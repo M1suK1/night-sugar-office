@@ -1,21 +1,23 @@
 import { useId, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, BedDouble, Building2, Cat, Check, ChevronRight, Coins, Crosshair, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Plus, Search, Shield, Sparkles, Star, Telescope, Users } from 'lucide-react';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BedDouble, BookOpen, Building2, Cat, Check, ChevronRight, Coins, Crosshair, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Plus, Search, Shield, Sparkles, Star, Swords, Telescope, Users } from 'lucide-react';
 import type { GameState, Girl, Room } from '../types';
 import './aux-views.css';
 
 type BaseViewProps = { state: GameState; onRoom: (id: string) => void; onBuild: () => void; onGirl: (id: string) => void; onTalk: (id: string) => void };
 type MarketViewProps = { state: GameState; onHire: (id: string) => void; onGirl: (id: string) => void };
-type RecordsViewProps = { state: GameState };
+type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void };
 type Metric = 'income' | 'expense' | 'reputation';
 type LogKind = GameState['logs'][number]['kind'];
 
 const number = (value: number) => value.toLocaleString('zh-CN');
-const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息' };
+const hm = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息', retired: '已退役' };
 const roomIcons = { lounge: Cat, clinic: HeartPulse, dorm: BedDouble, observatory: Telescope };
 const roomCaptions = { lounge: '茶香、软糖与不必保密的心事。', clinic: '把伤口留在这里，把勇气带回去。', dorm: '今晚的星光，也需要好好休息。', observatory: '城市的每一次心跳，都有回声。' };
 const metricNames: Record<Metric, string> = { income: '委托收入', expense: '经营支出', reputation: '城市声望' };
-const kindNames: Record<LogKind, string> = { dispatch: '派遣', finance: '收支', story: '故事', care: '照护', base: '基地' };
-const kindIcons = { dispatch: Crosshair, finance: Coins, story: MessageCircle, care: HeartPulse, base: House };
+const kindNames: Record<LogKind, string> = { dispatch: '派遣', finance: '收支', story: '故事', care: '照护', base: '基地', battle: '战斗', relationship: '关系', memorial: '悼念' };
+const kindIcons = { dispatch: Crosshair, finance: Coins, story: MessageCircle, care: HeartPulse, base: House, battle: Swords, relationship: Heart, memorial: Flower2 };
+const outcomeNames = { victory: '战斗胜利', repelled: '暂时击退', defeat: '战斗失败', draw: '僵持收场' } as const;
 
 function capacityOf(state: GameState) {
   const dorms = state.rooms.filter(room => room.type === 'dorm');
@@ -68,12 +70,14 @@ function RoomTile({ room, occupants, selected, onSelect, onGirl }: { room: Room;
 export function BaseView({ state, onRoom, onBuild, onGirl, onTalk }: BaseViewProps) {
   const [selectedId, setSelectedId] = useState(state.rooms[0]?.id ?? '');
   const room = state.rooms.find(item => item.id === selectedId) ?? state.rooms[0];
-  const present = state.girls.filter(girl => girl.status !== 'mission');
+  const present = state.girls.filter(girl => !girl.retired && girl.status !== 'mission');
+  const active = state.girls.filter(girl => !girl.retired);
+  const away = active.filter(girl => girl.status === 'mission').length;
   const occupants = room ? present.filter(girl => girl.roomId === room.id) : [];
   const capacity = capacityOf(state);
   const Icon = room ? roomIcons[room.type] : House;
   return <section className="av-view av-base-view" aria-labelledby="av-base-title">
-    <header className="av-heading"><div><p className="av-eyebrow"><House size={12} />夜糖事务所 · 基地</p><h1 id="av-base-title">灯火为你而留</h1><p>出发之前，或归来之后。这里始终有一个位置。</p></div><div className="av-heading-meta"><Users size={14} /><span>契约成员</span><strong>{state.girls.length}<span className="av-capacity-denominator"> / {capacity}</span></strong></div></header>
+    <header className="av-heading"><div><p className="av-eyebrow"><House size={12} />夜糖事务所 · 基地</p><h1 id="av-base-title">灯火为你而留</h1><p>出发之前，或归来之后。这里始终有一个位置。</p></div><div className="av-heading-meta"><Users size={14} /><span>契约成员</span><strong>{active.length}<span className="av-capacity-denominator"> / {capacity}</span></strong></div></header>
     <div className="av-base-layout">
       <div><div className="av-floorplan"><div className="av-floor-topline"><span><span className="av-live-dot" />基地平面图</span><span>月见街 17 号 · 二层</span></div>
         <div className="av-room-grid">{state.rooms.slice(0, 2).map(item => <RoomTile key={item.id} room={item} occupants={present.filter(girl => girl.roomId === item.id)} selected={room?.id === item.id} onSelect={() => { setSelectedId(item.id); onRoom(item.id); }} onGirl={onGirl} />)}
@@ -88,7 +92,7 @@ export function BaseView({ state, onRoom, onBuild, onGirl, onTalk }: BaseViewPro
         {room && <div className="av-room-actions"><button id="av-base-manage-selected-room" type="button" className="av-btn av-btn-small" onClick={() => onRoom(room.id)}>管理房间<ArrowUpRight size={12} /></button></div>}
       </aside>
     </div>
-    <p className="av-section-caption"><Sparkles size={12} />{present.length} 名成员在基地 · {state.girls.length - present.length} 名成员正在城市中执行委托。交谈将保留为她们各自的故事记忆。</p>
+    <p className="av-section-caption"><Sparkles size={12} />{present.length} 名成员在基地 · {away} 名成员正在城市中执行委托。交谈将保留为她们各自的故事记忆。</p>
   </section>;
 }
 
@@ -113,7 +117,7 @@ export function MarketView({ state, onHire, onGirl }: MarketViewProps) {
     <div className="av-market-note"><Shield size={21} strokeWidth={1.3} /><p><strong>不是雇佣武器，而是邀请伙伴。</strong><br />签约前可以查看完整档案；加入后，她的能力、情绪与经历都将影响事务所的故事。</p></div>
     <div className="av-toolbar"><div className="av-filters" aria-label="候选成员类型">{([['all', '全部'], ['combat', '作战'], ['support', '支援']] as const).map(([value, label]) => <button id={`av-market-filter-${value}`} type="button" className="av-filter" aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>{label}</button>)}<span className="av-filter-count">{candidates.length} 位候选成员</span></div><label className="av-search" htmlFor="av-market-search"><Search size={14} /><input id="av-market-search" className="av-input" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="寻找姓名、称号或元素" aria-label="搜索候选魔法少女" /></label></div>
     {candidates.length ? <div className="av-candidate-grid">{candidates.map(girl => <CandidateCard key={girl.id} girl={girl} state={state} onHire={onHire} onGirl={onGirl} />)}</div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>{state.candidates.length ? '没有找到符合条件的契约者。' : '此刻的星愿名册已经翻到最后一页。'}<br />{state.candidates.length ? '试着更换类型，或使用其他关键词。' : '已加入的伙伴，可以在基地中找到。'}</p>{state.candidates.length > 0 && <button id="av-market-clear-filters" className="av-btn av-btn-small" type="button" onClick={() => { setFilter('all'); setQuery(''); }}>清除筛选</button>}</div>}
-    <footer className="av-market-footer"><span><Info size={12} /> 契约费用为一次性支出。完成邀请前会再次确认。</span><span>成员容量 {state.girls.length} / {capacityOf(state)} · 在基地扩建宿舍可增加容量</span></footer>
+    <footer className="av-market-footer"><span><Info size={12} /> 契约费用为一次性支出。完成邀请前会再次确认。</span><span>成员容量 {state.girls.filter(girl => !girl.retired).length} / {capacityOf(state)} · 在基地扩建宿舍可增加容量</span></footer>
   </section>;
 }
 
@@ -134,7 +138,7 @@ function RecordsChart({ state, range, metric }: { state: GameState; range: numbe
   return <><div className="av-chart-metric"><strong>{number(latest)}</strong><span>{metric === 'reputation' ? '声望' : '星砂'} · 最近一日</span></div>{points.length ? <div className="av-chart-wrap"><svg className="av-chart-svg" viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`最近${range}天${metricNames[metric]}折线图。可使用制表键查看每日数据。`}><defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f49abd" stopOpacity=".16" /><stop offset="100%" stopColor="#f49abd" stopOpacity="0" /></linearGradient></defs>{[0, 1, 2, 3, 4].map(index => { const y = top + chartHeight * index / 4; return <g key={index}><line className="av-chart-grid" x1={left} y1={y} x2={width - right} y2={y} /><text x={left - 12} y={y + 3} textAnchor="end">{number(ceiling - index * tick)}</text></g>; })}<path d={areaPath} fill={`url(#${gradientId})`} /><path className="av-chart-line" d={linePath} />{active && <line className="av-chart-selected-line" x1={active.x} y1={top} x2={active.x} y2={height - bottom} />}{points.map((point, index) => <g key={point.day}><g id={`av-record-point-${metric}-day-${point.day}`} className="av-chart-point" role="button" tabIndex={0} aria-label={`第${point.day}天，${metricNames[metric]}${point[metric]}${metric === 'reputation' ? '点' : '星砂'}`} data-active={active?.day === point.day} onMouseEnter={() => setActiveDay(point.day)} onFocus={() => setActiveDay(point.day)} onClick={() => setActiveDay(point.day)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveDay(point.day); } }}><circle cx={point.x} cy={point.y} r="14" fill="transparent" /><circle className="av-chart-point-dot" cx={point.x} cy={point.y} r="3.5" /><title>第{point.day}天：{metricNames[metric]} {number(point[metric])}</title></g>{(samples.length <= 7 || index % 2 === 0 || index === samples.length - 1) && <text x={point.x} y={height - 10} textAnchor="middle">第{point.day}天</text>}</g>)}</svg><div className="av-chart-tooltip" aria-live="polite">{active && <><span>第 {active.day} 天</span><span>{metricNames[metric]}</span><strong>{number(active[metric])}</strong><span>{metric === 'reputation' ? '声望' : '星砂'}</span></>}</div></div> : <div className="av-empty"><History size={28} strokeWidth={1} /><p>还没有经营数据。<br />推进游戏时间后，第一条曲线会从这里开始。</p></div>}</>;
 }
 
-export function RecordsView({ state }: RecordsViewProps) {
+export function RecordsView({ state, onBattle, onCodex }: RecordsViewProps) {
   const [range, setRange] = useState(7);
   const [metric, setMetric] = useState<Metric>('income');
   const [kind, setKind] = useState<'all' | LogKind>('all');
@@ -142,9 +146,13 @@ export function RecordsView({ state }: RecordsViewProps) {
   const totals = useMemo(() => state.samples.reduce((sum, sample) => ({ income: sum.income + sample.income, expense: sum.expense + sample.expense }), { income: 0, expense: 0 }), [state.samples]);
   const logs = state.logs.filter(log => kind === 'all' || log.kind === kind);
   return <section className="av-view av-records-view" aria-labelledby="av-records-title"><header className="av-heading"><div><p className="av-eyebrow"><History size={12} />事务所档案 · 经营记录</p><h1 id="av-records-title">每个选择，都有回响</h1><p>那些守护过的夜晚，和慢慢变好的日常。</p></div><div className="av-heading-meta"><span className="av-live-dot" /><span>记录至第 {state.day} 天</span></div></header>
-    <div className="av-record-summary"><div className="av-record-stat"><span><ArrowDownLeft size={13} />累计委托收入</span><strong>{number(totals.income)}</strong><small>星砂 · 已收录经营记录</small></div><div className="av-record-stat"><span><ArrowUpRight size={13} />累计经营支出</span><strong>{number(totals.expense)}</strong><small>星砂 · 契约、照护与建设</small></div><div className="av-record-stat"><span><Star size={13} />城市声望</span><strong>{number(state.reputation)}</strong><small>已完成 {state.completed.length} 项委托</small></div></div>
+    <div className="av-record-summary"><div className="av-record-stat"><span><ArrowDownLeft size={13} />记录期委托收入</span><strong>{number(totals.income)}</strong><small>星砂 · 每日经营记录汇总</small></div><div className="av-record-stat"><span><ArrowUpRight size={13} />记录期经营支出</span><strong>{number(totals.expense)}</strong><small>星砂 · 契约、照护与建设</small></div><div className="av-record-stat"><span><Star size={13} />当前星砂储备</span><strong>{number(state.gold)}</strong><small>可用余额 · 声望 {state.reputation} · 已完成 {state.completed.length} 项</small></div></div>
     <section className="av-record-chart-panel" aria-labelledby="av-chart-title"><div className="av-chart-header"><h2 id="av-chart-title">经营轨迹</h2><div className="av-chart-controls"><div className="av-filters" aria-label="图表指标">{(['income', 'expense', 'reputation'] as const).map(value => <button id={`av-record-metric-${value}`} className="av-filter" type="button" key={value} aria-pressed={metric === value} onClick={() => setMetric(value)}>{metricNames[value]}</button>)}</div><label className="av-visually-hidden" htmlFor="av-record-range">图表时间范围</label><select id="av-record-range" className="av-select" value={range} onChange={event => setRange(Number(event.target.value))}><option value={7}>最近 7 天</option><option value={14}>最近 14 天</option></select></div></div><RecordsChart state={state} metric={metric} range={range} /></section>
-    <section aria-labelledby="av-record-log-title"><div className="av-log-head"><h2 id="av-record-log-title"><History size={14} />行动手记<small>{logs.length} 条</small></h2><div className="av-log-filter"><label htmlFor="av-record-log-filter">记录类型</label><select id="av-record-log-filter" className="av-select" value={kind} onChange={event => { setKind(event.target.value as typeof kind); setVisibleCount(8); }}><option value="all">全部记录</option>{(['dispatch', 'finance', 'story', 'care', 'base'] as const).map(value => <option key={value} value={value}>{kindNames[value]}记录</option>)}</select></div></div>
+    <section className="av-battle-archive" aria-labelledby="av-record-battle-title"><div className="av-log-head"><h2 id="av-record-battle-title"><Swords size={14} />战斗档案<small>{state.battles.length} 场</small></h2><button id="av-record-codex" type="button" className="av-btn av-btn-small" onClick={onCodex}><BookOpen size={13} />魔物图鉴<ChevronRight size={12} /></button></div>
+      {state.battles.length ? <ol className="av-battle-list">{state.battles.slice(0, 4).map(battle => <li key={battle.id}><button id={`av-record-battle-${battle.id}`} type="button" className={`av-battle-row av-tone-${battle.outcome ?? 'draw'}`} onClick={() => onBattle(battle.id)}><span className="av-battle-date">第 {battle.startedAt.day} 日 · {hm(battle.startedAt.minutes)}</span><strong>{battle.missionTitle}</strong><span className="av-battle-outcome-tag">{outcomeNames[battle.outcome ?? 'draw']}</span><span className="av-battle-meta">{battle.rounds} 轮 · {number(battle.rewards?.gold ?? 0)} 星砂</span><ArrowUpRight size={12} /></button></li>)}</ol> : <div className="av-empty av-empty-battle"><Swords size={26} strokeWidth={1} /><p>还没有战斗记录。<br />战斗委托结束后，完整过程会被保存在这里。</p></div>}
+      {state.battles.length > 4 && <p className="av-battle-more">仅展示最近 4 场战斗，完整战报可在派遣地图的任务详情中回看。</p>}
+    </section>
+    <section aria-labelledby="av-record-log-title"><div className="av-log-head"><h2 id="av-record-log-title"><History size={14} />行动手记<small>{logs.length} 条</small></h2><div className="av-log-filter"><label htmlFor="av-record-log-filter">记录类型</label><select id="av-record-log-filter" className="av-select" value={kind} onChange={event => { setKind(event.target.value as typeof kind); setVisibleCount(8); }}><option value="all">全部记录</option>{(Object.keys(kindNames) as LogKind[]).map(value => <option key={value} value={value}>{kindNames[value]}记录</option>)}</select></div></div>
       {logs.length ? <ol className="av-log-list">{logs.slice(0, visibleCount).map(log => { const Icon = kindIcons[log.kind]; return <li className="av-log-item" key={log.id}><time className="av-log-time">{log.time}</time><span className="av-log-icon"><Icon size={12} strokeWidth={1.5} /></span><div className="av-log-copy"><strong>{log.text}</strong>{typeof log.delta === 'number' && log.delta !== 0 && <p className={log.delta > 0 ? 'av-log-positive' : ''}>{log.delta > 0 ? '+' : '−'}{number(Math.abs(log.delta))} 星砂</p>}</div><span className="av-log-category">{kindNames[log.kind]}</span></li>; })}</ol> : <div className="av-empty"><History size={28} strokeWidth={1} /><p>这一页还没有记录。<br />{kind === 'all' ? '派遣、照护或与成员交谈后，故事会留在这里。' : '切换到全部记录，看看事务所发生过的其他故事。'}</p></div>}
       {logs.length > visibleCount && <button id="av-record-load-more" className="av-btn av-log-more" type="button" onClick={() => setVisibleCount(count => count + 8)}>继续翻阅 · 还有 {logs.length - visibleCount} 条<ChevronRight size={13} /></button>}
     </section><p className="av-section-caption"><LockKeyhole size={11} />经营与故事记录仅保存在此浏览器，不会上传到任何服务。</p>
