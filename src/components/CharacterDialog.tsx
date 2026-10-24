@@ -1,25 +1,33 @@
 import { useState } from 'react';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList } from 'lucide-react';
 import type { GameState, Girl, StatKey } from '../types';
 import { relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, getSkill, resourceLabels, tierLabels } from '../content/skills';
+import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
+import { expNeeded, progressLabel } from '../progression';
 
 const dossierTabs = [
   { id: 'overview', label: '状态概览' },
   { id: 'ability', label: '魔法能力' },
   { id: 'relations', label: '关系网络' },
+  { id: 'growth', label: '契约成长' },
   { id: 'memory', label: '心愿与羁绊' },
 ];
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire }: {
   girl: Girl; state: GameState; onCare: (mode: 'healing' | 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
+  onClinic: (mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
+  onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
 }) {
   const [tab, setTab] = useState('overview');
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
   const peers = Object.entries(girl.relationships).map(([id, score]) => ({ girl: state.girls.find(g => g.id === id), score })).filter(x => x.girl);
+  const renewCost = renewalCost(girl) + pensionArrears(girl);
+  const contract = contractLabel(girl, state.day);
+  const isAssistant = state.assistantId === girl.id;
   return (
     <div className="character-dossier" style={{ '--girl-color': girl.color } as React.CSSProperties}>
       <div className="dossier-art">
@@ -32,7 +40,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
       <div className="dossier-content">
         <div className="modal-eyebrow">{candidate ? '招募档案' : '契约者档案'} / {girl.element}</div>
         <div className="dossier-name"><h2>{girl.name}</h2><span>Lv.{girl.level.toString().padStart(2, '0')}</span></div>
-        <div className="dossier-codename">{girl.codename}<span className="pill">{candidate ? '等待签约' : statusLabels[girl.status]}</span></div>
+        <div className="dossier-codename">{girl.codename}<span className={`pill contract-pill ${girl.contractEndDay - state.day < 3 ? 'urgent' : ''}`}>{candidate ? '等待签约' : statusLabels[girl.status]}</span>{!candidate && <span className="contract-mini">{contract}</span>}</div>
         <div className="dossier-tabs" role="tablist" aria-label="人物档案分页">
           {dossierTabs.map((t, index) => (
             <button role="tab" aria-selected={tab === t.id} aria-controls="dossier-tab-content" tabIndex={tab === t.id ? 0 : -1}
@@ -53,6 +61,10 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {girl.maxHp}</small></b></div><i><b style={{ width: `${girl.hp / girl.maxHp * 100}%` }} /></i></div>
             <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>共情值</span><b>{girl.spirit}<small> / {girl.maxSpirit}</small></b></div><i><b style={{ width: `${girl.spirit / girl.maxSpirit * 100}%` }} /></i></div>
             <div className="dossier-meter fatigue"><div><BatteryMedium size={15} /><span>疲劳值</span><b>{girl.fatigue}<small> / 100</small></b></div><i><b style={{ width: `${girl.fatigue}%` }} /></i></div>
+            <div className="dossier-meter exp-meter"><div><Star size={14} /><span>成长经验</span><b>{progressLabel(girl)}<small> · Lv.{girl.level}</small></b></div><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i></div>
+            <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
+            <div className="trait-tags">{girl.traits.length ? girl.traits.map(trait => <span key={trait.id} className={`trait-tag ${trait.polarity}`} title={trait.description}>{trait.name}</span>) : <span className="trait-empty">还没有显露特性</span>}</div>
+            {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
             <div className="scar-track">
               <div className="scar-track-head"><span><Bandage size={13} />疤痕</span><b>{girl.scars.length} / 5</b></div>
               <div className="scar-slots">
@@ -66,7 +78,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <p>{girl.scars.length >= 4 ? '第 5 道疤痕会带来不可逆的死亡。她仍可以申请退役，转任事务所文职。' : `每道疤痕让血量上限降低约 8%。当前上限 ${girl.maxHp} / 基础 ${girl.baseMaxHp}。`}</p>
             </div>
             <p className="dossier-description">{girl.description}</p>
-            <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
+            <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : girl.status === 'expedition' ? '星象台远行中 · 每 60 分钟回报一次' : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
           </>}
           {tab === 'ability' && <>
             <div className="skill-list">
@@ -112,25 +124,59 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             </div>
             <p className="small-note">关系会随共同出勤、战斗胜负与告别而变化。数值不会直接显示在对话里。</p>
           </>}
+          {tab === 'growth' && <>
+            <div className="growth-columns">
+            <div className="growth-col">
+            <div className="growth-hero"><div><small>当前目标</small><strong>{girl.goal}</strong><span>{girl.goalKind}倾向 · Lv.{girl.level}</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : `Lv.${girl.level}`}</div></div>
+            <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>战斗经验按推荐等级结算；连续两次达标战斗或四次调查可提升一级。</small></div>
+            <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
+            <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
+            </div>
+            <div className="growth-col">
+            <div className="modal-section-heading"><h3>契约与退休金</h3><small>到期后需续签</small></div>
+            <div className="contract-grid">
+              <div><span>契约状态</span><b>{contract}</b><small>{girl.contractEndDay} 日到期 · 已续签 {girl.contractRenewals} 次</small></div>
+              <div><span>退休金标准</span><b>{pensionFor(girl)} <small>星砂 / 10 日</small></b><small>{girl.retired ? '每月从事务所账户划拨' : '退役后开始计发'}</small></div>
+              <div><span>欠缴</span><b className={pensionArrears(girl) ? 'warn' : ''}>{pensionArrears(girl)}</b><small>{girl.pensionMissed} 日未结</small></div>
+            </div>
+            {!girl.retired && <button id="girl-renew" className="btn full renew-btn" disabled={state.gold < renewCost} onClick={onRenew}><RefreshCw size={15} />续签契约 · {renewCost.toLocaleString()} 星砂（含欠缴与羁绊系数）</button>}
+            {girl.retired && girl.retiredReason === 'contract' && <button id="girl-rehire" className="btn full" onClick={onRehire}><UserRoundCheck size={15} />返聘 · {600 + girl.level * 120} 星砂</button>}
+            {girl.retired && <p className="small-note"><Phone size={12} />已退役，可进行远程联络。每次通话 40 星砂，每日首次提升羁绊。</p>}
+            {!candidate && <button id="girl-assistant-toggle" className={`btn full ${isAssistant ? 'active' : ''}`} onClick={onAssistant}><ShieldCheck size={15} />{isAssistant ? '取消值班助理' : '设为值班助理'} · 需羁绊 40</button>}
+            <div className="modal-section-heading"><h3>月光诊所</h3><small>花一点星砂，换她一个完整的夜晚</small></div>
+            <div className="clinic-grid">
+              <button id="clinic-heal" className="clinic-action" disabled={state.gold < 240 || (girl.status !== 'idle' && !girl.retired)} onClick={() => onClinic('heal')}><Cross size={16} /><b>快速治疗</b><small>240 星砂 · 回满血量与共情</small></button>
+              <button id="clinic-rest" className="clinic-action" disabled={state.gold < 360 || girl.status !== 'idle'} onClick={() => onClinic('rest')}><Moon size={16} /><b>深度疗养</b><small>360 星砂 · 三天，清空疲劳</small></button>
+              <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性重置</small></button>
+              <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
+            </div>
+            </div>
+            </div>
+          </>}
           {tab === 'memory' && <>
             <div className="bond-emblem"><Heart size={28} /><div><small>与你的羁绊</small><strong>{girl.bond}<span>/100</span></strong></div></div>
             <p className="dossier-description">{candidate ? '一个故事还没有开始。在签署契约之后，你会慢慢认识她不为人知的另一面。' : girl.bond >= 70 ? '「如果城市的灯都熄了，我也知道该往哪里走。因为你会在这里等我。」' : girl.bond >= 40 ? '「我不太擅长讲自己的事。不过，如果你愿意听……我们可以慢慢来。」' : '「工作之外的事，我还没有想好要不要告诉你。」'}</p>
+            <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
             <div className="memory-item"><BadgeCheck size={17} /><span>已知心愿<small>{girl.quote ?? '希望每一次出勤之后，大家都能平安回来。'}</small></span></div>
             <div className="memory-item"><LockKeyhole size={16} /><span>{girl.bond >= 60 ? '被记住的片刻' : '未说出口的故事'}<small>{girl.bond >= 60 ? '深夜留在桌上的一杯热可可，杯沿有她的口红印。' : '多陪她聊聊，故事会在日常中慢慢展开。'}</small></span></div>
+            {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
             {girl.scars.length > 0 && <div className="memory-scars">{girl.scars.map(scar => <div key={scar.id} className={`memory-scar ${scar.kind}`}><Bandage size={13} /><span><b>{scar.name}</b><small>{scar.condition} · {scar.gainedAt}</small></span></div>)}</div>}
           </>}
         </div>
         {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>缔结契约 · {girl.cost.toLocaleString()} 星砂<ArrowUpRight size={16} /></button> : <>
+          <div className="dossier-footer">
           <div className="care-actions">
             <button id="girl-heal" className="btn" disabled={girl.status !== 'idle' || girl.hp === girl.maxHp} onClick={() => onCare('healing')}><Cross size={15} /><span>送去治疗<small>180 星砂 · 60 分钟</small></span></button>
             <button id="girl-rest" className="btn" disabled={girl.status !== 'idle' || girl.fatigue === 0} onClick={() => onCare('resting')}><Moon size={15} /><span>安排休息<small>免费 · 90 分钟</small></span></button>
           </div>
           <div className="dossier-primary-actions">
             <button id="girl-talk" className="btn" disabled={girl.status === 'mission'} onClick={onTalk}><MessageCircle size={16} />和她聊聊</button>
+            <button id="girl-remote" className="btn" disabled={!girl.retired} onClick={onRemote}><Phone size={16} />远程联络</button>
             <button id="girl-assign" className="btn primary" disabled={girl.status !== 'idle' || girl.hp < 25 || girl.fatigue >= 80} onClick={onAssign}><Swords size={16} />安排派遣<ArrowUpRight size={17} /></button>
           </div>
+          </div>
           {girl.retired
-            ? <p className="small-note"><ShieldCheck size={12} />已转任文职。她仍住在基地，也会出现在关系网络里。</p>
+            ? <p className="small-note"><ShieldCheck size={12} />已转任文职。她仍住在基地，也会出现在关系网络里。退休金从每月经营收入中划拨。</p>
             : girl.scars.length >= 4 && <button id="girl-retire" className="btn retire-btn" onClick={onRetire}><Flower2 size={15} />申请退役 · 转任文职</button>}
           {girl.status !== 'idle' && <p className="small-note">正在{statusLabels[girl.status]}，剩余 {girl.remaining} 分钟。推进时间完成安排。</p>}
         </>}

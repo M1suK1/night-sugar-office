@@ -163,6 +163,58 @@ try {
     expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(4); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
     await page.locator('#dismiss-toast').click();
   });
+  await check('契约成长页：目标、经验、契约与诊所入口', async () => {
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-growth').click();
+    await expect(page.locator('.growth-hero')).toContainText(/当前目标/);
+    await expect(page.locator('.contract-grid')).toContainText('退休金标准');
+    await expect(page.locator('#girl-renew')).toBeEnabled();
+    await expect(page.locator('#clinic-heal')).toBeEnabled();
+    await expect(page.locator('#clinic-clone')).toBeDisabled();
+    await layout('growth dossier');
+    await page.screenshot({ path: 'artifacts/character-growth.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
+  await check('基地议事与星象台远行按小时结算', async () => {
+    await page.locator('#nav-base').click();
+    await expect(page.locator('#av-council-accept')).toBeVisible();
+    const before = (await stored()).gold;
+    await page.locator('#av-council-accept').click();
+    await expect.poll(async () => (await stored()).gold).toBe(before - 900);
+    await expect(page.locator('.av-op-quiet')).toContainText('会客厅暂时安静');
+    await page.locator('#av-expedition-pick-yue').click();
+    await page.locator('#av-expedition-pick-tang').click();
+    await page.locator('#av-expedition-start').click();
+    await expect.poll(async () => (await stored()).expeditions.length).toBe(1);
+    await page.locator('#advance-time-30').click(); await page.locator('#advance-time-30').click();
+    await expect.poll(async () => (await stored()).expeditions[0]?.cyclesDone ?? 0).toBe(1);
+    await page.screenshot({ path: 'artifacts/base-operations.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#av-expedition-recall').click();
+    await expect.poll(async () => (await stored()).expeditions.length).toBe(0);
+  });
+  await check('退休区、退休金与远程手机联络', async () => {
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      const yue = raw.girls.find(g => g.id === 'yue');
+      const scar = i => ({ id: `test-scar-${i}`, name: '旧伤', kind: 'physical', condition: '阴雨天会疼', description: '她不太提起。', effect: { kind: 'stat', stat: 'agility', amount: -1 }, maxHpLoss: 8, gainedAt: '第 13 日 · 02:10', missionId: 'mirror' });
+      yue.retired = true; yue.retiredReason = 'contract'; yue.status = 'retired'; yue.scars = [1, 2, 3, 4].map(scar);
+      yue.contractEndDay = 14; yue.pensionMissed = 2; yue.roomId = 'dorm';
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    await expect(page.locator('.av-retired-card')).toHaveCount(1);
+    await expect(page.locator('.av-retired-card')).toContainText('退休金');
+    await page.locator('#av-market-remote-yue').click();
+    await expect(page.locator('.remote-banner')).toContainText('远程联络 · 手机');
+    const before = (await stored()).gold;
+    await page.locator('#chat-input').fill('退休以后，睡得还好吗？');
+    await page.locator('#chat-send').click();
+    await expect.poll(async () => (await stored()).gold).toBe(before - 40);
+    await page.screenshot({ path: 'artifacts/retired-remote.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();
