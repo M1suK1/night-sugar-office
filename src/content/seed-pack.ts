@@ -1,6 +1,8 @@
-import type { ContentPack, Girl, Mission, Skill, StatKey } from '../types';
+import type { ContentPack, Girl, Mission, Skill, StatKey, Trait } from '../types';
 import { skills } from './skills.ts';
 import { monsters } from './monsters.ts';
+import { traitById } from './traits.ts';
+import { baseStatsAt } from '../progression.ts';
 
 const base = (magic: number, insight: number, agility: number, empathy: number): Record<StatKey, number> => ({ magic, insight, agility, empathy });
 const relations = (own: string, values: Record<string, number>): Record<string, number> => {
@@ -9,7 +11,27 @@ const relations = (own: string, values: Record<string, number>): Record<string, 
   return out;
 };
 
-export const seedGirls: Girl[] = [
+type SeedGirl = Omit<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed'> & Partial<Pick<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed'>>;
+
+const goals: Record<string, { goal: string; goalKind: Girl['goalKind'] }> = {
+  yue: { goal: '让每一个加班到深夜的人，都能抬头看见一点光。', goalKind: '生活' },
+  tang: { goal: '把噩梦包进糖纸，让她们醒来时只记得甜味。', goalKind: '社交' },
+  ling: { goal: '听清这座城市所有被忽略的频率。', goalKind: '调查' },
+  wu: { goal: '找到梦的尽头，顺便给每只流浪猫起名字。', goalKind: '调查' },
+  zhi: { goal: '让诊所的灯，永远比伤口晚一点熄灭。', goalKind: '生活' },
+  lu: { goal: '把每一场不能退让的战斗，打成一场演出。', goalKind: '战斗' },
+};
+const seedTraits: Record<string, string[]> = {
+  yue: ['cat-sense', 'protective'], tang: ['sweet-tooth', 'loyal'], ling: ['quiet', 'clock-sense'],
+  wu: ['cat-nap', 'moon-bound'], zhi: ['tidy-hands', 'curious'], lu: ['night-owl', 'scarred-pride'],
+};
+function hydrateGirl(girl: SeedGirl, index: number): Girl {
+  const plan = goals[girl.id] ?? { goal: '在城市与事务所之间，找到自己的位置。', goalKind: '生活' as const };
+  const traits = (girl.traits ?? (seedTraits[girl.id] ?? []).map(id => traitById.get(id)).filter((t): t is Trait => Boolean(t)));
+  return { ...girl, baseStats: girl.baseStats ?? baseStatsAt(girl.stats, girl.level, girl.archetype), goal: girl.goal ?? plan.goal, goalKind: girl.goalKind ?? plan.goalKind, traits, conditions: girl.conditions ?? [], contractEndDay: girl.contractEndDay ?? 20 + index * 3, contractDays: girl.contractDays ?? 10, contractRenewals: girl.contractRenewals ?? 0, pensionMissed: girl.pensionMissed ?? 0 };
+}
+
+const seedGirlData: SeedGirl[] = [
   {
     id: 'yue', name: '月见桃', codename: '绯色回响', title: '把夜晚染成桃色的魔法少女', element: '星光系', color: '#F49ABD', portrait: '/art/yue.svg',
     level: 6, hp: 120, maxHp: 120, baseMaxHp: 120, spirit: 100, maxSpirit: 100, fatigue: 40, bond: 62, exp: 0,
@@ -60,41 +82,43 @@ export const seedGirls: Girl[] = [
   },
 ];
 
+export const seedGirls: Girl[] = seedGirlData.map(hydrateGirl);
+
 export const seedMissions: Mission[] = [
   {
     id: 'candy', title: '糖果街的失眠电波', category: '异象调查', description: '糖果街的霓虹灯连续七晚在凌晨三点同时变成灰白色。居民说，灯灭的瞬间会听见有人轻声数糖。',
     x: 24, y: 27, difficulty: '低危', duration: 45, reward: 680, requirement: 'empathy', target: 70, color: '#F49ABD',
-    status: 'open', squad: [], work: 'investigation', attempts: 0,
+    status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 3,
   },
   {
     id: 'station', title: '末班车上的第十三人', category: '紧急委托', description: '末班电车每晚多载一名乘客。司机不敢回头，只在到站时听见第十三声脚步。',
     x: 66, y: 25, difficulty: '高危', duration: 60, reward: 920, requirement: 'agility', target: 80, color: '#E86A8A',
-    status: 'open', squad: [], work: 'combat', enemyIds: ['night-tram', 'echo-cat'], rounds: 4, attempts: 0,
+    status: 'open', squad: [], work: 'combat', enemyIds: ['night-tram', 'echo-cat'], rounds: 4, attempts: 0, recommendedLevel: 4,
   },
   {
     id: 'mirror', title: '镜中的另一轮月亮', category: '结界修复', description: '旧教堂的镜厅里出现了第二个夜空。镜中的月亮比真实的更圆，也更近。',
     x: 42, y: 51, difficulty: '中危', duration: 90, reward: 1240, requirement: 'insight', target: 75, color: '#9FB4E8',
-    status: 'open', squad: [], work: 'combat', enemyIds: ['mirror-nun'], rounds: 6, attempts: 0,
+    status: 'open', squad: [], work: 'combat', enemyIds: ['mirror-nun'], rounds: 6, attempts: 0, recommendedLevel: 5,
   },
   {
     id: 'cat', title: '寻找走失的星尾猫', category: '市民求助', description: '一只尾巴上有星形斑纹的三花猫走失了。委托人没有留下姓名，只留下一小袋猫薄荷。',
     x: 76, y: 62, difficulty: '低危', duration: 30, reward: 420, requirement: 'agility', target: 65, color: '#B9D8A8',
-    status: 'open', squad: [], work: 'investigation', attempts: 0,
+    status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 2,
   },
   {
     id: 'tower', title: '旧钟楼的未寄信', category: '心愿回收', description: '旧钟楼每天傍晚都会多出一封没有收件人的信。信纸很旧，邮戳却是明天。',
     x: 27, y: 76, difficulty: '中危', duration: 60, reward: 760, requirement: 'empathy', target: 78, color: '#C7A7E8',
-    status: 'open', squad: [], work: 'investigation', attempts: 0,
+    status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 4,
   },
   {
     id: 'arcade', title: '糖果王座上的蛀牙', category: '紧急委托', description: '废弃游乐场的糖王雕像开始进食。它把整条街的甜味吸进王座，再吐出没有味道的雾。',
     x: 58, y: 72, difficulty: '高危', duration: 90, reward: 1420, requirement: 'magic', target: 82, color: '#D98A94',
-    status: 'open', squad: [], work: 'combat', enemyIds: ['candy-king', 'sugar-moth'], rounds: 6, attempts: 0,
+    status: 'open', squad: [], work: 'combat', enemyIds: ['candy-king', 'sugar-moth'], rounds: 6, attempts: 0, recommendedLevel: 6,
   },
   {
     id: 'hollow', title: '空月悬在钟楼上', category: '结界修复', description: '月亮缺席的第七夜，旧钟楼上方出现了一个没有背面的天体。仰望它的人会忘记自己为什么抬头。',
     x: 12, y: 52, difficulty: '绝望', duration: 90, reward: 2000, requirement: 'insight', target: 90, color: '#C9C4FF',
-    status: 'open', squad: [], work: 'combat', enemyIds: ['hollow-moon'], rounds: 6, attempts: 0,
+    status: 'open', squad: [], work: 'combat', enemyIds: ['hollow-moon'], rounds: 6, attempts: 0, recommendedLevel: 8,
   },
 ];
 
@@ -110,7 +134,7 @@ export function packHash(pack: Pick<ContentPack, 'girls' | 'monsters' | 'skills'
 
 export function createSeedPack(): ContentPack {
   const pack: ContentPack = {
-    id: 'seed-night-sugar', hash: '', schemaVersion: 2, promptVersion: 'seed-1', source: 'seed',
+    id: 'seed-night-sugar', hash: '', schemaVersion: 3, promptVersion: 'seed-3', source: 'seed',
     createdAt: '2026-10-23T00:00:00.000Z',
     palette: { ink: '#0B0B10', rose: '#F49ABD', blush: '#FFD6E5', mist: '#85828F', frost: '#9CC9D2' },
     girls: seedGirls, monsters, skills: skills as Skill[], missions: seedMissions,

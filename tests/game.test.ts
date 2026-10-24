@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit } from '../src/game.ts';
-import type { Scar } from '../src/types.ts';
+import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
+import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
+import type { Opinion, Scar } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
   id: `scar-${id}-old`, name: '陈旧伤', kind: 'physical', condition: '旧伤在阴雨天发作',
@@ -11,7 +13,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 3);
+  assert.equal(s.version, 4);
   assert.equal(s.girls.length, 4);
   assert.equal(s.candidates.length, 2);
   assert.equal(s.missions.length, 7);
@@ -80,7 +82,7 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
   const yue = result.girls.find(g => g.id === 'yue')!;
   assert.equal(yue.bond, Math.min(100, before.bond + 3));
   assert.equal(yue.relationships.tang, (before.relationships.tang ?? 40) + 2);
-  assert.equal(yue.exp, 24 + battle.rounds * 3);
+  assert.equal(yue.exp, battleExp(result.missions.find(m => m.id === 'mirror')!.recommendedLevel));
   assert.equal(yue.scars.length, 0);
   assert.equal(result.logs.find(l => l.kind === 'battle')?.delta, 1240);
 });
@@ -186,7 +188,7 @@ test('跨日推进记录新日期，拒绝负数、过小及过大推进量', ()
   assert.equal(act(s, { type: 'advance', minutes: 0.5 }).ok, false);
   assert.equal(act(s, { type: 'advance', minutes: 181 }).ok, false);
 });
-test('坏存档安全回退，v1 存档迁移，合法 v3 存档恢复', () => {
+test('坏存档安全回退，v1 存档迁移，合法 v4 存档恢复', () => {
   assert.equal(loadState('not json').girls.length, 4);
   const migrated = loadState('{"version":1,"gold":777,"girls":[]}');
   assert.equal(migrated.girls.length, 4);
@@ -220,3 +222,80 @@ test('单人匹配率与小队契合度保持在合理区间', () => {
   const squad = s.girls.slice(0, 2);
   assert.ok(squadChance(squad, m) >= 20 && squadChance(squad, m) <= 99);
 });
+test('经验达到阈值后升级并提升主副属性', () => {
+  const s = createInitialState(); const g = s.girls[0]; const level = g.level;
+  g.exp = 0; g.retired = false;
+  const need = expNeeded(level);
+  assert.equal(grantExp(g, need - 1), false);
+  assert.equal(g.exp, need - 1);
+  assert.equal(grantExp(g, 2), true);
+  assert.equal(g.level, level + 1);
+  assert.equal(g.exp, 1);
+  assert.ok(g.maxHp > s.girls[1].baseMaxHp || g.maxHp >= 120);
+});
+test('退休金按日划拨，欠约累积到契约状态', () => {
+  const s = createInitialState(); const yue = s.girls.find(g => g.id === 'yue')!;
+  yue.scars = [oldScar('1'), oldScar('2'), oldScar('3'), oldScar('4')];
+  const retired = act(s, { type: 'retire', girlId: 'yue' });
+  assert.equal(retired.ok, true);
+  assert.equal(retired.state.girls.find(g => g.id === 'yue')!.retired, true);
+  const before = retired.state.gold; let current = retired.state;
+  for (let i = 0; i < 100; i++) current = act(current, { type: 'advance', minutes: 180 }).state;
+  assert.ok(current.gold < before, '退役金应该造成持续支出');
+  assert.ok(current.logs.some(log => log.text.includes('退休金')));
+  assert.ok(current.gold < before - Math.round(pensionFor(yue) / 10) * 8);
+});
+test('远程联络只对退役成员开放，按次计费且每日首次提升羁绊', () => {
+  const s = createInitialState(); const yue = s.girls.find(g => g.id === 'yue')!;
+  yue.retired = true; yue.retiredReason = 'contract'; yue.status = 'retired'; s.gold = 1000;
+  const first = act(s, { type: 'talk', girlId: 'yue', text: '最近睡得好吗？', remote: true });
+  assert.equal(first.ok, true);
+  assert.equal(first.state.gold, 1000 - REMOTE_CALL_COST);
+  assert.equal(first.state.girls.find(g => g.id === 'yue')!.bond, yue.bond + 1);
+  const second = act(first.state, { type: 'talk', girlId: 'yue', text: '明天再聊。', remote: true });
+  assert.equal(second.state.gold, 1000 - REMOTE_CALL_COST * 2);
+  assert.equal(second.state.girls.find(g => g.id === 'yue')!.bond, yue.bond + 1);
+  assert.equal(act(s, { type: 'talk', girlId: 'tang', text: '在吗', remote: true }).ok, false);
+});
+test('续签与复制契约会消耗星砂并写入新契约', () => {
+  const s = createInitialState(); s.gold = 30000; s.girls[0].contractEndDay = 12; s.girls[0].pensionMissed = 2;
+  const renewed = act(s, { type: 'renewContract', girlId: 'yue' });
+  assert.equal(renewed.ok, true);
+  assert.equal(renewed.state.girls[0].pensionMissed, 0);
+  assert.ok(renewed.state.girls[0].contractEndDay >= renewed.state.day + 10);
+  const cloned = act(renewed.state, { type: 'clinic', girlId: 'yue', mode: 'clone' });
+  assert.equal(cloned.ok, true);
+  assert.equal(cloned.state.girls.length, s.girls.length + 1);
+  const copy = cloned.state.girls.at(-1)!;
+  assert.equal(copy.cloneOf, 'yue');
+  assert.equal(copy.level, 1);
+  assert.match(copy.id, /^g_/);
+  assert.equal(act(cloned.state, { type: 'clinic', girlId: 'yue', mode: 'clone' }).ok, false);
+});
+test('星象台远行按小时结算并可以召回', () => {
+  const s = createInitialState();
+  const started = act(s, { type: 'startExpedition', memberIds: ['yue', 'tang'] });
+  assert.equal(started.ok, true);
+  const expedition = started.state.expeditions[0];
+  assert.deepEqual(expedition.memberIds, ['yue', 'tang']);
+  assert.equal(started.state.girls.find(g => g.id === 'yue')!.status, 'expedition');
+  const advanced = act(started.state, { type: 'advance', minutes: 60 });
+  assert.equal(advanced.state.expeditions[0].cyclesDone, 1);
+  assert.ok(advanced.state.gold > started.state.gold);
+  const recalled = act(advanced.state, { type: 'recallExpedition', expeditionId: expedition.id });
+  assert.equal(recalled.state.expeditions.length, 0);
+  assert.equal(recalled.state.girls.find(g => g.id === 'yue')!.status, 'idle');
+});
+test('会客厅议题可以批准、驳回或暂缓', () => {
+  const s = createInitialState(); const opinion: Opinion = { id: 'op-test', day: 14, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '白光太像诊所。', request: '申请 600 星砂。', status: 'pending', options: [] };
+  s.opinions = [opinion];
+  const accepted = act(s, { type: 'decideOpinion', opinionId: 'op-test', decision: 'accept' });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.state.gold, s.gold - 600);
+  assert.equal(accepted.state.opinions[0].status, 'accepted');
+  assert.equal(act(accepted.state, { type: 'decideOpinion', opinionId: 'op-test', decision: 'reject' }).ok, false);
+  const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-test', decision: 'reject' });
+  assert.equal(rejected.state.opinions[0].status, 'rejected');
+  assert.equal(rejected.state.girls.find(g => g.id === 'yue')!.bond, s.girls.find(g => g.id === 'yue')!.bond - 2);
+});
+

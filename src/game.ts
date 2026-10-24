@@ -1,7 +1,10 @@
-import type { ActionResult, BattleState, ContentPack, GameAction, GameState, Girl, Log, Mission, Sample, Scar, StatKey } from './types';
+import type { ActionResult, BattleState, ContentPack, GameAction, GameState, Girl, Log, Mission, Opinion, Sample, Scar, StatKey } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { getSkill } from './content/skills.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
+import { pickTraits } from './content/traits.ts';
+import { battleExp, grantExp, investigationExp } from './progression.ts';
+import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 export const statLabels: Record<StatKey, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情' };
@@ -58,13 +61,23 @@ function defaultSkills(id: string): string[] {
 function hydrate(girl: Girl): Girl {
   const g = clone(girl);
   g.baseMaxHp ??= g.maxHp;
+  g.baseStats ??= { ...g.stats };
   g.skills ??= defaultSkills(g.id);
   g.scars ??= [];
   g.relationships ??= {};
   g.exp ??= 0;
+  g.goal ??= '在城市的夜里，找到一件值得反复去做的事。';
+  g.goalKind ??= '生活';
+  g.traits ??= [];
+  g.conditions ??= [];
+  g.contractEndDay ??= 24;
+  g.contractDays ??= CONTRACT_DAYS;
+  g.contractRenewals ??= 0;
+  g.pensionMissed ??= 0;
+  g.status ??= 'idle';
   g.maxHp = Math.max(40, Math.round(g.baseMaxHp * Math.max(0.4, 1 - g.scars.length * 0.08)));
   g.hp = Math.min(g.hp, g.maxHp);
-  g.maxSpirit = spiritMax(g);
+  g.maxSpirit = Math.max(30, g.maxSpirit ?? spiritMax(g));
   g.spirit = Math.min(g.spirit ?? g.maxSpirit, g.maxSpirit);
   g.skill = getSkill(g.skills[g.skills.length - 1] ?? 'glimmer-spear').name;
   return g;
@@ -75,6 +88,113 @@ function sampleDays(): GameState['samples'] {
     const wave = Math.sin(index * 0.9) * 180 + Math.cos(index * 0.37) * 120;
     return { day, income: Math.round(640 + index * 28 + wave), expense: Math.round(300 + index * 12 - wave * 0.25), reputation: Math.max(48, Math.min(82, Math.round(62 + index * 1.1 + Math.sin(index) * 4))) };
   });
+}
+function hashText(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
+  return hash >>> 0;
+}
+const conditionCatalog = [
+  { name: '夜惊', kind: 'debuff' as const, description: '连续几晚在同一个时刻惊醒，白天会下意识避开钟声。', stat: 'insight' as StatKey, amount: -3 },
+  { name: '手部震颤', kind: 'debuff' as const, description: '握笔时手指会轻轻发抖，写下的字比平时更用力。', stat: 'agility' as StatKey, amount: -4 },
+  { name: '幻听', kind: 'debuff' as const, description: '在安静的房间里，偶尔会听见并不存在的汽笛。', stat: 'empathy' as StatKey, amount: -3 },
+  { name: '过度警觉', kind: 'buff' as const, description: '很难真正放松，但危险靠近时她总是第一个察觉。', stat: 'insight' as StatKey, amount: 4 },
+  { name: '甜食安抚', kind: 'buff' as const, description: '随身带着糖，情绪低落时会好得快一点。', stat: 'empathy' as StatKey, amount: 2 },
+];
+function addCondition(state: GameState, girl: Girl, source: string): void {
+  const seed = hashText(girl.id + state.day + source);
+  const base = conditionCatalog[seed % conditionCatalog.length];
+  girl.conditions.push({ id: `cond-${girl.id}-${seed.toString(16)}`, name: base.name, kind: base.kind, source, description: base.description, remaining: 3, removable: true, stat: base.stat, amount: base.amount });
+  state.logs.unshift({ id: `log-cond-${girl.id}-${seed}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `${girl.name}在「${source}」之后出现了「${base.name}」。${base.description}` });
+}
+function gainTrait(state: GameState, girl: Girl, source: string, chance = 0.35): void {
+  if (!girl.traits || girl.dead) return;
+  const seed = hashText(`${girl.id}:${state.day}:${state.minutes}:${source}:${girl.traits.length}`);
+  if (seed % 100 >= chance * 100) return;
+  const [trait] = pickTraits(seed, 1, girl.traits.map(t => t.id));
+  if (!trait) return;
+  girl.traits.push({ ...trait, gainedAt: dateLabel(state.day, state.minutes) });
+  state.logs.unshift({ id: `log-trait-${girl.id}-${trait.id}-${seed}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `${girl.name}在「${source}」之后显露出新的特性「${trait.name}」。${trait.description}` });
+}
+function tickConditions(girl: Girl, days: number): void {
+  for (const condition of girl.conditions) condition.remaining -= days;
+  girl.conditions = girl.conditions.filter(condition => condition.remaining > 0);
+}
+function accruePension(state: GameState, days: number): void {
+  let paid = 0;
+  let missing = 0;
+  for (const girl of state.girls) {
+    if (girl.dead || !girl.retired) continue;
+    for (let i = 0; i < days; i++) {
+      const daily = Math.max(1, Math.round(pensionFor(girl) / 10));
+      if (state.gold - paid - daily >= 0) paid += daily;
+      else missing += daily;
+    }
+  }
+  if (paid) { state.gold -= paid; book(state, state.day, -paid); }
+  if (missing) {
+    state.pensionDebt += missing;
+    state.logs.unshift({ id: `log-pension-${state.day}-${state.pensionDebt}`, time: dateLabel(state.day, state.minutes), kind: 'finance', text: `退休金账户出现 ${missing} 星砂缺口，已记入事务所欠款。`, delta: -missing });
+  }
+  for (const girl of state.girls) {
+    if (girl.dead || girl.retired) continue;
+    if (state.day > girl.contractEndDay) girl.pensionMissed = Math.min(60, girl.pensionMissed + days);
+  }
+}
+function makeOpinion(state: GameState, author: Girl, topic: Opinion['topic'], title: string, text: string, request: string): Opinion {
+  return {
+    id: `op-${state.day}-${hashText(author.id + title + state.minutes)}`, day: state.day, authorId: author.id, topic,
+    title, text, request, status: 'pending',
+    options: [
+      { id: 'accept', label: '批准', effect: '消耗少量星砂，羁绊提升' },
+      { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' },
+      { id: 'reject', label: '驳回', effect: '节省资源，羁绊下降' },
+    ],
+    assistantNote: state.assistantId === author.id ? `${author.name}亲自提交，附了一份写得很短的预算。` : undefined,
+  };
+}
+function generateOpinions(state: GameState): void {
+  if (state.opinions.filter(opinion => opinion.status === 'pending').length >= 6) return;
+  const pool = state.girls.filter(girl => !girl.dead && girl.status !== 'mission');
+  if (!pool.length) return;
+  const author = pool[hashText(`${state.day}:${state.minutes}`) % pool.length];
+  const topics: { topic: Opinion['topic']; title: string; text: string; request: string }[] = [
+    { topic: '经费', title: '想把会客厅的灯换暖一点', text: '现在的白光太像诊所。夜里回来的人，应该看见一点偏黄的光。', request: '申请 600 星砂更换会客厅灯具。' },
+    { topic: '排班', title: '下周的夜班可以少排一个人吗', text: '连续出勤之后，大家的恢复速度明显变慢了。', request: '下一周期战斗委托最多接两件。' },
+    { topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝，零青说风声会干扰收听。', request: '申请 900 星砂维修星象台。' },
+    { topic: '同伴', title: '给新来的人办一场欢迎会', text: '不必很大，只要有糖和一张写着名字的卡片。', request: '申请 300 星砂筹办小型欢迎会。' },
+    { topic: '城市', title: '糖果街的灯又灭了', text: '居民说不是电的问题。她们想再去看看。', request: '把糖果街的调查优先级提前。' },
+    { topic: '私人心愿', title: '想请半天假', text: '不是去玩。只是想去看看城南那棵还没开的树。', request: '批准半天个人时间，不扣羁绊。' },
+  ];
+  const pick = topics[hashText(`${author.id}:${state.day}`) % topics.length];
+  state.opinions.unshift(makeOpinion(state, author, pick.topic, pick.title, pick.text, pick.request));
+  state.logs.unshift({ id: `log-op-${author.id}-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `${author.name}向事务所提交了议题「${pick.title}」。` });
+}
+function settleExpedition(state: GameState, expeditionId: string, at: { day: number; minutes: number }): void {
+  const expedition = state.expeditions.find(e => e.id === expeditionId);
+  if (!expedition) return;
+  const members = expedition.memberIds.map(id => findGirl(state, id)).filter((g): g is Girl => Boolean(g));
+  if (!members.length) { state.expeditions = state.expeditions.filter(e => e.id !== expeditionId); return; }
+  const seed = hashText(`${expedition.id}:${expedition.cyclesDone}:${at.day}:${at.minutes}`);
+  const gain = 60 + (seed % 121);
+  const found = seed % 10 < 6;
+  state.gold += gain;
+  book(state, at.day, gain);
+  expedition.cyclesDone += 1;
+  expedition.lastSettledDay = at.day;
+  expedition.lastSettledMinutes = at.minutes;
+  for (const girl of members) {
+    girl.fatigue = Math.min(100, girl.fatigue + 5);
+    girl.bond = Math.min(100, girl.bond + 1);
+    grantExp(girl, 2);
+    if (found) gainTrait(state, girl, '星象台远行', 0.12);
+  }
+  state.logs.unshift({ id: `log-exp-${expedition.id}-${expedition.cyclesDone}`, time: dateLabel(at.day, at.minutes), kind: 'expedition', text: `星象台远行第 ${expedition.cyclesDone} 轮：${members.map(g => g.name).join('、')}带回 ${gain} 星砂${found ? '和一段可以写进档案的见闻' : '，但没有发现异常'}。`, delta: gain });
+  if (members.some(girl => girl.fatigue >= 95)) {
+    for (const girl of members) { if (girl.status === 'expedition') { girl.status = 'idle'; girl.roomId = 'lounge'; girl.remaining = 0; } }
+    state.expeditions = state.expeditions.filter(item => item.id !== expeditionId);
+    state.logs.unshift({ id: `log-exp-tired-${expedition.id}`, time: dateLabel(at.day, at.minutes), kind: 'expedition', text: `远行队因疲劳达到极限自动返回。${members.map(g => g.name).join('、')}需要休息。` });
+  }
 }
 function sampleFor(state: GameState, day: number): Sample {
   let sample = state.samples.find(s => s.day === day);
@@ -101,16 +221,17 @@ export function createInitialState(pack: ContentPack = createSeedPack()): GameSt
     { id: 'dorm', name: '晚安宿舍', type: 'dorm' as const, level: 3, capacity: 6, description: '每个床位都有一盏可以调到最暗的小灯。' },
     { id: 'observatory', name: '星象台', type: 'observatory' as const, level: 1, capacity: 0, description: '零青常常在这里收听城市上空的杂音。' },
   ];
-  const missions = clone(pack.missions).map(m => ({ ...m, squad: m.squad ?? [], attempts: m.attempts ?? 0, rounds: m.rounds ?? Math.max(2, Math.floor(m.duration / ROUND_MINUTES)) }));
+  const missions = clone(pack.missions).map(m => ({ ...m, squad: m.squad ?? [], attempts: m.attempts ?? 0, recommendedLevel: m.recommendedLevel ?? 3, rounds: m.rounds ?? Math.max(2, Math.floor(m.duration / ROUND_MINUTES)) }));
   const logs: Log[] = [
     { id: 'l-1', time: '第 14 日 · 20:05', kind: 'story', text: '樱雾市进入夜间结界维护时段，事务所开始第十三夜的值班。' },
     { id: 'l-2', time: '第 14 日 · 20:40', kind: 'base', text: '晚安宿舍完成本月第三次床品更换，砂糖在每张床上放了一颗糖。' },
     { id: 'l-3', time: '第 14 日 · 21:10', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   return {
-    version: 3, day: 14, minutes: 21 * 60 + 40, gold: 12840, reputation: 76,
+    version: 4, day: 14, minutes: 21 * 60 + 40, gold: 12840, reputation: 76,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
+    opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
   };
 }
 export function createInitialFromPack(pack: ContentPack): GameState {
@@ -169,7 +290,10 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     if (!girl) continue;
     girl.hp = Math.max(1, unit.hp);
     girl.spirit = Math.max(0, unit.spirit);
-    if (battle.outcome !== 'defeat') girl.exp += rewards.exp;
+    if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
+      grantExp(girl, battleExp(mission.recommendedLevel));
+      girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
+    }
     girl.bond = Math.max(0, Math.min(100, girl.bond + rewards.bond));
     for (const peer of squad) {
       if (peer.id === girl.id) continue;
@@ -186,6 +310,15 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
       if (girl) {
         applyScar(state, girl, scar);
         if (scar.fatal) killGirl(state, girl, battle, mission);
+      }
+    }
+  } else {
+    for (const girl of squad) {
+      if (girl.dead) continue;
+      gainTrait(state, girl, mission.title, 0.35);
+      if (battle.outcome === 'repelled') addCondition(state, girl, mission.title);
+      if (hashText(`${girl.id}:${mission.id}:${state.day}`) % 100 < 28) {
+        state.opinions.unshift(makeOpinion(state, girl, '同伴', `想再去一次「${mission.title}」`, `这次没有彻底解决。她认为下一次可以做得更好。`, '申请把该委托重新排入优先队列。'));
       }
     }
   }
@@ -225,7 +358,17 @@ function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], 
     state.completed.push(mission.id);
     mission.status = 'done';
     state.logs.unshift({ id: `log-inv-${mission.id}-${mission.attempts}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `调查完成：${mission.title}。${squad.map(g => g.name).join('、')}带回了可以写进档案的答案。`, delta: mission.reward });
-    for (const girl of squad) { girl.exp += 8; girl.bond = Math.min(100, girl.bond + 1); girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 15)); }
+    for (const girl of squad) {
+      grantExp(girl, investigationExp(mission.recommendedLevel));
+      girl.bond = Math.min(100, girl.bond + 1);
+      girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 15));
+      girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
+      gainTrait(state, girl, mission.title, 0.3);
+    }
+    if (hashText(`${mission.id}:${state.day}`) % 100 < 22) {
+      const author = squad[0];
+      if (author) state.opinions.unshift(makeOpinion(state, author, '城市', '关于下一次调查的路线', '她想把糖果街和旧钟楼的线索并在一起看。', '申请一次不消耗星砂的线索整理时间。'));
+    }
   } else {
     mission.status = 'open';
     mission.squad = [];
@@ -243,14 +386,23 @@ function advanceClock(state: GameState, to: number): void {
   const now = state.day * 1440 + state.minutes;
   const elapsed = to - now;
   if (elapsed <= 0) return;
+  const previousDay = state.day;
   state.day = Math.floor(to / 1440);
   state.minutes = to % 1440;
+  const days = state.day - previousDay;
+  if (days > 0) {
+    accruePension(state, days);
+    for (const girl of state.girls) tickConditions(girl, days);
+    if (state.day > state.councilDay) { state.councilDay = state.day; generateOpinions(state); }
+  }
   for (const girl of state.girls) {
     if (girl.status === 'mission' || girl.status === 'healing' || girl.status === 'resting') girl.remaining = Math.max(0, girl.remaining - elapsed);
   }
 }
 function careRecovery(girl: Girl, mode: 'healing' | 'resting'): void {
-  if (mode === 'healing') {
+  if (girl.clinicRest) {
+    girl.hp = girl.maxHp; girl.spirit = girl.maxSpirit; girl.fatigue = 0; girl.clinicRest = false;
+  } else if (mode === 'healing') {
     girl.hp = girl.maxHp;
     girl.fatigue = Math.max(0, girl.fatigue - 10);
   } else {
@@ -266,7 +418,7 @@ function advance(state: GameState, minutes: number): ActionResult {
   const end = next.day * 1440 + next.minutes + minutes;
   let lastBattle: BattleState | undefined;
   for (let guard = 0; guard < 24; guard++) {
-    const events: { at: number; mission?: Mission; girl?: Girl }[] = [];
+    const events: { at: number; mission?: Mission; girl?: Girl; expedition?: GameState['expeditions'][number] }[] = [];
     for (const mission of next.missions) {
       if (mission.status !== 'active') continue;
       const squad = mission.squad.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g && g.status === 'mission'));
@@ -276,6 +428,11 @@ function advance(state: GameState, minutes: number): ActionResult {
     }
     for (const girl of next.girls) {
       if (girl.status === 'healing' || girl.status === 'resting') events.push({ at: next.day * 1440 + next.minutes + girl.remaining, girl });
+    }
+    for (const expedition of next.expeditions) {
+      const last = expedition.lastSettledDay * 1440 + expedition.lastSettledMinutes;
+      const nextAt = last + 60;
+      if (nextAt <= end) events.push({ at: nextAt, expedition });
     }
     const due = events.filter(e => e.at <= end).sort((a, b) => a.at - b.at)[0];
     if (!due) break;
@@ -293,9 +450,18 @@ function advance(state: GameState, minutes: number): ActionResult {
     } else if (due.girl) {
       const girl = findGirl(next, due.girl.id);
       if (girl) careRecovery(girl, girl.status === 'healing' ? 'healing' : 'resting');
+    } else if (due.expedition) {
+      settleExpedition(next, due.expedition.id, { day: next.day, minutes: next.minutes });
     }
   }
   advanceClock(next, end);
+  for (const girl of next.girls) {
+    if (girl.dead || girl.retired || girl.status === 'mission' || girl.status === 'expedition') continue;
+    if (next.day > girl.contractEndDay && girl.pensionMissed >= 15) {
+      girl.retired = true; girl.retiredReason = 'contract'; girl.status = 'retired'; girl.remaining = 0;
+      next.logs.unshift({ id: `log-contract-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'memorial', text: `${girl.name}的契约已欠约 ${girl.pensionMissed} 日，事务所为她办理了强制退休。她仍会按月领取退休金。` });
+    }
+  }
   return { state: next, ok: true, message: lastBattle ? `${outcomeLabel(lastBattle.outcome)}：${lastBattle.missionTitle}` : `时间推进 ${minutes} 分钟。`, battle: lastBattle };
 }
 function dispatch(state: GameState, girlIds: string[], missionId: string): ActionResult {
@@ -346,15 +512,33 @@ function talkResponse(girl: Girl, text: string, bond: number): string {
   if (stage >= 3) return `「我在听。」${girl.name}合上手里的档案，「不过，如果你只是路过，也没关系。」`;
   return `「……知道了。」${girl.name}的语气很轻，像是在确认自己是否应该继续这个话题。`;
 }
-function talk(state: GameState, girlId: string, text: string): ActionResult {
+function talk(state: GameState, girlId: string, text: string, remote = false): ActionResult {
   const clean = text.trim();
   if (!clean) return { state, ok: false, message: '想说些什么，再按下发送。' };
   const next = clone(state); const girl = findGirl(next, girlId);
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
-  if (girl.status === 'mission') return { state, ok: false, message: `${girl.name}正在出勤，等她回来再聊吧。` };
   if (clean.length > 200) return { state, ok: false, message: '一次最多说 200 个字。' };
+  if (remote) {
+    if (!girl.retired) return { state, ok: false, message: `${girl.name}还没有退役，直接去会客厅找她吧。` };
+    if (next.gold < REMOTE_CALL_COST) return { state, ok: false, message: `远程联络需要 ${REMOTE_CALL_COST} 星砂，当前不足。` };
+    next.gold -= REMOTE_CALL_COST; book(next, next.day, -REMOTE_CALL_COST);
+    const firstToday = girl.lastTalkDay !== next.day;
+    const gain = firstToday ? 1 : 0;
+    girl.lastTalkDay = next.day; girl.talksToday = firstToday ? 1 : (girl.talksToday ?? 0) + 1;
+    girl.bond = Math.min(100, girl.bond + gain);
+    const messages = next.messages[girl.id] ?? [];
+    messages.push({ role: 'player', text: clean });
+    messages.push({ role: 'girl', text: `（电话那头有很轻的电流声）${talkResponse(girl, clean, girl.bond)}` });
+    next.messages[girl.id] = messages.slice(-60);
+    next.logs.unshift({ id: `log-call-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'relationship', text: `与退休在家的${girl.name}通了一次电话（${REMOTE_CALL_COST} 星砂）。`, delta: -REMOTE_CALL_COST });
+    return { state: next, ok: true, message: gain ? `电话接通了。与${girl.name}的羁绊 +1。` : `电话接通了，但今晚已经聊过很久。` };
+  }
+  if (girl.retired) return { state, ok: false, message: `${girl.name}已经退役，改用远程联络吧。` };
+  if (girl.status === 'mission') return { state, ok: false, message: `${girl.name}正在出勤，等她回来再聊吧。` };
+  if (girl.status === 'expedition') return { state, ok: false, message: `${girl.name}正在星象台远行，暂时联络不上。` };
   const count = girl.lastTalkDay === next.day ? (girl.talksToday ?? 0) : 0;
-  const gain = count < 3 ? 2 : 0;
+  const assistantBonus = next.assistantId === girl.id ? 1 : 0;
+  const gain = count < 3 ? 2 + assistantBonus : 0;
   girl.lastTalkDay = next.day; girl.talksToday = count + 1;
   girl.bond = Math.min(100, girl.bond + gain);
   const messages = next.messages[girl.id] ?? [];
@@ -368,7 +552,145 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'advance': return advance(state, action.minutes);
     case 'dispatch': return dispatch(state, action.girlIds, action.missionId);
     case 'care': return care(state, action.girlId, action.mode);
-    case 'talk': return talk(state, action.girlId, action.text);
+    case 'talk': return talk(state, action.girlId, action.text, action.remote);
+    case 'renewContract': {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.retired) return { state, ok: false, message: `${girl.name}已经退役，请使用返聘。` };
+      const cost = renewalCost(girl) + pensionArrears(girl);
+      if (next.gold < cost) return { state, ok: false, message: `续签需要 ${cost} 星砂（含欠缴退休金 ${pensionArrears(girl)}）。` };
+      next.gold -= cost; book(next, next.day, -cost);
+      girl.contractEndDay = Math.max(next.day, girl.contractEndDay) + girl.contractDays;
+      girl.contractRenewals += 1; girl.pensionMissed = 0;
+      girl.bond = Math.min(100, girl.bond + 3);
+      next.logs.unshift({ id: `log-renew-${girl.id}-${girl.contractRenewals}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `与${girl.name}续签 ${girl.contractDays} 日契约（第 ${girl.contractRenewals} 次续签），并结清退休金欠款。`, delta: -cost });
+      return { state: next, ok: true, message: `${girl.name}的契约延长至第 ${girl.contractEndDay} 日。` };
+    }
+    case 'rehire': {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!girl.retired || girl.retiredReason !== 'contract') return { state, ok: false, message: '只有因欠约退休的契约者可以返聘。' };
+      const cost = 600 + girl.level * 120;
+      if (next.gold < cost) return { state, ok: false, message: `返聘需要 ${cost} 星砂。` };
+      next.gold -= cost; book(next, next.day, -cost);
+      girl.retired = false; girl.retiredReason = undefined; girl.status = 'idle'; girl.contractEndDay = next.day + CONTRACT_DAYS; girl.pensionMissed = 0;
+      girl.bond = Math.max(0, girl.bond - 5);
+      next.logs.unshift({ id: `log-rehire-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `${girl.name}接受返聘，重新回到夜班名册。` });
+      return { state: next, ok: true, message: `${girl.name}已返聘，契约重新生效。` };
+    }
+    case 'setAssistant': {
+      const next = clone(state);
+      if (!action.girlId) { next.assistantId = undefined; return { state: next, ok: true, message: '已取消值班助理。' }; }
+      const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.bond < 40) return { state, ok: false, message: `${girl.name}还需要更多信任（羁绊 40）才能担任值班助理。` };
+      next.assistantId = action.girlId;
+      next.logs.unshift({ id: `log-assistant-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl.name}开始担任值班助理，会替你整理议题与排班。` });
+      return { state: next, ok: true, message: `${girl.name}成为值班助理。` };
+    }
+    case 'decideOpinion': {
+      const next = clone(state); const opinion = next.opinions.find(o => o.id === action.opinionId);
+      if (!opinion || opinion.status !== 'pending') return { state, ok: false, message: '这项议题已经处理过了。' };
+      const author = findGirl(next, opinion.authorId);
+      if (action.decision === 'accept') {
+        const cost = opinion.topic === '经费' ? 600 : opinion.topic === '设施' ? 900 : opinion.topic === '同伴' ? 300 : 0;
+        if (next.gold < cost) return { state, ok: false, message: `批准这项议题需要 ${cost} 星砂。` };
+        next.gold -= cost; if (cost) book(next, next.day, -cost);
+        opinion.status = 'accepted';
+        if (author) author.bond = Math.min(100, author.bond + 3);
+        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `批准议题「${opinion.title}」。${cost ? `支出 ${cost} 星砂。` : '未产生额外支出。'}`, delta: -cost });
+      } else if (action.decision === 'reject') {
+        opinion.status = 'rejected';
+        if (author) author.bond = Math.max(0, author.bond - 2);
+        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `驳回议题「${opinion.title}」。提出者没有当场说什么。` });
+      } else {
+        opinion.status = 'deferred';
+        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `议题「${opinion.title}」暂时搁置，留待下个议事日。` });
+      }
+      return { state: next, ok: true, message: `已处理「${opinion.title}」。` };
+    }
+    case 'startExpedition': {
+      const next = clone(state);
+      if (next.expeditions.length >= 1) return { state, ok: false, message: '星象台一次只能支持一支远行队伍。' };
+      const observatory = next.rooms.find(r => r.type === 'observatory');
+      if (!observatory) return { state, ok: false, message: '需要先建造星象台。' };
+      if (action.memberIds.length < 1 || action.memberIds.length > 2) return { state, ok: false, message: '远行队伍需要 1–2 人。' };
+      const members = action.memberIds.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g));
+      if (members.length !== action.memberIds.length) return { state, ok: false, message: '队伍成员无效。' };
+      for (const girl of members) {
+        if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}当前无法参加远行。` };
+        if (girl.pensionMissed >= 15) return { state, ok: false, message: `${girl.name}的契约欠约过久，请先续签。` };
+        girl.status = 'expedition'; girl.roomId = observatory.id;
+      }
+      next.expeditions.push({ id: `exp-${next.day}-${next.minutes}-${next.expeditions.length}`, roomId: observatory.id, memberIds: members.map(g => g.id), startedDay: next.day, startedMinutes: next.minutes, cyclesDone: 0, lastSettledDay: next.day, lastSettledMinutes: next.minutes });
+      next.logs.unshift({ id: `log-exp-start-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'expedition', text: `${members.map(g => g.name).join('、')}进入星象台远行，每 60 分钟结算一次观测结果。` });
+      return { state: next, ok: true, message: '远行开始，星象台将每小时回报一次。' };
+    }
+    case 'recallExpedition': {
+      const next = clone(state); const expedition = next.expeditions.find(e => e.id === action.expeditionId);
+      if (!expedition) return { state, ok: false, message: '这支远行队伍已经结束。' };
+      for (const id of expedition.memberIds) { const girl = findGirl(next, id); if (girl && girl.status === 'expedition') girl.status = 'idle'; }
+      next.expeditions = next.expeditions.filter(e => e.id !== expedition.id);
+      next.logs.unshift({ id: `log-exp-recall-${expedition.id}`, time: dateLabel(next.day, next.minutes), kind: 'expedition', text: '星象台远行队伍提前返回，最后一轮观测未结算。' });
+      return { state: next, ok: true, message: '远行队伍已返回。' };
+    }
+    case 'clinic': {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.dead) return { state, ok: false, message: '她已不在名册上。' };
+      if (action.mode === 'heal') {
+        if (girl.status !== 'idle' && girl.status !== 'retired') return { state, ok: false, message: `${girl.name}当前无法接受治疗。` };
+        if (next.gold < 240) return { state, ok: false, message: '快速治疗需要 240 星砂。' };
+        next.gold -= 240; book(next, next.day, -240);
+        girl.hp = girl.maxHp; girl.spirit = girl.maxSpirit; girl.fatigue = Math.min(100, girl.fatigue + 6);
+        next.logs.unshift({ id: `log-clinic-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}在诊所接受快速治疗，血量与共情值恢复，但疲劳略有增加。`, delta: -240 });
+        return { state: next, ok: true, message: `${girl.name}已完成快速治疗。` };
+      }
+      if (action.mode === 'rest') {
+        if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}正在忙，无法开始深度疗养。` };
+        if (next.gold < 360) return { state, ok: false, message: '三天深度疗养需要 360 星砂。' };
+        next.gold -= 360; book(next, next.day, -360);
+        girl.status = 'resting'; girl.remaining = 3 * 1440; girl.clinicRest = true;
+        next.logs.unshift({ id: `log-clinic-rest-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}开始为期三天的深度疗养，期间无法出勤。`, delta: -360 });
+        return { state: next, ok: true, message: `${girl.name}开始深度疗养，三天后恢复。` };
+      }
+      if (action.mode === 'wipe') {
+        if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆重塑。' };
+        if (next.gold < 4000) return { state, ok: false, message: '记忆重塑需要 4,000 星砂。' };
+        const oldLevel = girl.level;
+        next.gold -= 4000; book(next, next.day, -4000);
+        girl.level = 1; girl.exp = 0;
+        girl.stats = { ...girl.baseStats };
+        girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
+        girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
+        girl.hp = girl.maxHp;
+        girl.maxSpirit = Math.max(30, girl.maxSpirit - (oldLevel - 1) * 2);
+        girl.spirit = girl.maxSpirit;
+        girl.status = 'idle'; girl.remaining = 0; girl.conditions = [];
+        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级与能力回到起点，疤痕仍在。`, delta: -4000 });
+        return { state: next, ok: true, message: `${girl.name}的能力已重塑至 1 级。` };
+      }
+      if (action.mode === 'clone') {
+        if (girl.cloneOf || girl.generation) return { state, ok: false, message: '复制体不能再次被复制。' };
+        if (girl.level < 3) return { state, ok: false, message: '只有 3 级以上的契约者可以进行复制。' };
+        if (next.gold < 18000) return { state, ok: false, message: '复制契约需要 18,000 星砂。' };
+        if (next.girls.filter(g => !g.dead).length >= capacity(next)) return { state, ok: false, message: '没有空余席位安置复制体。' };
+        next.gold -= 18000; book(next, next.day, -18000);
+        const seed = hashText(`${girl.id}:${next.day}:${next.minutes}`).toString(16).padStart(8, '0');
+        const copy: Girl = {
+          ...clone(girl), id: `g_${seed}`, name: `${girl.name}·复制体`, codename: `${girl.codename} II`, level: 1, exp: 0,
+          stats: { ...girl.baseStats }, hp: girl.baseMaxHp, maxHp: girl.baseMaxHp, baseMaxHp: girl.baseMaxHp,
+          spirit: Math.max(30, girl.maxSpirit - (girl.level - 1) * 2), maxSpirit: Math.max(30, girl.maxSpirit - (girl.level - 1) * 2),
+          fatigue: 0, bond: 20, status: 'idle', roomId: 'lounge', remaining: 0, scars: [], conditions: [],
+          relationships: {}, retired: false, dead: false, retiredReason: undefined, cloneOf: girl.id, generation: (girl.generation ?? 0) + 1,
+          contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, missionId: undefined,
+        };
+        next.girls.push(copy);
+        next.logs.unshift({ id: `log-clone-${copy.id}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `以${girl.name}为原体完成复制契约。复制体「${copy.name}」从 1 级开始。`, delta: -18000 });
+        return { state: next, ok: true, message: `${copy.name}已加入名册。` };
+      }
+      return { state, ok: false, message: '未知的诊所项目。' };
+    }
     case 'hire': {
       const next = clone(state); const candidate = next.candidates.find(g => g.id === action.girlId);
       if (!candidate) return { state, ok: false, message: '这位候选者已经不在名册上。' };
@@ -377,9 +699,10 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (used >= capacity(next)) return { state, ok: false, message: '基地席位已满，请先扩建宿舍或让资深契约者退役。' };
       next.gold -= candidate.cost;
       book(next, next.day, -candidate.cost);
-      next.girls.push({ ...candidate, status: 'idle', roomId: 'lounge', remaining: 0 });
+      next.girls.push({ ...candidate, status: 'idle', roomId: 'lounge', remaining: 0, contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, retired: false, retiredReason: undefined });
       next.candidates = next.candidates.filter(g => g.id !== candidate.id);
       next.logs.unshift({ id: `log-hire-${candidate.id}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `与${candidate.name}缔结契约，事务所增加一位新的魔法少女。`, delta: -candidate.cost });
+      next.opinions.unshift(makeOpinion(next, next.girls[next.girls.length - 1], '同伴', `欢迎${candidate.name}`, '新契约者已经住进宿舍。她想为对方准备一点什么。', '申请 300 星砂筹办一次小型欢迎会。'));
       return { state: next, ok: true, message: `${candidate.name}已加入夜糖事务所。` };
     }
     case 'build': {
@@ -398,8 +721,8 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (girl.status === 'mission') return { state, ok: false, message: '出勤中的契约者无法办理退役。' };
       if (girl.scars.length < 4) return { state, ok: false, message: '只有累积 4 道疤痕的契约者可以申请退役。' };
-      girl.retired = true; girl.status = 'retired';
-      next.logs.unshift({ id: `log-retire-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'memorial', text: `${girl.name}办理了退役，转任事务所文职。她的席位仍留在基地。` });
+      girl.retired = true; girl.status = 'retired'; girl.retiredReason = 'injury';
+      next.logs.unshift({ id: `log-retire-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'memorial', text: `${girl.name}办理了退役，转任事务所文职。她的席位仍留在基地，并将按月领取退休金。` });
       return { state: next, ok: true, message: `${girl.name}已转为文职，不再参与派遣。` };
     }
     case 'reset': return { state: createInitialState(), ok: true, message: '事务所已回到第 14 日的夜晚。' };
@@ -446,7 +769,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (value.version !== 3) return createInitialState();
+  if (value.version !== 3 && value.version !== 4) return createInitialState();
   try {
     if (!Array.isArray(value.girls) || !value.girls.length || !value.girls.every(validGirl)) return createInitialState();
     const ids = new Set<string>();
@@ -478,10 +801,14 @@ export function loadState(raw: string | null): GameState {
       for (const m of list) if (!m || typeof m !== 'object' || !['girl', 'player', 'system'].includes((m as { role: string }).role) || typeof (m as { text: unknown }).text !== 'string') return createInitialState();
     }
     const state = clone(value) as unknown as GameState;
+    state.version = 4;
     state.girls = state.girls.map(hydrate);
-    state.missions.forEach(m => { m.attempts ??= 0; m.squad ??= m.girlId ? [m.girlId] : []; });
+    state.missions.forEach(m => { m.attempts ??= 0; m.squad ??= m.girlId ? [m.girlId] : []; m.recommendedLevel ??= 3; });
     state.memorial ??= []; state.battles = Array.isArray(state.battles) ? state.battles.slice(0, 20) : [];
     state.packHash ??= createSeedPack().hash;
+    state.opinions = Array.isArray(state.opinions) ? state.opinions.slice(0, 30) : [];
+    state.expeditions = Array.isArray(state.expeditions) ? state.expeditions.slice(0, 1) : [];
+    state.councilDay ??= state.day; state.pensionDebt ??= 0;
     return state;
   } catch { return createInitialState(); }
 }
