@@ -555,3 +555,4 @@
 @keyframes fieldShimmer{to{background-position:-220% 0}}
 @keyframes originPulse{50%{opacity:.45}}
 @media(max-width:560px){.custom-gate{padding:10px 0 2px}.custom-gate h2{font-size:22px}.custom-gate>p{margin:5px 0 12px}.custom-gate-card{padding:13px 14px;gap:4px}.custom-gate-card b{font-size:15px}.custom-gate-grid{gap:8px}.custom-gate-draft{display:block;padding:9px;margin-top:10px}.custom-gate-draft img{width:100%;height:112px;object-position:50% 0}.custom-gate-draft b{font-size:14px;display:block;margin-top:8px}.custom-gate-draft p{margin:3px 0 8px}.custom-gate-actions .btn{flex:1;font-size:9px;padding:8px}}
+.custom-hint{font-style:normal;color:#c79a7a;font-size:9px;letter-spacing:0}

@@ -393,7 +393,23 @@ try {
     await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-prompts'); localStorage.removeItem('night-sugar:llm-auto'); });
     await page.reload({ waitUntil: 'networkidle' });
   });
-  await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
+  await check('只导入立绘后可手动完成登记', async () => {
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await page.setInputFiles('#custom-portrait-file', 'artifacts/fixture-portrait.png');
+    await page.locator('#custom-gate-manual').click();
+    await page.locator('#custom-name').fill('门口登记');
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    await expect(page.locator('#custom-create')).toBeEnabled();
+    await page.locator('#custom-create').click();
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '门口登记')).toBe(true);
+    await close();
+  });  await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();
 }

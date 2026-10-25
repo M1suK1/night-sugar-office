@@ -33,7 +33,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [name, setName] = useState(''); const [codename, setCodename] = useState('未命名契约'); const [title, setTitle] = useState('新登记的魔法少女');
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
   const [quote, setQuote] = useState('请多指教。我会努力记住这座城市的路。'); const [goal, setGoal] = useState('完成第一次独立委托，并得到同伴的认可。');
-  const [stats, setStats] = useState<Record<StatKey, number>>({ magic: 45, insight: 45, agility: 45, empathy: 45 });
+  const [stats, setStats] = useState<Record<StatKey, number>>({ magic: 65, insight: 65, agility: 65, empathy: 65 });
   const [skillIds, setSkillIds] = useState<string[]>([]); const [traitIds, setTraitIds] = useState<string[]>([]);
   const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
@@ -70,8 +70,18 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const toggleSkill = (id: string) => setSkillIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : prev.length >= 3 ? prev : [...prev, id]);
   const toggleTrait = (id: string) => setTraitIds(prev => prev.includes(id) ? prev.filter(t => t !== id) : prev.length >= 3 ? prev : [...prev, id]);
   const canCreate = name.trim().length > 0 && skillIds.length === 3 && traitIds.length === 3 && remaining === 0;
+  const createHint = [
+    !name.trim() && '缺少名字',
+    remaining > 0 && `还剩 ${remaining} 点`,
+    remaining < 0 && `超出 ${-remaining} 点`,
+    skillIds.length !== 3 && `技能 ${skillIds.length}/3`,
+    traitIds.length !== 3 && `特性 ${traitIds.length}/3`,
+  ].filter(Boolean).join(' · ');
   const submit = () => {
-    if (!canCreate) { setMessage('请填写名字、分配完 260 点、选定 3 个技能与 3 个特性。'); return; }
+    if (!name.trim()) { setStep(0); setMessage('先给她一个名字，再登记。'); return; }
+    if (remaining !== 0) { setStep(1); setMessage(remaining > 0 ? `还有 ${remaining} 点没有分配。` : `属性点超出 ${-remaining} 点，请调低。`); return; }
+    if (skillIds.length !== 3) { setStep(2); setMessage(`请选择 3 个技能，现在还差 ${3 - skillIds.length} 个。`); return; }
+    if (traitIds.length !== 3) { setStep(3); setMessage(`请选择 3 个特性，现在还差 ${3 - traitIds.length} 个。`); return; }
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: traitIds,
@@ -84,7 +94,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     else if (key === 'codename') setCodename(profile.codename);
     else if (key === 'title') setTitle(profile.title);
     else if (key === 'element') setElement(profile.element);
-    else if (key === 'archetype') { setArchetype(profile.archetype); setStats(statsForArchetype(profile.archetype === '魔物' ? '输出' : profile.archetype)); }
+    else if (key === 'archetype') { const next = profile.archetype === '魔物' ? '输出' : profile.archetype; setArchetype(next); setStats(statsForArchetype(next)); }
     else if (key === 'goal') setGoal(profile.goal);
     else if (key === 'quote') setQuote(profile.quote);
     else if (key === 'appearance') setAppearance(profile.appearance);
@@ -150,7 +160,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         <button id="custom-entry-import" type="button" className="custom-gate-card" onClick={() => fileRef.current?.click()}><ImagePlus size={22} /><b>只导入立绘</b><small>PNG / JPEG / WebP，4:5 实时裁剪；不生成任何文字。</small></button>
         <button id="custom-entry-blank" type="button" className="custom-gate-card" onClick={() => setEntry('wizard')}><Wand2 size={22} /><b>从空白开始</b><small>直接进入五步向导，260 点由你分配。</small></button>
       </div>
-      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔补全身份、目标、台词与外观描述；她不会替你分配属性点，也不会直接写入候选池。</p><div className="custom-gate-actions"><button id="custom-draft" type="button" className="btn primary" disabled={drafting} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
+      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><div className="custom-gate-actions"><button id="custom-draft" type="button" className="btn primary" disabled={drafting} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
       {message && <p className="inline-warning" role="alert">{message}</p>}
     </div> : <>
     <div className="custom-steps" role="tablist" aria-label="创建步骤">{steps.map((label, index) => <button key={label} id={`custom-step-${index}`} type="button" role="tab" aria-selected={step === index} className={step === index ? 'active' : ''} onClick={() => setStep(index)}><i>{index + 1}</i>{label}</button>)}</div>
@@ -200,8 +210,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     {hasDraft && <div className="custom-regenerate"><span>不满意这一版？只会重写文案与技能选项，保留立绘与你已经分配的属性点。</span><button id="custom-regenerate-all" type="button" className="av-btn av-btn-small" disabled={drafting} onClick={() => runGenerate('all')}><RefreshCw size={12} />重新生成全部</button></div>}
     <div className="custom-footer">
       <button type="button" className="btn" disabled={step === 0} onClick={() => setStep(s => Math.max(0, s - 1))}><ArrowLeft size={14} />上一步</button>
-      <span>第 {step + 1} / {steps.length} 步</span>
-      {step < steps.length - 1 ? <button id="custom-next" type="button" className="btn primary" disabled={drafting} onClick={() => { if (step === 0 && !name.trim()) { setMessage('先给她一个名字。'); return; } setMessage(''); setStep(s => s + 1); }}>下一步<ArrowRight size={14} /></button> : <button id="custom-create" type="button" className="btn primary" disabled={!canCreate} onClick={submit}><Sparkles size={14} />登记并加入名册</button>}
+      <span>第 {step + 1} / {steps.length} 步{!canCreate && <em className="custom-hint"> · {createHint}</em>}</span>
+      {step < steps.length - 1 ? <button id="custom-next" type="button" className="btn primary" disabled={drafting} onClick={() => { if (step === 0 && !name.trim()) { setMessage('先给她一个名字。'); return; } setMessage(''); setStep(s => s + 1); }}>下一步<ArrowRight size={14} /></button> : <button id="custom-create" type="button" className="btn primary" disabled={drafting} onClick={submit}><Sparkles size={14} />登记并加入名册</button>}
     </div>
     </>}
   </div>;

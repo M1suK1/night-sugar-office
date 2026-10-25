@@ -107,3 +107,5 @@ npm run test:browser
 ## 视觉与性能
 
 React 19、TypeScript 严格模式、Vite 7；Lucide 线性图标，无 emoji。中文展示标题使用本地 Noto Serif SC 子集，数据使用本地 Space Grotesk 子集，中文界面使用系统现代无衬线字体。字体说明见 `public/fonts/NOTICE.md`。SVG 资产均在本地，运行时无外部图像/字体下载；不引入沉重的地图或图表引擎。保留系统 reduced-motion 支持与手动减少动画开关。
+
+当前回归规模：38 项状态测试、24 组浏览器流程。两组自定义登记验收分别覆盖「导入立绘 → 使魔逐字段补全 → 未确认不落库」和「只导入立绘 → 继续手动填写 → 登记并加入名册」。
