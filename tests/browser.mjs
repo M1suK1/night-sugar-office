@@ -455,6 +455,31 @@ try {
     expect((await stored()).candidates.length).toBe(before + 1);
     await page.screenshot({ path: 'artifacts/card-import.png', animations: 'disabled' });
   });
+  await check('存档导出、导入与损坏文件拒绝', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#advance-time-30').click();
+    const before = await stored();
+    await page.locator('#open-settings').click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export-save').click()]);
+    const savePath = await download.path();
+    const exported = JSON.parse(fs.readFileSync(savePath, 'utf8'));
+    expect(exported.day).toBe(before.day);
+    expect(exported.girls.length).toBe(before.girls.length);
+    await close();
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.setInputFiles('#settings-import-save-file', savePath);
+    await expect(page.locator('#import-save-confirm')).toBeVisible();
+    await page.locator('#import-save-confirm').click();
+    await expect.poll(async () => (await stored()).day).toBe(before.day);
+    await page.locator('#open-settings').click();
+    await page.setInputFiles('#settings-import-save-file', { name: '坏存档.json', mimeType: 'application/json', buffer: Buffer.from('{"version":6,"girls":[]}') });
+    await expect(page.locator('[role="status"]')).toContainText('导入失败');
+    await expect(page.locator('#import-save-confirm')).toHaveCount(0);
+    await page.screenshot({ path: 'artifacts/save-import.png', animations: 'disabled' });
+  });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

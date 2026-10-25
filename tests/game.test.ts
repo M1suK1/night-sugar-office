@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock } from '../src/game.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
@@ -590,4 +590,12 @@ test('对话上下文包含角色特性、同伴关系、完整历史与战斗�
     assert.equal(body.messages.filter(message => message.role === 'assistant' || message.role === 'user').length, 13);
     assert.ok(body.messages.some(message => message.content === '第12句对话'));
   } finally { globalThis.fetch = original; }
+});
+
+test('严格存档导入接受 v6，拒绝损坏与截断文件', () => {
+  const state = createInitialState();
+  assert.equal(importState(JSON.stringify(state))?.day, state.day);
+  assert.equal(importState('{"version":6,"girls":[]}'), null);
+  assert.equal(importState('not json'), null);
+  assert.equal(importState(JSON.stringify({ ...state, version: 2 })), null);
 });

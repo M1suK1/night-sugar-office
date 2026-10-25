@@ -25,7 +25,7 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
   const sx = Math.max(0, Math.min(maxX, (image.naturalWidth - sw) / 2 + (x / 100) * (sw / 2)));
   const sy = Math.max(0, Math.min(maxY, (image.naturalHeight - sh) / 2 + (y / 100) * (sh / 2)));
   ctx.drawImage(image, sx, sy, sw, sh, 0, 0, 768, 960);
-  return canvas.toDataURL('image/webp', 0.9);
+  return canvas.toDataURL('image/webp', 0.78);
 }
 
 export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {

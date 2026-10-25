@@ -68,9 +68,9 @@ export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolea
   return result;
 }
 
-export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+export async function generateDaily(config: LlmConfig, prompts: LlmPrompts, context?: string): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
   const started = Date.now();
-  const result = await generateDailyCore(config, prompts);
+  const result = await generateDailyCore(config, prompts, context);
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: config.endpoint,
@@ -107,7 +107,7 @@ export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, {
     const peer = allGirls.find(candidate => candidate.id === id);
     return peer ? `${peer.name}：${value}/100（${stage(value)}）` : '';
   }).filter(Boolean);
-  const battles = state.battles.filter(battle => battle.units.some(unit => unit.uid === `ally-${girl.id}`)).map(battle => {
+  const battles = state.battles.filter(battle => battle.units.some(unit => unit.uid === `ally-${girl.id}`)).slice(0, 5).map(battle => {
     const unit = battle.units.find(entry => entry.uid === `ally-${girl.id}`)!;
     const label = { victory: '胜利', repelled: '暂时击退', defeat: '失败', draw: '平局' }[battle.outcome ?? 'draw'];
     const scar = battle.scars?.length ? `；留下${battle.scars.length}道疤痕` : '';
@@ -127,9 +127,21 @@ export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, {
 状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕：${girl.scars.map(scar => scar.name).join('、')}` : ''}。
 ${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}
 只输出她这一次的回应：中文，1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型，不要输出 JSON。`;
+  const MAX_CONTEXT = 12_000;
+  const recentHistory: typeof history = [];
+  let used = system.length + text.length;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    const clipped = message.content.slice(0, 1_200);
+    if (used + clipped.length > MAX_CONTEXT) break;
+    recentHistory.unshift({ ...message, content: clipped });
+    used += clipped.length;
+  }
+  const omitted = history.length - recentHistory.length;
+  const boundedSystem = omitted > 0 ? `${system}\n（更早的 ${omitted} 条对话因上下文预算省略，只保留最近的部分。）` : system;
   const result = await chat(config, [
-    { role: 'system', content: system },
-    ...history,
+    { role: 'system', content: boundedSystem },
+    ...recentHistory,
     { role: 'user', content: text },
   ]);
   const clean = result.ok ? result.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 400) : '';
@@ -219,19 +231,27 @@ async function chat(config: LlmConfig, messages: ChatMessage[]): Promise<{ ok: t
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
   const model = config.model.trim();
   if (!model) return { ok: false, message: '请先在设置中填写模型名称。' };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
     const url = `${apiBase(config.endpoint)}/chat/completions`;
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` };
     const payload: Record<string, unknown> = { model, messages };
     // Reasoning models such as o1/o3/gpt-5 reject temperature with HTTP 400.
     if (!/^(o1|o3|o4|gpt-5)/i.test(model)) payload.temperature = 0.9;
-    let response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    const send = (body: Record<string, unknown>) => fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+    const retryable = (status: number) => status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+    let response = await send(payload);
+    if (!response.ok && retryable(response.status)) {
+      await new Promise(resolve => setTimeout(resolve, 700));
+      response = await send(payload);
+    }
     if (!response.ok) {
       let detail = await errorDetail(response);
       // Some OpenAI-compatible gateways still reject temperature on models we cannot detect by name.
       if (response.status === 400 && /temperature/i.test(detail) && 'temperature' in payload) {
         const { temperature: _temperature, ...rest } = payload;
-        response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(rest) });
+        response = await send(rest);
         if (!response.ok) detail = await errorDetail(response);
       }
       if (!response.ok) return { ok: false, message: `服务返回 ${response.status}${detail ? `：${detail}` : ''}` };
@@ -241,8 +261,12 @@ async function chat(config: LlmConfig, messages: ChatMessage[]): Promise<{ ok: t
     const text = Array.isArray(raw) ? raw.map(part => typeof part?.text === 'string' ? part.text : '').join('') : raw ?? '';
     if (!text.trim()) return { ok: false, message: '模型没有返回文本内容。请确认该模型支持对话补全。' };
     return { ok: true, text };
-  } catch {
-    return { ok: false, message: '浏览器无法访问接口，或服务未允许跨域请求。' };
+  } catch (error) {
+    if (controller.signal.aborted) return { ok: false, message: '请求超过 60 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
+    const detail = error instanceof Error ? error.message : '';
+    return { ok: false, message: `浏览器无法访问接口，或服务未允许跨域请求。${detail ? `（${detail}）` : ''}` };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -287,7 +311,7 @@ const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
 const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
 const factions = ['witch', 'association', 'government'] as const;
 
-async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts, context?: string): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
@@ -296,7 +320,7 @@ async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts): Promis
 "agendaTitle":"","agendaText":"","agendaRequest":"","agendaTopic":"经费|排班|设施|同伴|城市|私人心愿",
 "envoyFaction":"witch|association|government","envoyTitle":"","envoyDescription":""}`;
   const result = await chat(config, [
-    { role: 'system', content: `${prompts.world}\n\n${prompts.daily}\n\n${schema}` },
+    { role: 'system', content: `${prompts.world}\n\n${prompts.daily}\n\n${context ? `当前局势：${context}\n\n` : ''}${schema}` },
     { role: 'user', content: '请提交今晚的提案。' },
   ]);
   if (!result.ok) return { ok: false, message: `生成失败：${result.message}` };

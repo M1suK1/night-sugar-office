@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, RotateCcw, MousePointer2, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, Copy } from 'lucide-react';
+import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, Upload, RotateCcw, MousePointer2, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, Copy } from 'lucide-react';
 import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
@@ -19,7 +19,7 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:Moon,title:'让时间，慢慢往前走',text:'点击「推进 30 分钟」结算派遣、治疗与休息。也可启用自动推进，每 12 秒前进 5 分钟。不会在离线时推进。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。对话每人每天前三次增加羁绊，所有历史都保存在本地。'},{Icon:MousePointer2,title:'为未来的叙事留出空间',text:'对话窗口包含角色状态、场景记忆和自由输入。目前是明确标记的本地剧情回复，没有模型调用或后端服务。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
 type SettingsTab = 'general' | 'llm' | 'pools';
-export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate,autoGenerate,onAutoGenerate}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:(prompts:LlmPrompts)=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void}) {
+export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate,autoGenerate,onAutoGenerate}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:(prompts:LlmPrompts)=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void}) {
   const [tab, setTab] = useState<SettingsTab>('general');
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
   const [prompts, setPrompts] = useState<LlmPrompts>(loadLlmPrompts);
@@ -39,7 +39,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolL
     {tab === 'general' && <>
       <div className="settings-row"><div><b>减少动态效果</b><p>关闭漂浮与入场动画，保留必要的状态反馈。</p></div><button id="settings-reduced-motion" role="switch" aria-checked={reduced} aria-label="减少动态效果" className={`toggle ${reduced?'on':''}`} onClick={()=>onReduced(!reduced)}><i/></button></div>
       <div className="settings-row"><div><b>本地自动存档</b><p>每次操作后保存于当前浏览器，不上传任何数据。</p></div><span className="settings-enabled"><Check size={14}/>已启用</span></div>
-      <div className="settings-data-actions"><button id="settings-export-save" className="btn" onClick={onExport}><Download size={16}/>导出当前存档</button><button id="settings-reset-save" className="btn danger" onClick={onReset}><RotateCcw size={15}/>重置演示进度</button></div>
+      <div className="settings-data-actions"><button id="settings-export-save" className="btn" onClick={onExport}><Download size={16}/>导出当前存档</button><label id="settings-import-save" className="btn" htmlFor="settings-import-save-file"><Upload size={16}/>导入存档<input id="settings-import-save-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onImport(file); }} /></label><button id="settings-reset-save" className="btn danger" onClick={onReset}><RotateCcw size={15}/>重置演示进度</button></div>
       <div className="prototype-note"><Info size={17}/><p><b>纯前端 · 本地剧情演示</b><br/>不包含后端、登录或支付。故事引擎的密钥只保存在当前浏览器，不会写入游戏存档。</p></div>
     </>}
     {tab === 'llm' && <div className="llm-settings">

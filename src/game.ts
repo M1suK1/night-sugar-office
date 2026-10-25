@@ -1324,3 +1324,16 @@ export function loadState(raw: string | null): GameState {
     return state;
   } catch { return createInitialState(); }
 }
+
+/** Strict import used by the save importer: malformed files must not silently reset progress. */
+export function importState(raw: string): GameState | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const value = parsed as Record<string, unknown>;
+  if (![1, 3, 4, 5, 6].includes(Number(value.version))) return null;
+  if (!Array.isArray(value.girls) || !value.girls.length) return null;
+  if (!value.girls.every(validGirl)) return null;
+  if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;
+  return loadState(raw);
+}

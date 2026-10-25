@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck } from 'lucide-react';
 import type { FactionId, GameAction, GameState } from './types';
-import { act, loadState, SAVE_KEY } from './game';
+import { act, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
@@ -38,6 +38,16 @@ function readAutoGenerate() { try { return localStorage.getItem('night-sugar:aut
 function readReduced() { try { return localStorage.getItem('night-sugar:motion') === 'reduced' || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } }
 const factionOrder: FactionId[] = ['witch', 'association', 'government'];
 
+function worldBrief(state: GameState) {
+  const open = state.missions.filter(m => m.status === 'open');
+  const urgent = open.filter(m => m.boss || m.difficulty === '高').length;
+  const bossMission = state.boss ? state.missions.find(m => m.id === state.boss?.missionId) : undefined;
+  const boss = bossMission ? `周期魔物正在城内，相关委托「${bossMission.title}」尚未解决。` : '当前没有周期魔物。';
+  const standings = factionOrder.map(id => `${factionInfo[id].name} ${state.factions[id].standing}`).join('，');
+  const recent = state.chronicle.slice(0, 4).map(entry => entry.title).join('、') || '尚无';
+  return `第 ${state.day} 日 ${Math.floor(state.minutes / 60).toString().padStart(2, '0')}:${(state.minutes % 60).toString().padStart(2, '0')}，星砂 ${state.gold}，城市安定度 ${state.reputation}。待处理委托 ${open.length} 条（高危 ${urgent} 条），${boss}势力声望：${standings}。最近编年史：${recent}。`;
+}
+
 export default function App() {
   const [state, setState] = useState<GameState>(readSave);
   const [page, setPage] = useState<Page>('dispatch');
@@ -45,12 +55,21 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; ok: boolean; id: number } | null>(null);
   const [auto, setAuto] = useState(false);
   const [saved, setSaved] = useState(true);
+  const [pendingSave, setPendingSave] = useState<GameState | null>(null);
   const [reduced, setReduced] = useState(readReduced);
   const [autoGenerate, setAutoGenerate] = useState(readAutoGenerate);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
 
-  useEffect(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); setSaved(true); } catch { setSaved(false); } }, [state]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      setSaved(true);
+    } catch {
+      setSaved(false);
+      setToast({ message: '浏览器存储空间不足，本次进度没有写入。请导出存档并清理浏览器站点数据。', ok: false, id: Date.now() });
+    }
+  }, [state]);
   useEffect(() => { document.documentElement.classList.toggle('reduced-motion', reduced); try { localStorage.setItem('night-sugar:motion', reduced ? 'reduced' : 'full'); } catch { /* Preferences are optional when storage is unavailable. */ } }, [reduced]);
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
@@ -71,7 +90,7 @@ export default function App() {
 
   const notify = (message: string, ok = true) => setToast({ message, ok, id: Date.now() });
   const generateContent = async (prompts: LlmPrompts) => {
-    const result = await generateDaily(loadLlmConfig(), prompts);
+    const result = await generateDaily(loadLlmConfig(), prompts, worldBrief(state));
     if (!result.ok) return { ok: false, message: result.message };
     const content = materializeDaily(result.data, state);
     const applied = act(state, { type: 'addGeneratedContent', ...content });
@@ -116,7 +135,24 @@ export default function App() {
     if (!parsed.ok) { notify(`导入失败：${parsed.message}`, false); return; }
     perform({ type: 'importCard', card: parsed.card });
   };
-  const exportSave = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = `夜糖事务所-第${state.day}日存档.json`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); notify('当前存档已导出到下载目录。'); };
+  const exportSave = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `夜糖事务所-第${state.day}日存档.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify('当前存档已导出到下载目录。');
+  };
+  const importSave = async (file: File) => {
+    if (file.size > 6_000_000) { notify('存档文件超过 6MB，无法导入。', false); return; }
+    const next = importState(await file.text());
+    if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
+    setModal(null);
+    setPendingSave(next);
+  };
 
   const selectedGirl = modal && 'id' in modal ? [...state.girls, ...state.candidates].find(g => g.id === modal.id) : undefined;
   const selectedMission = modal?.type === 'mission' ? state.missions.find(m => m.id === modal.id) : undefined;
@@ -228,8 +264,24 @@ export default function App() {
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} />}
+      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
+    </Dialog>}
+    {pendingSave && <Dialog label="导入存档确认" onClose={() => setPendingSave(null)}>
+      <div className="standard-modal import-save-modal">
+        <div className="modal-eyebrow"><ShieldCheck size={14} />存档恢复 / 覆盖确认</div>
+        <h2>要回到那个夜晚吗？</h2>
+        <p className="muted">导入会把当前进度替换为第 {pendingSave.day} 日、{pendingSave.girls.length} 位契约者、{pendingSave.gold.toLocaleString('zh-CN')} 星砂的存档。当前进度尚未自动备份，建议先取消并导出。</p>
+        <div className="confirmation-facts">
+          <span>目标日期<b>第 {pendingSave.day} 日</b></span>
+          <span>契约者<b>{pendingSave.girls.length} 人</b></span>
+          <span>星砂<b>{pendingSave.gold.toLocaleString('zh-CN')}</b></span>
+        </div>
+        <div className="settings-data-actions">
+          <button id="import-save-confirm" className="btn primary" onClick={() => { setState(pendingSave); setPendingSave(null); notify(`已载入第 ${pendingSave.day} 日的存档。`); }}>确认覆盖并继续</button>
+          <button id="import-save-cancel" className="btn" onClick={() => setPendingSave(null)}>取消</button>
+        </div>
+      </div>
     </Dialog>}
   </div>;
 }

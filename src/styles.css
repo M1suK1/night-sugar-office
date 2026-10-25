@@ -400,3 +400,22 @@ body {
 .llm-log li small{display:block;color:#6f5f7a;font-size:7.5px;line-height:1.5}
 .llm-log li em{display:block;margin-top:3px;color:#e6a3ad;font-size:8px;line-height:1.6;font-style:normal;word-break:break-word}
 .llm-log-empty{margin:0;color:#776682;font-size:8.5px;line-height:1.8}
+
+/* P0 readability floor */
+@media(min-width:561px){
+  .small-note,.av-section-caption,.settings-row p,.help-items p,.chronicle-entry p,.av-retired-card p,.av-supply-card p,.growth-hero small,.dossier-tab-body .small-note{font-size:11px;line-height:1.7}
+  .battle-log li{font-size:11px}
+  .event-formula{font-size:10px}
+  .nav-item span,.rail-utility{font-size:11px}
+}
+label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+
+/* Fatal fallback */
+.fatal-screen{min-height:100dvh;display:grid;place-items:center;background:radial-gradient(circle at 50% 20%,#2a1024,#08070d 65%);padding:24px}
+.fatal-card{max-width:560px;border:1px solid #f3aec933;background:#111016f2;padding:38px;border-radius:10px;box-shadow:0 30px 90px #000a}
+.fatal-eyebrow{font-size:10px;letter-spacing:.24em;color:#f3aec9;text-transform:uppercase}
+.fatal-card h1{font-family:var(--font-serif);font-size:30px;margin:14px 0 10px;color:#fff4fa}
+.fatal-card p{color:#b9a7c3;font-size:13px;line-height:1.9}
+.fatal-card pre{white-space:pre-wrap;background:#08070d;border:1px solid #ffffff12;padding:12px;border-radius:5px;color:#e7a7bd;font-size:11px;max-height:150px;overflow:auto}
+.fatal-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0 14px}
+.fatal-card small{color:#7d6c87;font-size:11px;line-height:1.7}
