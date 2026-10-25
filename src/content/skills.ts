@@ -37,6 +37,8 @@ const seed: Seed[] = [
   ['monster-scales', '鳞粉', '魔物', 'hp', 0.85, 2, 'enemy', 2, 'signature', [{ kind: 'dot', amount: 10, duration: 3 }], '细小的糖鳞落下来，像一场不祥的雪。'],
   ['monster-gaze', '空月凝视', '魔物', 'spirit', 1.1, 2, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'magic', amount: 16, duration: 2 }], '月亮没有瞳孔，但你确定它在看你。'],
   ['monster-tide', '引力潮汐', '魔物', 'hp', 1.15, 3, 'enemy', 3, 'signature', [], '整条街的重量忽然朝同一个方向倾斜。'],
+
+  ['night-prayer', '夜祷回响', '月影系', 'spirit', 0.85, 2, 'ally', 3, 'signature', [{ kind: 'regen', amount: 9, duration: 2 }], '指环内侧的祷词被念出来时，伤口会先于记忆合拢。'],
 ];
 
 export const skills: Skill[] = seed.map(([id, name, school, resource, power, targets, side, cooldown, tier, effects, description]) => ({ id, name, school, resource, power, targets, side, cooldown, tier, effects, description }));

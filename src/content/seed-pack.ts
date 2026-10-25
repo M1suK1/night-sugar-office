@@ -1,4 +1,4 @@
-import type { ContentPack, Girl, Mission, Skill, StatKey, Trait } from '../types';
+import type { ContentPack, Expression, Girl, Mission, Outfit, Skill, StatKey, Trait } from '../types';
 import { skills } from './skills.ts';
 import { monsters } from './monsters.ts';
 import { traitById } from './traits.ts';
@@ -11,7 +11,24 @@ const relations = (own: string, values: Record<string, number>): Record<string, 
   return out;
 };
 
-type SeedGirl = Omit<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed'> & Partial<Pick<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed'>>;
+type SeedGirl = Omit<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment'> & Partial<Pick<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment'>>;
+
+const appearanceText: Record<string, { appearance: string; personality: string; outfit: string }> = {
+  yue: { appearance: '桃粉色长卷发，发尾有细碎的星屑，笑起来时眼角会弯成月牙。', personality: '温柔、擅长逞强，习惯先照顾别人再处理自己的伤口。', outfit: '黑粉配色的短披肩制服，胸前系着猫形领结。' },
+  tang: { appearance: '银白色短发，右眼被刘海遮住，随身带着一只旧糖罐。', personality: '安静、体贴，对甜味和别人的情绪都过分敏感。', outfit: '奶白色高领制服，袖口缝着一圈极细的糖霜边。' },
+  ling: { appearance: '深青色齐肩发，常戴一副不要紧的耳机，瞳色偏冷。', personality: '寡言、敏锐，对杂音有近乎本能的警觉。', outfit: '深色观测员外套，领口别着频率计。' },
+  wu: { appearance: '淡紫色睡帽与蓬松长发，眼睛总像刚从梦里醒来。', personality: '慵懒、跳脱，记得所有猫的名字，却常忘记自己的排班。', outfit: '宽松的梦境系睡袍，帽檐垂着一颗毛绒星星。' },
+  zhi: { appearance: '浅金绿色双马尾，发间别着白色花饰，指尖常有药草味。', personality: '耐心、务实，相信每一种伤口都值得被认真处理。', outfit: '自然系采药围裙，口袋里插着晒干的花。' },
+  lu: { appearance: '酒红色短发，右侧别着鹿角发饰，耳后有一道旧疤。', personality: '直率、好胜，把每一次出场都当成最后一次谢幕。', outfit: '赤焰系短夹克与舞台手套，腰侧挂着鼓槌。' },
+};
+
+function wardrobeFor(color: string): Outfit[] {
+  return [
+    { id: 'uniform', name: '值夜制服', description: '事务所统一配发的夜间制服，便于行动。', palette: [color, '#17141c', '#f7e9f1'], layerKey: 'uniform' },
+    { id: 'casual', name: '私服', description: '下班后才会穿的衣服，袖口仍留着一点夜里的冷气。', palette: [color, '#241d2b', '#d9c9e2'], layerKey: 'casual' },
+    { id: 'formal', name: '礼装', description: '在需要被城市记住的场合穿的那一套。', palette: [color, '#0e0c14', '#ffe4ef'], layerKey: 'formal' },
+  ];
+}
 
 const goals: Record<string, { goal: string; goalKind: Girl['goalKind'] }> = {
   yue: { goal: '让每一个加班到深夜的人，都能抬头看见一点光。', goalKind: '生活' },
@@ -28,7 +45,8 @@ const seedTraits: Record<string, string[]> = {
 function hydrateGirl(girl: SeedGirl, index: number): Girl {
   const plan = goals[girl.id] ?? { goal: '在城市与事务所之间，找到自己的位置。', goalKind: '生活' as const };
   const traits = (girl.traits ?? (seedTraits[girl.id] ?? []).map(id => traitById.get(id)).filter((t): t is Trait => Boolean(t)));
-  return { ...girl, baseStats: girl.baseStats ?? baseStatsAt(girl.stats, girl.level, girl.archetype), goal: girl.goal ?? plan.goal, goalKind: girl.goalKind ?? plan.goalKind, traits, conditions: girl.conditions ?? [], contractEndDay: girl.contractEndDay ?? 20 + index * 3, contractDays: girl.contractDays ?? 10, contractRenewals: girl.contractRenewals ?? 0, pensionMissed: girl.pensionMissed ?? 0 };
+  const text = appearanceText[girl.id];
+  return { ...girl, baseStats: girl.baseStats ?? baseStatsAt(girl.stats, girl.level, girl.archetype), goal: girl.goal ?? plan.goal, goalKind: girl.goalKind ?? plan.goalKind, traits, conditions: girl.conditions ?? [], contractEndDay: girl.contractEndDay ?? 20 + index * 3, contractDays: girl.contractDays ?? 10, contractRenewals: girl.contractRenewals ?? 0, pensionMissed: girl.pensionMissed ?? 0, appearance: girl.appearance ?? text?.appearance ?? '她的轮廓在夜灯下显得很安静。', personality: girl.personality ?? text?.personality ?? '安静，习惯把心事留到天亮。', outfitDescription: girl.outfitDescription ?? text?.outfit ?? '事务所配发的深色值夜制服。', wardrobe: girl.wardrobe ?? wardrobeFor(girl.color), outfitId: girl.outfitId ?? 'uniform', expression: (girl.expression ?? 'calm') as Expression, corruption: girl.corruption ?? 0, equipment: girl.equipment ?? {} };
 }
 
 const seedGirlData: SeedGirl[] = [

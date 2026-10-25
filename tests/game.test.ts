@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit } from '../src/game.ts';
+import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit, inWithdrawal } from '../src/game.ts';
+import { effectiveStats } from '../src/economy.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import type { Opinion, Scar } from '../src/types.ts';
@@ -11,11 +12,12 @@ const oldScar = (id: string): Scar => ({
   maxHpLoss: 8, gainedAt: '第 13 日 · 02:10', missionId: 'mirror',
 });
 
-test('初始数据包含六位契约者、战斗与调查委托、基地容量', () => {
+test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 4);
-  assert.equal(s.girls.length, 4);
-  assert.equal(s.candidates.length, 2);
+  assert.equal(s.version, 6);
+  assert.equal(s.girls.length, 5);
+  assert.equal(s.girls.filter(g => g.retired).length, 1);
+  assert.equal(s.candidates.length, 1);
   assert.equal(s.missions.length, 7);
   assert.equal(capacity(s), 6);
   assert.ok(s.missions.some(m => m.work === 'combat') && s.missions.some(m => m.work === 'investigation'));
@@ -76,7 +78,7 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
   assert.ok(battle.events.length > 0);
   assert.ok((battle.frames?.length ?? 0) >= battle.round);
   assert.equal(battle.startedAt.day, 14);
-  assert.equal(result.gold, goldBefore + 1240);
+  assert.equal(result.gold, goldBefore + 1240 - 88); // 跨日支付退役栀子的退休金
   assert.equal(result.missions.find(m => m.id === 'mirror')!.status, 'done');
   assert.ok(result.completed.includes('mirror'));
   const yue = result.girls.find(g => g.id === 'yue')!;
@@ -94,7 +96,7 @@ test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
   assert.equal(battle.outcome, 'repelled');
-  assert.equal(result.gold, goldBefore + Math.round(920 * 0.8));
+  assert.equal(result.gold, goldBefore + Math.round(920 * 0.8) - 88);
   assert.equal(mission.status, 'open');
   assert.equal(mission.worsened, true);
   assert.equal(mission.attempts, 1);
@@ -108,7 +110,7 @@ test('战斗失败保留事件、施加疤痕并降低血量上限', () => {
   const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
   const battle = result.battles[0];
   assert.equal(battle.outcome, 'defeat');
-  assert.equal(result.gold, goldBefore);
+  assert.equal(result.gold, goldBefore - 88);
   assert.equal(result.missions.find(m => m.id === 'arcade')!.status, 'open');
   for (const id of ['yue', 'tang', 'ling']) {
     const girl = result.girls.find(g => g.id === id)!;
@@ -132,7 +134,7 @@ test('第五道疤痕导致死亡，释放席位并进入纪念墙', () => {
   const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
   assert.equal(result.battles[0].outcome, 'defeat');
   assert.equal(result.memorial.length, 3);
-  assert.deepEqual(result.girls.map(g => g.id), ['wu']);
+  assert.deepEqual(result.girls.map(g => g.id), ['wu', 'zhi']);
   assert.equal(result.reputation, 58);
   assert.deepEqual(result.missions.find(m => m.id === 'arcade')!.squad, []);
   assert.ok(result.memorial.every(m => m.girl.dead && m.girl.scars.length === 5 && m.lastBattleId === result.battles[0].id));
@@ -162,8 +164,9 @@ test('治疗与休息按实际时间恢复，不足条件时拒绝', () => {
 });
 test('雇佣扣款、去重并遵守基地容量', () => {
   const s = createInitialState(); s.gold = 20000;
-  const r = act(s, { type: 'hire', girlId: 'zhi' }); assert.equal(r.ok, true); assert.equal(r.state.girls.length, 5);
-  assert.equal(act(r.state, { type: 'hire', girlId: 'zhi' }).ok, false);
+  const candidate = s.candidates[0];
+  const r = act(s, { type: 'hire', girlId: candidate.id }); assert.equal(r.ok, true); assert.equal(r.state.girls.length, 6);
+  assert.equal(act(r.state, { type: 'hire', girlId: candidate.id }).ok, false);
   r.state.rooms.find(room => room.type === 'dorm')!.capacity = 5;
   assert.equal(act(r.state, { type: 'hire', girlId: 'lu' }).ok, false);
 });
@@ -188,10 +191,10 @@ test('跨日推进记录新日期，拒绝负数、过小及过大推进量', ()
   assert.equal(act(s, { type: 'advance', minutes: 0.5 }).ok, false);
   assert.equal(act(s, { type: 'advance', minutes: 181 }).ok, false);
 });
-test('坏存档安全回退，v1 存档迁移，合法 v4 存档恢复', () => {
-  assert.equal(loadState('not json').girls.length, 4);
+test('坏存档安全回退，v1 存档迁移，合法 v6 存档恢复', () => {
+  assert.equal(loadState('not json').girls.length, 5);
   const migrated = loadState('{"version":1,"gold":777,"girls":[]}');
-  assert.equal(migrated.girls.length, 4);
+  assert.equal(migrated.girls.length, 5);
   assert.equal(migrated.gold, 777);
   const s = createInitialState(); s.gold = 999;
   assert.equal(loadState(JSON.stringify(s)).gold, 999);
@@ -299,3 +302,56 @@ test('会客厅议题可以批准、驳回或暂缓', () => {
   assert.equal(rejected.state.girls.find(g => g.id === 'yue')!.bond, s.girls.find(g => g.id === 'yue')!.bond - 2);
 });
 
+
+test('市场升级与高级招募消耗资金和安定度，并扩充候选', () => {
+  const s = createInitialState(); s.gold = 50000;
+  const up = act(s, { type: 'upgradeMarket' });
+  assert.equal(up.ok, true);
+  assert.equal(up.state.marketLevel, 2);
+  assert.equal(up.state.gold, 44000);
+  const before = up.state.candidates.length;
+  const adv = act(up.state, { type: 'advancedRecruit', level: 3 });
+  assert.equal(adv.ok, true);
+  assert.equal(adv.state.candidates.length, before + 1);
+  assert.ok(adv.state.gold < up.state.gold);
+  assert.ok(adv.state.reputation < up.state.reputation);
+  assert.equal(act(adv.state, { type: 'advancedRecruit', level: 3 }).ok, false);
+});
+test('势力装备可从仓库穿戴，并计入有效属性', () => {
+  const s = createInitialState(); s.gold = 10000; s.factions.witch.standing = 60;
+  const bought = act(s, { type: 'buyItem', itemId: 'moon-weapon' });
+  assert.equal(bought.ok, true);
+  assert.equal(bought.state.inventory['moon-weapon'], 1);
+  const before = effectiveStats(bought.state.girls.find(g => g.id === 'yue')!, bought.state);
+  const equipped = act(bought.state, { type: 'equipItem', girlId: 'yue', itemId: 'moon-weapon', slot: 'weapon' });
+  assert.equal(equipped.ok, true);
+  const after = effectiveStats(equipped.state.girls.find(g => g.id === 'yue')!, equipped.state);
+  assert.ok(after.magic > before.magic);
+  assert.equal(equipped.state.inventory['moon-weapon'], 0);
+});
+test('断药期禁止派遣，抑制剂立即解除', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(g => g.id === 'yue')!;
+  yue.corruption = 75; yue.witch = true; yue.withdrawalDays = 2; yue.drugUntilDay = 0;
+  assert.equal(inWithdrawal(yue), true);
+  const blocked = act(s, { type: 'dispatch', girlIds: ['yue'], missionId: 'cat' });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /断药/);
+  s.inventory['moon-drug'] = 1;
+  const cured = act(s, { type: 'useItem', girlId: 'yue', itemId: 'moon-drug' });
+  assert.equal(cured.ok, true);
+  const curedYue = cured.state.girls.find(g => g.id === 'yue')!;
+  assert.equal(curedYue.withdrawalDays, 0);
+  assert.ok((curedYue.drugUntilDay ?? 0) > cured.state.day);
+  assert.equal(act(cured.state, { type: 'dispatch', girlIds: ['yue'], missionId: 'cat' }).ok, true);
+});
+test('自定义契约者登记为一级并进入候选名册', () => {
+  const s = createInitialState();
+  const before = s.candidates.length;
+  const draft = { name: '夜见灯', codename: '宵灯', title: '新登记契约者', element: '星光系' as const, archetype: '输出' as const, color: '#f49abd', quote: '请多指教。', goal: '完成第一次委托', appearance: '短发', personality: '认真', outfitDescription: '夜色制服', stats: { magic: 75, insight: 65, agility: 60, empathy: 60 }, skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traits: ['cat-sense', 'protective', 'silent'], portrait: '' };
+  const r = act(s, { type: 'createGirl', draft });
+  assert.equal(r.ok, true);
+  assert.equal(r.state.candidates.length, before + 1);
+  assert.equal(r.state.candidates.at(-1)?.level, 1);
+  assert.equal(s.candidates.length, before);
+});

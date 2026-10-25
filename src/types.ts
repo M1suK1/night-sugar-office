@@ -9,6 +9,32 @@ export type SkillSide = 'enemy' | 'ally' | 'self';
 export type SkillTier = 'basic' | 'signature' | 'ultimate';
 export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen';
 export type TraitPolarity = 'positive' | 'negative' | 'neutral';
+export type Expression = 'calm' | 'smile' | 'surprise' | 'sad' | 'angry' | 'shy';
+export type FactionId = 'witch' | 'association' | 'government';
+export interface Outfit {
+  id: string; name: string; description: string;
+  palette: string[]; layerKey: string;
+}
+export interface Equipment {
+  id: string; name: string; faction: FactionId; slot: 'weapon' | 'charm' | 'consumable';
+  price: number; standingReq: number; description: string;
+  stats?: Partial<Record<StatKey, number>>;
+  passive?: string; skillId?: string; corruptionPerBattle?: number;
+  maxHpBonus?: number; spiritBonus?: number; damageBonus?: number; initiativeBonus?: number;
+  effect?: 'drug' | 'heal' | 'purify' | 'contractDiscount' | 'taxRefund';
+  amount?: number;
+}
+export interface BossState {
+  id: string; appearedDay: number; lastTick: number; deadline: number;
+  missionId: string; defeated?: boolean;
+}
+export interface GirlDraft {
+  name: string; codename: string; title: string; element: Element; archetype: Archetype;
+  color: string; quote: string; goal: string;
+  appearance: string; personality: string; outfitDescription: string;
+  stats: Record<StatKey, number>; skillIds: string[]; traits: string[];
+  portrait?: string; appearanceSpec?: PortraitSpec;
+}
 
 export interface Trait {
   id: string; name: string; polarity: TraitPolarity; tags: string[];
@@ -81,7 +107,7 @@ export interface Girl {
   fatigue: number; bond: number; exp: number;
   stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string;
   skill: string; skills: string[]; description: string; cost: number;
-  scars: Scar[]; relationships: Record<string, number>; appearance?: PortraitSpec;
+  scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   retired?: boolean; dead?: boolean; diedAt?: string; archetype?: Archetype; quote?: string;
   lastTalkDay?: number; talksToday?: number;
   goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[];
@@ -89,6 +115,12 @@ export interface Girl {
   clinicRest?: boolean;
   contractEndDay: number; contractDays: number; contractRenewals: number;
   retiredReason?: 'contract' | 'injury'; pensionMissed: number;
+  appearance: string; personality: string; outfitDescription: string;
+  wardrobe: Outfit[]; outfitId: string; expression: Expression;
+  corruption: number; witch?: boolean; drugUntilDay?: number; withdrawalDays?: number;
+  equipment: { weapon?: string; charm?: string };
+  importedVariants?: Record<string, string>;
+  candidateUntilDay?: number; custom?: boolean;
 }
 export interface Memorial {
   girl: Girl; diedAt: string; cause: string; epitaph: string; lastBattleId: string;
@@ -99,7 +131,7 @@ export interface Mission {
   color: string; status: 'open' | 'active' | 'done'; girlId?: string; squad: string[];
   work: WorkKind; enemyIds?: string[]; rounds?: number; attempts: number; worsened?: boolean;
   lastOutcome?: 'victory' | 'repelled' | 'defeat' | 'draw'; generated?: boolean; sourcePack?: string;
-  recommendedLevel: number;
+  recommendedLevel: number; faction?: FactionId; envoy?: boolean; boss?: boolean;
 }
 export interface Room { id: string; name: string; type: 'lounge' | 'clinic' | 'dorm' | 'observatory'; level: number; capacity: number; description: string }
 export interface Log { id: string; time: string; kind: 'dispatch' | 'finance' | 'care' | 'story' | 'base' | 'battle' | 'relationship' | 'memorial' | 'council' | 'expedition' | 'clinic'; text: string; delta?: number }
@@ -133,13 +165,20 @@ export interface ContentPack {
   traits?: Trait[];
   notes: string;
 }
+export interface FactionState {
+  standing: number; stockDay: number; envoyDay: number; envoyTaskId?: string;
+}
 export interface GameState {
-  version: 4; day: number; minutes: number; gold: number; reputation: number;
+  version: 6; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; packHash: string;
   assistantId?: string; opinions: Opinion[]; expeditions: Expedition[]; councilDay: number;
   pensionDebt: number;
+  factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
+  marketLevel: number; marketDay: number; advancedDay?: number;
+  boss: BossState | null; bossCycle: number; nextBossDay: number;
+  customSkills: Skill[];
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -156,5 +195,16 @@ export type GameAction =
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
   | { type: 'clinic'; girlId: string; mode: 'heal' | 'rest' | 'wipe' | 'clone' }
+  | { type: 'changeOutfit'; girlId: string; outfitId: string }
+  | { type: 'setExpression'; girlId: string; expression: Expression }
+  | { type: 'buyItem'; itemId: string }
+  | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
+  | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
+  | { type: 'useItem'; girlId: string; itemId: string }
+  | { type: 'acceptFactionTask'; faction: FactionId }
+  | { type: 'upgradeMarket' }
+  | { type: 'advancedRecruit'; level: number }
+  | { type: 'createGirl'; draft: GirlDraft }
+  | { type: 'setVariant'; girlId: string; key: string; dataUrl: string }
   | { type: 'reset' };
 export interface ActionResult { state: GameState; ok: boolean; message: string; battle?: BattleState }

@@ -1,6 +1,7 @@
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, Scar, Skill, StatKey } from './types';
 import { getSkill } from './content/skills.ts';
 import { getMonster } from './content/monsters.ts';
+import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
 
 export const ROUND_MINUTES = 15;
 const clamp = (min: number, max: number, v: number) => Math.max(min, Math.min(max, v));
@@ -52,11 +53,12 @@ function initiativeOf(unit: BattleUnit, roll: number): number {
   return statOf(unit, 'insight') + roll + bonus;
 }
 function unitFromGirl(girl: Girl, _index: number): BattleUnit {
-  const maxSpirit = spiritMax(girl);
+  const maxSpirit = effectiveMaxSpirit(girl);
+  const extraSkills = equipmentOf(girl).map(item => item.skillId).filter((id): id is string => Boolean(id));
   return {
     uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, color: girl.color,
-    hp: clamp(0, girl.maxHp, girl.hp), maxHp: girl.maxHp, spirit: maxSpirit, maxSpirit,
-    stats: { ...girl.stats }, skills: [...girl.skills], cooldown: {}, effects: [], down: false,
+    hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
+    stats: effectiveStats(girl), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,
     insightRoll: 0, scarHit: girl.scars.reduce((s, scar) => s + (scar.effect.kind === 'hit' ? scar.effect.amount : 0), 0),
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
   };
