@@ -419,9 +419,28 @@ test('生成提案会写入事件、候选与魔物池，池满时拒绝', () =>
   assert.equal(result.ok, true);
   assert.equal(result.state.candidates.length, base.candidates.length + 1);
   assert.equal(result.state.customMonsters.length, 1);
-  assert.equal(result.state.missions.length, base.missions.length + 1);
+  assert.equal(result.state.missions.length, base.missions.length + 2);
+  assert.equal(result.state.opinions.length, base.opinions.length + 1);
   assert.equal(result.state.missions.at(-1)?.enemyIds?.[0], content.monster.id);
 
   const capped = { ...base, poolLimits: { ...base.poolLimits, candidates: 1 } };
   assert.equal(act(capped, { type: 'addGeneratedContent', ...content }).ok, false);
+});
+
+test('生成议题进入会客厅，代表委托带势力标记', () => {
+  const base = createInitialState();
+  const content = materializeDaily({ monsterName: '纸月', monsterEpithet: '折月', monsterRank: '游荡', monsterElement: '月影', monsterTrait: '怕水', monsterDescription: '纸月。', monsterHabit: '贴窗。', monsterWeakness: '遇水。', girlName: '纸灯', girlCodename: '折光', girlTitle: '折纸的人', girlElement: '星光', girlArchetype: '支援', girlQuote: '留一盏灯。', girlGoal: '找到纸船。', girlSkill: '折光', girlAppearance: '短发。', girlPersonality: '安静。', girlOutfit: '宽大制服。', missionTitle: '纸月亮', missionCategory: '异象调查', missionDescription: '两个月亮。' }, base);
+  const result = act(base, { type: 'addGeneratedContent', ...content });
+  assert.equal(result.state.opinions[0].id, content.opinion.id);
+  assert.equal(result.state.opinions[0].status, 'pending');
+  const envoy = result.state.missions.find(m => m.envoy);
+  assert.equal(envoy?.faction, 'association');
+  assert.ok(envoy && envoy.x !== content.mission.x);
+});
+
+test('生成的代表委托会被会客厅代表登记为今日任务', () => {
+  const base = createInitialState();
+  const content = materializeDaily({ monsterName: '纸月', monsterEpithet: '折月', monsterRank: '游荡', monsterElement: '月影', monsterTrait: '怕水', monsterDescription: '纸月。', monsterHabit: '贴窗。', monsterWeakness: '遇水。', girlName: '纸灯', girlCodename: '折光', girlTitle: '折纸的人', girlElement: '星光', girlArchetype: '支援', girlQuote: '留一盏灯。', girlGoal: '找到纸船。', girlSkill: '折光', girlAppearance: '短发。', girlPersonality: '安静。', girlOutfit: '宽大制服。', missionTitle: '纸月亮', missionCategory: '异象调查', missionDescription: '两个月亮。' }, base);
+  const result = act(base, { type: 'addGeneratedContent', ...content });
+  assert.equal(result.state.factions.association.envoyTaskId, content.envoyMission.id);
 });

@@ -214,7 +214,7 @@ export type GameAction =
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }
-  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission }
+  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }

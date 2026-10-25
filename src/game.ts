@@ -1153,7 +1153,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     }
     case 'addGeneratedContent': {
       const open = state.missions.filter(m => m.status !== 'done').length;
-      if (open >= state.poolLimits.missions) return { state, ok: false, message: '事件池已满，先移除一条事件再生成。' };
+      if (open + 2 > state.poolLimits.missions) return { state, ok: false, message: '事件池至少需要两个空位，先移除事件再生成。' };
       if (state.candidates.length >= state.poolLimits.candidates) return { state, ok: false, message: '市场池已满，先移除一位候选者再生成。' };
       if (state.customMonsters.length + monsters.length - state.removedMonsters.length >= state.poolLimits.monsters) return { state, ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
       if (state.missions.some(m => m.id === action.mission.id) || state.candidates.some(g => g.id === action.girl.id) || state.customMonsters.some(m => m.id === action.monster.id)) return { state, ok: false, message: '生成内容与现有条目重复。' };
@@ -1161,8 +1161,13 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.customMonsters.push(action.monster);
       next.candidates.push(action.girl);
       next.missions.push({ ...action.mission, generated: true, sourcePack: 'llm' });
-      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场里也出现了一位新候选者 ${action.girl.name}。` });
-      return { state: next, ok: true, message: '新的委托已出现在地图上，候选者也已进入市场。' };
+      if (action.envoyMission) {
+        next.missions.push({ ...action.envoyMission, generated: true, sourcePack: 'llm' });
+        if (action.envoyMission.faction) next.factions[action.envoyMission.faction].envoyTaskId = action.envoyMission.id;
+      }
+      if (action.opinion) next.opinions.unshift(action.opinion);
+      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}。` });
+      return { state: next, ok: true, message: '新的委托已出现在地图上，候选者进入市场，会客厅也收到了议题。' };
     }
     default: return { state, ok: false, message: '未知操作。' };
   }

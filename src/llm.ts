@@ -80,18 +80,24 @@ export interface GeneratedDaily {
   girlName: string; girlCodename: string; girlTitle: string; girlElement: string; girlArchetype: string;
   girlQuote: string; girlGoal: string; girlSkill: string; girlAppearance: string; girlPersonality: string; girlOutfit: string;
   missionTitle: string; missionCategory: string; missionDescription: string;
+  agendaTitle?: string; agendaText?: string; agendaRequest?: string; agendaTopic?: Opinion['topic'];
+  envoyFaction?: 'witch' | 'association' | 'government'; envoyTitle?: string; envoyDescription?: string;
 }
 
 const elements = ['星光', '糖霜', '月影', '花息', '潮汐', '余烬', '魔物'] as const;
 const archetypes = ['战斗', '调查', '支援', '防御', '治疗', '控制'] as const;
 const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
+const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
+const factions = ['witch', 'association', 'government'] as const;
 
 export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光|糖霜|月影|花息|潮汐|余烬|魔物","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
 "girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光|糖霜|月影|花息|潮汐|余烬|魔物","girlArchetype":"战斗|调查|支援|防御|治疗|控制","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
-"missionTitle":"","missionCategory":"","missionDescription":""}`;
+"missionTitle":"","missionCategory":"","missionDescription":"",
+"agendaTitle":"","agendaText":"","agendaRequest":"","agendaTopic":"经费|排班|设施|同伴|城市|私人心愿",
+"envoyFaction":"witch|association|government","envoyTitle":"","envoyDescription":""}`;
   try {
     const response = await fetch(`${config.endpoint.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
@@ -125,6 +131,10 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Pro
       girlSkill: str('girlSkill', '未命名魔法'), girlAppearance: str('girlAppearance', '短发，发梢有一缕不合规矩的挑染。'),
       girlPersonality: str('girlPersonality', '安静，习惯先观察再开口。'), girlOutfit: str('girlOutfit', '事务所配发的值夜制服，袖口略长。'),
       missionTitle: str('missionTitle', '没有名字的委托'), missionCategory: str('missionCategory', '异象调查'), missionDescription: str('missionDescription', '地图边缘出现了一处无法解释的空缺。'),
+      agendaTitle: str('agendaTitle', '今晚的排班需要再确认'), agendaText: str('agendaText', '她在便签上写下了几个名字，又划掉了其中一个。'), agendaRequest: str('agendaRequest', '申请调整一次夜班顺序。'),
+      agendaTopic: agendaTopics.includes(raw.agendaTopic as typeof agendaTopics[number]) ? raw.agendaTopic as Opinion['topic'] : '排班',
+      envoyFaction: factions.includes(raw.envoyFaction as typeof factions[number]) ? raw.envoyFaction as 'witch' | 'association' | 'government' : 'association',
+      envoyTitle: str('envoyTitle', '代表的口头委托'), envoyDescription: str('envoyDescription', '她没有留下书面任务书，只说今晚需要有人去一趟。'),
     };
     return { ok: true, data };
   } catch {
@@ -134,9 +144,9 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Pro
 
 import { createSeedPack } from './content/seed-pack.ts';
 import { monsters as baseMonsters } from './content/monsters.ts';
-import type { GameState, Girl, Mission, MonsterTemplate } from './types';
+import type { GameState, Girl, Mission, MonsterTemplate, Opinion } from './types';
 
-export function materializeDaily(data: GeneratedDaily, state: GameState): { monster: MonsterTemplate; girl: Girl; mission: Mission } {
+export function materializeDaily(data: GeneratedDaily, state: GameState): { monster: MonsterTemplate; girl: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission } {
   const pack = createSeedPack();
   const stamp = `${Date.now().toString(36)}${Math.floor(Math.random() * 999).toString(36)}`;
   const baseMonster = baseMonsters.find(m => m.rank === data.monsterRank) ?? baseMonsters[1];
@@ -208,5 +218,24 @@ export function materializeDaily(data: GeneratedDaily, state: GameState): { mons
     generated: true,
     sourcePack: 'llm',
   };
-  return { monster, girl, mission };
+  const author = [...state.girls].filter(g => !g.retired && !g.dead).sort((a, b) => b.bond - a.bond)[0] ?? state.girls[0];
+  const opinion: Opinion = {
+    id: `op_${stamp}`, day: state.day, authorId: author?.id ?? state.girls[0].id, topic: data.agendaTopic ?? '排班',
+    title: data.agendaTitle ?? '今晚的排班需要再确认', text: data.agendaText ?? '她在便签上写下了几个名字，又划掉了其中一个。',
+    request: data.agendaRequest ?? '申请调整一次夜班顺序。', status: 'pending',
+    options: [
+      { id: 'accept', label: '批准', effect: '消耗资源，提出者羁绊提升' },
+      { id: 'defer', label: '暂缓', effect: '不消耗资源，留待下个议事日' },
+      { id: 'reject', label: '驳回', effect: '节省资源，提出者羁绊下降' },
+    ],
+    assistantNote: '这份议题由故事引擎起草，数值与后果仍由本地规则决定。',
+  };
+  const envoyMission: Mission = {
+    ...mission, id: `m_env_${stamp}`, title: data.envoyTitle ?? '代表的口头委托', category: '代表委托',
+    description: data.envoyDescription ?? '她没有留下书面任务书，只说今晚需要有人去一趟。',
+    faction: data.envoyFaction ?? 'association', envoy: true, duration: 45, reward: 720,
+    requirement: 'empathy', target: 52, rounds: 3, enemyIds: [monster.id],
+    x: (mission.x + 31) % 78 + 8, y: (mission.y + 19) % 58 + 12,
+  };
+  return { monster, girl, mission, opinion, envoyMission };
 }
