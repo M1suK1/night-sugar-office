@@ -3,7 +3,7 @@ import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings
 import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
-import { loadLlmConfig, saveLlmConfig, testLlmConnection, type LlmConfig } from '../llm';
+import { loadLlmConfig, saveLlmConfig, testLlmConnection, loadLlmPrompts, saveLlmPrompts, defaultPrompts, type LlmConfig, type LlmPrompts } from '../llm';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
   const full=state.girls.length>=capacity(state),poor=state.gold<girl.cost;
   return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{state.girls.length} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
@@ -19,15 +19,20 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:Moon,title:'让时间，慢慢往前走',text:'点击「推进 30 分钟」结算派遣、治疗与休息。也可启用自动推进，每 12 秒前进 5 分钟。不会在离线时推进。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。对话每人每天前三次增加羁绊，所有历史都保存在本地。'},{Icon:MousePointer2,title:'为未来的叙事留出空间',text:'对话窗口包含角色状态、场景记忆和自由输入。目前是明确标记的本地剧情回复，没有模型调用或后端服务。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
 type SettingsTab = 'general' | 'llm' | 'pools';
-export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void}) {
+export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:(prompts:LlmPrompts)=>Promise<{ok:boolean;message:string}>}) {
   const [tab, setTab] = useState<SettingsTab>('general');
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
+  const [prompts, setPrompts] = useState<LlmPrompts>(loadLlmPrompts);
   const [llmNote, setLlmNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const openMissions = state.missions.filter(m => m.status !== 'done');
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
+  const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
   const update = (patch: Partial<LlmConfig>) => { const next = { ...llm, ...patch }; setLlm(next); saveLlmConfig(next); };
+  const updatePrompt = (patch: Partial<LlmPrompts>) => { const next = { ...prompts, ...patch }; setPrompts(next); saveLlmPrompts(next); };
   const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
+  const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(prompts); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
   return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2><div className="settings-tabs" role="tablist" aria-label="设置分类">{[{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }, { id: 'pools', label: '内容池', Icon: Boxes }].map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
     {tab === 'general' && <>
       <div className="settings-row"><div><b>减少动态效果</b><p>关闭漂浮与入场动画，保留必要的状态反馈。</p></div><button id="settings-reduced-motion" role="switch" aria-checked={reduced} aria-label="减少动态效果" className={`toggle ${reduced?'on':''}`} onClick={()=>onReduced(!reduced)}><i/></button></div>
@@ -40,8 +45,14 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolL
       <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
-      <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥仅存于 localStorage</span></div>
+      <div className="llm-prompts">
+        <div className="llm-prompts-head"><b>提示词</b><button id="settings-prompts-reset" className="llm-reset" onClick={() => { setPrompts({ ...defaultPrompts }); saveLlmPrompts({ ...defaultPrompts }); }}>恢复默认</button></div>
+        <label className="llm-field"><span>世界观与语气</span><textarea id="settings-prompt-world" rows={4} value={prompts.world} onChange={e => updatePrompt({ world: e.target.value })}/></label>
+        <label className="llm-field"><span>本次生成要求</span><textarea id="settings-prompt-daily" rows={3} value={prompts.daily} onChange={e => updatePrompt({ daily: e.target.value })}/></label>
+      </div>
+      <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥与提示词仅存于 localStorage</span></div>
       {llmNote && <div id="settings-llm-result" className={`llm-result ${llmNote.ok ? 'ok' : 'error'}`} role="status">{llmNote.ok ? <Check size={14}/> : <AlertTriangle size={14}/>}{llmNote.text}</div>}
+      <button id="settings-llm-generate" className="btn primary full" disabled={generating || full} onClick={generate}><Sparkles size={15}/>{full ? '内容池已满，请先清理' : generating ? '叙事者正在书写' : '生成今晚的提案'}</button>
       <div className="llm-warning"><AlertTriangle size={15}/><p>浏览器直连会暴露密钥给页面脚本。正式版本应改为服务端代理；此处仅用于本地原型验证。</p></div>
     </div>}
     {tab === 'pools' && <div className="pool-settings">

@@ -1,4 +1,4 @@
-import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, Scar, Skill, StatKey } from './types';
+import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterTemplate, Scar, Skill, StatKey } from './types';
 import { getSkill } from './content/skills.ts';
 import { getMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
@@ -63,15 +63,15 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
   };
 }
-function unitFromMonster(id: string, index: number, wounded: boolean): BattleUnit {
-  const monster = getMonster(id);
+function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = []): BattleUnit {
+  const monster = pool.find(m => m.id === id) ?? getMonster(id);
   const scale = wounded ? 0.8 : 1;
   const maxHp = Math.round(monster.maxHp * scale);
   return {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
     hp: maxHp, maxHp, spirit: Math.round(monster.maxSpirit * scale), maxSpirit: Math.round(monster.maxSpirit * scale),
     stats: { ...monster.stats }, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false,
-    insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
+    insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0, monster,
   };
 }
 function alive(units: BattleUnit[], side: 'ally' | 'enemy'): BattleUnit[] {
@@ -151,6 +151,7 @@ export interface BattleSetup {
   day: number;
   minutes: number;
   woundedEnemies?: boolean;
+  monsters?: MonsterTemplate[];
 }
 export function simulateBattle(setup: BattleSetup): BattleState {
   const { mission, girls, day, minutes } = setup;
@@ -159,7 +160,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   const rounds = mission.rounds ?? Math.max(2, Math.floor(mission.duration / ROUND_MINUTES));
   const units = [
     ...girls.map(unitFromGirl),
-    ...(mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false)),
+    ...(mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [])),
   ];
   const startedAt = { day, minutes };
   const state: BattleState = {

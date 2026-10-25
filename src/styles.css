@@ -372,3 +372,11 @@ body {
 .pool-block li>button:hover:not(:disabled){color:#ff9fb2;border-color:#ff5f7a55;background:#ff5f7a12}
 .pool-block li>button:disabled{opacity:.3;cursor:not-allowed}
 @media(max-width:560px){.settings-modal{max-width:100%}.llm-actions{flex-direction:column;align-items:flex-start}.settings-tabs{gap:2px}.settings-tab{padding:6px 8px}}
+
+.llm-prompts{border:1px solid #ffffff0f;background:#ffffff03;border-radius:5px;padding:11px;display:flex;flex-direction:column;gap:10px}
+.llm-prompts-head{display:flex;align-items:center;justify-content:space-between}
+.llm-prompts-head b{font:600 10px/1 var(--font-body);color:#ffd9e8}
+.llm-reset{border:0;background:none;color:#a78fb4;font-size:8.5px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.llm-reset:hover{color:#ffd9e8}
+.llm-field textarea{width:100%;resize:vertical;padding:8px 10px;border:1px solid #ffffff1a;background:#0d0a10;color:#e9dcea;font:400 10px/1.7 var(--font-body);border-radius:4px;outline:none}
+.llm-field textarea:focus{border-color:#f3aec966;box-shadow:0 0 0 2px #f3aec91f}

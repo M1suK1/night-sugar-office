@@ -9,7 +9,7 @@ const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', sh
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
 
 function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean; compact?: boolean }) {
-  const monster = unit.side === 'enemy' ? getMonster(unit.portrait) : null;
+  const monster = unit.side === 'enemy' ? (unit.monster ?? getMonster(unit.portrait)) : null;
   return (
     <article className={`battle-unit ${unit.side} ${unit.down ? 'down' : ''} ${active ? 'active' : ''}`} style={{ '--unit-color': unit.color } as React.CSSProperties}>
       <div className="battle-unit-art">

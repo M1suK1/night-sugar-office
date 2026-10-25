@@ -416,7 +416,7 @@ export function createInitialState(pack: ContentPack = createSeedPack()): GameSt
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
     opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [],
+    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
   };
 }
@@ -444,7 +444,7 @@ function recordBattle(state: GameState, battle: BattleState): void {
   state.battles = state.battles.slice(0, 20);
 }
 function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
-  const battle = simulateBattle({ mission, girls: squad, day: at.day, minutes: at.minutes, woundedEnemies: mission.worsened });
+  const battle = simulateBattle({ mission, girls: squad, day: at.day, minutes: at.minutes, woundedEnemies: mission.worsened, monsters: state.customMonsters });
   mission.attempts += 1;
   mission.lastOutcome = battle.outcome;
   const rewards = battle.rewards ?? { gold: 0, exp: 0, bond: 0 };
@@ -1145,10 +1145,24 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if ((state.removedMonsters ?? []).includes(action.monsterId)) return { state, ok: false, message: '这只魔物已经离开魔物池。' };
       const next = clone(state);
       next.removedMonsters = [...(next.removedMonsters ?? []), action.monsterId];
+      next.customMonsters = (next.customMonsters ?? []).filter(m => m.id !== action.monsterId);
       const affected = next.missions.filter(m => m.enemyIds?.includes(action.monsterId));
       next.missions = next.missions.filter(m => !m.enemyIds?.includes(action.monsterId) || m.status === 'active');
       for (const m of affected) if (m.status !== 'active') next.logs.unshift({ id: `log-pool-${m.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'battle', text: `「${m.title}」因魔物被移出池而消散。` });
       return { state: next, ok: true, message: `${target.name} 已从魔物池移除。` };
+    }
+    case 'addGeneratedContent': {
+      const open = state.missions.filter(m => m.status !== 'done').length;
+      if (open >= state.poolLimits.missions) return { state, ok: false, message: '事件池已满，先移除一条事件再生成。' };
+      if (state.candidates.length >= state.poolLimits.candidates) return { state, ok: false, message: '市场池已满，先移除一位候选者再生成。' };
+      if (state.customMonsters.length + monsters.length - state.removedMonsters.length >= state.poolLimits.monsters) return { state, ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
+      if (state.missions.some(m => m.id === action.mission.id) || state.candidates.some(g => g.id === action.girl.id) || state.customMonsters.some(m => m.id === action.monster.id)) return { state, ok: false, message: '生成内容与现有条目重复。' };
+      const next = clone(state);
+      next.customMonsters.push(action.monster);
+      next.candidates.push(action.girl);
+      next.missions.push({ ...action.mission, generated: true, sourcePack: 'llm' });
+      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场里也出现了一位新候选者 ${action.girl.name}。` });
+      return { state: next, ok: true, message: '新的委托已出现在地图上，候选者也已进入市场。' };
     }
     default: return { state, ok: false, message: '未知操作。' };
   }
@@ -1256,6 +1270,7 @@ export function loadState(raw: string | null): GameState {
     state.marketDay ??= state.day;
     state.boss ??= null; state.bossCycle ??= 0; state.nextBossDay ??= state.day + 2;
     state.customSkills ??= [];
+    state.customMonsters ??= [];
     state.poolLimits ??= { missions: 12, monsters: 8, candidates: 6 };
     state.removedMonsters ??= [];
     return state;

@@ -19,6 +19,7 @@ import { MarketView } from './views/MarketView';
 import { CustomGirlDialog } from './components/CustomGirlDialog';
 import { BattleReport } from './components/BattleReport';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
+import { generateDaily, loadLlmConfig, materializeDaily, type LlmPrompts } from './llm';
 import './styles.css';
 import './combat.css';
 
@@ -54,6 +55,14 @@ export default function App() {
   }, []);
 
   const notify = (message: string, ok = true) => setToast({ message, ok, id: Date.now() });
+  const generateContent = async (prompts: LlmPrompts) => {
+    const result = await generateDaily(loadLlmConfig(), prompts);
+    if (!result.ok) return { ok: false, message: result.message };
+    const content = materializeDaily(result.data, state);
+    const applied = act(state, { type: 'addGeneratedContent', ...content });
+    if (applied.ok) setState(applied.state);
+    return { ok: applied.ok, message: applied.message };
+  };
   const perform = (action: GameAction, quiet = false) => {
     const result = act(state, action);
     if (result.ok) setState(result.state);
@@ -172,10 +181,10 @@ export default function App() {
       {modal.type === 'build' && <BuildDialog state={state} initialRoom={modal.id} onConfirm={roomId => { if (perform({ type: 'build', roomId })) setModal(null); }} />}
       {modal.type === 'room' && <RoomDialog state={state} id={modal.id} onGirl={girl} onTalk={talk} onBuild={() => setModal({ type: 'build', id: modal.id })} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })} onRecall={id => perform({ type: 'recallExpedition', expeditionId: id })} onClinic={(girlId, mode) => perform({ type: 'clinic', girlId, mode })} onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })} />}
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} onClose={() => setModal(null)} />}
-      {modal.type === 'codex' && <CodexDialog initialId={modal.id} />}
+      {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'custom' && <CustomGirlDialog onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} />}
+      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
   </div>;

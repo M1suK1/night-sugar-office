@@ -53,7 +53,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           <div className="modal-section-heading"><h3>魔物反应</h3><small>点击查看图鉴</small></div>
           <div className="enemy-row">
             {(mission.enemyIds ?? []).map(id => {
-              const monster = getMonster(id);
+              const monster = state.customMonsters.find(m => m.id === id) ?? getMonster(id);
               return (
                 <button id={`enemy-${id}`} key={id} className="enemy-card" onClick={() => onEnemy(id)} style={{ '--enemy-color': monster.color } as React.CSSProperties}>
                   <MonsterGlyph monster={monster} size={62} />

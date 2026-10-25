@@ -144,6 +144,7 @@ export interface BattleUnit {
   stats: Record<StatKey, number>; skills: string[]; cooldown: Record<string, number>;
   effects: ActiveEffect[]; down: boolean; insightRoll: number; scarHit: number;
   dealt: number; taken: number; healed: number; controlled: number; kills: number;
+  monster?: MonsterTemplate;
 }
 export interface BattleCalc {
   hit?: { base: number; agility: number; targetAgility: number; bonus: number; chance: number; roll: number };
@@ -189,6 +190,7 @@ export interface GameState {
   marketLevel: number; marketDay: number; advancedDay?: number;
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   customSkills: Skill[];
+  customMonsters: MonsterTemplate[];
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -212,6 +214,7 @@ export type GameAction =
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }
+  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }

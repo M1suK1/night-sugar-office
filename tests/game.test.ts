@@ -4,6 +4,7 @@ import { createInitialState, act, loadState, capacity, chance, squadChance, squa
 import { effectiveStats } from '../src/economy.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
+import { materializeDaily } from '../src/llm.ts';
 import type { Opinion, Scar } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
@@ -401,4 +402,26 @@ test('内容池上限可调整，事件、候选与魔物可手动移除', () =>
   assert.equal(purified.state.removedMonsters.includes(monster), true);
   assert.equal(purified.state.missions.some(m => m.enemyIds?.includes(monster)), false);
   assert.equal(act(purified.state, { type: 'deleteMonster', monsterId: monster }).ok, false);
+});
+
+test('生成提案会写入事件、候选与魔物池，池满时拒绝', () => {
+  const base = createInitialState();
+  const proposal = {
+    monsterName: '纸月', monsterEpithet: '被折起来的月亮', monsterRank: '游荡' as const, monsterElement: '月影',
+    monsterTrait: '害怕被展开', monsterDescription: '一张悬在空中的纸月亮。', monsterHabit: '深夜贴着窗户移动。', monsterWeakness: '遇水变软。',
+    girlName: '纸灯', girlCodename: '折光', girlTitle: '把夜色折成小船的人', girlElement: '星光', girlArchetype: '支援',
+    girlQuote: '我会把灯留给你。', girlGoal: '找到愿意收留纸船的人。', girlSkill: '折光', girlAppearance: '短发，发梢有折痕。',
+    girlPersonality: '安静，喜欢折纸。', girlOutfit: '宽大的值夜制服。', missionTitle: '窗上的纸月亮', missionCategory: '异象调查',
+    missionDescription: '一扇窗里同时出现了两个月亮。',
+  };
+  const content = materializeDaily(proposal, base);
+  const result = act(base, { type: 'addGeneratedContent', ...content });
+  assert.equal(result.ok, true);
+  assert.equal(result.state.candidates.length, base.candidates.length + 1);
+  assert.equal(result.state.customMonsters.length, 1);
+  assert.equal(result.state.missions.length, base.missions.length + 1);
+  assert.equal(result.state.missions.at(-1)?.enemyIds?.[0], content.monster.id);
+
+  const capped = { ...base, poolLimits: { ...base.poolLimits, candidates: 1 } };
+  assert.equal(act(capped, { type: 'addGeneratedContent', ...content }).ok, false);
 });

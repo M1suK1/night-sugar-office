@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { BookOpen, Skull, Flower2, Heart, Sparkles, Shield, ScanEye, ChevronRight, MoonStar, Quote } from 'lucide-react';
 import type { GameState, MonsterTemplate } from '../types';
-import { monsters } from '../content/monsters';
+import { monsters as baseMonsters } from '../content/monsters';
 import { statLabels } from '../game';
 import { MonsterGlyph } from './MonsterGlyph';
 
-export function CodexDialog({ initialId }: { initialId?: string }) {
+export function CodexDialog({ initialId, extra = [] }: { initialId?: string; extra?: MonsterTemplate[] }) {
+  const monsters = [...extra, ...baseMonsters];
   const [picked, setPicked] = useState<string>(initialId ?? monsters[0].id);
   const monster = monsters.find(m => m.id === picked) ?? monsters[0];
   return (
