@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock } from '../src/game.ts';
 import { effectiveStats } from '../src/economy.ts';
+import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateDaily, generateGirlProfile, materializeDaily } from '../src/llm.ts';
@@ -447,12 +448,15 @@ test('生成的代表委托会被会客厅代表登记为今日任务', () => {
 
 test('自定义登记自动填表会校验叙事者输出并补齐技能与特性', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+  const profile = {
     name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈',
     quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。',
     personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy',
     skillIds: ['glimmer-spear', 'glimmer-spear', 'not-a-skill'],
-  }) } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{ message: { content: [{ type: 'text', text: JSON.stringify(profile) }] } }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
   try {
     const result = await generateGirlProfile({ endpoint: 'https://mock.local/v1', apiKey: 'x', model: 'mock' }, { world: '夜', daily: '写一位新人' });
     assert.equal(result.ok, true);
@@ -480,6 +484,34 @@ test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试',
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
     assert.equal('temperature' in calls[1], false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('职阶自动分配 260 点且各项在创建范围内', () => {
+  for (const archetype of ['输出', '守护', '治愈', '控制', '侦查'] as const) {
+    const stats = statsForArchetype(archetype);
+    assert.equal(Object.values(stats).reduce((sum, value) => sum + value, 0), 260);
+    for (const value of Object.values(stats)) assert.ok(value >= 40 && value <= 96);
+  }
+});
+
+test('角色起草会把立绘作为图像内容发送给视觉模型', async () => {
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ name: '纸灯', codename: '折光', title: '折夜的人', element: '星光系', archetype: '治愈', quote: '灯会亮。', goal: '找到归处。', appearance: '粉色短发，猫耳，黑粉制服。', personality: '安静。', outfitDescription: '黑粉配色的夜间制服。', focus: 'empathy', skillIds: [], traitIds: [] }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const portrait = 'data:image/webp;base64,AAAA';
+    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, { world: 'w', daily: 'd' }, portrait);
+    assert.equal(result.ok, true);
+    const content = calls[0].messages[1].content;
+    assert.equal(Array.isArray(content), true);
+    assert.equal(content[1].type, 'image_url');
+    assert.equal(content[1].image_url.url, portrait);
   } finally {
     globalThis.fetch = original;
   }

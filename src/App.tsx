@@ -76,8 +76,8 @@ export default function App() {
     if (applied.ok) setState(applied.state);
     return { ok: applied.ok, message: applied.message };
   };
-  const draftGirlProfile = async () => {
-    const result = await generateGirlProfile(loadLlmConfig(), loadLlmPrompts());
+  const draftGirlProfile = async (portrait?: string) => {
+    const result = await generateGirlProfile(loadLlmConfig(), loadLlmPrompts(), portrait);
     return result.ok ? { ok: true, message: '', profile: result.data } : { ok: false, message: result.message };
   };
   const perform = (action: GameAction, quiet = false) => {

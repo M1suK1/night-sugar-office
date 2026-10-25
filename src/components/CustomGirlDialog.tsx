@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { Archetype, Element, GirlDraft, StatKey } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
+import { statsForArchetype, type PlayableArchetype } from '../content/archetypes';
 import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
@@ -27,7 +28,7 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
   return canvas.toDataURL('image/webp', 0.9);
 }
 
-export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: () => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
+export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(''); const [codename, setCodename] = useState('未命名契约'); const [title, setTitle] = useState('新登记的魔法少女');
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
@@ -65,6 +66,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   };
 
   const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(40, Math.min(96, prev[key] + delta)) }));
+  const chooseArchetype = (next: PlayableArchetype) => { setArchetype(next); setStats(statsForArchetype(next)); };
   const toggleSkill = (id: string) => setSkillIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : prev.length >= 3 ? prev : [...prev, id]);
   const toggleTrait = (id: string) => setTraitIds(prev => prev.includes(id) ? prev.filter(t => t !== id) : prev.length >= 3 ? prev : [...prev, id]);
   const canCreate = name.trim().length > 0 && skillIds.length === 3 && traitIds.length === 3 && remaining === 0;
@@ -82,7 +84,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     else if (key === 'codename') setCodename(profile.codename);
     else if (key === 'title') setTitle(profile.title);
     else if (key === 'element') setElement(profile.element);
-    else if (key === 'archetype') setArchetype(profile.archetype);
+    else if (key === 'archetype') { setArchetype(profile.archetype); setStats(statsForArchetype(profile.archetype === '魔物' ? '输出' : profile.archetype)); }
     else if (key === 'goal') setGoal(profile.goal);
     else if (key === 'quote') setQuote(profile.quote);
     else if (key === 'appearance') setAppearance(profile.appearance);
@@ -97,7 +99,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     setDrafting(true); setMessage('');
     setPending(new Set(keys));
     if (targets === 'all') setFilled(new Set());
-    const result = await onGenerate();
+    const result = await onGenerate(preview || undefined);
     if (!result.ok || !result.profile) {
       setDrafting(false); setPending(new Set()); setMessage(result.message); return;
     }
@@ -110,8 +112,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         await sleep(130);
       }
       setSkillIds(profile.skillIds); setTraitIds(profile.traitIds);
+      setStats(statsForArchetype(profile.archetype === '魔物' ? '输出' : profile.archetype));
       setStep(0); setHasDraft(true); setDrafting(false);
-      setMessage('使魔补全了身份与描述。请逐项检查；数值仍需要你分配 260 点。');
+      setMessage('使魔读取了立绘，补全了身份、描述，并按职阶分配了 260 点能力值。请逐项检查，仍可手动微调。');
     } else {
       for (const key of keys) {
         applyField(key, profile);
@@ -156,7 +159,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       <h2>先写下她的名字。</h2><p className="muted">契约登记不收费，但每个名字都会留在事务所的账本上。</p>
       <div className="custom-grid"><label>{fieldHead('名字', 'name')}<input id="custom-name" className={`av-input${shimmer('name')}`} value={name} onChange={e => editText('name', setName, e.target.value)} maxLength={12} placeholder="例如：夜见 灯" /></label><label>{fieldHead('称号', 'codename')}<input id="custom-codename" className={`av-input${shimmer('codename')}`} value={codename} onChange={e => editText('codename', setCodename, e.target.value)} maxLength={16} /></label></div>
       <label>{fieldHead('一句话介绍', 'title')}<input id="custom-title" className={`av-input${shimmer('title')}`} value={title} onChange={e => editText('title', setTitle, e.target.value)} maxLength={30} /></label>
-      <div className="custom-grid"><label>{fieldHead('元素', 'element')}<select id="custom-element" className={`av-select${shimmer('element')}`} value={element} onChange={e => { setElement(e.target.value as Element); editText('element', () => undefined, ''); }}>{elements.filter(e => e !== '魔物').map(e => <option key={e}>{e}</option>)}</select></label><label>{fieldHead('职阶', 'archetype')}<select id="custom-archetype" className={`av-select${shimmer('archetype')}`} value={archetype} onChange={e => { setArchetype(e.target.value as Archetype); editText('archetype', () => undefined, ''); }}>{archetypes.filter(a => a !== '魔物').map(a => <option key={a}>{a}</option>)}</select></label></div>
+      <div className="custom-grid"><label>{fieldHead('元素', 'element')}<select id="custom-element" className={`av-select${shimmer('element')}`} value={element} onChange={e => { setElement(e.target.value as Element); editText('element', () => undefined, ''); }}>{elements.filter(e => e !== '魔物').map(e => <option key={e}>{e}</option>)}</select></label><label>{fieldHead('职阶', 'archetype')}<select id="custom-archetype" className={`av-select${shimmer('archetype')}`} value={archetype} onChange={e => { chooseArchetype(e.target.value as PlayableArchetype); editText('archetype', () => undefined, ''); }}>{archetypes.filter(a => a !== '魔物').map(a => <option key={a}>{a}</option>)}</select></label></div>
       <label>代表色<div className="custom-colors">{colors.map(c => <button key={c} type="button" id={`custom-color-${c.slice(1)}`} aria-label={`代表色 ${c}`} aria-pressed={color === c} style={{ background: c }} onClick={() => setColor(c)} />)}</div></label>
       <label>{fieldHead('当前目标', 'goal')}<input id="custom-goal" className={`av-input${shimmer('goal')}`} value={goal} onChange={e => editText('goal', setGoal, e.target.value)} maxLength={60} /></label>
       <label>{fieldHead('登场台词', 'quote')}<input id="custom-quote" className={`av-input${shimmer('quote')}`} value={quote} onChange={e => editText('quote', setQuote, e.target.value)} maxLength={80} /></label>
@@ -166,7 +169,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       <h2>把 260 点，分给她的可能性。</h2><p className="muted">单项 40–96。等级固定为 1，之后靠委托成长。</p>
       <div className="custom-points"><span>剩余点数</span><strong className={remaining < 0 ? 'warn' : ''}>{remaining}</strong><button id="custom-autofill" type="button" className="av-btn av-btn-small" onClick={() => setStats({ magic: 65, insight: 65, agility: 65, empathy: 65 })}>平均分配</button></div>
       <div className="custom-stat-list">{(Object.keys(statLabels) as StatKey[]).map(key => <div key={key} className="custom-stat-row"><span>{statLabels[key]}</span><input aria-label={`${statLabels[key]}数值`} type="range" min={40} max={96} value={stats[key]} onChange={e => setStats(prev => ({ ...prev, [key]: Number(e.target.value) }))} /><b>{stats[key]}</b><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}减一`} onClick={() => adjust(key, -1)}>−</button><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}加一`} onClick={() => adjust(key, 1)}>+</button></div>)}</div>
-      <p className="small-note">推荐：突击偏魔力与敏捷，守护偏共情与生命，侦察偏洞察。数值会永久影响战斗、调查与匹配率。</p>
+      <p className="small-note">选择职阶会自动分配 260 点：输出偏魔力与敏捷，守护偏共情，治愈偏共情与洞察，控制偏洞察与魔力，侦查偏洞察与敏捷。分配后仍可逐点微调。</p>
     </div>}
 
     {step === 2 && <div className="custom-step-body">

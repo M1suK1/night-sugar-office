@@ -360,8 +360,11 @@ try {
     });
     fs.writeFileSync('artifacts/fixture-portrait.png', Buffer.from(png, 'base64'));
     let calls = 0;
+    let imageSent = false;
     await page.route('**/chat/completions', route => {
       calls += 1;
+      const payload = route.request().postDataJSON();
+      imageSent = imageSent || Array.isArray(payload?.messages?.[1]?.content) && payload.messages[1].content.some(part => part.type === 'image_url');
       const content = { name: calls === 1 ? '使魔草稿' : '重写后的名字', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈', quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy', skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traitIds: ['cat-sense', 'protective', 'star-allergy'] };
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }) });
     });
@@ -378,7 +381,8 @@ try {
     await expect(page.locator('.field-origin')).toHaveCount(7);
     await page.screenshot({ path: 'artifacts/custom-autofill.png', animations: 'disabled' });
     await page.locator('#custom-step-1').click();
-    expect((await page.locator('.custom-stat-row b').allInnerTexts()).join(',')).toBe('45,45,45,45');
+    expect((await page.locator('.custom-stat-row b').allInnerTexts()).join(',')).toBe('52,68,44,96');
+    expect(imageSent).toBe(true);
     await page.locator('#custom-step-0').click();
     await page.locator('#custom-rewrite-name').click();
     await expect(page.locator('#custom-name')).toHaveValue('重写后的名字');

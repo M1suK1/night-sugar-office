@@ -80,13 +80,13 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Pro
   return result;
 }
 
-export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts, portrait?: string): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   const started = Date.now();
-  const result = await generateGirlProfileCore(config, prompts);
+  const result = await generateGirlProfileCore(config, prompts, portrait);
   recordLlmLog({
     kind: '角色起草', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: config.endpoint,
-    message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}` : result.message,
+    message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}${portrait ? '（已读取立绘）' : '（无立绘）'}` : result.message,
     detail: result.ok ? undefined : result.message,
   });
   return result;
@@ -160,7 +160,10 @@ async function errorDetail(response: Response): Promise<string> {
   return text.replace(/\s+/g, ' ').slice(0, 220);
 }
 
-async function chat(config: LlmConfig, messages: { role: 'system' | 'user'; content: string }[]): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+type ChatMessage = { role: 'system' | 'user'; content: string | ChatPart[] };
+
+async function chat(config: LlmConfig, messages: ChatMessage[]): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
   const model = config.model.trim();
@@ -182,9 +185,10 @@ async function chat(config: LlmConfig, messages: { role: 'system' | 'user'; cont
       }
       if (!response.ok) return { ok: false, message: `服务返回 ${response.status}${detail ? `：${detail}` : ''}` };
     }
-    const body = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const text = body.choices?.[0]?.message?.content ?? '';
-    if (!text.trim()) return { ok: false, message: '模型没有返回内容。' };
+    const body = await response.json() as { choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[] };
+    const raw = body.choices?.[0]?.message?.content;
+    const text = Array.isArray(raw) ? raw.map(part => typeof part?.text === 'string' ? part.text : '').join('') : raw ?? '';
+    if (!text.trim()) return { ok: false, message: '模型没有返回文本内容。请确认该模型支持对话补全。' };
     return { ok: true, text };
   } catch {
     return { ok: false, message: '浏览器无法访问接口，或服务未允许跨域请求。' };
@@ -281,7 +285,7 @@ export interface GeneratedGirlProfile {
   focus: StatKey; skillIds: string[]; traitIds: string[];
 }
 
-async function generateGirlProfileCore(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+async function generateGirlProfileCore(config: LlmConfig, prompts: LlmPrompts, portrait?: string): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const skillList = skills.filter(s => s.school !== 'monster').map(s => `${s.id}(${s.name})`).join('、');
   const traitList = traits.map(t => `${t.id}(${t.name})`).join('、');
@@ -289,11 +293,24 @@ async function generateGirlProfileCore(config: LlmConfig, prompts: LlmPrompts): 
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traitIds":["","",""]}
 skillIds 只能从以下 ID 中选三个：${skillList}
 traitIds 只能从以下 ID 中选三个：${traitList}`;
+  const visualRule = portrait
+    ? '先观察附带的立绘：发色与发型、瞳色、服装轮廓与配色、配饰、兽耳或尾巴、姿态与表情。appearance 必须具体描述这些可见特征；outfitDescription 必须写到颜色、材质与穿法；element、archetype、personality 和 title 都要从画面气质推断，不能与立绘冲突。'
+    : '这次没有立绘，请只根据世界观与文字要求起草，不要假装看见图片。';
   const result = await chat(config, [
-    { role: 'system', content: `${prompts.world}\n\n为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n\n${schema}` },
-    { role: 'user', content: '请起草这位新契约者。' },
+    { role: 'system', content: `${prompts.world}\n\n为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n${visualRule}\n\n${schema}` },
+    {
+      role: 'user',
+      content: portrait
+        ? [{ type: 'text', text: '请根据这张立绘起草这位新契约者，确保外貌、服装、元素与职阶都和画面一致。' }, { type: 'image_url', image_url: { url: portrait } }]
+        : '请起草这位新契约者。',
+    },
   ]);
-  if (!result.ok) return { ok: false, message: `起草失败：${result.message}` };
+  if (!result.ok) {
+    if (portrait && /image|vision|multimodal|图像|图片/i.test(result.message)) {
+      return { ok: false, message: `起草失败：当前模型似乎不支持图像输入，请换用支持视觉的模型。原始错误：${result.message}` };
+    }
+    return { ok: false, message: `起草失败：${result.message}` };
+  }
   try {
     const text = result.text;
     const match = text.match(/\{[\s\S]*\}/);
