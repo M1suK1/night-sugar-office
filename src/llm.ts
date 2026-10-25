@@ -92,6 +92,40 @@ export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts
   return result;
 }
 
+export interface DialogueContext {
+  girl: Girl; state: GameState; text: string; remote?: boolean;
+}
+
+export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, { girl, state, text, remote }: DialogueContext): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  const started = Date.now();
+  if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
+  const recent = (state.messages[girl.id] ?? []).slice(-10).map(message => ({ role: message.role === 'player' ? 'user' as const : 'assistant' as const, content: message.text }));
+  const bondLabel = girl.bond >= 85 ? '爱意' : girl.bond >= 70 ? '依恋' : girl.bond >= 55 ? '亲近' : girl.bond >= 40 ? '平常' : girl.bond >= 25 ? '戒备' : '疏离';
+  const system = `${prompts.world}
+
+你现在只扮演「${girl.name}」，不要以旁白、作者或 AI 的身份说话。
+身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}。
+外貌：${girl.appearance ?? '不详'}。性格：${girl.personality ?? '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
+当前目标：${girl.goal ?? '没有写下来的愿望'}。对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
+状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕` : ''}。
+${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}
+只输出她这一次的回应：中文，1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型，不要输出 JSON。`;
+  const result = await chat(config, [
+    { role: 'system', content: system },
+    ...recent,
+    { role: 'user', content: text },
+  ]);
+  const clean = result.ok ? result.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 400) : '';
+  const final = clean ? { ok: true as const, text: clean } : { ok: false as const, message: result.ok ? '模型没有返回可用的对话内容。' : result.message };
+  recordLlmLog({
+    kind: '角色对话', ok: final.ok, model: config.model.trim(), status: final.ok ? 200 : statusOf(final.message),
+    durationMs: Date.now() - started, endpoint: config.endpoint,
+    message: final.ok ? `与${girl.name}完成一次对话` : final.message,
+    detail: final.ok ? undefined : final.message,
+  });
+  return final;
+}
+
 export const defaultLlmConfig: LlmConfig = {
   endpoint: 'https://api.openai.com/v1',
   apiKey: '',
@@ -161,7 +195,7 @@ async function errorDetail(response: Response): Promise<string> {
 }
 
 type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
-type ChatMessage = { role: 'system' | 'user'; content: string | ChatPart[] };
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string | ChatPart[] };
 
 async function chat(config: LlmConfig, messages: ChatMessage[]): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };

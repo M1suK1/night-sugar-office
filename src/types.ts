@@ -177,6 +177,10 @@ export interface FactionState {
 export interface MarketStockEntry {
   id: string; itemId: string; faction: FactionId; sold: boolean;
 }
+export interface ChronicleEntry {
+  id: string; day: number; at: string; kind: '魔物' | '少女' | '事件' | '议程' | '代表' | '登记';
+  title: string; summary: string;
+}
 export interface GameState {
   version: 6; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
@@ -191,6 +195,7 @@ export interface GameState {
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   customSkills: Skill[];
   customMonsters: MonsterTemplate[];
+  chronicle: ChronicleEntry[];
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -198,7 +203,7 @@ export type GameAction =
   | { type: 'advance'; minutes: number }
   | { type: 'hire'; girlId: string }
   | { type: 'build'; roomId?: string }
-  | { type: 'talk'; girlId: string; text: string; remote?: boolean }
+  | { type: 'talk'; girlId: string; text: string; remote?: boolean; reply?: string }
   | { type: 'retire'; girlId: string }
   | { type: 'renewContract'; girlId: string }
   | { type: 'rehire'; girlId: string }

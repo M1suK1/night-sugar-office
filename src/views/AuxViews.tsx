@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Cat, Check, ChevronRight, Coins, Compass, Copy, Cross, Crosshair, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Moon, Phone, Plus, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Cat, Check, ChevronRight, Coins, Compass, Copy, Cross, Crosshair, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
@@ -23,7 +23,7 @@ type BaseViewProps = {
   onAssistant?: (girlId?: string) => void;
   onUseItem?: (girlId: string, itemId: string) => void;
 };
-type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void; onGirl?: (id: string) => void };
+type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
 type Metric = 'income' | 'expense' | 'reputation';
 type LogKind = GameState['logs'][number]['kind'];
 
@@ -714,7 +714,7 @@ function RecordsChart({ state, range, metric }: { state: GameState; range: numbe
   </>;
 }
 
-export function RecordsView({ state, onBattle, onCodex, onGirl }: RecordsViewProps) {
+export function RecordsView({ state, onBattle, onCodex, onChronicle, onGirl }: RecordsViewProps) {
   const [range, setRange] = useState(7);
   const [metric, setMetric] = useState<Metric>('income');
   const [kind, setKind] = useState<'all' | LogKind>('all');
@@ -885,7 +885,7 @@ export function RecordsView({ state, onBattle, onCodex, onGirl }: RecordsViewPro
       <section className="av-battle-archive" aria-labelledby="av-record-battle-title">
         <div className="av-log-head">
           <h2 id="av-record-battle-title"><Swords size={14} />战斗档案<small>{state.battles.length} 场</small></h2>
-          <button id="av-record-codex" type="button" className="av-btn av-btn-small" onClick={onCodex}>
+          <button id="av-record-chronicle" type="button" className="av-btn av-btn-small" onClick={onChronicle}><ScrollText size={13} />编年史 {state.chronicle.length}<ChevronRight size={12} /></button><button id="av-record-codex" type="button" className="av-btn av-btn-small" onClick={onCodex}>
             <BookOpen size={13} />魔物图鉴<ChevronRight size={12} />
           </button>
         </div>

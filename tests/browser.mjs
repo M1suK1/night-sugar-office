@@ -409,7 +409,30 @@ try {
     await page.locator('#custom-create').click();
     await expect.poll(async () => (await stored()).candidates.some(g => g.name === '门口登记')).toBe(true);
     await close();
-  });  await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
+  });  await check('模型对话与生成内容编年史', async () => {
+    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: '「今晚的月色像一颗没拆开的糖。」她把手机贴近耳边。' } }] }) }));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#girl-talk').click();
+    await page.locator('#chat-input').fill('今晚的月亮好看吗？');
+    await page.locator('#chat-send').click();
+    await expect(page.locator('.chat-message.girl').last()).toContainText('没拆开的糖');
+    await expect(page.locator('.chat-message.typing')).toHaveCount(0);
+    await close();
+    await page.unroute('**/chat/completions');
+    await page.evaluate(() => { const key = 'night-sugar-office:v1'; const saved = JSON.parse(localStorage.getItem(key)); saved.chronicle = [{ id: 'ch-browser', day: 14, at: '21:40', kind: '魔物', title: '纸月', summary: '被折起来的月亮在窗外停了一夜。' }]; localStorage.setItem(key, JSON.stringify(saved)); });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-records').click();
+    await page.locator('#av-record-chronicle').click();
+    await expect(page.locator('.chronicle-entry')).toHaveCount(1);
+    await page.locator('#chronicle-filter-魔物').click();
+    await expect(page.locator('.chronicle-entry h3')).toHaveText('纸月');
+    await page.screenshot({ path: 'artifacts/chronicle-desktop.png', animations: 'disabled' });
+    await close();
+    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); });
+  });
+  await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();
 }

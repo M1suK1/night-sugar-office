@@ -1,4 +1,4 @@
-import type { ActionResult, BattleState, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Log, MarketStockEntry, Mission, Opinion, Sample, Scar, StatKey } from './types';
+import type { ActionResult, BattleState, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Log, MarketStockEntry, Mission, Opinion, Sample, Scar, StatKey } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { getSkill } from './content/skills.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
@@ -387,6 +387,10 @@ function book(state: GameState, day: number, money: number): void {
   if (money < 0) sample.expense += -money;
   sample.reputation = state.reputation;
 }
+function archive(state: GameState, kind: ChronicleEntry['kind'], title: string, summary: string): void {
+  state.chronicle.unshift({ id: `chr-${Date.now()}-${state.chronicle.length}`, day: state.day, at: dateLabel(state.day, state.minutes), kind, title, summary });
+  state.chronicle = state.chronicle.slice(0, 200);
+}
 export function createInitialState(pack: ContentPack = createSeedPack()): GameState {
   const all = pack.girls.map(hydrate);
   const zhiIndex = all.findIndex(g => g.id === 'zhi');
@@ -416,7 +420,7 @@ export function createInitialState(pack: ContentPack = createSeedPack()): GameSt
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
     opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [],
+    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
   };
 }
@@ -735,7 +739,7 @@ function talkResponse(girl: Girl, text: string, bond: number): string {
   if (stage >= 3) return `「我在听。」${girl.name}合上手里的档案，「不过，如果你只是路过，也没关系。」`;
   return `「……知道了。」${girl.name}的语气很轻，像是在确认自己是否应该继续这个话题。`;
 }
-function talk(state: GameState, girlId: string, text: string, remote = false): ActionResult {
+function talk(state: GameState, girlId: string, text: string, remote = false, reply?: string): ActionResult {
   const clean = text.trim();
   if (!clean) return { state, ok: false, message: '想说些什么，再按下发送。' };
   const next = clone(state); const girl = findGirl(next, girlId);
@@ -751,7 +755,8 @@ function talk(state: GameState, girlId: string, text: string, remote = false): A
     girl.bond = Math.min(100, girl.bond + gain);
     const messages = next.messages[girl.id] ?? [];
     messages.push({ role: 'player', text: clean });
-    messages.push({ role: 'girl', text: `（电话那头有很轻的电流声）${talkResponse(girl, clean, girl.bond)}` });
+    const spoken = reply?.trim().slice(0, 400) || talkResponse(girl, clean, girl.bond);
+    messages.push({ role: 'girl', text: reply?.trim() ? spoken : `（电话那头有很轻的电流声）${spoken}` });
     next.messages[girl.id] = messages.slice(-60);
     next.logs.unshift({ id: `log-call-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'relationship', text: `与退休在家的${girl.name}通了一次电话（${REMOTE_CALL_COST} 星砂）。`, delta: -REMOTE_CALL_COST });
     return { state: next, ok: true, message: gain ? `电话接通了。与${girl.name}的羁绊 +1。` : `电话接通了，但今晚已经聊过很久。` };
@@ -766,7 +771,7 @@ function talk(state: GameState, girlId: string, text: string, remote = false): A
   girl.bond = Math.min(100, girl.bond + gain);
   const messages = next.messages[girl.id] ?? [];
   messages.push({ role: 'player', text: clean });
-  messages.push({ role: 'girl', text: talkResponse(girl, clean, girl.bond) });
+  messages.push({ role: 'girl', text: reply?.trim().slice(0, 400) || talkResponse(girl, clean, girl.bond) });
   next.messages[girl.id] = messages.slice(-60);
   return { state: next, ok: true, message: gain ? `与${girl.name}的羁绊 +${gain}。` : '今晚已经聊得够多了，明天再继续吧。' };
 }
@@ -775,7 +780,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'advance': return advance(state, action.minutes);
     case 'dispatch': return dispatch(state, action.girlIds, action.missionId);
     case 'care': return care(state, action.girlId, action.mode);
-    case 'talk': return talk(state, action.girlId, action.text, action.remote);
+    case 'talk': return talk(state, action.girlId, action.text, action.remote, action.reply);
     case 'renewContract': {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
@@ -1104,6 +1109,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       });
       next.gold -= 300; book(next, next.day, -300);
       next.candidates.push(girl);
+      archive(next, '登记', girl.name, `${girl.title}。${girl.appearance}`);
       next.logs.unshift({ id: `log-custom-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `新契约「${girl.name}」已发布到候选名册，保留 7 天。登记费 300 星砂。`, delta: -300 });
       return { state: next, ok: true, message: `${girl.name}已进入候选名册。` };
     }
@@ -1166,6 +1172,11 @@ export function act(state: GameState, action: GameAction): ActionResult {
         if (action.envoyMission.faction) next.factions[action.envoyMission.faction].envoyTaskId = action.envoyMission.id;
       }
       if (action.opinion) next.opinions.unshift(action.opinion);
+      archive(next, '魔物', action.monster.name, `${action.monster.epithet}。${action.monster.description}`);
+      archive(next, '少女', action.girl.name, `${action.girl.title} · ${action.girl.element} · ${action.girl.archetype}`);
+      archive(next, '事件', action.mission.title, action.mission.description);
+      if (action.opinion) archive(next, '议程', action.opinion.title, action.opinion.text);
+      if (action.envoyMission) archive(next, '代表', action.envoyMission.title, action.envoyMission.description);
       next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}。` });
       return { state: next, ok: true, message: '新的委托已出现在地图上，候选者进入市场，会客厅也收到了议题。' };
     }
@@ -1278,6 +1289,9 @@ export function loadState(raw: string | null): GameState {
     state.customMonsters ??= [];
     state.poolLimits ??= { missions: 12, monsters: 8, candidates: 6 };
     state.removedMonsters ??= [];
+    state.chronicle = Array.isArray(state.chronicle)
+      ? state.chronicle.filter((entry): entry is ChronicleEntry => Boolean(entry) && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && Number.isFinite(entry.day)).slice(0, 200)
+      : [];
     return state;
   } catch { return createInitialState(); }
 }

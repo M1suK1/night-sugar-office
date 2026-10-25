@@ -516,3 +516,27 @@ test('角色起草会把立绘作为图像内容发送给视觉模型', async ()
     globalThis.fetch = original;
   }
 });
+
+test('编年史缓存生成内容并在存档中保留', () => {
+  const base = createInitialState();
+  const content = materializeDaily({
+    monsterName: '纸月', monsterEpithet: '被折起来的月亮', monsterRank: '游荡' as const, monsterElement: '月影',
+    monsterTrait: '害怕被展开', monsterDescription: '一张悬在空中的纸月亮。', monsterHabit: '深夜贴着窗户移动。', monsterWeakness: '遇水变软。',
+    girlName: '纸灯', girlCodename: '折光', girlTitle: '把夜色折成小船的人', girlElement: '星光', girlArchetype: '支援',
+    girlQuote: '我会把灯留给你。', girlGoal: '找到愿意收留纸船的人。', girlSkill: '折光', girlAppearance: '短发，发梢有折痕。',
+    girlPersonality: '安静，喜欢折纸。', girlOutfit: '宽大的值夜制服。', missionTitle: '窗上的纸月亮', missionCategory: '异象调查',
+    missionDescription: '一扇窗里同时出现了两个月亮。', agendaTitle: '窗边的空位', agendaText: '有人希望把靠窗的位置留给新来的孩子。', agendaRequest: '把窗边的位置留给纸灯。',
+    agendaTopic: '窗边的位置', envoyFaction: 'association' as const, envoyTitle: '替协会送一盏灯', envoyDescription: '把灯送到旧车站。',
+  }, base);
+  const result = act(base, { type: 'addGeneratedContent', ...content });
+  assert.equal(result.ok, true);
+  const kinds = new Set(result.state.chronicle.map(entry => entry.kind));
+  for (const kind of ['魔物', '少女', '事件', '议程', '代表'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
+  const loaded = loadState(JSON.stringify(result.state));
+  assert.equal(loaded.chronicle.length, result.state.chronicle.length);
+  assert.ok(loaded.chronicle.every(entry => entry.title && entry.summary));
+
+  const spoken = act(result.state, { type: 'talk', girlId: 'yue', text: '今晚还顺利吗？', reply: '模型写下的回答。' });
+  assert.equal(spoken.ok, true);
+  assert.equal(spoken.state.messages.yue.at(-1)?.text, '模型写下的回答。');
+});
