@@ -4,7 +4,7 @@ import { createInitialState, act, loadState, capacity, chance, squadChance, squa
 import { effectiveStats } from '../src/economy.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { materializeDaily } from '../src/llm.ts';
+import { generateGirlProfile, materializeDaily } from '../src/llm.ts';
 import type { Opinion, Scar } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
@@ -443,4 +443,26 @@ test('生成的代表委托会被会客厅代表登记为今日任务', () => {
   const content = materializeDaily({ monsterName: '纸月', monsterEpithet: '折月', monsterRank: '游荡', monsterElement: '月影', monsterTrait: '怕水', monsterDescription: '纸月。', monsterHabit: '贴窗。', monsterWeakness: '遇水。', girlName: '纸灯', girlCodename: '折光', girlTitle: '折纸的人', girlElement: '星光', girlArchetype: '支援', girlQuote: '留一盏灯。', girlGoal: '找到纸船。', girlSkill: '折光', girlAppearance: '短发。', girlPersonality: '安静。', girlOutfit: '宽大制服。', missionTitle: '纸月亮', missionCategory: '异象调查', missionDescription: '两个月亮。' }, base);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.state.factions.association.envoyTaskId, content.envoyMission.id);
+});
+
+test('自定义登记自动填表会校验叙事者输出并补齐技能与特性', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+    name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈',
+    quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。',
+    personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy',
+    skillIds: ['glimmer-spear', 'glimmer-spear', 'not-a-skill'],
+  }) } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const result = await generateGirlProfile({ endpoint: 'https://mock.local/v1', apiKey: 'x', model: 'mock' }, { world: '夜', daily: '写一位新人' });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.name, '纸灯');
+      assert.equal(result.data.element, '星光系');
+      assert.equal(result.data.archetype, '治愈');
+      assert.equal(result.data.focus, 'empathy');
+      assert.equal(new Set(result.data.skillIds).size, 3);
+      assert.equal(new Set(result.data.traitIds).size, 3);
+    }
+  } finally { globalThis.fetch = original; }
 });

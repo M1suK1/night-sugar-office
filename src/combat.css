@@ -522,3 +522,9 @@
 .event-formula{font-size:9.5px;line-height:1.65;color:#b9a4c4;border-left:2px solid #f3aec92e;background:#ffffff03;border-radius:0 3px 3px 0;margin-top:3px}
 .battle-log li.miss .event-formula{color:#93819e}
 @media(max-width:560px){.event-formula{font-size:8px}}
+
+.custom-draft-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #f3aec92b;background:linear-gradient(90deg,#f3aec90d,transparent);border-radius:5px;padding:10px 12px;margin:8px 0 12px}
+.custom-draft-bar b{display:block;font-size:11px;color:#f3c4d6;font-weight:500}
+.custom-draft-bar p{font-size:8px;color:#8f7d99;margin-top:3px;line-height:1.65}
+.custom-draft-bar .btn{flex-shrink:0;font-size:9px}
+@media(max-width:560px){.custom-draft-bar{align-items:flex-start;flex-direction:column}.custom-draft-bar .btn{width:100%}}

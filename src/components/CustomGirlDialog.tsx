@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { Archetype, Element, GirlDraft, StatKey } from '../types';
+import type { GeneratedGirlProfile } from '../llm';
 import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
@@ -23,7 +24,7 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
   return canvas.toDataURL('image/webp', 0.9);
 }
 
-export function CustomGirlDialog({ onCreate }: { onCreate: (draft: GirlDraft) => void }) {
+export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: () => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(''); const [codename, setCodename] = useState('未命名契约'); const [title, setTitle] = useState('新登记的魔法少女');
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
@@ -33,6 +34,7 @@ export function CustomGirlDialog({ onCreate }: { onCreate: (draft: GirlDraft) =>
   const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
   const [message, setMessage] = useState('');
+  const [drafting, setDrafting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const total = Object.values(stats).reduce((sum, value) => sum + value, 0);
   const remaining = 260 - total;
@@ -68,8 +70,26 @@ export function CustomGirlDialog({ onCreate }: { onCreate: (draft: GirlDraft) =>
     });
   };
 
+  const draftFromStory = async () => {
+    if (!onGenerate) return;
+    setDrafting(true); setMessage('');
+    const result = await onGenerate();
+    setDrafting(false);
+    if (!result.ok || !result.profile) { setMessage(result.message); return; }
+    const profile = result.profile;
+    setName(profile.name); setCodename(profile.codename); setTitle(profile.title);
+    setElement(profile.element); setArchetype(profile.archetype);
+    setQuote(profile.quote); setGoal(profile.goal);
+    setAppearance(profile.appearance); setPersonality(profile.personality); setOutfitDescription(profile.outfitDescription);
+    const nextStats: Record<StatKey, number> = { magic: 60, insight: 60, agility: 60, empathy: 60 };
+    nextStats[profile.focus] = 80;
+    setStats(nextStats); setSkillIds(profile.skillIds); setTraitIds(profile.traitIds);
+    setStep(0); setMessage('叙事者已起草身份、能力、技能与特性；请逐步检查后再登记。');
+  };
+
   return <div className="standard-modal custom-girl">
     <div className="modal-eyebrow"><Wand2 size={14} />契约登记 / 自定义魔法少女</div>
+    {onGenerate && <div className="custom-draft-bar"><div><b>让叙事者先写一版</b><p>只生成文案与选项，260 点仍由本地分配。生成后可以逐步改写。</p></div><button id="custom-draft" type="button" className="btn" disabled={drafting} onClick={draftFromStory}><Sparkles size={14} />{drafting ? '正在起草' : '自动填表'}</button></div>}
     <div className="custom-steps" role="tablist" aria-label="创建步骤">{steps.map((label, index) => <button key={label} id={`custom-step-${index}`} type="button" role="tab" aria-selected={step === index} className={step === index ? 'active' : ''} onClick={() => setStep(index)}><i>{index + 1}</i>{label}</button>)}</div>
 
     {step === 0 && <div className="custom-step-body">

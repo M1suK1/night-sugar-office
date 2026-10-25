@@ -84,7 +84,7 @@ export interface GeneratedDaily {
   envoyFaction?: 'witch' | 'association' | 'government'; envoyTitle?: string; envoyDescription?: string;
 }
 
-const elements = ['星光', '糖霜', '月影', '花息', '潮汐', '余烬', '魔物'] as const;
+const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'] as const;
 const archetypes = ['战斗', '调查', '支援', '防御', '治疗', '控制'] as const;
 const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
 const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
@@ -93,8 +93,8 @@ const factions = ['witch', 'association', 'government'] as const;
 export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
-{"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光|糖霜|月影|花息|潮汐|余烬|魔物","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
-"girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光|糖霜|月影|花息|潮汐|余烬|魔物","girlArchetype":"战斗|调查|支援|防御|治疗|控制","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
+{"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
+"girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","girlArchetype":"战斗|调查|支援|防御|治疗|控制","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
 "missionTitle":"","missionCategory":"","missionDescription":"",
 "agendaTitle":"","agendaText":"","agendaRequest":"","agendaTopic":"经费|排班|设施|同伴|城市|私人心愿",
 "envoyFaction":"witch|association|government","envoyTitle":"","envoyDescription":""}`;
@@ -142,9 +142,67 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Pro
   }
 }
 
+export interface GeneratedGirlProfile {
+  name: string; codename: string; title: string; element: Element; archetype: Archetype;
+  quote: string; goal: string; appearance: string; personality: string; outfitDescription: string;
+  focus: StatKey; skillIds: string[]; traitIds: string[];
+}
+
+export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+  if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
+  const skillList = skills.filter(s => s.school !== 'monster').map(s => `${s.id}(${s.name})`).join('、');
+  const traitList = traits.map(t => `${t.id}(${t.name})`).join('、');
+  const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
+{"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traitIds":["","",""]}
+skillIds 只能从以下 ID 中选三个：${skillList}
+traitIds 只能从以下 ID 中选三个：${traitList}`;
+  try {
+    const response = await fetch(`${config.endpoint.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` },
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0.9,
+        messages: [
+          { role: 'system', content: `${prompts.world}\n\n为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n\n${schema}` },
+          { role: 'user', content: '请起草这位新契约者。' },
+        ],
+      }),
+    });
+    if (!response.ok) return { ok: false, message: `起草失败：服务返回 ${response.status}。` };
+    const body = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const text = body.choices?.[0]?.message?.content ?? '';
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return { ok: false, message: '模型没有返回可解析的 JSON。' };
+    const raw = JSON.parse(match[0]) as Record<string, unknown>;
+    const str = (key: string, fallback: string) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, 160) : fallback;
+    const knownSkills = skills.filter(s => s.school !== 'monster');
+    const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && knownSkills.some(s => s.id === id)) : [];
+    const skillIds = [...new Set(pickedSkills)].slice(0, 3);
+    for (const skill of knownSkills) { if (skillIds.length >= 3) break; if (!skillIds.includes(skill.id)) skillIds.push(skill.id); }
+    const pickedTraits = Array.isArray(raw.traitIds) ? raw.traitIds.filter((id): id is string => typeof id === 'string' && traits.some(t => t.id === id)) : [];
+    const traitIds = [...new Set(pickedTraits)].slice(0, 3);
+    for (const trait of traits) { if (traitIds.length >= 3) break; if (!traitIds.includes(trait.id)) traitIds.push(trait.id); }
+    const element = elements.includes(raw.element as typeof elements[number]) ? raw.element as Element : '星光系';
+    const archetype = archetypes.includes(raw.archetype as typeof archetypes[number]) ? raw.archetype as Archetype : '治愈';
+    const focus: StatKey = ['magic', 'insight', 'agility', 'empathy'].includes(raw.focus as string) ? raw.focus as StatKey : 'magic';
+    return { ok: true, data: {
+      name: str('name', '未命名'), codename: str('codename', '未命名契约'), title: str('title', '刚被城市记住的人'),
+      element: element === ('魔物' as Element) ? '星光系' : element, archetype: archetype === ('魔物' as Archetype) ? '治愈' : archetype,
+      quote: str('quote', '请多指教。'), goal: str('goal', '想找到一个可以回去的地方。'),
+      appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。'), personality: str('personality', '安静，习惯先观察再开口。'),
+      outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), focus, skillIds, traitIds,
+    } };
+  } catch {
+    return { ok: false, message: '起草失败：浏览器无法访问接口，或返回内容不是合法 JSON。' };
+  }
+}
+
 import { createSeedPack } from './content/seed-pack.ts';
 import { monsters as baseMonsters } from './content/monsters.ts';
-import type { GameState, Girl, Mission, MonsterTemplate, Opinion } from './types';
+import { skills } from './content/skills.ts';
+import { traits } from './content/traits.ts';
+import type { Archetype, Element, GameState, Girl, Mission, MonsterTemplate, Opinion, StatKey } from './types';
 
 export function materializeDaily(data: GeneratedDaily, state: GameState): { monster: MonsterTemplate; girl: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission } {
   const pack = createSeedPack();
