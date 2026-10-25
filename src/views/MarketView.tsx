@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowUpRight, Check, Coins, Flower2, Info, Phone, Plus, Search, ShoppingBag, Sparkles, Star } from 'lucide-react';
+import { ArrowUpRight, Check, Coins, Flower2, Info, Phone, Plus, RefreshCw, Search, ShoppingBag, Sparkles, Star } from 'lucide-react';
 import type { FactionId, GameState, Girl } from '../types';
-import { factionInfo, items } from '../content/items';
+import { factionInfo, getItem } from '../content/items';
 import { itemPrice, marketPool, marketUpgrade } from '../game';
 import { pensionArrears, pensionFor } from '../contracts';
 import { getSkill } from '../content/skills';
@@ -26,7 +26,7 @@ export type MarketViewProps = {
   onUpgradeMarket: () => void;
   onAdvancedRecruit: (level: number) => void;
   onCustom: () => void;
-  onBuyItem: (id: string) => void;
+  onBuyItem: (itemId: string, stockId?: string) => void;
 };
 
 export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew, onUpgradeMarket, onAdvancedRecruit, onCustom, onBuyItem }: MarketViewProps) {
@@ -68,7 +68,8 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
     </div>}
 
     {tab === 'supplies' && <div id="av-market-panel-supplies" role="tabpanel" aria-labelledby="av-market-tab-supplies" className="av-supplies">
-      {(Object.keys(factionInfo) as FactionId[]).map(faction => { const info = factionInfo[faction]; const stock = items.filter(item => item.faction === faction); return <section key={faction} className="av-supply-group" style={{ '--faction': info.color } as React.CSSProperties}><header><span className="av-supply-seal">{info.short}</span><div><small>{info.title}</small><h2>{info.name}</h2></div><span className="av-supply-standing">声望 <b>{state.factions[faction].standing}</b></span></header><div className="av-supply-grid">{stock.map(item => { const price = itemPrice(state, item); const canBuy = state.factions[faction].standing >= item.standingReq && state.gold >= price; return <article key={item.id} className="av-supply-card"><div className="av-supply-title"><ShoppingBag size={13} /><b>{item.name}</b><span>{item.slot === 'consumable' ? '消耗品' : item.slot === 'weapon' ? '法器' : '护符'}</span></div><p>{item.passive ?? item.description}</p><div className="av-supply-buy"><span>{price.toLocaleString('zh-CN')} <small>星砂</small></span><button id={`av-supply-buy-${item.id}`} type="button" className="av-btn av-btn-small" disabled={!canBuy} onClick={() => onBuyItem(item.id)}>{state.factions[faction].standing < item.standingReq ? `声望 ${item.standingReq}` : <><Plus size={12} />购入</>}</button></div></article>; })}</div></section>; })}
+      <div className="av-supply-refresh"><span><RefreshCw size={12} />每日 00:00 刷新 · 每个货位限购一次</span><small>售罄不补货，明日重新进货</small></div>
+      {(Object.keys(factionInfo) as FactionId[]).map(faction => { const info = factionInfo[faction]; const stock = state.marketStock.filter(entry => entry.faction === faction); return <section key={faction} className="av-supply-group" style={{ '--faction': info.color } as React.CSSProperties}><header><span className="av-supply-seal">{info.short}</span><div><small>{info.title}</small><h2>{info.name}</h2></div><span className="av-supply-standing">声望 <b>{state.factions[faction].standing}</b></span></header><div className="av-supply-grid">{stock.map(entry => { const item = getItem(entry.itemId); if (!item) return null; const price = itemPrice(state, item); const canBuy = !entry.sold && state.factions[faction].standing >= item.standingReq && state.gold >= price; return <article key={entry.id} className={`av-supply-card ${entry.sold ? 'sold' : ''}`}><div className="av-supply-title"><ShoppingBag size={13} /><b>{item.name}</b><span>{item.slot === 'consumable' ? '消耗品' : item.slot === 'weapon' ? '法器' : '护符'}</span></div><p>{item.passive ?? item.description}</p><div className="av-supply-buy"><span>{price.toLocaleString('zh-CN')} <small>星砂</small>{!entry.sold && <em className="av-supply-limit">限购 1</em>}</span><button id={`av-supply-buy-${entry.id}`} type="button" className="av-btn av-btn-small" disabled={!canBuy} onClick={() => onBuyItem(item.id, entry.id)}>{entry.sold ? <><Check size={12} />已售罄</> : state.factions[faction].standing < item.standingReq ? `声望 ${item.standingReq}` : <><Plus size={12} />购入</>}</button></div></article>; })}</div></section>; })}
       <p className="av-section-caption"><Info size={11} /> 物资进入仓库后，可在成员档案的“外观与装备”页装配；消耗品也可在那里使用。</p>
     </div>}
 

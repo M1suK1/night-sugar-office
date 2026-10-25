@@ -1,11 +1,11 @@
-import type { ActionResult, BattleState, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Log, Mission, Opinion, Sample, Scar, StatKey } from './types';
+import type { ActionResult, BattleState, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Log, MarketStockEntry, Mission, Opinion, Sample, Scar, StatKey } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { getSkill } from './content/skills.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
-import { factionInfo, getItem } from './content/items.ts';
+import { factionInfo, getItem, items } from './content/items.ts';
 import { advancedCost, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf, factionPrice, marketSize, marketUpgradeCost } from './economy.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
@@ -172,6 +172,21 @@ function refreshMarket(state: GameState): void {
     guard += 1;
   }
   state.marketDay = state.day;
+}
+
+export function makeFactionStock(faction: FactionId, day: number): MarketStockEntry[] {
+  const pool = items.filter(item => item.faction === faction);
+  if (!pool.length) return [];
+  const picked: typeof pool = [];
+  for (let index = 0; index < 3; index++) {
+    const roll = hashText(`${faction}:${day}:${index}`);
+    const duplicate = index > 0 && roll % 100 < 32;
+    picked.push(duplicate ? picked[index - 1] : pool[roll % pool.length]);
+  }
+  return picked.map((item, index) => ({ id: `stock-${faction}-${day}-${index}`, itemId: item.id, faction, sold: false }));
+}
+export function makeMarketStock(day: number): MarketStockEntry[] {
+  return (Object.keys(factionInfo) as FactionId[]).flatMap(faction => makeFactionStock(faction, day));
 }
 
 function addCorruption(state: GameState, girl: Girl, amount: number): void {
@@ -400,7 +415,7 @@ export function createInitialState(pack: ContentPack = createSeedPack()): GameSt
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
     opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [],
+    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [],
   };
 }
 export function createInitialFromPack(pack: ContentPack): GameState {
@@ -584,10 +599,13 @@ function processDay(state: GameState): void {
     if (!girl.dead && girl.fatigue >= 80) addCorruption(state, girl, 2);
   }
   for (const faction of Object.keys(state.factions) as FactionId[]) {
+    if (state.factions[faction].stockDay < state.day) {
+      state.factions[faction].stockDay = state.day;
+      state.marketStock = state.marketStock.filter(entry => entry.faction !== faction).concat(makeFactionStock(faction, state.day));
+    }
     if (state.factions[faction].envoyDay < state.day) {
       state.factions[faction].envoyDay = state.day;
       state.factions[faction].envoyTaskId = undefined;
-      state.factions[faction].stockDay = state.day;
     }
   }
   if (state.marketDay < state.day) refreshMarket(state);
@@ -945,7 +963,13 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}的表情已切换。` };
     }
     case 'buyItem': {
-      const next = clone(state); const item = getItem(action.itemId);
+      const next = clone(state);
+      const entry = action.stockId
+        ? next.marketStock.find(stock => stock.id === action.stockId)
+        : next.marketStock.find(stock => !stock.sold && stock.itemId === action.itemId);
+      if (!entry) return { state, ok: false, message: '今日货架已经售罄，明天会重新进货。' };
+      if (entry.sold) return { state, ok: false, message: '这个货位今天已经售出，明天会刷新。' };
+      const item = getItem(entry.itemId);
       if (!item) return { state, ok: false, message: '货架上没有这件物资。' };
       const standing = factionStanding(next, item.faction);
       if (standing < item.standingReq) return { state, ok: false, message: `${factionInfo[item.faction].name}声望需要 ${item.standingReq}，当前 ${standing}。` };
@@ -954,8 +978,9 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const price = itemPrice(next, item);
       if (next.gold < price) return { state, ok: false, message: `购买需要 ${price} 星砂。` };
       next.gold -= price; book(next, next.day, -price);
+      entry.sold = true;
       next.inventory[item.id] = (next.inventory[item.id] ?? 0) + 1;
-      next.logs.unshift({ id: `log-buy-${item.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `从${factionInfo[item.faction].name}购入「${item.name}」。`, delta: -price });
+      next.logs.unshift({ id: `log-buy-${entry.id}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `从${factionInfo[item.faction].name}购入「${item.name}」。`, delta: -price });
       return { state: next, ok: true, message: `已购入「${item.name}」，放入事务所仓库。` };
     }
     case 'equipItem': {
@@ -1181,6 +1206,17 @@ export function loadState(raw: string | null): GameState {
       f.stockDay ??= state.day; f.envoyDay ??= state.day;
     }
     state.inventory = state.inventory && typeof state.inventory === 'object' ? state.inventory : {};
+    const rawStock = Array.isArray(state.marketStock) ? state.marketStock : [];
+    state.marketStock = rawStock.filter((entry): entry is MarketStockEntry => {
+      if (!entry || typeof entry !== 'object') return false;
+      const candidate = entry as MarketStockEntry;
+      const item = getItem(candidate.itemId);
+      return typeof candidate.id === 'string' && Boolean(item) && item!.faction === candidate.faction && typeof candidate.sold === 'boolean';
+    }).slice(0, 24);
+    for (const faction of Object.keys(state.factions) as FactionId[]) {
+      if (!state.marketStock.some(entry => entry.faction === faction)) state.marketStock = state.marketStock.concat(makeFactionStock(faction, state.day));
+    }
+    state.marketStock = state.marketStock.filter((entry, index, list) => list.findIndex(other => other.id === entry.id) === index);
     state.marketLevel = Math.max(1, Math.min(4, Number(state.marketLevel) || 1));
     state.marketDay ??= state.day;
     state.boss ??= null; state.bossCycle ??= 0; state.nextBossDay ??= state.day + 2;

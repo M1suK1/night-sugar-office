@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Shirt, Syringe, Wand2 } from 'lucide-react';
-import type { Expression, GameState, Girl, StatKey } from '../types';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen } from 'lucide-react';
+import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, getSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -17,10 +17,17 @@ const dossierTabs = [
   { id: 'appearance', label: '外观装备' },
   { id: 'memory', label: '心愿与羁绊' },
 ];
-const expressions: { id: Expression; label: string }[] = [
-  { id: 'calm', label: '平静' }, { id: 'smile', label: '微笑' }, { id: 'surprise', label: '惊讶' },
-  { id: 'sad', label: '低落' }, { id: 'angry', label: '生气' }, { id: 'shy', label: '害羞' },
+const expressions: { id: Expression; label: string; note: string }[] = [
+  { id: 'calm', label: '平静', note: '呼吸放轻' }, { id: 'smile', label: '微笑', note: '眼角弯起' }, { id: 'surprise', label: '惊讶', note: '微微睁大' },
+  { id: 'sad', label: '低落', note: '视线垂下' }, { id: 'angry', label: '生气', note: '眉峰压低' }, { id: 'shy', label: '害羞', note: '别开脸' },
 ];
+const expressionIcons = { calm: Meh, smile: Smile, surprise: Sparkles, sad: Frown, angry: Angry, shy: Heart } as const;
+const slotLabels = { weapon: '法器', charm: '护符' } as const;
+
+function gearSummary(item: Equipment) {
+  const stats = Object.entries(item.stats ?? {}).map(([key, value]) => `${statLabels[key as StatKey]}+${value}`).join(' · ');
+  return item.passive ?? (stats || item.description);
+}
 
 export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onEquip, onUseItem, onUnequip }: {
   girl: Girl; state: GameState; onCare: (mode: 'healing' | 'resting') => void;
@@ -31,6 +38,9 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
+  const [equipmentDrawer, setEquipmentDrawer] = useState<'weapon' | 'charm' | null>(null);
+  const [dragOver, setDragOver] = useState<'weapon' | 'charm' | null>(null);
+  const [drawerMessage, setDrawerMessage] = useState('');
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
@@ -42,6 +52,26 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const corruptionTier = corruptionStage(girl.corruption);
   const drug = drugDaysLeft(girl, state.day);
   const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
+  const gear = items.filter(item => (item.slot === 'weapon' || item.slot === 'charm') && (state.inventory[item.id] ?? 0) > 0);
+  const corruptionLabel = girl.witch ? '魔女化' : corruptionTier === 2 ? '第三阶段' : corruptionTier === 1 ? '第二阶段' : '第一阶段';
+
+  function equipFromInventory(itemId: string, slot: 'weapon' | 'charm') {
+    const item = getItem(itemId);
+    if (!item || (item.slot !== 'weapon' && item.slot !== 'charm')) return;
+    if (item.slot !== slot) {
+      setDrawerMessage(`「${item.name}」只能放入${slotLabels[item.slot]}槽位。`);
+      return;
+    }
+    setDrawerMessage('');
+    onEquip(itemId, slot);
+  }
+
+  function dropOnSlot(event: React.DragEvent, slot: 'weapon' | 'charm') {
+    event.preventDefault();
+    setDragOver(null);
+    const itemId = event.dataTransfer.getData('text/equipment-id');
+    if (itemId) equipFromInventory(itemId, slot);
+  }
   return (
     <div className="character-dossier" style={{ '--girl-color': girl.color } as React.CSSProperties}>
       <div className="dossier-art">
@@ -75,6 +105,12 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {effectiveMaxHp(girl)}</small></b></div><i><b style={{ width: `${girl.hp / effectiveMaxHp(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>共情值</span><b>{girl.spirit}<small> / {effectiveMaxSpirit(girl)}</small></b></div><i><b style={{ width: `${girl.spirit / effectiveMaxSpirit(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter fatigue"><div><BatteryMedium size={15} /><span>疲劳值</span><b>{girl.fatigue}<small> / 100</small></b></div><i><b style={{ width: `${girl.fatigue}%` }} /></i></div>
+            <div className={`corruption-panel corruption-inline stage-${corruptionTier}`}>
+              <div className="corruption-head"><span><Syringe size={14} />侵蚀度<em>{corruptionLabel}</em></span><b>{girl.corruption}<small> / 100</small></b></div>
+              <i><b style={{ width: `${girl.corruption}%` }} /></i>
+              <div className="corruption-facts"><span>魔女阈值<b>70</b></span><span>共情修正<b>−{corruptionTier === 2 ? 25 : corruptionTier === 1 ? 12 : 5}%</b></span><span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span></div>
+              {girl.witch && <p className="corruption-note">{drug > 0 ? '抑制剂仍在起效。断药前记得补充。' : '断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。'}</p>}
+            </div>
             <div className="dossier-meter exp-meter"><div><Star size={14} /><span>成长经验</span><b>{progressLabel(girl)}<small> · Lv.{girl.level}</small></b></div><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i></div>
             <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
             <div className="trait-tags">{girl.traits.length ? girl.traits.map(trait => <span key={trait.id} className={`trait-tag ${trait.polarity}`} title={trait.description}>{trait.name}</span>) : <span className="trait-empty">还没有显露特性</span>}</div>
@@ -167,25 +203,55 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             </div>
           </>}
           {tab === 'appearance' && <>
-            <div className={`corruption-panel stage-${corruptionTier}`}>
-              <div className="corruption-head"><span><Syringe size={15} />侵蚀度</span><b>{girl.corruption}<small> / 100</small></b></div>
-              <i><b style={{ width: `${girl.corruption}%` }} /></i>
-              <p>{girl.witch ? '已越过魔女阈值。共情被月蚀压低，其余能力被强行抬高；必须依靠抑制剂维持自我。' : corruptionTier === 2 ? '第三阶段：她的共情正在被磨损，说话时偶尔会停顿，像在听另一个人的声音。' : corruptionTier === 1 ? '第二阶段：情绪开始变薄，能力却更锋利。宿舍休息与净化课程可以降低侵蚀。' : '第一阶段：仍在可控范围。战斗、失败与高疲劳会缓慢累积侵蚀。'}</p>
-              <div className="corruption-facts"><span>魔女阈值<b>70</b></span><span>抑制剂剩余<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span><span>共情修正<b>−{corruptionTier === 2 ? 25 : corruptionTier === 1 ? 12 : 5}%</b></span></div>
-              {girl.witch && <p className="small-note">断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。使用月蚀抑制剂可立即结束断药。</p>}
-            </div>
-            <div className="appearance-columns">
-              <section><div className="modal-section-heading"><h3><Shirt size={13} />衣柜与表情</h3><small>换装同步立绘与头像</small></div>
-                <div className="wardrobe-list">{girl.wardrobe.map(outfit => <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={girl.outfitId === outfit.id ? 'picked' : ''} onClick={() => onChangeOutfit(outfit.id)}><i style={{ background: outfit.palette[0] }} /><span><b>{outfit.name}</b><small>{outfit.description}</small></span>{girl.outfitId === outfit.id && <BadgeCheck size={13} />}</button>)}</div>
-                <div className="expression-list" role="group" aria-label="表情">{expressions.map(item => <button key={item.id} id={`dossier-expression-${item.id}`} type="button" aria-pressed={girl.expression === item.id} className={girl.expression === item.id ? 'picked' : ''} onClick={() => onExpression(item.id)}>{item.label}</button>)}</div>
+            <div className="appearance-page">
+              <section className="appearance-section" aria-labelledby="wardrobe-title">
+                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>最多三套 · 换装同步立绘与头像</small></div><em>{Math.min(3, girl.wardrobe.length)} / 3</em></div>
+                <div className="wardrobe-grid">
+                  {girl.wardrobe.slice(0, 3).map(outfit => (
+                    <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id ? 'picked' : ''}`} aria-pressed={girl.outfitId === outfit.id} onClick={() => onChangeOutfit(outfit.id)}>
+                      <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id }} variant="avatar" /></span>
+                      <span className="wardrobe-copy"><b>{outfit.name}</b><small title={outfit.description}>{outfit.description}</small></span>
+                      {girl.outfitId === outfit.id && <span className="wardrobe-check"><BadgeCheck size={12} /></span>}
+                    </button>
+                  ))}
+                </div>
               </section>
-              <section><div className="modal-section-heading"><h3><Wand2 size={13} />装备</h3><small>法器与护符各一</small></div>
-                <div className="equipment-slots">{(['weapon', 'charm'] as const).map(slot => { const item = getItem(girl.equipment[slot]); return <div key={slot} className="equipment-slot"><span>{slot === 'weapon' ? '法器' : '护符'}</span><b>{item?.name ?? '空置'}</b><small>{item?.passive ?? '从市场采购后在这里穿戴'}</small>{item && <button type="button" id={`dossier-unequip-${slot}`} className="av-btn av-btn-small" onClick={() => onUnequip(slot)}>卸下</button>}<select aria-label={`更换${slot === 'weapon' ? '法器' : '护符'}`} className="av-select" value="" onChange={e => { if (e.target.value) onEquip(e.target.value, slot); }}><option value="">更换…</option>{items.filter(i => i.slot === slot && (state.inventory[i.id] ?? 0) > 0).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>; })}</div>
-                <div className="consumable-list">{consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="av-btn av-btn-small" onClick={() => onUseItem(item.id)}><Syringe size={12} />{item.name} ×{state.inventory[item.id]}</button>) : <p className="small-note">仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}</div>
+
+              <section className="appearance-section" aria-labelledby="expression-title">
+                <div className="appearance-head"><span className="appearance-index">02</span><div><h3 id="expression-title"><Sparkles size={14} />表情</h3><small>只改变呈现，不影响数值</small></div><em>{expressions.find(item => item.id === girl.expression)?.label ?? '平静'}</em></div>
+                <div className="expression-grid" role="group" aria-label="选择表情">
+                  {expressions.map(item => {
+                    const Icon = expressionIcons[item.id];
+                    return <button key={item.id} id={`dossier-expression-${item.id}`} type="button" aria-pressed={girl.expression === item.id} className={`expression-tile ${girl.expression === item.id ? 'picked' : ''}`} onClick={() => onExpression(item.id)}><Icon size={15} /><b>{item.label}</b><small>{item.note}</small></button>;
+                  })}
+                </div>
               </section>
+
+              <section className="appearance-section" aria-labelledby="equipment-title">
+                <div className="appearance-head"><span className="appearance-index">03</span><div><h3 id="equipment-title"><Wand2 size={14} />装备</h3><small>法器与护符各一 · 从仓库拖入</small></div><em>{gear.length} 件在库</em></div>
+                <div className="equipment-slots">
+                  {(['weapon', 'charm'] as const).map((slot, index) => {
+                    const item = getItem(girl.equipment[slot]);
+                    return (
+                      <button key={slot} id={`dossier-equipment-${slot}`} type="button" className={`equipment-slot ${equipmentDrawer === slot ? 'active' : ''}`} onClick={() => { setEquipmentDrawer(slot); setDrawerMessage(''); }} aria-label={`打开${slotLabels[slot]}仓库，当前${item?.name ?? '空置'}`}>
+                        <span className="equipment-slot-top"><em>{slotLabels[slot]}</em><small>0{index + 1}</small></span>
+                        {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small></> : <><b className="empty">空置</b><small>点击打开仓库，拖入装备</small></>}
+                        <span className="equipment-open">打开仓库 <ChevronRight size={11} /></span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="consumable-row">
+                  <span className="consumable-label"><Syringe size={12} />随身物资</span>
+                  {consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="consumable-chip" onClick={() => onUseItem(item.id)}>{item.name}<em>×{state.inventory[item.id]}</em></button>) : <p>仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}
+                </div>
+              </section>
+
+              <div className="appearance-stats">
+                <div className="appearance-head"><span className="appearance-index">04</span><div><h3><ShieldCheck size={14} />有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div></div>
+                <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${Math.min(100, eff[k])}%` }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
+              </div>
             </div>
-            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${Math.min(100, eff[k])}%` }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
-            <p className="small-note">外观与表情只改变呈现；装备、侵蚀与服装被动会进入 `effectiveStats`，影响战斗、调查与匹配率。</p>
           </>}
           {tab === 'memory' && <>
             <div className="bond-emblem"><Heart size={28} /><div><small>与你的羁绊</small><strong>{girl.bond}<span>/100</span></strong></div></div>
@@ -215,6 +281,42 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           {girl.status !== 'idle' && <p className="small-note">正在{statusLabels[girl.status]}，剩余 {girl.remaining} 分钟。推进时间完成安排。</p>}
         </>}
       </div>
+      {equipmentDrawer && (
+        <aside className="equipment-drawer" aria-label="装备仓库" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setEquipmentDrawer(null); } }}>
+          <div className="drawer-head">
+            <div><small>装备仓库 / ARMORY</small><h3>{slotLabels[equipmentDrawer]}</h3></div>
+            <button id="equipment-drawer-close" type="button" className="drawer-close" aria-label="关闭装备仓库" onClick={() => setEquipmentDrawer(null)}><X size={16} /></button>
+          </div>
+          <p className="drawer-hint">把下方装备拖进对应槽位，或点击装备直接穿戴。装备会立即计入有效能力。</p>
+          <div className="drawer-slots">
+            {(['weapon', 'charm'] as const).map(slot => {
+              const item = getItem(girl.equipment[slot]);
+              return (
+                <div key={slot} id={`equipment-drop-${slot}`} className={`drawer-slot ${equipmentDrawer === slot ? 'focused' : ''} ${dragOver === slot ? 'over' : ''}`}
+                  onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(slot); }}
+                  onDragLeave={() => setDragOver(current => current === slot ? null : current)}
+                  onDrop={event => dropOnSlot(event, slot)}>
+                  <span className="drawer-slot-label">{slotLabels[slot]}<small>DROP HERE</small></span>
+                  {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small><button type="button" id={`dossier-unequip-${slot}`} className="drawer-unequip" onClick={() => { setDrawerMessage(''); onUnequip(slot); }}>卸下</button></> : <><b className="empty">拖入{slotLabels[slot]}</b><small>空置槽位</small></>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="drawer-inventory-head"><span><GripVertical size={12} />持有装备</span><b>{gear.length}</b></div>
+          <div className="drawer-inventory">
+            {gear.length ? gear.map(item => (
+              <button key={item.id} id={`dossier-gear-${item.id}`} type="button" draggable className={`gear-card ${item.slot === equipmentDrawer ? 'compatible' : ''}`}
+                onDragStart={event => { event.dataTransfer.setData('text/equipment-id', item.id); event.dataTransfer.effectAllowed = 'move'; }}
+                onClick={() => { if (item.slot === 'weapon' || item.slot === 'charm') equipFromInventory(item.id, item.slot); }}>
+                <span className={`gear-glyph ${item.slot}`}>{item.slot === 'weapon' ? <Wand2 size={15} /> : <ShieldCheck size={15} />}</span>
+                <span className="gear-copy"><b>{item.name}</b><small>{gearSummary(item)}</small></span>
+                <em>×{state.inventory[item.id]}</em>
+              </button>
+            )) : <div className="drawer-empty"><PackageOpen size={22} /><p>仓库里还没有装备。<br />去市场或势力货架采购。</p></div>}
+          </div>
+          {drawerMessage && <p className="drawer-message" role="status">{drawerMessage}</p>}
+        </aside>
+      )}
     </div>
   );
 }

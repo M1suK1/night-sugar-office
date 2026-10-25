@@ -282,6 +282,52 @@ try {
     await expect(page.locator('.av-soul-card')).toHaveCount(5);
     await page.screenshot({ path: 'artifacts/records-desktop.png', fullPage: true, animations: 'disabled' });
   });
+  await check('外观装备页：三套衣柜、六种表情、侵蚀归位与拖拽装备', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      raw.inventory = { 'moon-weapon': 2, 'star-charm': 1 };
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await expect(page.locator('.corruption-inline')).toBeVisible();
+    await expect(page.locator('.corruption-inline')).toContainText('侵蚀度');
+    await page.locator('#dossier-tab-appearance').click();
+    await expect(page.locator('.wardrobe-tile')).toHaveCount(3);
+    await expect(page.locator('.expression-tile')).toHaveCount(6);
+    await page.locator('#dossier-outfit-casual').click();
+    await page.locator('#dossier-expression-shy').click();
+    await expect.poll(async () => {
+      const girl = (await stored()).girls.find(g => g.id === 'yue');
+      return `${girl.outfitId}:${girl.expression}`;
+    }).toBe('casual:shy');
+    await page.locator('#dossier-equipment-weapon').click();
+    await expect(page.locator('.equipment-drawer')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/armory-desktop.png', animations: 'disabled' });
+    await page.locator('#dossier-gear-moon-weapon').dragTo(page.locator('#equipment-drop-weapon'));
+    await expect.poll(async () => (await stored()).girls.find(g => g.id === 'yue').equipment.weapon).toBe('moon-weapon');
+    await page.locator('#equipment-drawer-close').click();
+    await page.screenshot({ path: 'artifacts/appearance-desktop.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
+  await check('势力物资每日货位、单次限购与售罄状态', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-tab-supplies').click();
+    await expect(page.locator('.av-supply-card')).toHaveCount(9);
+    const firstBuy = page.locator('.av-supply-card button:not([disabled])').first();
+    const buyId = await firstBuy.getAttribute('id');
+    await firstBuy.click();
+    await expect(page.locator(`#${buyId}`)).toBeDisabled();
+    await expect(page.locator(`#${buyId}`)).toContainText('已售罄');
+    const sold = (await stored()).marketStock.filter(entry => entry.sold);
+    expect(sold.length).toBe(1);
+    await page.screenshot({ path: 'artifacts/market-supplies.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

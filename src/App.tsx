@@ -155,7 +155,7 @@ export default function App() {
           onUseItem={(girlId, itemId) => perform({ type: 'useItem', girlId, itemId })}
         />
       ) : page === 'market' ? (
-        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId: string) => perform({ type: 'buyItem', itemId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} />
+        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} />
       ) : (
         <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
       )}

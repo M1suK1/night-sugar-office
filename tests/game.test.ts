@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit, inWithdrawal } from '../src/game.ts';
+import { createInitialState, act, loadState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock } from '../src/game.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
@@ -328,6 +328,26 @@ test('势力装备可从仓库穿戴，并计入有效属性', () => {
   const after = effectiveStats(equipped.state.girls.find(g => g.id === 'yue')!, equipped.state);
   assert.ok(after.magic > before.magic);
   assert.equal(equipped.state.inventory['moon-weapon'], 0);
+});
+test('势力货架每日三个货位、每格限购一次并跨日刷新', () => {
+  const s = createInitialState();
+  s.gold = 50000; s.factions.witch.standing = 80;
+  const witch = s.marketStock.filter(entry => entry.faction === 'witch');
+  assert.equal(witch.length, 3);
+  const first = witch[0];
+  const bought = act(s, { type: 'buyItem', stockId: first.id });
+  assert.equal(bought.ok, true);
+  assert.equal(bought.state.marketStock.find(entry => entry.id === first.id)!.sold, true);
+  const again = act(bought.state, { type: 'buyItem', stockId: first.id });
+  assert.equal(again.ok, false);
+  assert.match(again.message, /售出|售罄/);
+  const duplicated = Array.from({ length: 120 }, (_, index) => makeFactionStock('witch', 14 + index)).find(list => new Set(list.map(entry => entry.itemId)).size < 3);
+  assert.ok(duplicated, '货架应允许同一天出现重复物品');
+  const refreshed = act(bought.state, { type: 'advance', minutes: 180 }).state;
+  assert.equal(refreshed.day, 15);
+  const nextWitch = refreshed.marketStock.filter(entry => entry.faction === 'witch');
+  assert.equal(nextWitch.length, 3);
+  assert.ok(nextWitch.every(entry => entry.id.includes('-15-') && !entry.sold));
 });
 test('断药期禁止派遣，抑制剂立即解除', () => {
   const s = createInitialState();

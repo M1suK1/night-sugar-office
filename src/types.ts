@@ -168,6 +168,9 @@ export interface ContentPack {
 export interface FactionState {
   standing: number; stockDay: number; envoyDay: number; envoyTaskId?: string;
 }
+export interface MarketStockEntry {
+  id: string; itemId: string; faction: FactionId; sold: boolean;
+}
 export interface GameState {
   version: 6; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
@@ -176,6 +179,7 @@ export interface GameState {
   assistantId?: string; opinions: Opinion[]; expeditions: Expedition[]; councilDay: number;
   pensionDebt: number;
   factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
+  marketStock: MarketStockEntry[];
   marketLevel: number; marketDay: number; advancedDay?: number;
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   customSkills: Skill[];
@@ -197,7 +201,7 @@ export type GameAction =
   | { type: 'clinic'; girlId: string; mode: 'heal' | 'rest' | 'wipe' | 'clone' }
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
-  | { type: 'buyItem'; itemId: string }
+  | { type: 'buyItem'; itemId?: string; stockId?: string }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }
