@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
-import { chance, clock, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
+import { chance, clock, inWithdrawal, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { getMonster } from '../content/monsters';
 import { MonsterGlyph } from './MonsterGlyph';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
   if (girl.retired) return { ok: false, reason: '已退役' };
   if (girl.status !== 'idle') return { ok: false, reason: statusLabels[girl.status] };
+  if (inWithdrawal(girl)) return { ok: false, reason: '断药期' };
   if (girl.hp < 25) return { ok: false, reason: '血量过低' };
   if (girl.fatigue >= 80) return { ok: false, reason: '疲劳过高' };
   return { ok: true, reason: '' };

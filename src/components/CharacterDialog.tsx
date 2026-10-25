@@ -1,24 +1,34 @@
 import { useState } from 'react';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList } from 'lucide-react';
-import type { GameState, Girl, StatKey } from '../types';
-import { relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Shirt, Syringe, Wand2 } from 'lucide-react';
+import type { Expression, GameState, Girl, StatKey } from '../types';
+import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
+import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, getSkill, resourceLabels, tierLabels } from '../content/skills';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
 import { expNeeded, progressLabel } from '../progression';
+import { GirlPortrait } from './GirlPortrait';
+import { getItem, items } from '../content/items';
 
 const dossierTabs = [
   { id: 'overview', label: '状态概览' },
   { id: 'ability', label: '魔法能力' },
   { id: 'relations', label: '关系网络' },
   { id: 'growth', label: '契约成长' },
+  { id: 'appearance', label: '外观装备' },
   { id: 'memory', label: '心愿与羁绊' },
 ];
+const expressions: { id: Expression; label: string }[] = [
+  { id: 'calm', label: '平静' }, { id: 'smile', label: '微笑' }, { id: 'surprise', label: '惊讶' },
+  { id: 'sad', label: '低落' }, { id: 'angry', label: '生气' }, { id: 'shy', label: '害羞' },
+];
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onEquip, onUseItem, onUnequip }: {
   girl: Girl; state: GameState; onCare: (mode: 'healing' | 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
+  onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
+  onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
   const candidate = !state.girls.some(g => g.id === girl.id);
@@ -28,12 +38,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const renewCost = renewalCost(girl) + pensionArrears(girl);
   const contract = contractLabel(girl, state.day);
   const isAssistant = state.assistantId === girl.id;
+  const eff = effectiveStats(girl);
+  const corruptionTier = corruptionStage(girl.corruption);
+  const drug = drugDaysLeft(girl, state.day);
+  const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
   return (
     <div className="character-dossier" style={{ '--girl-color': girl.color } as React.CSSProperties}>
       <div className="dossier-art">
         <span className="dossier-art-code">契约档案<br /><b>{girl.codename}</b></span>
         <div className="portrait-orbit" />
-        <img src={girl.portrait} alt={`${girl.name}的魔法少女立绘`} />
+        <GirlPortrait girl={girl} variant="full" />
         <span className="dossier-seal"><Star size={20} /><span>夜糖<br />契约</span></span>
         <span className="dossier-art-bottom">每一束星光，都有自己的名字。</span>
       </div>
@@ -58,8 +72,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         </div>
         <div id="dossier-tab-content" className="dossier-tab-body" role="tabpanel" aria-labelledby={`dossier-tab-${tab}`}>
           {tab === 'overview' && <>
-            <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {girl.maxHp}</small></b></div><i><b style={{ width: `${girl.hp / girl.maxHp * 100}%` }} /></i></div>
-            <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>共情值</span><b>{girl.spirit}<small> / {girl.maxSpirit}</small></b></div><i><b style={{ width: `${girl.spirit / girl.maxSpirit * 100}%` }} /></i></div>
+            <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {effectiveMaxHp(girl)}</small></b></div><i><b style={{ width: `${girl.hp / effectiveMaxHp(girl) * 100}%` }} /></i></div>
+            <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>共情值</span><b>{girl.spirit}<small> / {effectiveMaxSpirit(girl)}</small></b></div><i><b style={{ width: `${girl.spirit / effectiveMaxSpirit(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter fatigue"><div><BatteryMedium size={15} /><span>疲劳值</span><b>{girl.fatigue}<small> / 100</small></b></div><i><b style={{ width: `${girl.fatigue}%` }} /></i></div>
             <div className="dossier-meter exp-meter"><div><Star size={14} /><span>成长经验</span><b>{progressLabel(girl)}<small> · Lv.{girl.level}</small></b></div><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i></div>
             <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
@@ -114,8 +128,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 const peerStage = relationshipStage(score);
                 return (
                   <button id={`relation-${peer!.id}`} key={peer!.id} className="peer-row" onClick={() => document.dispatchEvent(new CustomEvent('nso:open-girl', { detail: peer!.id }))}>
-                    <img src={peer!.portrait} alt="" />
-                    <span><b>{peer!.name}</b><small>{peer!.codename}</small></span>
+                    <img src={peer!.portrait} alt="" />                    <span><b>{peer!.name}</b><small>{peer!.codename}</small></span>
                     <i><b style={{ width: `${score}%` }} /></i>
                     <em className={`stage-${peerStage}`}>{stageLabels[peerStage]}<small>{score}</small></em>
                   </button>
@@ -153,6 +166,27 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             </div>
             </div>
           </>}
+          {tab === 'appearance' && <>
+            <div className={`corruption-panel stage-${corruptionTier}`}>
+              <div className="corruption-head"><span><Syringe size={15} />侵蚀度</span><b>{girl.corruption}<small> / 100</small></b></div>
+              <i><b style={{ width: `${girl.corruption}%` }} /></i>
+              <p>{girl.witch ? '已越过魔女阈值。共情被月蚀压低，其余能力被强行抬高；必须依靠抑制剂维持自我。' : corruptionTier === 2 ? '第三阶段：她的共情正在被磨损，说话时偶尔会停顿，像在听另一个人的声音。' : corruptionTier === 1 ? '第二阶段：情绪开始变薄，能力却更锋利。宿舍休息与净化课程可以降低侵蚀。' : '第一阶段：仍在可控范围。战斗、失败与高疲劳会缓慢累积侵蚀。'}</p>
+              <div className="corruption-facts"><span>魔女阈值<b>70</b></span><span>抑制剂剩余<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span><span>共情修正<b>−{corruptionTier === 2 ? 25 : corruptionTier === 1 ? 12 : 5}%</b></span></div>
+              {girl.witch && <p className="small-note">断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。使用月蚀抑制剂可立即结束断药。</p>}
+            </div>
+            <div className="appearance-columns">
+              <section><div className="modal-section-heading"><h3><Shirt size={13} />衣柜与表情</h3><small>换装同步立绘与头像</small></div>
+                <div className="wardrobe-list">{girl.wardrobe.map(outfit => <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={girl.outfitId === outfit.id ? 'picked' : ''} onClick={() => onChangeOutfit(outfit.id)}><i style={{ background: outfit.palette[0] }} /><span><b>{outfit.name}</b><small>{outfit.description}</small></span>{girl.outfitId === outfit.id && <BadgeCheck size={13} />}</button>)}</div>
+                <div className="expression-list" role="group" aria-label="表情">{expressions.map(item => <button key={item.id} id={`dossier-expression-${item.id}`} type="button" aria-pressed={girl.expression === item.id} className={girl.expression === item.id ? 'picked' : ''} onClick={() => onExpression(item.id)}>{item.label}</button>)}</div>
+              </section>
+              <section><div className="modal-section-heading"><h3><Wand2 size={13} />装备</h3><small>法器与护符各一</small></div>
+                <div className="equipment-slots">{(['weapon', 'charm'] as const).map(slot => { const item = getItem(girl.equipment[slot]); return <div key={slot} className="equipment-slot"><span>{slot === 'weapon' ? '法器' : '护符'}</span><b>{item?.name ?? '空置'}</b><small>{item?.passive ?? '从市场采购后在这里穿戴'}</small>{item && <button type="button" id={`dossier-unequip-${slot}`} className="av-btn av-btn-small" onClick={() => onUnequip(slot)}>卸下</button>}<select aria-label={`更换${slot === 'weapon' ? '法器' : '护符'}`} className="av-select" value="" onChange={e => { if (e.target.value) onEquip(e.target.value, slot); }}><option value="">更换…</option>{items.filter(i => i.slot === slot && (state.inventory[i.id] ?? 0) > 0).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>; })}</div>
+                <div className="consumable-list">{consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="av-btn av-btn-small" onClick={() => onUseItem(item.id)}><Syringe size={12} />{item.name} ×{state.inventory[item.id]}</button>) : <p className="small-note">仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}</div>
+              </section>
+            </div>
+            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${Math.min(100, eff[k])}%` }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
+            <p className="small-note">外观与表情只改变呈现；装备、侵蚀与服装被动会进入 `effectiveStats`，影响战斗、调查与匹配率。</p>
+          </>}
           {tab === 'memory' && <>
             <div className="bond-emblem"><Heart size={28} /><div><small>与你的羁绊</small><strong>{girl.bond}<span>/100</span></strong></div></div>
             <p className="dossier-description">{candidate ? '一个故事还没有开始。在签署契约之后，你会慢慢认识她不为人知的另一面。' : girl.bond >= 70 ? '「如果城市的灯都熄了，我也知道该往哪里走。因为你会在这里等我。」' : girl.bond >= 40 ? '「我不太擅长讲自己的事。不过，如果你愿意听……我们可以慢慢来。」' : '「工作之外的事，我还没有想好要不要告诉你。」'}</p>
@@ -172,7 +206,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           <div className="dossier-primary-actions">
             <button id="girl-talk" className="btn" disabled={girl.status === 'mission'} onClick={onTalk}><MessageCircle size={16} />和她聊聊</button>
             <button id="girl-remote" className="btn" disabled={!girl.retired} onClick={onRemote}><Phone size={16} />远程联络</button>
-            <button id="girl-assign" className="btn primary" disabled={girl.status !== 'idle' || girl.hp < 25 || girl.fatigue >= 80} onClick={onAssign}><Swords size={16} />安排派遣<ArrowUpRight size={17} /></button>
+            <button id="girl-assign" className="btn primary" disabled={girl.status !== 'idle' || girl.hp < 25 || girl.fatigue >= 80 || Boolean(girl.witch && drugDaysLeft(girl, state.day) <= 0)} onClick={onAssign}><Swords size={16} />安排派遣<ArrowUpRight size={17} /></button>
           </div>
           </div>
           {girl.retired

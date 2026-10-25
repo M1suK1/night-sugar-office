@@ -1,11 +1,11 @@
 import { useId, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BedDouble, BookOpen, Building2, Cat, Check, ChevronRight, Coins, Compass, Crosshair, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Phone, Plus, Search, Shield, Sparkles, Star, Swords, Telescope, Users } from 'lucide-react';
-import type { GameState, Girl, Room } from '../types';
-import { pensionArrears, pensionFor } from '../contracts';
+import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BedDouble, BookOpen, Building2, Cat, Check, ChevronRight, Coins, Compass, Crosshair, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Phone, Plus, Sparkles, Star, Swords, Telescope, Users } from 'lucide-react';
+import type { FactionId, GameState, Girl, Room } from '../types';
+import { factionInfo } from '../content/items';
+import { inWithdrawal } from '../game';
 import './aux-views.css';
 
-type BaseViewProps = { state: GameState; onRoom: (id: string) => void; onBuild: () => void; onGirl: (id: string) => void; onTalk: (id: string) => void; onStartExpedition: (ids: string[]) => void; onRecallExpedition: (id: string) => void; onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void };
-type MarketViewProps = { state: GameState; onHire: (id: string) => void; onGirl: (id: string) => void; onRemote: (id: string) => void; onRehire: (id: string) => void };
+type BaseViewProps = { state: GameState; onRoom: (id: string) => void; onBuild: () => void; onGirl: (id: string) => void; onTalk: (id: string) => void; onStartExpedition: (ids: string[]) => void; onRecallExpedition: (id: string) => void; onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void; onAcceptTask: (faction: FactionId) => void };
 type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void };
 type Metric = 'income' | 'expense' | 'reputation';
 type LogKind = GameState['logs'][number]['kind'];
@@ -68,7 +68,7 @@ function RoomTile({ room, occupants, selected, onSelect, onGirl }: { room: Room;
   </div>;
 }
 
-export function BaseView({ state, onRoom, onBuild, onGirl, onTalk, onStartExpedition, onRecallExpedition, onDecide }: BaseViewProps) {
+export function BaseView({ state, onRoom, onBuild, onGirl, onTalk, onStartExpedition, onRecallExpedition, onDecide, onAcceptTask }: BaseViewProps) {
   const [selectedId, setSelectedId] = useState(state.rooms[0]?.id ?? '');
   const [expeditionSquad, setExpeditionSquad] = useState<string[]>([]);
   const room = state.rooms.find(item => item.id === selectedId) ?? state.rooms[0];
@@ -81,7 +81,7 @@ export function BaseView({ state, onRoom, onBuild, onGirl, onTalk, onStartExpedi
   const expedition = state.expeditions[0];
   const decision = state.opinions.find(opinion => opinion.status === 'pending');
   const assistant = state.girls.find(girl => girl.id === state.assistantId);
-  const eligible = state.girls.filter(girl => girl.status === 'idle' && !girl.retired && girl.id !== state.assistantId && girl.hp >= 30 && girl.fatigue < 80);
+  const eligible = state.girls.filter(girl => girl.status === 'idle' && !girl.retired && !inWithdrawal(girl) && girl.id !== state.assistantId && girl.hp >= 30 && girl.fatigue < 80);
   const expeditionMembers = expedition ? expedition.memberIds.map(id => state.girls.find(girl => girl.id === id)).filter((girl): girl is Girl => Boolean(girl)) : [];
   const decisionAuthor = decision ? state.girls.find(girl => girl.id === decision.authorId) : undefined;
   const toggleExpedition = (id: string) => setExpeditionSquad(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 2 ? current : [...current, id]);
@@ -128,36 +128,12 @@ export function BaseView({ state, onRoom, onBuild, onGirl, onTalk, onStartExpedi
         </div> : <div className="av-op-quiet"><Phone size={17} strokeWidth={1.2} /><p>{assistant ? `${assistant.name} 正在值班。她会在每日议事时带回一条来自城市或同伴的请求。` : '会客厅暂时安静。任命一位值班助理后，她会替你留意城市里的请求。'}</p></div>}
       </article>
     </div>
+    <section className="av-envoys" aria-labelledby="av-envoy-title"><div className="av-envoy-head"><div><p className="av-eyebrow"><Sparkles size={12} />会客厅 · 每日来使</p><h2 id="av-envoy-title">三方都想知道，事务所今晚站在哪一边</h2><p>每个势力每天派来一位代表。接受任务会改变声望，也会改变城市安定度。</p></div><span className="av-tag">每日各 1 次</span></div><div className="av-envoy-grid">{(Object.keys(factionInfo) as FactionId[]).map(id => { const info = factionInfo[id]; const done = state.factions[id].envoyDay >= state.day; return <article key={id} className="av-envoy-card" style={{ '--faction': info.color } as React.CSSProperties}><span className="av-envoy-seal">{info.short}</span><div><small>{info.title}</small><h3>{info.envoy}</h3><p>「{info.motto}」</p><div className="av-envoy-stats"><span>声望 <b>{state.factions[id].standing}</b></span><span>任务 <b>{done ? '已完成' : '待接取'}</b></span></div><button id={`av-envoy-accept-${id}`} type="button" className="av-btn av-btn-small" disabled={done} onClick={() => onAcceptTask(id)}>{done ? <><Check size={12} />今日已领取</> : <>接受委托<ArrowUpRight size={12} /></>}</button></div></article>; })}</div></section>
     <p className="av-section-caption"><Sparkles size={12} />{present.length} 名成员在基地 · {away} 名成员在外执行委托或远行。交谈将保留为她们各自的故事记忆。</p>
   </section>;
 }
 
-function CandidateCard({ girl, state, onHire, onGirl }: { girl: Girl; state: GameState; onHire: (id: string) => void; onGirl: (id: string) => void }) {
-  const hired = state.girls.some(member => member.id === girl.id);
-  const stats: [string, number][] = [['魔力', girl.stats.magic], ['洞察', girl.stats.insight], ['敏捷', girl.stats.agility], ['共情', girl.stats.empathy]];
-  return <article className="av-candidate" aria-labelledby={`av-candidate-name-${girl.id}`}>
-    <button id={`av-market-preview-${girl.id}`} type="button" className="av-candidate-preview" onClick={() => onGirl(girl.id)} aria-label={`查看${girl.name}的完整档案`}><img src={girl.portrait} alt={`${girl.name}的魔法少女立绘`} loading="lazy" /><span className="av-candidate-rank">{girl.element}</span><span className="av-candidate-inspect">查看档案<ArrowUpRight size={12} /></span></button>
-    <div className="av-candidate-body"><div className="av-candidate-title"><h2 id={`av-candidate-name-${girl.id}`}>{girl.name}</h2><span className="av-tag">等级 {girl.level}</span></div><p className="av-candidate-role">{girl.codename} · {girl.title}</p><p className="av-candidate-quote">{girl.description}</p><div className="av-candidate-skills"><span className="av-tag av-tag-pink"><Sparkles size={10} />{girl.skill}</span><span className="av-tag">{girl.stats.empathy >= girl.stats.magic ? '支援倾向' : '作战倾向'}</span></div><div className="av-candidate-stats">{stats.map(([label, value]) => <div className="av-candidate-stat" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="av-candidate-hire"><span className="av-candidate-price">{number(girl.cost)}<small>星砂</small></span><button id={`av-market-hire-${girl.id}`} type="button" className="av-btn av-btn-primary av-btn-small" onClick={() => onHire(girl.id)} disabled={hired}>{hired ? <><Check size={13} />已签订契约</> : <><Plus size={13} />邀请加入</>}</button></div></div>
-  </article>;
-}
-
-export function MarketView({ state, onHire, onGirl, onRemote, onRehire }: MarketViewProps) {
-  const [filter, setFilter] = useState<'all' | 'combat' | 'support'>('all');
-  const [query, setQuery] = useState('');
-  const retired = state.girls.filter(girl => girl.retired);
-  const candidates = state.candidates.filter(girl => {
-    const support = girl.stats.empathy >= girl.stats.magic;
-    const matchesRole = filter === 'all' || (filter === 'support' ? support : !support);
-    return matchesRole && `${girl.name}${girl.codename}${girl.title}${girl.element}${girl.description}`.includes(query.trim());
-  });
-  return <section className="av-view av-market-view" aria-labelledby="av-market-title"><header className="av-heading"><div><p className="av-eyebrow"><Star size={12} />星愿契约 · 人才市场</p><h1 id="av-market-title">寻找下一束微光</h1><p>每一份契约，都是两段命运的相遇。</p></div><div className="av-heading-meta"><Coins size={14} /><span>可用星砂</span><strong>{number(state.gold)}</strong></div></header>
-    <div className="av-market-note"><Shield size={21} strokeWidth={1.3} /><p><strong>不是雇佣武器，而是邀请伙伴。</strong><br />签约前可以查看完整档案；加入后，她的能力、情绪与经历都将影响事务所的故事。</p></div>
-    <div className="av-toolbar"><div className="av-filters" aria-label="候选成员类型">{([['all', '全部'], ['combat', '作战'], ['support', '支援']] as const).map(([value, label]) => <button id={`av-market-filter-${value}`} type="button" className="av-filter" aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>{label}</button>)}<span className="av-filter-count">{candidates.length} 位候选成员</span></div><label className="av-search" htmlFor="av-market-search"><Search size={14} /><input id="av-market-search" className="av-input" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="寻找姓名、称号或元素" aria-label="搜索候选魔法少女" /></label></div>
-    {candidates.length ? <div className="av-candidate-grid">{candidates.map(girl => <CandidateCard key={girl.id} girl={girl} state={state} onHire={onHire} onGirl={onGirl} />)}</div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>{state.candidates.length ? '没有找到符合条件的契约者。' : '此刻的星愿名册已经翻到最后一页。'}<br />{state.candidates.length ? '试着更换类型，或使用其他关键词。' : '已加入的伙伴，可以在基地中找到。'}</p>{state.candidates.length > 0 && <button id="av-market-clear-filters" className="av-btn av-btn-small" type="button" onClick={() => { setFilter('all'); setQuery(''); }}>清除筛选</button>}</div>}
-    {retired.length > 0 && <section className="av-retired-zone" aria-labelledby="av-retired-title"><div className="av-retired-head"><div><p className="av-eyebrow"><Flower2 size={12} />退休区 · 城南</p><h2 id="av-retired-title">她们把夜班，交给了后来的人</h2><p>退役成员仍住在事务所附近。退休金每 10 日从账户划拨一次，欠缴会累积；手机一直开着。</p></div><span className="av-retired-count">{retired.length} 位退役成员</span></div><div className="av-retired-grid">{retired.map(girl => <article key={girl.id} className="av-retired-card"><div className="av-retired-portrait"><img src={girl.portrait} alt="" loading="lazy" /><span>{girl.retiredReason === 'injury' ? '因伤退役' : '契约到期'}</span></div><div className="av-retired-body"><div className="av-retired-name"><h3>{girl.name}</h3><small>Lv.{girl.level}</small></div><p>{girl.codename} · 羁绊 {girl.bond} · {girl.scars.length} 道疤痕</p><div className="av-retired-stats"><span>退休金<b>{pensionFor(girl)}<small> / 10 日</small></b></span><span>欠缴<b className={pensionArrears(girl) ? 'warn' : ''}>{pensionArrears(girl)}</b></span></div><div className="av-retired-actions"><button id={`av-market-remote-${girl.id}`} type="button" className="av-btn av-btn-small" onClick={() => onRemote(girl.id)}><Phone size={13} />远程联络</button>{girl.retiredReason === 'contract' && <button id={`av-market-rehire-${girl.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 600 + girl.level * 120} onClick={() => onRehire(girl.id)}>返聘 · {600 + girl.level * 120}</button>}</div></div></article>)}</div></section>}
-    <footer className="av-market-footer"><span><Info size={12} /> 契约费用为一次性支出。完成邀请前会再次确认。</span><span>成员容量 {state.girls.filter(girl => !girl.retired).length} / {capacityOf(state)} · 在基地扩建宿舍可增加容量</span></footer>
-  </section>;
-}
+export { MarketView } from './MarketView';
 
 function RecordsChart({ state, range, metric }: { state: GameState; range: number; metric: Metric }) {
   const gradientId = `av-record-gradient-${useId().replace(/:/g, '')}`;

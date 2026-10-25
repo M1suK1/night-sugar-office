@@ -42,7 +42,7 @@ try {
     await expect(page.locator('.skill-card')).toHaveCount(3);
     await page.locator('#dossier-tab-relations').click();
     await expect(page.locator('.relation-legend span')).toHaveCount(7);
-    await expect(page.locator('.peer-row')).toHaveCount(3);
+    await expect(page.locator('.peer-row')).toHaveCount(4);
     await page.locator('#dossier-tab-memory').click(); await expect(page.locator('.bond-emblem')).toContainText(/与你的羁绊\d+\/100/);
     await page.locator('#dossier-tab-overview').click(); await layout('character dialog');
     await page.screenshot({ path: 'artifacts/character-dossier.png', fullPage: true, animations: 'disabled' });
@@ -103,14 +103,14 @@ try {
   });
   await check('市场筛选、档案与签约', async () => {
     await page.locator('#nav-market').click(); await layout('market');
-    await page.locator('#av-market-search').fill('栀子');
+    await page.locator('#av-market-search').fill('鹿铃');
     await expect(page.locator('.av-candidate')).toHaveCount(1);
-    await page.locator('#av-market-preview-zhi').click(); await expect(page.locator('dialog')).toContainText('栀子');
+    await page.locator('#av-market-preview-lu').click(); await expect(page.locator('dialog')).toContainText('鹿铃');
     await close();
     const before = await stored();
-    await page.locator('#av-market-hire-zhi').click(); await page.locator('#hire-confirm').click();
+    await page.locator('#av-market-hire-lu').click(); await page.locator('#hire-confirm').click();
     const after = await stored();
-    expect(after.girls).toHaveLength(5); expect(after.gold).toBe(before.gold - 2400);
+    expect(after.girls).toHaveLength(6); expect(after.gold).toBe(before.gold - 3200);
   });
   await check('经营折线图、战斗档案与日志筛选', async () => {
     await page.locator('#nav-records').click(); await layout('records');
@@ -140,7 +140,7 @@ try {
     await close();
     await page.locator('#open-notifications').click(); await expect(page.locator('.notification-list')).toBeVisible(); await close();
     const before = await stored(); await page.reload({ waitUntil: 'networkidle' });
-    expect((await stored()).gold).toBe(before.gold); expect((await stored()).girls).toHaveLength(5);
+    expect((await stored()).gold).toBe(before.gold); expect((await stored()).girls).toHaveLength(6);
   });
   await check('自动推进开关与操作指南', async () => {
     await page.locator('#toggle-auto-time').click(); await expect(page.locator('#toggle-auto-time')).toHaveAttribute('aria-pressed', 'true');
@@ -160,7 +160,7 @@ try {
     await page.locator('#open-settings').click(); await page.locator('#settings-reset-save').click();
     await page.locator('#reset-confirm').click();
     const s = await stored();
-    expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(4); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
+    expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(5); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
     await page.locator('#dismiss-toast').click();
   });
   await check('契约成长页：目标、经验、契约与诊所入口', async () => {
@@ -204,8 +204,9 @@ try {
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
-    await expect(page.locator('.av-retired-card')).toHaveCount(1);
-    await expect(page.locator('.av-retired-card')).toContainText('退休金');
+    await page.locator('#av-market-tab-retired').click();
+    await expect(page.locator('.av-retired-card')).toHaveCount(2);
+    await expect(page.locator('.av-retired-card:has(#av-market-remote-yue)')).toContainText('退休金');
     await page.locator('#av-market-remote-yue').click();
     await expect(page.locator('.remote-banner')).toContainText('远程联络 · 手机');
     const before = (await stored()).gold;
@@ -214,6 +215,48 @@ try {
     await expect.poll(async () => (await stored()).gold).toBe(before - 40);
     await page.screenshot({ path: 'artifacts/retired-remote.png', fullPage: true, animations: 'disabled' });
     await close();
+  });
+  await check('市场四标签、升级与自定义登记', async () => {
+    await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    await expect(page.locator('#av-market-tab-candidates')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.av-candidate')).toHaveCount(1);
+    await page.locator('#av-market-tab-contracts').click();
+    await expect(page.locator('.av-contract-row')).toHaveCount(4);
+    await page.locator('#av-market-tab-supplies').click();
+    await expect(page.locator('.av-supply-card').first()).toBeVisible();
+    await page.locator('#av-market-tab-retired').click();
+    await expect(page.locator('.av-retired-card')).toHaveCount(1);
+    await page.locator('#av-market-tab-candidates').click();
+    await page.locator('#av-market-upgrade').click();
+    await expect.poll(async () => (await stored()).marketLevel).toBe(2);
+    await page.locator('#av-market-custom').click();
+    await expect(page.locator('.custom-steps [role="tab"]')).toHaveCount(5);
+    await page.locator('#custom-name').fill('测试契约');
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-autofill').click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-create').click();
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '测试契约')).toBe(true);
+  });
+  await check('断药期禁止派遣与 Boss 危机横幅', async () => {
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      const yue = raw.girls.find(g => g.id === 'yue');
+      yue.witch = true; yue.corruption = 80; yue.withdrawalDays = 5; yue.drugUntilDay = 13; yue.status = 'idle';
+      raw.boss = { id: 'boss-test', appearedDay: raw.day, lastTick: 0, deadline: raw.day * 1440 + 1200, missionId: 'boss-test' };
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('.boss-banner')).toContainText('空月降临');
+    await expect(page.locator('.girl-roster-card:has(#roster-girl-yue)')).toContainText('断药');
+    await page.locator('#mission-station').click();
+    await expect(page.locator('#assign-yue')).toBeDisabled();
+    await page.screenshot({ path: 'artifacts/withdrawal-boss.png', fullPage: true, animations: 'disabled' });
   });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
