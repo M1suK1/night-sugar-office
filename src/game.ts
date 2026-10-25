@@ -822,6 +822,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (members.length !== action.memberIds.length) return { state, ok: false, message: '队伍成员无效。' };
       for (const girl of members) {
         if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}当前无法参加远行。` };
+        if (inWithdrawal(girl)) return { state, ok: false, message: `${girl.name}正在断药期，无法远行。请先使用月蚀抑制剂。` };
         if (girl.pensionMissed >= 15) return { state, ok: false, message: `${girl.name}的契约欠约过久，请先续签。` };
         girl.status = 'expedition'; girl.roomId = observatory.id;
       }

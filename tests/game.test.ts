@@ -337,6 +337,9 @@ test('断药期禁止派遣，抑制剂立即解除', () => {
   const blocked = act(s, { type: 'dispatch', girlIds: ['yue'], missionId: 'cat' });
   assert.equal(blocked.ok, false);
   assert.match(blocked.message, /断药/);
+  const blockedTrip = act(s, { type: 'startExpedition', memberIds: ['yue'] });
+  assert.equal(blockedTrip.ok, false);
+  assert.match(blockedTrip.message, /断药/);
   s.inventory['moon-drug'] = 1;
   const cured = act(s, { type: 'useItem', girlId: 'yue', itemId: 'moon-drug' });
   assert.equal(cured.ok, true);
