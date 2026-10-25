@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck } from 'lucide-react';
 import type { FactionId, GameAction, GameState } from './types';
 import { act, loadState, SAVE_KEY } from './game';
@@ -19,7 +19,7 @@ import { MarketView } from './views/MarketView';
 import { CustomGirlDialog } from './components/CustomGirlDialog';
 import { BattleReport } from './components/BattleReport';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
-import { generateDaily, loadLlmConfig, materializeDaily, type LlmPrompts } from './llm';
+import { generateDaily, loadLlmConfig, loadLlmPrompts, materializeDaily, type LlmPrompts } from './llm';
 import './styles.css';
 import './combat.css';
 
@@ -32,6 +32,7 @@ type Modal =
   | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' };
 
 function readSave() { try { return loadState(localStorage.getItem(SAVE_KEY)); } catch { return loadState(null); } }
+function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
 function readReduced() { try { return localStorage.getItem('night-sugar:motion') === 'reduced' || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } }
 const factionOrder: FactionId[] = ['witch', 'association', 'government'];
 
@@ -43,10 +44,22 @@ export default function App() {
   const [auto, setAuto] = useState(false);
   const [saved, setSaved] = useState(true);
   const [reduced, setReduced] = useState(readReduced);
+  const [autoGenerate, setAutoGenerate] = useState(readAutoGenerate);
+  const lastGeneratedDay = useRef(state.day);
+  const generatingRef = useRef(false);
 
   useEffect(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); setSaved(true); } catch { setSaved(false); } }, [state]);
   useEffect(() => { document.documentElement.classList.toggle('reduced-motion', reduced); try { localStorage.setItem('night-sugar:motion', reduced ? 'reduced' : 'full'); } catch { /* Preferences are optional when storage is unavailable. */ } }, [reduced]);
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
+  useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
+  useEffect(() => {
+    if (!autoGenerate) { lastGeneratedDay.current = state.day; return; }
+    if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
+    lastGeneratedDay.current = state.day;
+    if (generatingRef.current || !loadLlmConfig().apiKey) return;
+    generatingRef.current = true;
+    void generateContent(loadLlmPrompts()).then(result => { if (!result.ok) notify(`夜间自动补充停笔：${result.message}`, false); }).finally(() => { generatingRef.current = false; });
+  }, [state.day, autoGenerate]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
     const openGirl = (event: Event) => { const id = (event as CustomEvent<string>).detail; if (id) setModal({ type: 'girl', id }); };
@@ -184,7 +197,7 @@ export default function App() {
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'custom' && <CustomGirlDialog onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} />}
+      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
   </div>;
