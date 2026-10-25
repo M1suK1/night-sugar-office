@@ -233,6 +233,8 @@ try {
     await page.locator('#av-market-upgrade').click();
     await expect.poll(async () => (await stored()).marketLevel).toBe(2);
     await page.locator('#av-market-custom').click();
+    await expect(page.locator('#custom-entry-import')).toBeVisible();
+    await page.locator('#custom-entry-blank').click();
     await expect(page.locator('.custom-steps [role="tab"]')).toHaveCount(5);
     await page.locator('#custom-name').fill('测试契约');
     await page.locator('#custom-next').click();
@@ -345,6 +347,47 @@ try {
     await page.locator('#mission-view-battle').click();
     await expect(page.locator('.battle-theater')).toBeVisible();
     await page.locator('#battle-close').click();
+  });
+  await check('自定义登记：只导入立绘、逐字段补全与未确认不落库', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    const png = await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
+      const ctx = canvas.getContext('2d'); if (!ctx) return '';
+      const gradient = ctx.createLinearGradient(0, 0, 0, 500); gradient.addColorStop(0, '#2b1c31'); gradient.addColorStop(1, '#120d18');
+      ctx.fillStyle = gradient; ctx.fillRect(0, 0, 400, 500); ctx.fillStyle = '#f3aec9'; ctx.beginPath(); ctx.arc(200, 210, 90, 0, Math.PI * 2); ctx.fill();
+      return canvas.toDataURL('image/png').split(',')[1];
+    });
+    fs.writeFileSync('artifacts/fixture-portrait.png', Buffer.from(png, 'base64'));
+    let calls = 0;
+    await page.route('**/chat/completions', route => {
+      calls += 1;
+      const content = { name: calls === 1 ? '使魔草稿' : '重写后的名字', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈', quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy', skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traitIds: ['cat-sense', 'protective', 'star-allergy'] };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }) });
+    });
+    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    const before = (await stored()).candidates.length;
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await expect(page.locator('#custom-entry-import')).toBeVisible();
+    await page.setInputFiles('#custom-portrait-file', 'artifacts/fixture-portrait.png');
+    await expect(page.locator('#custom-draft')).toBeVisible();
+    await page.locator('#custom-draft').click();
+    await expect(page.locator('#custom-rewrite-name')).toBeVisible();
+    await expect(page.locator('#custom-name')).toHaveValue('使魔草稿');
+    await expect(page.locator('.field-origin')).toHaveCount(7);
+    await page.screenshot({ path: 'artifacts/custom-autofill.png', animations: 'disabled' });
+    await page.locator('#custom-step-1').click();
+    expect((await page.locator('.custom-stat-row b').allInnerTexts()).join(',')).toBe('45,45,45,45');
+    await page.locator('#custom-step-0').click();
+    await page.locator('#custom-rewrite-name').click();
+    await expect(page.locator('#custom-name')).toHaveValue('重写后的名字');
+    await expect(page.locator('#custom-regenerate-all')).toBeVisible();
+    expect((await stored()).candidates.length).toBe(before);
+    await close();
+    await page.unroute('**/chat/completions');
+    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-prompts'); localStorage.removeItem('night-sugar:llm-auto'); });
+    await page.reload({ waitUntil: 'networkidle' });
   });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
