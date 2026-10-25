@@ -380,3 +380,4 @@ body {
 .llm-reset:hover{color:#ffd9e8}
 .llm-field textarea{width:100%;resize:vertical;padding:8px 10px;border:1px solid #ffffff1a;background:#0d0a10;color:#e9dcea;font:400 10px/1.7 var(--font-body);border-radius:4px;outline:none}
 .llm-field textarea:focus{border-color:#f3aec966;box-shadow:0 0 0 2px #f3aec91f}
+.llm-field-hint{color:#7c6b86;font-size:8px;line-height:1.6;letter-spacing:.02em}

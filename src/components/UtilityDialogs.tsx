@@ -42,7 +42,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolL
     </>}
     {tab === 'llm' && <div className="llm-settings">
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接任意 OpenAI 兼容接口。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
-      <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/></label>
+      <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/><small className="llm-field-hint">填到 /v1 即可；也可直接粘贴完整的 /chat/completions 地址。</small></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
       <div className="llm-prompts">

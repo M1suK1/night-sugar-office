@@ -4,7 +4,7 @@ import { createInitialState, act, loadState, capacity, chance, squadChance, squa
 import { effectiveStats } from '../src/economy.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { generateGirlProfile, materializeDaily } from '../src/llm.ts';
+import { generateDaily, generateGirlProfile, materializeDaily } from '../src/llm.ts';
 import type { Opinion, Scar } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
@@ -465,4 +465,22 @@ test('自定义登记自动填表会校验叙事者输出并补齐技能与特�
       assert.equal(new Set(result.data.traitIds).size, 3);
     }
   } finally { globalThis.fetch = original; }
+});
+
+test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试', async () => {
+  const calls: Record<string, unknown>[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    if (calls.length === 1) return new Response(JSON.stringify({ error: { message: 'Unsupported parameter: temperature' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"monsterName":"纸月"}' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateDaily({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'custom-model' }, { world: 'w', daily: 'd' });
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 2);
+    assert.equal('temperature' in calls[1], false);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

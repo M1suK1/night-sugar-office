@@ -38,14 +38,70 @@ export function saveLlmConfig(config: LlmConfig) {
 export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先填写 API 密钥。' };
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
+  const model = config.model.trim();
+  if (!model) return { ok: false, message: '请先填写模型名称。' };
   try {
-    const response = await fetch(`${config.endpoint.replace(/\/+$/, '')}/models`, {
+    const response = await fetch(`${apiBase(config.endpoint)}/models`, {
       headers: { Authorization: `Bearer ${config.apiKey.trim()}` },
     });
-    if (!response.ok) return { ok: false, message: `连接失败：服务返回 ${response.status}。` };
-    return { ok: true, message: '连接成功，模型服务可以访问。' };
+    if (!response.ok) {
+      const detail = await errorDetail(response);
+      return { ok: false, message: `连接失败：服务返回 ${response.status}${detail ? `（${detail}）` : ''}。` };
+    }
+    const body = await response.json().catch(() => null) as { data?: { id?: string }[] } | null;
+    const ids = body?.data?.map(item => item.id).filter(Boolean) ?? [];
+    if (ids.length && !ids.includes(model)) {
+      return { ok: false, message: `服务可以访问，但模型列表里没有「${model}」。请从设置中改成可用模型，例如 ${ids.slice(0, 3).join('、')}。` };
+    }
+    return { ok: true, message: ids.length ? `连接成功，模型「${model}」可用。` : '连接成功，模型服务可以访问。' };
   } catch {
     return { ok: false, message: '连接失败：浏览器无法访问该地址，或服务未允许跨域请求。' };
+  }
+}
+
+function apiBase(endpoint: string): string {
+  return endpoint.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+}
+
+async function errorDetail(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '');
+  if (!text) return '';
+  try {
+    const body = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
+    const message = typeof body.error === 'string' ? body.error : body.error?.message ?? body.message;
+    if (message) return String(message).slice(0, 220);
+  } catch { /* fall through to raw text */ }
+  return text.replace(/\s+/g, ' ').slice(0, 220);
+}
+
+async function chat(config: LlmConfig, messages: { role: 'system' | 'user'; content: string }[]): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
+  if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
+  const model = config.model.trim();
+  if (!model) return { ok: false, message: '请先在设置中填写模型名称。' };
+  try {
+    const url = `${apiBase(config.endpoint)}/chat/completions`;
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` };
+    const payload: Record<string, unknown> = { model, messages };
+    // Reasoning models such as o1/o3/gpt-5 reject temperature with HTTP 400.
+    if (!/^(o1|o3|o4|gpt-5)/i.test(model)) payload.temperature = 0.9;
+    let response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    if (!response.ok) {
+      let detail = await errorDetail(response);
+      // Some OpenAI-compatible gateways still reject temperature on models we cannot detect by name.
+      if (response.status === 400 && /temperature/i.test(detail) && 'temperature' in payload) {
+        const { temperature: _temperature, ...rest } = payload;
+        response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(rest) });
+        if (!response.ok) detail = await errorDetail(response);
+      }
+      if (!response.ok) return { ok: false, message: `服务返回 ${response.status}${detail ? `：${detail}` : ''}` };
+    }
+    const body = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const text = body.choices?.[0]?.message?.content ?? '';
+    if (!text.trim()) return { ok: false, message: '模型没有返回内容。' };
+    return { ok: true, text };
+  } catch {
+    return { ok: false, message: '浏览器无法访问接口，或服务未允许跨域请求。' };
   }
 }
 
@@ -85,7 +141,7 @@ export interface GeneratedDaily {
 }
 
 const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'] as const;
-const archetypes = ['战斗', '调查', '支援', '防御', '治疗', '控制'] as const;
+const archetypes = ['输出', '守护', '治愈', '控制', '侦查'] as const;
 const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
 const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
 const factions = ['witch', 'association', 'government'] as const;
@@ -94,34 +150,25 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Pro
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
-"girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","girlArchetype":"战斗|调查|支援|防御|治疗|控制","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
+"girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","girlArchetype":"输出|守护|治愈|控制|侦查","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
 "missionTitle":"","missionCategory":"","missionDescription":"",
 "agendaTitle":"","agendaText":"","agendaRequest":"","agendaTopic":"经费|排班|设施|同伴|城市|私人心愿",
 "envoyFaction":"witch|association|government","envoyTitle":"","envoyDescription":""}`;
+  const result = await chat(config, [
+    { role: 'system', content: `${prompts.world}\n\n${prompts.daily}\n\n${schema}` },
+    { role: 'user', content: '请提交今晚的提案。' },
+  ]);
+  if (!result.ok) return { ok: false, message: `生成失败：${result.message}` };
   try {
-    const response = await fetch(`${config.endpoint.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.85,
-        messages: [
-          { role: 'system', content: `${prompts.world}\n\n${prompts.daily}\n\n${schema}` },
-          { role: 'user', content: '请提交今晚的提案。' },
-        ],
-      }),
-    });
-    if (!response.ok) return { ok: false, message: `生成失败：服务返回 ${response.status}。` };
-    const body = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const text = body.choices?.[0]?.message?.content ?? '';
+    const text = result.text;
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return { ok: false, message: '模型没有返回可解析的 JSON。' };
     const raw = JSON.parse(match[0]) as Record<string, unknown>;
     const str = (key: string, fallback: string) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, 160) : fallback;
     const rank = ranks.includes(raw.monsterRank as typeof ranks[number]) ? raw.monsterRank as typeof ranks[number] : '游荡';
-    const element = elements.includes(raw.monsterElement as typeof elements[number]) ? raw.monsterElement as typeof elements[number] : '月影';
-    const girlElement = elements.includes(raw.girlElement as typeof elements[number]) ? raw.girlElement as typeof elements[number] : '星光';
-    const archetype = archetypes.includes(raw.girlArchetype as typeof archetypes[number]) ? raw.girlArchetype as typeof archetypes[number] : '支援';
+    const element = elements.includes(raw.monsterElement as typeof elements[number]) ? raw.monsterElement as typeof elements[number] : '月影系';
+    const girlElement = elements.includes(raw.girlElement as typeof elements[number]) ? raw.girlElement as typeof elements[number] : '星光系';
+    const archetype = archetypes.includes(raw.girlArchetype as typeof archetypes[number]) ? raw.girlArchetype as typeof archetypes[number] : '治愈';
     const data: GeneratedDaily = {
       monsterName: str('monsterName', '无名之影'), monsterEpithet: str('monsterEpithet', '从夜里长出来的东西'), monsterRank: rank,
       monsterElement: element, monsterTrait: str('monsterTrait', '它似乎害怕被叫出名字。'), monsterDescription: str('monsterDescription', '一团没有影子的轮廓。'),
@@ -156,22 +203,13 @@ export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traitIds":["","",""]}
 skillIds 只能从以下 ID 中选三个：${skillList}
 traitIds 只能从以下 ID 中选三个：${traitList}`;
+  const result = await chat(config, [
+    { role: 'system', content: `${prompts.world}\n\n为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n\n${schema}` },
+    { role: 'user', content: '请起草这位新契约者。' },
+  ]);
+  if (!result.ok) return { ok: false, message: `起草失败：${result.message}` };
   try {
-    const response = await fetch(`${config.endpoint.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.9,
-        messages: [
-          { role: 'system', content: `${prompts.world}\n\n为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n\n${schema}` },
-          { role: 'user', content: '请起草这位新契约者。' },
-        ],
-      }),
-    });
-    if (!response.ok) return { ok: false, message: `起草失败：服务返回 ${response.status}。` };
-    const body = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const text = body.choices?.[0]?.message?.content ?? '';
+    const text = result.text;
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return { ok: false, message: '模型没有返回可解析的 JSON。' };
     const raw = JSON.parse(match[0]) as Record<string, unknown>;
