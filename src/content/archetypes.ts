@@ -2,6 +2,10 @@ import type { Archetype, StatKey } from '../types';
 
 export type PlayableArchetype = Exclude<Archetype, '魔物'>;
 
+export const STAT_MIN = 40;
+export const STAT_MAX = 90;
+export const STAT_TOTAL = 260;
+
 export const archetypes: PlayableArchetype[] = ['输出', '守护', '治愈', '控制', '侦查'];
 
 export const archetypeDescriptions: Record<PlayableArchetype, string> = {
@@ -13,14 +17,26 @@ export const archetypeDescriptions: Record<PlayableArchetype, string> = {
 };
 
 const allocations: Record<PlayableArchetype, Record<StatKey, number>> = {
-  输出: { magic: 92, insight: 52, agility: 72, empathy: 44 },
+  输出: { magic: 88, insight: 54, agility: 72, empathy: 46 },
   守护: { magic: 58, insight: 60, agility: 54, empathy: 88 },
-  治愈: { magic: 52, insight: 68, agility: 44, empathy: 96 },
-  控制: { magic: 74, insight: 92, agility: 48, empathy: 46 },
-  侦查: { magic: 46, insight: 92, agility: 82, empathy: 40 },
+  治愈: { magic: 56, insight: 68, agility: 48, empathy: 88 },
+  控制: { magic: 78, insight: 88, agility: 48, empathy: 46 },
+  侦查: { magic: 46, insight: 88, agility: 86, empathy: 40 },
 };
 
-/** 260 points total, every stat inside the 40–96 creation range. */
+/** Every preset stays inside 40–90 and totals exactly 260. */
 export function statsForArchetype(archetype: PlayableArchetype): Record<StatKey, number> {
-  return { ...allocations[archetype] };
+  const stats = { ...allocations[archetype] };
+  const keys = Object.keys(stats) as StatKey[];
+  for (const key of keys) stats[key] = Math.max(STAT_MIN, Math.min(STAT_MAX, Math.round(stats[key])));
+  let remainder = STAT_TOTAL - keys.reduce((sum, key) => sum + stats[key], 0);
+  let guard = 0;
+  while (remainder !== 0 && guard++ < 1000) {
+    const candidates = keys.filter(key => remainder > 0 ? stats[key] < STAT_MAX : stats[key] > STAT_MIN);
+    if (!candidates.length) break;
+    candidates.sort((a, b) => remainder > 0 ? stats[a] - stats[b] : stats[b] - stats[a]);
+    stats[candidates[0]] += remainder > 0 ? 1 : -1;
+    remainder += remainder > 0 ? -1 : 1;
+  }
+  return stats;
 }

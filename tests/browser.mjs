@@ -381,7 +381,7 @@ try {
     await expect(page.locator('.field-origin')).toHaveCount(7);
     await page.screenshot({ path: 'artifacts/custom-autofill.png', animations: 'disabled' });
     await page.locator('#custom-step-1').click();
-    expect((await page.locator('.custom-stat-row b').allInnerTexts()).join(',')).toBe('52,68,44,96');
+    expect((await page.locator('.custom-stat-row b').allInnerTexts()).join(',')).toBe('56,68,48,88');
     expect(imageSent).toBe(true);
     await page.locator('#custom-step-0').click();
     await page.locator('#custom-rewrite-name').click();

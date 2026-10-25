@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { Archetype, Element, GirlDraft, StatKey } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
-import { statsForArchetype, type PlayableArchetype } from '../content/archetypes';
+import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
 import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
@@ -65,20 +65,23 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     image.src = url;
   };
 
-  const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(40, Math.min(96, prev[key] + delta)) }));
+  const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(STAT_MIN, Math.min(STAT_MAX, prev[key] + delta)) }));
   const chooseArchetype = (next: PlayableArchetype) => { setArchetype(next); setStats(statsForArchetype(next)); };
   const toggleSkill = (id: string) => setSkillIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : prev.length >= 3 ? prev : [...prev, id]);
   const toggleTrait = (id: string) => setTraitIds(prev => prev.includes(id) ? prev.filter(t => t !== id) : prev.length >= 3 ? prev : [...prev, id]);
-  const canCreate = name.trim().length > 0 && skillIds.length === 3 && traitIds.length === 3 && remaining === 0;
+  const statInvalid = Object.values(stats).some(value => value < STAT_MIN || value > STAT_MAX);
+  const canCreate = name.trim().length > 0 && skillIds.length === 3 && traitIds.length === 3 && remaining === 0 && !statInvalid;
   const createHint = [
     !name.trim() && '缺少名字',
     remaining > 0 && `还剩 ${remaining} 点`,
     remaining < 0 && `超出 ${-remaining} 点`,
+    statInvalid && `单项需在 ${STAT_MIN}–${STAT_MAX}`,
     skillIds.length !== 3 && `技能 ${skillIds.length}/3`,
     traitIds.length !== 3 && `特性 ${traitIds.length}/3`,
   ].filter(Boolean).join(' · ');
   const submit = () => {
     if (!name.trim()) { setStep(0); setMessage('先给她一个名字，再登记。'); return; }
+    if (statInvalid) { setStep(1); setMessage(`四维每项需在 ${STAT_MIN}–${STAT_MAX}。`); return; }
     if (remaining !== 0) { setStep(1); setMessage(remaining > 0 ? `还有 ${remaining} 点没有分配。` : `属性点超出 ${-remaining} 点，请调低。`); return; }
     if (skillIds.length !== 3) { setStep(2); setMessage(`请选择 3 个技能，现在还差 ${3 - skillIds.length} 个。`); return; }
     if (traitIds.length !== 3) { setStep(3); setMessage(`请选择 3 个特性，现在还差 ${3 - traitIds.length} 个。`); return; }
@@ -176,9 +179,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     </div>}
 
     {step === 1 && <div className="custom-step-body">
-      <h2>把 260 点，分给她的可能性。</h2><p className="muted">单项 40–96。等级固定为 1，之后靠委托成长。</p>
+      <h2>把 260 点，分给她的可能性。</h2><p className="muted">单项 {STAT_MIN}–{STAT_MAX}。等级固定为 1，之后靠委托成长。</p>
       <div className="custom-points"><span>剩余点数</span><strong className={remaining < 0 ? 'warn' : ''}>{remaining}</strong><button id="custom-autofill" type="button" className="av-btn av-btn-small" onClick={() => setStats({ magic: 65, insight: 65, agility: 65, empathy: 65 })}>平均分配</button></div>
-      <div className="custom-stat-list">{(Object.keys(statLabels) as StatKey[]).map(key => <div key={key} className="custom-stat-row"><span>{statLabels[key]}</span><input aria-label={`${statLabels[key]}数值`} type="range" min={40} max={96} value={stats[key]} onChange={e => setStats(prev => ({ ...prev, [key]: Number(e.target.value) }))} /><b>{stats[key]}</b><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}减一`} onClick={() => adjust(key, -1)}>−</button><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}加一`} onClick={() => adjust(key, 1)}>+</button></div>)}</div>
+      <div className="custom-stat-list">{(Object.keys(statLabels) as StatKey[]).map(key => <div key={key} className="custom-stat-row"><span>{statLabels[key]}</span><input aria-label={`${statLabels[key]}数值`} type="range" min={STAT_MIN} max={STAT_MAX} value={stats[key]} onChange={e => setStats(prev => ({ ...prev, [key]: Number(e.target.value) }))} /><b>{stats[key]}</b><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}减一`} onClick={() => adjust(key, -1)}>−</button><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}加一`} onClick={() => adjust(key, 1)}>+</button></div>)}</div>
       <p className="small-note">选择职阶会自动分配 260 点：输出偏魔力与敏捷，守护偏共情，治愈偏共情与洞察，控制偏洞察与魔力，侦查偏洞察与敏捷。分配后仍可逐点微调。</p>
     </div>}
 
