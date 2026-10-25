@@ -6,6 +6,7 @@ import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
 import { factionInfo, getItem, items } from './content/items.ts';
+import { monsters } from './content/monsters.ts';
 import { advancedCost, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf, factionPrice, marketSize, marketUpgradeCost } from './economy.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
@@ -416,6 +417,7 @@ export function createInitialState(pack: ContentPack = createSeedPack()): GameSt
     opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [],
+    poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
   };
 }
 export function createInitialFromPack(pack: ContentPack): GameState {
@@ -1115,6 +1117,39 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: '变体立绘已保存。' };
     }
     case 'reset': return { state: createInitialState(), ok: true, message: '事务所已回到第 14 日的夜晚。' };
+    case 'setPoolLimit': {
+      const next = clone(state);
+      const value = Math.max(1, Math.min(40, Math.round(action.value)));
+      next.poolLimits[action.pool] = value;
+      return { state: next, ok: true, message: `${action.pool === 'missions' ? '事件池' : action.pool === 'monsters' ? '魔物池' : '市场池'}上限已设为 ${value}。` };
+    }
+    case 'deleteMission': {
+      const target = state.missions.find(m => m.id === action.missionId);
+      if (!target) return { state, ok: false, message: '没有找到这条事件。' };
+      if (target.status === 'active') return { state, ok: false, message: '委托进行中，不能从事件池移除。' };
+      const next = clone(state);
+      next.missions = next.missions.filter(m => m.id !== action.missionId);
+      next.logs.unshift({ id: `log-pool-${action.missionId}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `从事件池移除了「${target.title}」。` });
+      return { state: next, ok: true, message: '事件已从池中移除。' };
+    }
+    case 'deleteCandidate': {
+      const target = state.candidates.find(g => g.id === action.girlId);
+      if (!target) return { state, ok: false, message: '没有找到这位候选者。' };
+      const next = clone(state);
+      next.candidates = next.candidates.filter(g => g.id !== action.girlId);
+      return { state: next, ok: true, message: `${target.name} 的候选档案已移除。` };
+    }
+    case 'deleteMonster': {
+      const target = monsters.find(m => m.id === action.monsterId);
+      if (!target) return { state, ok: false, message: '没有找到这只魔物。' };
+      if ((state.removedMonsters ?? []).includes(action.monsterId)) return { state, ok: false, message: '这只魔物已经离开魔物池。' };
+      const next = clone(state);
+      next.removedMonsters = [...(next.removedMonsters ?? []), action.monsterId];
+      const affected = next.missions.filter(m => m.enemyIds?.includes(action.monsterId));
+      next.missions = next.missions.filter(m => !m.enemyIds?.includes(action.monsterId) || m.status === 'active');
+      for (const m of affected) if (m.status !== 'active') next.logs.unshift({ id: `log-pool-${m.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'battle', text: `「${m.title}」因魔物被移出池而消散。` });
+      return { state: next, ok: true, message: `${target.name} 已从魔物池移除。` };
+    }
     default: return { state, ok: false, message: '未知操作。' };
   }
 }
@@ -1221,6 +1256,8 @@ export function loadState(raw: string | null): GameState {
     state.marketDay ??= state.day;
     state.boss ??= null; state.bossCycle ??= 0; state.nextBossDay ??= state.day + 2;
     state.customSkills ??= [];
+    state.poolLimits ??= { missions: 12, monsters: 8, candidates: 6 };
+    state.removedMonsters ??= [];
     return state;
   } catch { return createInitialState(); }
 }

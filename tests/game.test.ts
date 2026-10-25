@@ -378,3 +378,27 @@ test('自定义契约者登记为一级并进入候选名册', () => {
   assert.equal(r.state.candidates.at(-1)?.level, 1);
   assert.equal(s.candidates.length, before);
 });
+
+test('内容池上限可调整，事件、候选与魔物可手动移除', () => {
+  const base = createInitialState();
+  const limited = act(base, { type: 'setPoolLimit', pool: 'monsters', value: 3 });
+  assert.equal(limited.ok, true);
+  assert.equal(limited.state.poolLimits.monsters, 3);
+
+  const mission = base.missions.find(m => m.status === 'open')!;
+  const removed = act(base, { type: 'deleteMission', missionId: mission.id });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.state.missions.some(m => m.id === mission.id), false);
+
+  const candidate = base.candidates[0];
+  const dismissed = act(base, { type: 'deleteCandidate', girlId: candidate.id });
+  assert.equal(dismissed.ok, true);
+  assert.equal(dismissed.state.candidates.length, base.candidates.length - 1);
+
+  const monster = 'night-tram';
+  const purified = act(base, { type: 'deleteMonster', monsterId: monster });
+  assert.equal(purified.ok, true);
+  assert.equal(purified.state.removedMonsters.includes(monster), true);
+  assert.equal(purified.state.missions.some(m => m.enemyIds?.includes(monster)), false);
+  assert.equal(act(purified.state, { type: 'deleteMonster', monsterId: monster }).ok, false);
+});

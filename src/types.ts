@@ -185,6 +185,7 @@ export interface GameState {
   pensionDebt: number;
   factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
   marketStock: MarketStockEntry[];
+  poolLimits: { missions: number; monsters: number; candidates: number }; removedMonsters: string[];
   marketLevel: number; marketDay: number; advancedDay?: number;
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   customSkills: Skill[];
@@ -207,6 +208,10 @@ export type GameAction =
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
+  | { type: 'setPoolLimit'; pool: 'missions' | 'monsters' | 'candidates'; value: number }
+  | { type: 'deleteMission'; missionId: string }
+  | { type: 'deleteCandidate'; girlId: string }
+  | { type: 'deleteMonster'; monsterId: string }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }
