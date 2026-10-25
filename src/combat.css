@@ -510,3 +510,15 @@
 
 .mission-result-actions{display:flex;justify-content:center;margin-top:18px}
 .mission-result-actions .btn{min-height:38px;padding:9px 16px;display:inline-flex;align-items:center;gap:7px;font-size:11px}
+
+/* battle log calculation trace */
+.battle-log li{flex-wrap:wrap;row-gap:2px}
+.event-formula{flex-basis:100%;margin-left:44px;padding:1px 0 2px 8px;border-left:1px solid #f3aec922;color:#9d8aa8;font-family:var(--font-data);font-size:8px;line-height:1.55;letter-spacing:.01em;white-space:normal}
+.battle-log li.miss .event-formula{color:#81718b;border-left-color:#ffffff12}
+@media(max-width:560px){.event-formula{margin-left:0;border-left:0;padding-left:0;font-size:7.5px}}
+
+.battle-log ul{max-height:300px}
+.battle-log li{padding-top:7px;padding-bottom:7px}
+.event-formula{font-size:9.5px;line-height:1.65;color:#b9a4c4;border-left:2px solid #f3aec92e;background:#ffffff03;border-radius:0 3px 3px 0;margin-top:3px}
+.battle-log li.miss .event-formula{color:#93819e}
+@media(max-width:560px){.event-formula{font-size:8px}}

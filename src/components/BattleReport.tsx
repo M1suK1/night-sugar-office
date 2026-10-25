@@ -29,8 +29,32 @@ function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean
   );
 }
 
+function calcText(event: BattleEvent): string {
+  const calc = event.calc;
+  if (!calc) return '';
+  const parts: string[] = [];
+  if (calc.hit) {
+    const h = calc.hit;
+    const bonus = h.bonus ? ` + 修正 ${h.bonus}` : '';
+    parts.push(`命中 ${Math.round(h.chance)}% ＝ 50 + 敏捷 ${h.agility} − 敌敏 ${h.targetAgility}${bonus}；d100 ${h.roll.toFixed(1)} → ${event.hit ? '命中' : '落空'}`);
+  }
+  if (calc.damage) {
+    const d = calc.damage;
+    const mitigation = d.mitigation < 1 ? ` × 减伤 ${Math.round(d.mitigation * 100)}%` : '';
+    const shield = d.shield > 0 ? ` − 护盾吸收 ${d.shield}` : '';
+    const label = event.resource === 'spirit' ? '共情削减' : '伤害';
+    parts.push(`${label} ${d.raw} ＝ 魔力 ${d.magic} × 倍率 ${d.power} × 波动 ${d.variance.toFixed(2)}${mitigation}${shield} → 实际 ${d.dealt}`);
+  }
+  if (calc.heal) {
+    const h = calc.heal;
+    parts.push(`恢复 ${h.raw} ＝ 魔力 ${h.magic} × 倍率 ${h.power} × 0.5 → 实际 ${h.capped}`);
+  }
+  return parts.join('　｜　');
+}
+
 function EventRow({ event, units }: { event: BattleEvent; units: BattleUnit[] }) {
   const nameOf = (n: string) => units.find(u => u.name === n)?.name ?? n;
+  const formula = calcText(event);
   return (
     <li className={event.hit ? 'hit' : 'miss'}>
       <span className="event-time">{String(event.at.minutes % 1440).padStart(4, '0').replace(/^(\d\d)(\d\d)$/, '$1:$2')}</span>
@@ -40,6 +64,7 @@ function EventRow({ event, units }: { event: BattleEvent; units: BattleUnit[] })
       <span className="event-target">{event.targets.map(nameOf).join('、')}</span>
       {event.amount !== undefined && <em className={event.resource === 'spirit' ? 'spirit' : ''}>{event.resource === 'spirit' ? '共情' : '血量'} {event.note?.includes('恢复') ? '+' : '−'}{event.amount}</em>}
       <small>{event.note}</small>
+      {formula && <span className="event-formula">{formula}</span>}
     </li>
   );
 }

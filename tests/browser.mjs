@@ -68,6 +68,8 @@ try {
     await expect(page.locator('#battle-tab-replay')).toBeVisible();
     await expect(page.locator('.battle-stage')).toBeVisible();
     await expect(page.locator('.battle-log')).toContainText('第');
+    await expect(page.locator('.event-formula').first()).toContainText('魔力');
+    await expect(page.locator('.event-formula').first()).toContainText('d100');
     await page.screenshot({ path: 'artifacts/battle-replay.png', fullPage: true, animations: 'disabled' });
     await page.locator('#battle-skip').click();
     await expect(page.locator('#battle-report-table')).toBeVisible();

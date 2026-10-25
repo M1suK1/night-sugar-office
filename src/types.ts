@@ -145,9 +145,14 @@ export interface BattleUnit {
   effects: ActiveEffect[]; down: boolean; insightRoll: number; scarHit: number;
   dealt: number; taken: number; healed: number; controlled: number; kills: number;
 }
+export interface BattleCalc {
+  hit?: { base: number; agility: number; targetAgility: number; bonus: number; chance: number; roll: number };
+  damage?: { magic: number; power: number; variance: number; mitigation: number; raw: number; shield: number; dealt: number };
+  heal?: { magic: number; power: number; raw: number; capped: number };
+}
 export interface BattleEvent {
   round: number; at: { day: number; minutes: number }; actor: string; skillId: string; skillName: string;
-  targets: string[]; hit: boolean; resource?: SkillResource; amount?: number; effects?: string[]; note?: string;
+  targets: string[]; hit: boolean; resource?: SkillResource; amount?: number; effects?: string[]; note?: string; calc?: BattleCalc;
 }
 export interface BattleState {
   id: string; missionId: string; missionTitle: string; seed: number;

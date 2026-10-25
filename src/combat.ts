@@ -237,21 +237,31 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       const effectNotes: string[] = [];
       for (const target of targets) {
         if (target.down && skill.side === 'enemy') continue;
-        const hit = skill.side !== 'enemy' || rng() * 100 <= clamp(15, 95, 50 + statOf(unit, 'agility') - statOf(target, 'agility') + hitBonus(unit));
+        const agility = statOf(unit, 'agility');
+        const targetAgility = statOf(target, 'agility');
+        const bonus = hitBonus(unit);
+        const chance = clamp(15, 95, 50 + agility - targetAgility + bonus);
+        const roll = skill.side === 'enemy' ? rng() * 100 : 0;
+        const hit = skill.side !== 'enemy' || roll <= chance;
+        const hitCalc = { base: 50, agility, targetAgility, bonus, chance, roll };
         if (!hit) {
-          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: '攻击落空' });
+          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: '攻击落空', calc: { hit: hitCalc } });
           continue;
         }
         if (skill.side === 'enemy') {
-          const amount = Math.max(1, Math.round(statOf(unit, 'magic') * skill.power * (0.9 + rng() * 0.2) * (target.portrait === 'mirror-nun' ? 0.85 : 1)));
-          const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, amount) : Math.min(target.hp, absorb(target, amount));
+          const magic = statOf(unit, 'magic');
+          const variance = 0.9 + rng() * 0.2;
+          const mitigation = target.portrait === 'mirror-nun' ? 0.85 : 1;
+          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation));
+          const shield = skill.resource === 'spirit' ? 0 : Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), raw);
+          const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, raw) : Math.min(target.hp, absorb(target, raw));
           if (skill.resource === 'spirit') target.spirit -= dealt;
           else {
             target.hp -= dealt;
             target.taken += dealt;
             unit.dealt += dealt;
           }
-          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: skill.resource, amount: dealt, note: `${target.name}的${skill.resource === 'hp' ? '血量' : '共情值'} ${dealt}` });
+          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: skill.resource, amount: dealt, note: `${target.name}的${skill.resource === 'hp' ? '血量' : '共情值'} ${dealt}`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt } } });
           if (target.portrait === 'echo-cat') addEffect(unit, { kind: 'debuff', stat: 'hit', amount: 4, duration: 2, source: '回声' });
           if (target.portrait === 'sugar-moth') addEffect(unit, { kind: 'dot', amount: 6, duration: 1, source: '鳞粉' });
           if (target.hp <= 0 || target.spirit <= 0) {
@@ -259,11 +269,12 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             unit.kills += 1;
           }
         } else {
-          const heal = Math.round(statOf(unit, 'magic') * skill.power * 0.5);
+          const magic = statOf(unit, 'magic');
+          const heal = Math.round(magic * skill.power * 0.5);
           const real = Math.min(target.maxHp - target.hp, heal);
           target.hp += real;
           unit.healed += real;
-          if (real > 0) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'hp', amount: real, note: `为 ${target.name} 恢复 ${real} 点血量` });
+          if (real > 0) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'hp', amount: real, note: `为 ${target.name} 恢复 ${real} 点血量`, calc: { heal: { magic, power: skill.power, raw: heal, capped: real } } });
         }
         for (const effect of skill.effects) {
           if (effect.chance && rng() > effect.chance) continue;
