@@ -583,3 +583,6 @@
 .chat-message.pending{opacity:.55}
 @keyframes typing-dot{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-3px);opacity:1}}
 @media(max-width:560px){.chronicle-heading h2{font-size:24px}.chronicle-meta{flex-direction:column;gap:4px}.chronicle-list{max-height:none}}
+
+.dossier-export{display:inline-flex;align-items:center;gap:5px;margin-left:auto;border:1px solid #f3aec92e;background:#f3aec908;color:#d6bccb;padding:5px 9px;border-radius:3px;font-size:9px;letter-spacing:.04em}
+.dossier-export:hover{background:#f3aec918;border-color:#f3aec966;color:#fff}

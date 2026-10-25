@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
@@ -29,13 +29,13 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onEquip, onUseItem, onUnequip }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onEquip, onUseItem, onUnequip, onExportCard }: {
   girl: Girl; state: GameState; onCare: (mode: 'healing' | 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
-  onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
+  onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onExportCard: () => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
   const [equipmentDrawer, setEquipmentDrawer] = useState<'weapon' | 'charm' | null>(null);
@@ -83,7 +83,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
       </div>
       <div className="dossier-content">
         <div className="modal-eyebrow">{candidate ? '招募档案' : '契约者档案'} / {girl.element}</div>
-        <div className="dossier-name"><h2>{girl.name}</h2><span>Lv.{girl.level.toString().padStart(2, '0')}</span></div>
+        <div className="dossier-name"><h2>{girl.name}</h2><span>Lv.{girl.level.toString().padStart(2, '0')}</span><button id="girl-export-card" type="button" className="dossier-export" onClick={onExportCard} title="把这位契约者导出为可再次导入的卡片"><Download size={13}/>导出卡片</button></div>
         <div className="dossier-codename">{girl.codename}<span className={`pill contract-pill ${girl.contractEndDay - state.day < 3 ? 'urgent' : ''}`}>{candidate ? '等待签约' : statusLabels[girl.status]}</span>{!candidate && <span className="contract-mini">{contract}</span>}</div>
         <div className="dossier-tabs" role="tablist" aria-label="人物档案分页">
           {dossierTabs.map((t, index) => (

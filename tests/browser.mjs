@@ -432,6 +432,29 @@ try {
     await close();
     await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); });
   });
+  await check('契约卡导出并在新游戏中导入', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#girl-export-card').click()]);
+    const cardPath = await download.path();
+    expect(download.suggestedFilename()).toContain('契约卡-月见桃');
+    const card = JSON.parse(fs.readFileSync(cardPath, 'utf8'));
+    expect(card.format).toBe('night-sugar/girl-card');
+    expect(card.girl.name).toBe('月见桃');
+    await close();
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    const before = (await stored()).candidates.length;
+    await page.setInputFiles('#market-card-file', cardPath);
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '月见桃')).toBe(true);
+    expect((await stored()).candidates.length).toBe(before + 1);
+    await page.setInputFiles('#market-card-file', cardPath);
+    await expect(page.locator('[role="status"]')).toContainText('已经导入过');
+    expect((await stored()).candidates.length).toBe(before + 1);
+    await page.screenshot({ path: 'artifacts/card-import.png', animations: 'disabled' });
+  });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

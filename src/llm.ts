@@ -99,20 +99,37 @@ export interface DialogueContext {
 export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, { girl, state, text, remote }: DialogueContext): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   const started = Date.now();
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
-  const recent = (state.messages[girl.id] ?? []).slice(-10).map(message => ({ role: message.role === 'player' ? 'user' as const : 'assistant' as const, content: message.text }));
+  const history = (state.messages[girl.id] ?? []).map(message => ({ role: message.role === 'player' ? 'user' as const : 'assistant' as const, content: message.text }));
   const bondLabel = girl.bond >= 85 ? '爱意' : girl.bond >= 70 ? '依恋' : girl.bond >= 55 ? '亲近' : girl.bond >= 40 ? '平常' : girl.bond >= 25 ? '戒备' : '疏离';
+  const stage = (value: number) => value >= 85 ? '爱意' : value >= 70 ? '依恋' : value >= 55 ? '亲近' : value >= 40 ? '平常' : value >= 25 ? '戒备' : '疏离';
+  const allGirls = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
+  const peers = Object.entries(girl.relationships ?? {}).map(([id, value]) => {
+    const peer = allGirls.find(candidate => candidate.id === id);
+    return peer ? `${peer.name}：${value}/100（${stage(value)}）` : '';
+  }).filter(Boolean);
+  const battles = state.battles.filter(battle => battle.units.some(unit => unit.uid === `ally-${girl.id}`)).map(battle => {
+    const unit = battle.units.find(entry => entry.uid === `ally-${girl.id}`)!;
+    const label = { victory: '胜利', repelled: '暂时击退', defeat: '失败', draw: '平局' }[battle.outcome ?? 'draw'];
+    const scar = battle.scars?.length ? `；留下${battle.scars.length}道疤痕` : '';
+    return `第${battle.startedAt.day}日「${battle.missionTitle}」：${label}，${battle.round}/${battle.rounds}轮；造成 ${unit.dealt} 伤害，承受 ${unit.taken}，治疗 ${unit.healed}${scar}。`;
+  });
+  const skillNames = girl.skills.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、');
+  const traitText = girl.traits.map(trait => `${trait.name}（${trait.description}）`).join('；');
   const system = `${prompts.world}
 
 你现在只扮演「${girl.name}」，不要以旁白、作者或 AI 的身份说话。
-身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}。
+身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}，等级 ${girl.level}。
 外貌：${girl.appearance ?? '不详'}。性格：${girl.personality ?? '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
-当前目标：${girl.goal ?? '没有写下来的愿望'}。对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
-状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕` : ''}。
+登场台词：${girl.quote ?? '没有留下出场白'}。当前目标：${girl.goal ?? '没有写下来的愿望'}。特性：${traitText || '无'}。技能：${skillNames || '未记录'}。
+对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
+与同伴的关系：${peers.join('；') || '还没有特别亲近的同伴'}。
+经历的战斗：${battles.join(' ') || '还没有参加过战斗'}。
+状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕：${girl.scars.map(scar => scar.name).join('、')}` : ''}。
 ${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}
 只输出她这一次的回应：中文，1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型，不要输出 JSON。`;
   const result = await chat(config, [
     { role: 'system', content: system },
-    ...recent,
+    ...history,
     { role: 'user', content: text },
   ]);
   const clean = result.ok ? result.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 400) : '';

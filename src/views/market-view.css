@@ -116,3 +116,6 @@
 .av-supply-card.sold .av-supply-title b{color:#8b7682}
 .av-supply-limit{display:inline-block;margin-left:6px;padding:1px 4px;border:1px solid #f3aec930;border-radius:2px;font-family:var(--font-data);font-size:5.5px;font-style:normal;letter-spacing:.08em;color:#bd8fa3;vertical-align:1px}
 .av-supply-card.sold .av-supply-limit{display:none}
+
+.av-import-card{cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.av-import-card:hover{border-color:#f3aec966;color:#fff}

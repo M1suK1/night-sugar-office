@@ -5,7 +5,8 @@ import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { generateDaily, generateGirlProfile, materializeDaily } from '../src/llm.ts';
+import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, materializeDaily } from '../src/llm.ts';
+import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import type { Opinion, Scar } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
@@ -539,4 +540,54 @@ test('编年史缓存生成内容并在存档中保留', () => {
   const spoken = act(result.state, { type: 'talk', girlId: 'yue', text: '今晚还顺利吗？', reply: '模型写下的回答。' });
   assert.equal(spoken.ok, true);
   assert.equal(spoken.state.messages.yue.at(-1)?.text, '模型写下的回答。');
+});
+
+test('契约卡可导出、校验并重新导入候选名册', () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  const card = buildGirlCard(yue, base);
+  const parsed = parseGirlCard(JSON.stringify(card));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.card.girl.skillIds.length, 3);
+  const imported = act(base, { type: 'importCard', card: parsed.card });
+  assert.equal(imported.ok, true);
+  assert.equal(imported.state.candidates.length, base.candidates.length + 1);
+  assert.equal(imported.state.candidates.at(-1)?.level, yue.level);
+  assert.equal(act(imported.state, { type: 'importCard', card: parsed.card }).ok, false);
+  const broken = parseGirlCard(JSON.stringify({ ...card, girl: { ...card.girl, skillIds: ['nope', 'nope2', 'nope3'] } }));
+  assert.equal(broken.ok, false);
+  assert.equal(act({ ...base, poolLimits: { ...base.poolLimits, candidates: 1 } }, { type: 'importCard', card: parsed.card }).ok, false);
+});
+
+test('对话上下文包含角色特性、同伴关系、完整历史与战斗记录', async () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  const withHistory = {
+    ...base,
+    messages: { ...base.messages, yue: Array.from({ length: 12 }, (_, index) => ({ role: index % 2 ? 'girl' as const : 'player' as const, text: `第${index + 1}句对话` })) },
+    battles: [{
+      id: 'b-test', missionId: 'm', missionTitle: '镜中的另一轮月亮', seed: 1, startedAt: { day: 14, minutes: 1300 }, round: 6, rounds: 6,
+      units: [{ uid: 'ally-yue', side: 'ally', name: '月见桃', portrait: '', color: '#f3aec9', hp: 100, maxHp: 120, spirit: 80, maxSpirit: 100, stats: yue.stats, skills: [], cooldown: {}, effects: [], down: false, insightRoll: 10, scarHit: 0, dealt: 240, taken: 80, healed: 20, controlled: 0, kills: 1 }],
+      initiative: [], events: [], outcome: 'victory' as const, createdAt: '',
+    }],
+  };
+  const original = globalThis.fetch;
+  let payload = '';
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    payload = String(init?.body ?? '');
+    return new Response(JSON.stringify({ choices: [{ message: { content: '她轻轻点头。' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateDialogue({ endpoint: 'https://mock.local/v1', apiKey: 'k', model: 'mock' }, defaultPrompts, { girl: yue, state: withHistory, text: '今晚怎么样？' });
+    assert.equal(result.ok, true);
+    const body = JSON.parse(payload) as { messages: { role: string; content: string }[] };
+    const system = body.messages[0].content;
+    assert.ok(system.includes(yue.traits[0].name));
+    assert.ok(system.includes('与同伴的关系'));
+    assert.ok(system.includes('镜中的另一轮月亮'));
+    assert.ok(system.includes('第12句对话') === false);
+    assert.equal(body.messages.filter(message => message.role === 'assistant' || message.role === 'user').length, 13);
+    assert.ok(body.messages.some(message => message.content === '第12句对话'));
+  } finally { globalThis.fetch = original; }
 });

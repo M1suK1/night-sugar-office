@@ -1,5 +1,6 @@
 import type { ActionResult, BattleState, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Log, MarketStockEntry, Mission, Opinion, Sample, Scar, StatKey } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
+import { girlCardHash } from './cards.ts';
 import { getSkill } from './content/skills.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
@@ -1082,6 +1083,34 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.candidates.push(girl);
       next.logs.unshift({ id: `log-advanced-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'dispatch', text: `通过协会渠道指定招募 ${level} 级候选者「${girl.name}」，城市安定度 -${cost.stability}。`, delta: -cost.gold });
       return { state: next, ok: true, message: `${girl.name}已加入候选名册，保留 3 天。` };
+    }
+    case 'importCard': {
+      const next = clone(state); const card = action.card;
+      if (next.candidates.length >= next.poolLimits.candidates) return { state, ok: false, message: `候选名册已满（${next.poolLimits.candidates} 位），请先移除一位候选或到设置中调高上限。` };
+      const key = girlCardHash(card);
+      if ([...next.girls, ...next.candidates].some(girl => girl.cardId === key)) return { state, ok: false, message: '这张契约卡已经导入过，不能重复登记。' };
+      const g = card.girl;
+      if (!g.name || !Array.isArray(g.skillIds) || g.skillIds.length !== 3) return { state, ok: false, message: '契约卡资料不完整。' };
+      const stats = { ...g.stats };
+      const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
+      const id = `g_card_${key}`;
+      const girl = hydrate({
+        id, name: g.name, codename: g.codename, title: g.title, element: g.element, color: g.color,
+        portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
+        fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
+        skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: 1800 + g.level * 220,
+        scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
+        goal: g.goal, goalKind: '成长', traits: g.traitIds.map(id => traitById.get(id)).filter((trait): trait is NonNullable<typeof trait> => Boolean(trait)), conditions: [],
+        contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
+        appearance: g.appearance, personality: g.personality, outfitDescription: g.outfitDescription,
+        wardrobe: g.wardrobe ?? [], outfitId: g.outfitId ?? 'uniform', expression: g.expression ?? 'calm',
+        corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7, cardId: key,
+        portraitSpec: g.portraitSpec,
+      });
+      next.candidates.push(girl);
+      archive(next, '登记', girl.name, `从契约卡导入。${girl.title}。${girl.appearance}`);
+      next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。` });
+      return { state: next, ok: true, message: `契约卡已导入：${girl.name}进入候选名册。` };
     }
     case 'createGirl': {
       const next = clone(state); const draft = action.draft;

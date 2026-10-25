@@ -20,6 +20,7 @@ import { CustomGirlDialog } from './components/CustomGirlDialog';
 import { BattleReport } from './components/BattleReport';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { ChronicleDialog } from './components/ChronicleDialog';
+import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
 import { generateDaily, generateDialogue, generateGirlProfile, loadLlmConfig, loadLlmPrompts, materializeDaily, type LlmPrompts } from './llm';
 import './styles.css';
 import './combat.css';
@@ -101,6 +102,19 @@ export default function App() {
       notify(`叙事者没有回应：${result.message} 已切回本地剧情。`, false);
     }
     return perform({ type: 'talk', girlId: id, text, remote }, true);
+  };
+  const exportCard = (girl: Parameters<typeof buildGirlCard>[0]) => {
+    const card = buildGirlCard(girl, state);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(card, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = girlCardFileName(card); document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify(`契约卡「${girl.name}」已导出，可在新游戏中重新导入。`);
+  };
+  const importCard = async (file: File) => {
+    if (file.size > 4_000_000) { notify('卡片文件超过 4MB，无法导入。', false); return; }
+    const parsed = parseGirlCard(await file.text());
+    if (!parsed.ok) { notify(`导入失败：${parsed.message}`, false); return; }
+    perform({ type: 'importCard', card: parsed.card });
   };
   const exportSave = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = `夜糖事务所-第${state.day}日存档.json`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); notify('当前存档已导出到下载目录。'); };
 
@@ -193,7 +207,7 @@ export default function App() {
           onUseItem={(girlId, itemId) => perform({ type: 'useItem', girlId, itemId })}
         />
       ) : page === 'market' ? (
-        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} />
+        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} />
       ) : (
         <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onChronicle={() => setModal({ type: 'chronicle' })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
       )}
@@ -202,7 +216,7 @@ export default function App() {
     <div className="time-control-bar"><div><Clock3 size={15} /><span>游戏时间</span><small>{auto ? '每 12 秒推进 5 分钟' : '已暂停 · 由你掌握夜晚的节奏'}</small></div><div><button id="toggle-auto-time" className={`auto-time-btn ${auto ? 'active' : ''}`} aria-pressed={auto} onClick={() => setAuto(x => !x)}>{auto ? <Pause size={13} /> : <Play size={13} />}<span>{auto ? '暂停自动' : '自动推进'}</span></button><button id="advance-time-30" className="advance-btn" onClick={() => perform({ type: 'advance', minutes: 30 })}>推进 30 分钟<FastForward size={15} /></button></div></div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
     {modal && <Dialog label={modalTitle} onClose={() => setModal(null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle'}>
-      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={mode => perform({ type: 'clinic', girlId: selectedGirl.id, mode })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} />}
+      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={mode => perform({ type: 'clinic', girlId: selectedGirl.id, mode })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
       {modal.type === 'mission' && selectedMission && <MissionDialog key={`${modal.id}-${modal.girlId ?? ''}`} state={state} mission={selectedMission} initialGirlId={modal.girlId} onGirl={girl} onEnemy={id => setModal({ type: 'codex', id })} onBattle={id => setModal({ type: 'battle', id })} onDispatch={(girlIds, missionId) => { if (perform({ type: 'dispatch', girlIds, missionId })) setModal(null); }} />}
       {modal.type === 'talk' && selectedGirl && <Conversation key={`talk-${selectedGirl.id}`} girl={selectedGirl} state={state} remote={modal.remote} modelEnabled={Boolean(loadLlmConfig().apiKey.trim())} onSend={text => sendTalk(selectedGirl.id, text, modal.remote)} />}
       {modal.type === 'assign' && <AssignmentPicker state={state} girlId={modal.id} onSelect={id => setModal({ type: 'mission', id, girlId: modal.id })} />}

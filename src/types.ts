@@ -36,6 +36,16 @@ export interface GirlDraft {
   portrait?: string; appearanceSpec?: PortraitSpec;
 }
 
+export interface GirlCard {
+  format: 'night-sugar/girl-card'; version: 1; exportedAt: string; sourceDay: number; packHash?: string;
+  girl: {
+    name: string; codename: string; title: string; element: Element; archetype?: Archetype;
+    color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
+    level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
+    portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
+  };
+}
+
 export interface Trait {
   id: string; name: string; polarity: TraitPolarity; tags: string[];
   description: string; gainedAt?: string;
@@ -120,7 +130,7 @@ export interface Girl {
   corruption: number; witch?: boolean; drugUntilDay?: number; withdrawalDays?: number;
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
-  candidateUntilDay?: number; custom?: boolean;
+  candidateUntilDay?: number; custom?: boolean; cardId?: string;
 }
 export interface Memorial {
   girl: Girl; diedAt: string; cause: string; epitaph: string; lastBattleId: string;
@@ -227,6 +237,7 @@ export type GameAction =
   | { type: 'upgradeMarket' }
   | { type: 'advancedRecruit'; level: number }
   | { type: 'createGirl'; draft: GirlDraft }
+  | { type: 'importCard'; card: GirlCard }
   | { type: 'setVariant'; girlId: string; key: string; dataUrl: string }
   | { type: 'reset' };
 export interface ActionResult { state: GameState; ok: boolean; message: string; battle?: BattleState }
