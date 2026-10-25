@@ -328,6 +328,22 @@ try {
     await page.screenshot({ path: 'artifacts/market-supplies.png', fullPage: true, animations: 'disabled' });
     await close();
   });
+  await check('完成委托可回看战斗记录', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#mission-mirror').click();
+    for (const id of ['yue', 'tang', 'ling']) await page.locator(`#assign-${id}`).click();
+    await page.locator('#dispatch-confirm').click();
+    for (let i = 0; i < 3; i++) await page.locator('#advance-time-30').click();
+    await page.locator('#battle-skip').click();
+    await page.locator('#battle-close').click();
+    await page.locator('#mission-mirror').click();
+    await expect(page.locator('#mission-view-battle')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/mission-completed.png', animations: 'disabled' });
+    await page.locator('#mission-view-battle').click();
+    await expect(page.locator('.battle-theater')).toBeVisible();
+    await page.locator('#battle-close').click();
+  });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

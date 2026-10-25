@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight } from 'lucide-react';
+import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
 import { chance, clock, inWithdrawal, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { getMonster } from '../content/monsters';
@@ -14,10 +14,11 @@ function canGo(girl: Girl): { ok: boolean; reason: string } {
   return { ok: true, reason: '' };
 }
 
-export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGirl, onEnemy }: {
+export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGirl, onEnemy, onBattle }: {
   state: GameState; mission: Mission; initialGirlId?: string;
   onDispatch: (girlIds: string[], missionId: string) => void;
   onGirl: (id: string) => void; onEnemy: (id: string) => void;
+  onBattle?: (id: string) => void;
 }) {
   const initial = initialGirlId ? state.girls.find(g => g.id === initialGirlId) : undefined;
   const [selected, setSelected] = useState<string[]>(initial && canGo(initial).ok ? [initial.id] : []);
@@ -26,6 +27,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
   const squadReady = squad.length > 0 && squad.every(g => canGo(g).ok) && squad.length <= limit;
   const chanceValue = squadChance(squad, mission);
   const assigned = mission.squad.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
+  const lastBattle = state.battles.find(item => item.missionId === mission.id);
   const toggle = (girl: Girl) => {
     if (!canGo(girl).ok) return;
     setSelected(current => current.includes(girl.id) ? current.filter(id => id !== girl.id) : current.length >= limit ? current : [...current, girl.id]);
@@ -109,7 +111,8 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
             <p>距离返回还有 {Math.min(...assigned.map(g => g.remaining), 999)} 分钟。推进游戏时间即可结算{mission.work === 'combat' ? '并生成战斗报告' : ''}。</p>
             <div className="result-squad">{assigned.map(g => <button key={g.id} id={`mission-assigned-${g.id}`} className="btn" onClick={() => onGirl(g.id)}><img src={g.portrait} alt="" />{g.name}<Heart size={13} /></button>)}</div>
           </> : <>
-            <Check size={30} /><h3>这个心愿，已经被好好守护。</h3><p>最后一次结果：{mission.lastOutcome === 'victory' ? '战斗胜利' : mission.lastOutcome === 'repelled' ? '暂时击退' : '调查完成'}。报酬已计入星砂储备。</p>
+            <Check size={30} /><h3>这个心愿，已经被好好守护。</h3><p>最后一次结果：{mission.lastOutcome === 'victory' ? '战斗胜利' : mission.lastOutcome === 'repelled' ? '暂时击退' : '调查完成'}。{mission.work === 'combat' ? `报酬${mission.lastOutcome === 'repelled' ? '按八成' : '已全额'}计入星砂储备。` : '报酬已计入星砂储备。'}</p>
+            {mission.work === 'combat' && lastBattle && onBattle && <div className="mission-result-actions"><button id="mission-view-battle" className="btn" onClick={() => onBattle(lastBattle.id)}><ScrollText size={15} />查看战斗记录</button></div>}
           </>}
         </div>
       )}
