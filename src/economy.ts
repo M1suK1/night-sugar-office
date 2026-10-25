@@ -79,6 +79,12 @@ export function factionPrice(item: Equipment, standing: number): number {
   const factor = standing < 30 ? 1.1 : standing >= 80 ? 0.9 : standing >= 60 ? 0.95 : 1;
   return Math.round(item.price * factor);
 }
+export function factionAttitude(standing: number): { label: string; discount: string; tone: 'cold' | 'neutral' | 'warm' | 'ally' } {
+  if (standing >= 80) return { label: '盟约', discount: '货架 −10%', tone: 'ally' };
+  if (standing >= 60) return { label: '亲善', discount: '货架 −5%', tone: 'warm' };
+  if (standing >= 30) return { label: '中立', discount: '标准原价', tone: 'neutral' };
+  return { label: '戒备', discount: '货架 +10%', tone: 'cold' };
+}
 export function contractDiscount(state: GameState): number {
   return state.inventory['permit'] ? 10 : 0;
 }

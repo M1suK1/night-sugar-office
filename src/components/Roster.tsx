@@ -1,15 +1,15 @@
-import { GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3 } from 'lucide-react';
+import { GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3, Flame } from 'lucide-react';
 import type { GameState } from '../types';
 import { capacity, drugDaysLeft, inWithdrawal, relationshipStage, stageLabels, statusLabels } from '../game';
-import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats } from '../economy';
+import { corruptionLabels, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats } from '../economy';
 import { GirlPortrait } from './GirlPortrait';
 
 export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void }) {
-  const idle = state.girls.filter(g => g.status === 'idle').length;
+  const idle = state.girls.filter(g => g.status === 'idle' && !g.retired).length;
   return (
     <aside className="roster" aria-label="当前经营状态与魔法少女">
       <div className="roster-header">
-        <div className="eyebrow">值班契约者</div>
+        <div className="eyebrow">PUELLA ROSTER · 值班契约者</div>
         <h2>今晚，也请多关照。<Sparkles size={15} /></h2>
         <div className="roster-count">
           <span><i />{idle} 人待命</span>
@@ -19,11 +19,12 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
       <div className="girl-roster">
         {state.girls.filter(g => !g.retired).map(g => {
           const stage = relationshipStage(g.bond);
+          const cStage = corruptionStage(g.corruption ?? 0);
           const draggable = g.status === 'idle' && !g.retired && !inWithdrawal(g);
           const ending = g.contractEndDay - state.day <= 2;
-          const stats = effectiveStats(g);
+          const stats = effectiveStats(g, state);
           return (
-            <article key={g.id} className={`girl-roster-card ${g.status !== 'idle' ? 'is-busy' : ''} ${g.retired ? 'is-retired' : ''}`} style={{ '--girl-color': g.color } as React.CSSProperties}
+            <article key={g.id} className={`girl-roster-card ${g.status !== 'idle' ? 'is-busy' : ''} ${g.retired ? 'is-retired' : ''} ${g.witch ? 'is-witch' : ''}`} style={{ '--girl-color': g.color } as React.CSSProperties}
               draggable={draggable}
               onDragStart={e => { e.dataTransfer.setData('text/girl-id', g.id); e.dataTransfer.effectAllowed = 'move'; }}>
               <button id={`roster-girl-${g.id}`} className="girl-roster-main" onClick={() => onGirl(g.id)} aria-describedby={`tooltip-${g.id}`}>
@@ -35,11 +36,12 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                 </div>
                 <div className="roster-info">
                   <div className="roster-name"><h3>{g.name}</h3><span>Lv.{g.level.toString().padStart(2, '0')}</span></div>
-                  <p>{g.codename}</p>
+                  <p>{g.codename} · <em>{corruptionLabels[cStage]}</em></p>
                   <div className="girl-status"><i />{statusLabels[g.status]}{g.status !== 'idle' && !g.retired && <small> · {g.remaining} 分钟</small>}</div>
                   <div className="mini-meters">
-                    <span aria-label={`血量 ${g.hp}`}><Heart size={10} /><i><b style={{ width: `${g.hp / effectiveMaxHp(g) * 100}%` }} /></i><em>{g.hp}</em></span>
-                    <span aria-label={`疲劳 ${g.fatigue}`}><BatteryMedium size={11} /><i><b style={{ width: `${g.fatigue}%` }} /></i><em>{g.fatigue}</em></span>
+                    <span aria-label={`血量 ${g.hp}`}><Heart size={10} /><i><b style={{ width: `${Math.min(100, g.hp / effectiveMaxHp(g) * 100)}%` }} /></i><em>{g.hp}</em></span>
+                    <span aria-label={`疲劳 ${g.fatigue}`}><BatteryMedium size={11} /><i><b style={{ width: `${Math.min(100, g.fatigue)}%` }} /></i><em>{g.fatigue}</em></span>
+                    <span className="meter-corruption" aria-label={`侵蚀度 ${g.corruption ?? 0}`}><Flame size={10} /><i><b style={{ width: `${Math.min(100, g.corruption ?? 0)}%` }} /></i><em>{g.corruption ?? 0}</em></span>
                   </div>
                   <div className="roster-tags">
                     <span className={`stage-chip stage-${stage}`}>{stageLabels[stage]}</span>
@@ -60,7 +62,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                 </div>
                 <div className="tooltip-footer">
                   <span>{stageLabels[stage]} · 羁绊 {g.bond}</span>
-                  <span>共情值 {g.spirit}/{effectiveMaxSpirit(g)}</span>
+                  <span>共情值 {g.spirit}/{effectiveMaxSpirit(g)} · 侵蚀 {g.corruption ?? 0}%</span>
                 </div>
                 <small>{g.retired ? '已转任文职，不再参与派遣' : inWithdrawal(g) ? `断药第 ${g.withdrawalDays} 日，无法派遣，请尽快使用抑制剂` : g.status === 'idle' ? '拖动至地图任务点派遣 · 点击查看档案' : `当前${statusLabels[g.status]}，剩余 ${g.remaining} 分钟`}</small>
               </div>
@@ -68,8 +70,11 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
           );
         })}
         <button id="roster-open-market" className="roster-empty-slot" onClick={onMarket}>
-          <span><MoonStar size={18} />为下一束星光留个位置</span>
-          <small>前往市场，缔结新的契约</small>
+          <MoonStar size={18} />
+          <div>
+            <strong>为下一束星光留个位置</strong>
+            <small>前往市场，缔结新的契约</small>
+          </div>
           <ArrowUpRight size={17} />
         </button>
       </div>

@@ -257,6 +257,30 @@ try {
     await page.locator('#mission-station').click();
     await expect(page.locator('#assign-yue')).toBeDisabled();
     await page.screenshot({ path: 'artifacts/withdrawal-boss.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
+  await check('主页三方势力态度、基地平面图内嵌模块与记录页 v4 台账', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#dispatch-faction-witch')).toContainText('戒备');
+    await expect(page.locator('#dispatch-faction-association')).toContainText('中立');
+    await expect(page.locator('#dispatch-faction-government')).toContainText('中立');
+    await page.screenshot({ path: 'artifacts/dispatch-desktop.png', fullPage: true, animations: 'disabled' });
+
+    await page.locator('#nav-base').click();
+    await expect(page.locator('.av-floorplan-integrated')).toBeVisible();
+    await page.locator('#av-lounge-tab-envoys').click();
+    await expect(page.locator('.av-floorplan-integrated #av-envoy-accept-witch')).toBeVisible();
+    await page.locator('#av-envoy-accept-association').click();
+    await page.locator('#av-clinic-tab-surgery').click();
+    await expect(page.locator('.av-floorplan-integrated #av-clinic-wipe-yue')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/base-desktop.png', fullPage: true, animations: 'disabled' });
+
+    await page.locator('#nav-records').click();
+    await expect(page.locator('.av-record-summary-v4 .av-record-stat')).toHaveCount(4);
+    await expect(page.locator('.av-record-faction-card')).toHaveCount(3);
+    await expect(page.locator('.av-soul-card')).toHaveCount(5);
+    await page.screenshot({ path: 'artifacts/records-desktop.png', fullPage: true, animations: 'disabled' });
   });
   await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
