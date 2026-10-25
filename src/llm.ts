@@ -5,6 +5,92 @@ export interface LlmConfig {
 }
 
 const KEY = 'night-sugar:llm-config';
+const LOG_KEY = 'night-sugar:llm-log';
+
+export interface LlmLogEntry {
+  id: string;
+  at: string;
+  kind: string;
+  ok: boolean;
+  model: string;
+  endpoint: string;
+  status?: number;
+  durationMs: number;
+  message: string;
+  detail?: string;
+}
+
+export function loadLlmLog(): LlmLogEntry[] {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as LlmLogEntry[];
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.id === 'string').slice(0, 40) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearLlmLog() {
+  try { localStorage.removeItem(LOG_KEY); } catch { /* session only */ }
+}
+
+function endpointHost(endpoint: string): string {
+  try { return new URL(endpoint).host; } catch { return endpoint.slice(0, 60); }
+}
+
+function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { endpoint: string }): LlmLogEntry {
+  const full: LlmLogEntry = {
+    ...entry,
+    id: `llm_${Date.now().toString(36)}_${Math.floor(Math.random() * 999).toString(36)}`,
+    at: new Date().toISOString(),
+    endpoint: endpointHost(entry.endpoint),
+    detail: entry.detail?.replace(/\s+/g, ' ').slice(0, 600),
+  };
+  try {
+    const next = [full, ...loadLlmLog()].slice(0, 40);
+    localStorage.setItem(LOG_KEY, JSON.stringify(next));
+  } catch { /* logging must never break generation */ }
+  if (full.ok) console.info('[夜糖·LLM]', full.kind, full.message, full);
+  else console.error('[夜糖·LLM]', full.kind, full.message, full);
+  return full;
+}
+
+function statusOf(message: string): number | undefined {
+  const match = message.match(/服务返回\s*(\d{3})/);
+  return match ? Number(match[1]) : undefined;
+}
+
+export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
+  const started = Date.now();
+  const result = await testLlmConnectionCore(config);
+  recordLlmLog({ kind: '连接测试', ok: result.ok, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, message: result.message, endpoint: config.endpoint });
+  return result;
+}
+
+export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+  const started = Date.now();
+  const result = await generateDailyCore(config, prompts);
+  recordLlmLog({
+    kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
+    durationMs: Date.now() - started, endpoint: config.endpoint,
+    message: result.ok ? `生成成功：${result.data.monsterName} / ${result.data.girlName} / ${result.data.missionTitle}` : result.message,
+    detail: result.ok ? undefined : result.message,
+  });
+  return result;
+}
+
+export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+  const started = Date.now();
+  const result = await generateGirlProfileCore(config, prompts);
+  recordLlmLog({
+    kind: '角色起草', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
+    durationMs: Date.now() - started, endpoint: config.endpoint,
+    message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}` : result.message,
+    detail: result.ok ? undefined : result.message,
+  });
+  return result;
+}
 
 export const defaultLlmConfig: LlmConfig = {
   endpoint: 'https://api.openai.com/v1',
@@ -35,7 +121,7 @@ export function saveLlmConfig(config: LlmConfig) {
   }
 }
 
-export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
+async function testLlmConnectionCore(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先填写 API 密钥。' };
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
   const model = config.model.trim();
@@ -146,7 +232,7 @@ const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
 const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
 const factions = ['witch', 'association', 'government'] as const;
 
-export async function generateDaily(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
@@ -195,7 +281,7 @@ export interface GeneratedGirlProfile {
   focus: StatKey; skillIds: string[]; traitIds: string[];
 }
 
-export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+async function generateGirlProfileCore(config: LlmConfig, prompts: LlmPrompts): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!config.apiKey.trim()) return { ok: false, message: '请先在设置中填写 API 密钥。' };
   const skillList = skills.filter(s => s.school !== 'monster').map(s => `${s.id}(${s.name})`).join('、');
   const traitList = traits.map(t => `${t.id}(${t.name})`).join('、');

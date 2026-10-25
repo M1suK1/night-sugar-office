@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, RotateCcw, MousePointer2, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
+import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, RotateCcw, MousePointer2, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, Copy } from 'lucide-react';
 import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
-import { loadLlmConfig, saveLlmConfig, testLlmConnection, loadLlmPrompts, saveLlmPrompts, defaultPrompts, type LlmConfig, type LlmPrompts } from '../llm';
+import { loadLlmConfig, saveLlmConfig, testLlmConnection, loadLlmPrompts, saveLlmPrompts, defaultPrompts, loadLlmLog, clearLlmLog, type LlmConfig, type LlmPrompts, type LlmLogEntry } from '../llm';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
   const full=state.girls.length>=capacity(state),poor=state.gold<girl.cost;
   return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{state.girls.length} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
@@ -26,13 +26,15 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolL
   const [llmNote, setLlmNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [logs, setLogs] = useState<LlmLogEntry[]>(loadLlmLog);
   const openMissions = state.missions.filter(m => m.status !== 'done');
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
   const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
   const update = (patch: Partial<LlmConfig>) => { const next = { ...llm, ...patch }; setLlm(next); saveLlmConfig(next); };
   const updatePrompt = (patch: Partial<LlmPrompts>) => { const next = { ...prompts, ...patch }; setPrompts(next); saveLlmPrompts(next); };
-  const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
-  const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(prompts); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
+  const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setLogs(loadLlmLog()); setBusy(false); };
+  const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(prompts); setLlmNote({ ok: result.ok, text: result.message }); setLogs(loadLlmLog()); setGenerating(false); };
+  const copyLogs = async () => { try { await navigator.clipboard.writeText(JSON.stringify(logs, null, 2)); setLlmNote({ ok: true, text: '日志已复制到剪贴板。' }); } catch { setLlmNote({ ok: false, text: '浏览器拒绝了剪贴板访问，请手动选择日志文本。' }); } };
   return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2><div className="settings-tabs" role="tablist" aria-label="设置分类">{[{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }, { id: 'pools', label: '内容池', Icon: Boxes }].map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
     {tab === 'general' && <>
       <div className="settings-row"><div><b>减少动态效果</b><p>关闭漂浮与入场动画，保留必要的状态反馈。</p></div><button id="settings-reduced-motion" role="switch" aria-checked={reduced} aria-label="减少动态效果" className={`toggle ${reduced?'on':''}`} onClick={()=>onReduced(!reduced)}><i/></button></div>
@@ -55,6 +57,15 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onReset,onPoolL
       <div className="settings-row"><div><b>每日自动补充</b><p>跨日时若三池未满，自动请求一次新的魔物、候选者与委托。</p></div><button id="settings-auto-generate" role="switch" aria-checked={autoGenerate} aria-label="每日自动补充" className={`toggle ${autoGenerate?'on':''}`} onClick={()=>onAutoGenerate(!autoGenerate)}><i/></button></div>
       <button id="settings-llm-generate" className="btn primary full" disabled={generating || full} onClick={generate}><Sparkles size={15}/>{full ? '内容池已满，请先清理' : generating ? '叙事者正在书写' : '生成今晚的提案'}</button>
       <div className="llm-warning"><AlertTriangle size={15}/><p>浏览器直连会暴露密钥给页面脚本。正式版本应改为服务端代理；此处仅用于本地原型验证。</p></div>
+      <section id="settings-llm-log" className="llm-log" aria-labelledby="llm-log-title">
+        <div className="llm-log-head"><b id="llm-log-title">叙事引擎日志</b><span>{logs.length} 条 · 密钥不写入日志</span><div><button id="settings-llm-log-copy" className="llm-reset" disabled={!logs.length} onClick={copyLogs}><Copy size={11}/>复制</button><button id="settings-llm-log-clear" className="llm-reset" disabled={!logs.length} onClick={() => { clearLlmLog(); setLogs([]); }}><Trash2 size={11}/>清空</button></div></div>
+        {logs.length ? <ol>{logs.slice(0, 12).map(entry => <li id={`llm-log-entry-${entry.id}`} key={entry.id} className={entry.ok ? 'ok' : 'error'}>
+          <div className="llm-log-meta"><span className="llm-log-state">{entry.ok ? '成功' : '失败'}</span><b>{entry.kind}</b><time>{new Date(entry.at).toLocaleTimeString('zh-CN', { hour12: false })}</time><span>{entry.durationMs}ms</span>{entry.status && <span>HTTP {entry.status}</span>}</div>
+          <p>{entry.message}</p>
+          <small>{entry.endpoint} · {entry.model || '未填模型'}</small>
+          {entry.detail && entry.detail !== entry.message && <em>{entry.detail}</em>}
+        </li>)}</ol> : <p className="llm-log-empty">还没有调用记录。测试连接、生成提案或起草角色后，会在这里留下可复制的请求结果。</p>}
+      </section>
     </div>}
     {tab === 'pools' && <div className="pool-settings">
       <p className="pool-intro">内容池满后，故事引擎会停止补充对应内容。你可以随时手动移除，为新的相遇腾出位置。</p>
