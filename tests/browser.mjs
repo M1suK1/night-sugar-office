@@ -51,6 +51,14 @@ try {
     await expect(page.locator('.council-assistant')).toBeVisible();
     const before = (await stored()).opinions.filter(o => o.status === 'pending').length;
     if (before > 0) {
+      await expect(page.locator('.council-dialogue')).toBeVisible();
+      await expect(page.locator('#council-option-accept')).toBeHidden();
+      const firstLine = await page.locator('.council-dialogue-text').innerText();
+      await page.locator('#council-dialogue-next').click();
+      await expect(page.locator('.council-dialogue-text')).not.toHaveText(firstLine);
+      await page.screenshot({ path: 'artifacts/council-dialogue.png', fullPage: true, animations: 'disabled' });
+      await page.locator('#council-dialogue-skip').click();
+      await expect(page.locator('.council-dialogue')).toHaveCount(0);
       await expect(page.locator('#council-option-accept')).toBeVisible();
       await expect(page.locator('.council-option-tags')).toHaveCount(3);
       await expect(page.locator('#council-option-accept .council-option-tags')).toContainText(/星砂|分钟|安定度|羁绊|态度/);

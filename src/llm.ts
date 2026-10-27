@@ -1082,7 +1082,7 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
-import { defaultOpinionOptions } from './opinions.ts';
+import { defaultOpinionDialogue, defaultOpinionOptions } from './opinions.ts';
 import { createSeedPack } from './content/seed-pack.ts';
 import { monsters as baseMonsters } from './content/monsters.ts';
 import { skills } from './content/skills.ts';
@@ -1165,11 +1165,13 @@ export function materializeDaily(data: GeneratedDaily, state: GameState): { mons
   const agendaTopic = data.agendaTopic ?? '排班';
   const agendaDistrict = agendaTopic === '城市' ? 'candy' : undefined;
   const agendaFaction = agendaDistrict ? state.territories[agendaDistrict] : undefined;
+  const agendaRequest = data.agendaRequest ?? '申请调整一次夜班顺序。';
   const opinion: Opinion = {
     id: `op_${stamp}`, day: state.day, authorId: author?.id ?? state.girls[0].id, topic: agendaTopic,
     title: data.agendaTitle ?? '今晚的排班需要再确认', text: data.agendaText ?? '她在便签上写下了几个名字，又划掉了其中一个。',
-    request: data.agendaRequest ?? '申请调整一次夜班顺序。', status: 'pending', faction: agendaFaction,
+    request: agendaRequest, status: 'pending', faction: agendaFaction,
     options: defaultOpinionOptions(agendaTopic, { authorId: author?.id, authorName: author?.name, faction: agendaFaction, district: agendaDistrict }),
+    dialogue: defaultOpinionDialogue(agendaTopic, { authorId: author?.id, authorName: author?.name, faction: agendaFaction, district: agendaDistrict, request: agendaRequest }),
     assistantNote: '这份议题由故事引擎起草，数值与后果仍由本地规则决定。',
   };
   const envoyMission: Mission = {

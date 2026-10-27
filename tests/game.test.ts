@@ -19,7 +19,7 @@ import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { initiativeOf, simulateBattle } from '../src/combat.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
-import { defaultOpinionOptions, previewOpinionOption } from '../src/opinions.ts';
+import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -409,6 +409,29 @@ test('议会选项可以扣装备与推进时间，时间不足时整条锁定',
   assert.equal(rejected.ok, true);
   assert.equal(rejected.state.inventory['moon-weapon'], 0);
   assert.equal(rejected.state.minutes, SHIFT_START + 30);
+});
+test('议会开场对白按议题生成，旧议题与空对白会回退默认演出', () => {
+  const lines = defaultOpinionDialogue('设施', { authorId: 'yue', authorName: '月', faction: 'witch', request: '申请 900 星砂维修星象台。' });
+  assert.ok(lines.length >= 4);
+  assert.equal(lines[0].speaker, '月');
+  assert.equal(lines[0].expression, 'sad');
+  assert.ok(lines.some(line => line.text.includes('月蚀庭')));
+  assert.equal(lines.at(-1)?.text, '申请 900 星砂维修星象台。');
+
+  const s = createInitialState();
+  const old: Opinion = { id: 'op-old', day: s.day, authorId: 'yue', topic: '经费', title: '换暖灯', text: '', request: '申请 600 星砂。', status: 'pending', options: [] };
+  const fallback = resolveOpinionDialogue(s, old);
+  assert.ok(fallback.length >= 3);
+  assert.equal(fallback[0].speaker, s.girls.find(girl => girl.id === 'yue')!.name);
+  assert.equal(fallback.at(-1)?.text, '申请 600 星砂。');
+
+  const custom = resolveOpinionDialogue(s, { ...old, dialogue: [{ speaker: '旁白', text: '她把议题推到桌子中央。', expression: 'calm' }] });
+  assert.equal(custom.length, 1);
+  assert.equal(custom[0].speaker, '旁白');
+  assert.equal(custom[0].text, '她把议题推到桌子中央。');
+
+  const blank = resolveOpinionDialogue(s, { ...old, dialogue: [{ speaker: '旁白', text: '   ' }] });
+  assert.ok(blank.length >= 3);
 });
 
 

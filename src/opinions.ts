@@ -1,4 +1,4 @@
-import type { FactionId, GameState, MissionTemplate, Opinion, OpinionChange, OpinionOption, OpinionOutcome } from './types';
+import type { FactionId, GameState, MissionTemplate, Opinion, OpinionChange, OpinionDialogueLine, OpinionOption, OpinionOutcome } from './types';
 import { factionInfo, getItem } from './content/items.ts';
 import { districts, type DistrictId } from './districts.ts';
 import { absoluteMinutes, SHIFT_END } from './shift.ts';
@@ -8,6 +8,7 @@ export interface OpinionDefaultContext {
   authorName?: string;
   faction?: FactionId;
   district?: DistrictId;
+  request?: string;
 }
 
 export interface OpinionPreview {
@@ -87,6 +88,52 @@ export function defaultOpinionOptions(topic: Opinion['topic'], context: OpinionD
     { id: 'defer', label: '暂缓', effect: deferEffect, changes: baseDefer },
     { id: 'reject', label: '驳回', effect: rejectEffect, changes: reject },
   ];
+}
+
+/** 按议题主题生成一段简短的提出者独白；数值仍由选项决定。 */
+export function defaultOpinionDialogue(topic: Opinion['topic'], context: OpinionDefaultContext = {}): OpinionDialogueLine[] {
+  const { authorId, authorName = '提出者', faction, district, request } = context;
+  const districtName = district ? districts[district].name : '城里';
+  const script: Record<Opinion['topic'], { opening: string; reason: string; expression: OpinionDialogueLine['expression'] }> = {
+    经费: { opening: '会客厅的灯，我想换很久了。', reason: '不是嫌它旧。只是夜里回来，白光会让人以为自己还在诊所。', expression: 'calm' },
+    排班: { opening: '昨晚点名的时候，有人站着就睡着了。', reason: '我不是想少做事。只是再这样排下去，下一次出任务，她们可能连跑都跑不动。', expression: 'sad' },
+    设施: { opening: '星象台的裂缝又大了。', reason: '风声灌进来的时候，我会把求救听成别的东西。', expression: 'sad' },
+    同伴: { opening: '新来的人今天一直站在门口。', reason: '她没有说，但我知道她在等有人先开口。', expression: 'smile' },
+    城市: { opening: `${districtName}昨晚又出现了异常。`, reason: '我想去看看。不是以事务所的名义，是以住在那条街上的人的名义。', expression: 'calm' },
+    私人心愿: { opening: '这件事和事务所没有关系。', reason: '但我还是想问你。', expression: 'shy' },
+  };
+  const picked = script[topic] ?? script.私人心愿;
+  const lines: OpinionDialogueLine[] = [
+    { speakerId: authorId, speaker: authorName, text: picked.opening, expression: picked.expression },
+    { speakerId: authorId, speaker: authorName, text: picked.reason, expression: picked.expression },
+  ];
+  if (faction && topic !== '私人心愿') {
+    lines.push({ speakerId: authorId, speaker: authorName, text: `这件事，${factionLabel(faction)}也在等一个答复。`, expression: 'calm' });
+  }
+  if (request?.trim()) lines.push({ speakerId: authorId, speaker: authorName, text: request.trim(), expression: picked.expression });
+  return lines;
+}
+
+/** 取议题自带对白；旧存档、故事蓝图或缺失字段时按主题补默认演出。 */
+export function resolveOpinionDialogue(state: GameState, opinion: Opinion): OpinionDialogueLine[] {
+  const author = state.girls.find(girl => girl.id === opinion.authorId) ?? state.memorial.find(entry => entry.girl.id === opinion.authorId)?.girl;
+  const fallback = defaultOpinionDialogue(opinion.topic, {
+    authorId: opinion.authorId,
+    authorName: author?.name ?? '提出者',
+    faction: opinion.faction,
+    request: opinion.request,
+  });
+  if (!Array.isArray(opinion.dialogue)) return fallback;
+  const lines = opinion.dialogue
+    .filter(line => line && typeof line.text === 'string' && line.text.trim())
+    .slice(0, 8)
+    .map(line => ({
+      speakerId: typeof line.speakerId === 'string' ? line.speakerId : opinion.authorId,
+      speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim().slice(0, 24) : author?.name ?? '提出者',
+      text: line.text.trim().slice(0, 240),
+      expression: line.expression,
+    }));
+  return lines.length ? lines : fallback;
 }
 
 /** 旧存档、故事蓝图或手写选项没有结构化数据时，用同主题的默认值补齐。 */

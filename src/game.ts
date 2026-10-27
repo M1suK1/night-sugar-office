@@ -17,7 +17,7 @@ import { applyPct, districtAt, districts, type DistrictId } from './districts.ts
 import { loadBalance, rules } from './balance.ts';
 import { SHIFT_START, SHIFT_END, WAVE_AT, WAVE_SIZES, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt, LONG_MIN_DAYS, LONG_MAX_DAYS, type CommissionWindow } from './shift.ts';
 import { FACTION_ORDER, assignTerritories, canClaim, effectiveDistrictEffect, factionName, ownedDistricts, repairTerritories, type TerritoryMap } from './territories.ts';
-import { defaultOpinionOptions, opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from './opinions.ts';
+import { defaultOpinionDialogue, defaultOpinionOptions, opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from './opinions.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
@@ -410,6 +410,7 @@ function makeOpinion(state: GameState, author: Girl, topic: Opinion['topic'], ti
     id: `op-${state.day}-${hashText(author.id + title + state.minutes)}`, day: state.day, authorId: author.id, topic,
     title, text, request, status: 'pending', faction,
     options: defaultOpinionOptions(topic, { authorId: author.id, authorName: author.name, faction, district }),
+    dialogue: defaultOpinionDialogue(topic, { authorId: author.id, authorName: author.name, faction, district, request }),
     assistantNote: state.assistantId === author.id ? `${author.name}亲自提交，附了一份写得很短的预算。` : undefined,
   };
 }

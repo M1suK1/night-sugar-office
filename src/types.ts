@@ -93,6 +93,13 @@ export type OpinionOutcome =
   | { kind: 'join'; level: number }
   | { kind: 'leave'; girlId: string };
 
+/** 议会开场对白的一段；表情供后续立绘变化使用。 */
+export interface OpinionDialogueLine {
+  speakerId?: string;
+  speaker: string;
+  text: string;
+  expression?: Expression;
+}
 export interface OpinionOption {
   id: 'accept' | 'defer' | 'reject'; label: string; effect: string;
   /** 批准的成本、驳回的惩罚，或通过后的收益。负数表示支付。 */
@@ -106,6 +113,8 @@ export interface Opinion {
   id: string; day: number; authorId: string; topic: '经费' | '排班' | '设施' | '同伴' | '城市' | '私人心愿';
   title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired';
   options: OpinionOption[]; assistantNote?: string; storylineId?: string;
+  /** 提出者的逐段对白；旧议题没有时按主题生成默认对白。 */
+  dialogue?: OpinionDialogueLine[];
   /** 议题所属势力；暂缓与驳回会同步影响它的态度。 */
   faction?: FactionId;
   /** 暂缓后重新回到议事桌的日期。 */

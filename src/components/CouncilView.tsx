@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Clock3, Coins, Heart, Moon, ShieldCheck, X } from 'lucide-react';
 import type { GameState, Opinion } from '../types';
 import { factionInfo } from '../content/items';
-import { opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from '../opinions';
+import { opinionOptionTags, previewOpinionOption, resolveOpinionDialogue, resolveOpinionOptions } from '../opinions';
 import { GirlPortrait } from './GirlPortrait';
 
 type Props = {
@@ -60,12 +60,20 @@ function CouncilBackdrop() {
 export function CouncilView({ state, onDecide, onGirl }: Props) {
   const pending = state.opinions.filter(opinion => opinion.status === 'pending');
   const [index, setIndex] = useState(0);
+  const [lineIndex, setLineIndex] = useState(0);
   const [phase, setPhase] = useState<'entering' | 'idle' | 'leaving'>('entering');
   const current = pending[Math.min(index, Math.max(0, pending.length - 1))];
   const speaker = current ? state.girls.find(girl => girl.id === current.authorId) ?? state.memorial.find(entry => entry.girl.id === current.authorId)?.girl : undefined;
   const assistant = state.girls.find(girl => girl.id === state.assistantId) ?? state.girls.find(girl => !girl.retired);
   const next = pending[index + 1];
   const options = current ? resolveOpinionOptions(state, current) : [];
+  const dialogue = current ? resolveOpinionDialogue(state, current) : [];
+  const dialogueDone = !current || lineIndex >= dialogue.length;
+  const line = dialogueDone ? undefined : dialogue[Math.min(lineIndex, dialogue.length - 1)];
+
+  useEffect(() => {
+    setLineIndex(0);
+  }, [current?.id]);
 
   useEffect(() => {
     setPhase('entering');
@@ -78,7 +86,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
   }, [pending.length, index]);
 
   const decide = (optionId: 'accept' | 'defer' | 'reject') => {
-    if (!current) return;
+    if (!current || !dialogueDone) return;
     const option = options.find(entry => entry.id === optionId);
     if (!option || !previewOpinionOption(state, current, option).ok) return;
     setPhase('leaving');
@@ -89,12 +97,24 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
     }, 320);
   };
 
+  const advanceDialogue = () => {
+    if (!current || dialogueDone) return;
+    setLineIndex(value => Math.min(value + 1, dialogue.length));
+  };
+
   useEffect(() => {
     if (!current) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (!dialogueDone) {
+        if (event.key === ' ' || event.key === 'Enter' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          setLineIndex(value => Math.min(value + 1, dialogue.length));
+        }
+        return;
+      }
       const at = Number(event.key) - 1;
       if (at < 0 || at > 2) return;
       const option = options[at];
@@ -104,7 +124,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [current, options, state]);
+  }, [current, options, state, dialogueDone, dialogue.length]);
 
   return (
     <section className="council-stage" aria-label="议会">
@@ -130,7 +150,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
           <ul className="council-effort">
             {speaker && speaker.traits.slice(0, 3).map(trait => <li key={trait.id}><span className={`polarity ${trait.polarity}`}>{trait.name}</span>{trait.description}</li>)}
           </ul>
-          <p className="council-hint">决议会改变辖区归属、预算或她们的状态。按 1 / 2 / 3 也可以直接选择；资源不足的选项会锁定。</p>
+          <p className="council-hint">{dialogueDone ? '决议会改变辖区归属、预算或她们的状态。按 1 / 2 / 3 也可以直接选择；资源不足的选项会锁定。' : '先听她把话说完，再作决定。点击「继续」或按空格推进对白。'}</p>
         </aside>
 
         <div className={`council-speaker ${phase}`}>
@@ -146,9 +166,9 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
                 <small>{current.request}</small>
               </header>
               <div className="council-figure">
-                {speaker ? <GirlPortrait girl={{ ...speaker, expression: 'calm' }} variant="full" bare /> : <div className="council-figure-empty" />}
+                {speaker ? <GirlPortrait girl={{ ...speaker, expression: line?.expression ?? 'calm' }} variant="full" bare /> : <div className="council-figure-empty" />}
               </div>
-              <div className="council-options">
+              <div className={`council-options ${dialogueDone ? 'ready' : 'waiting'}`}>
                 {options.map((option, at) => {
                   const meta = optionMeta[option.id];
                   const Icon = meta.icon;
@@ -177,6 +197,25 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
                   );
                 })}
               </div>
+              {!dialogueDone && line && (
+                <div className="council-dialogue" aria-live="polite" onClick={advanceDialogue}>
+                  <div className="council-dialogue-head">
+                    <b>{line.speaker}</b>
+                    <span>{lineIndex + 1} / {dialogue.length}</span>
+                  </div>
+                  <p className="council-dialogue-text">{line.text}</p>
+                  <div className="council-dialogue-foot">
+                    <span>点击对话框或按空格继续</span>
+                    <div>
+                      <button id="council-dialogue-skip" type="button" onClick={event => { event.stopPropagation(); setLineIndex(dialogue.length); }}>跳过</button>
+                      <button id="council-dialogue-next" type="button" className="primary" onClick={event => { event.stopPropagation(); advanceDialogue(); }}>
+                        {lineIndex + 1 >= dialogue.length ? '进入决议' : '继续'}
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="council-empty">
