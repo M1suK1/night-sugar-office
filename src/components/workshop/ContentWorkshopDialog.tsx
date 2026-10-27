@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Copy, Download, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
 import { items as itemRegistry, factionInfo } from '../../content/items';
@@ -41,6 +41,44 @@ const INCIDENT_TRIGGER_LABELS: Record<IncidentCard['trigger'], string> = { manua
 const KIND_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备与消耗品', monster: '魔物', incident: '弹窗事件' };
 const KIND_NEW_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备', monster: '魔物', incident: '弹窗' };
 
+interface PickerOption { value: string; label: string; note?: string }
+
+function FilterPickerRow({ idPrefix, index, options, value, disabled, placeholder, taken, onChange, onRemove }: {
+  idPrefix: string;
+  index: number;
+  options: PickerOption[];
+  value: string;
+  disabled: boolean;
+  placeholder: string;
+  taken: Set<string>;
+  onChange: (value: string) => void;
+  onRemove?: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const pool = options.filter(option => (!taken.has(option.value) || option.value === value)
+    && (!needle || `${option.label} ${option.note ?? ''}`.toLowerCase().includes(needle)));
+  const chosen = options.find(option => option.value === value);
+  const visible = chosen && !pool.some(option => option.value === value) ? [chosen, ...pool] : pool;
+  return (
+    <div className="workshop-picker-row">
+      <input
+        id={`${idPrefix}-filter-${index}`}
+        className="workshop-picker-filter"
+        value={query}
+        placeholder="输入关键词筛选"
+        disabled={disabled}
+        onChange={event => setQuery(event.target.value)}
+      />
+      <select id={`${idPrefix}-${index}`} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
+        <option value="">{placeholder}</option>
+        {visible.map(option => <option key={option.value} value={option.value}>{option.label}{option.note ? ` · ${option.note}` : ''}</option>)}
+      </select>
+      {onRemove && <button id={`${idPrefix}-remove-${index}`} type="button" className="icon-btn" disabled={disabled} onClick={onRemove} aria-label="移除这一项"><Trash2 size={12} /></button>}
+    </div>
+  );
+}
+
 interface Props {
   state: GameState;
   library: ContentLibrary;
@@ -74,6 +112,8 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
   const [tab, setTab] = useState<'form' | 'preview'>('form');
   const [strategy, setStrategy] = useState<ImportStrategy>('rename');
   const importRef = useRef<HTMLInputElement>(null);
+  const [enemySlots, setEnemySlots] = useState<string[]>(['']);
+  const [skillSlots, setSkillSlots] = useState<string[]>(['']);
 
   const allSkills = useMemo(() => [...skillRegistry.filter(entry => !isCustom(entry.id)), ...draft.skills], [draft.skills]);
   const allItems = useMemo(() => [...itemRegistry.filter(entry => !isCustom(entry.id)), ...draft.items], [draft.items]);
@@ -101,6 +141,13 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
   const current = kind === 'skill' ? skill : kind === 'item' ? item : kind === 'monster' ? monster : kind === 'incident' ? incident : mission;
   const currentName = kind === 'mission' ? mission?.title : kind === 'incident' ? incident?.title : (current as Skill | Equipment | MonsterTemplate | undefined)?.name;
   const editable = Boolean(current && isCustom(current.id));
+
+  useEffect(() => {
+    setEnemySlots(mission && mission.enemyIds.length ? [...mission.enemyIds] : ['']);
+  }, [selected.mission]);
+  useEffect(() => {
+    setSkillSlots(monster && monster.skillIds.length ? [...monster.skillIds] : ['']);
+  }, [selected.monster]);
 
   const switchKind = (next: WorkshopKind) => {
     setKind(next);
@@ -284,22 +331,33 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     patchMonster({ rules: (monster.rules ?? []).filter((_, at) => at !== index) });
   };
 
-  const toggleSkill = (id: string) => {
-    if (!monster) return;
-    const has = monster.skillIds.includes(id);
-    if (has) {
-      if (monster.skillIds.length <= 1) return;
-      patchMonster({ skillIds: monster.skillIds.filter(entry => entry !== id) });
-    } else if (monster.skillIds.length < 6) {
-      patchMonster({ skillIds: [...monster.skillIds, id] });
-    }
-  };
-
-  const toggleEnemy = (id: string) => {
+  const setEnemyAt = (index: number, id: string) => {
     if (!mission) return;
-    const has = mission.enemyIds.includes(id);
-    if (has) patchMission({ enemyIds: mission.enemyIds.filter(entry => entry !== id) });
-    else if (mission.enemyIds.length < 3) patchMission({ enemyIds: [...mission.enemyIds, id] });
+    const next = [...enemySlots];
+    next[index] = id;
+    setEnemySlots(next);
+    patchMission({ enemyIds: next.filter(Boolean).slice(0, 3) });
+  };
+  const addEnemySlot = () => setEnemySlots(previous => [...previous, ''].slice(0, 3));
+  const removeEnemySlot = (index: number) => {
+    const next = enemySlots.filter((_, at) => at !== index);
+    const slots = next.length ? next : [''];
+    setEnemySlots(slots);
+    if (mission) patchMission({ enemyIds: slots.filter(Boolean) });
+  };
+  const setSkillAt = (index: number, id: string) => {
+    if (!monster) return;
+    const next = [...skillSlots];
+    next[index] = id;
+    setSkillSlots(next);
+    patchMonster({ skillIds: next.filter(Boolean).slice(0, 6) });
+  };
+  const addSkillSlot = () => setSkillSlots(previous => [...previous, ''].slice(0, 6));
+  const removeSkillSlot = (index: number) => {
+    const next = skillSlots.filter((_, at) => at !== index);
+    const slots = next.length ? next : [''];
+    setSkillSlots(slots);
+    if (monster) patchMonster({ skillIds: slots.filter(Boolean) });
   };
 
   const deploy = () => {
@@ -587,11 +645,23 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   ))}
                 </section>
                 <section className="workshop-section">
-                  <header><h4>技能（最多 6 个）</h4><small>{monster.skillIds.length}/6</small></header>
-                  <div className="workshop-skills">
-                    {skillRegistry.map(entry => (
-                      <label key={entry.id} className="workshop-check"><input id={`workshop-monster-skill-${entry.id}`} type="checkbox" checked={monster.skillIds.includes(entry.id)} disabled={!editable} onChange={() => toggleSkill(entry.id)} />{entry.name}</label>
+                  <header><h4>技能（最多 6 个）</h4><small>{skillSlots.filter(Boolean).length}/6</small></header>
+                  <div className="workshop-picker">
+                    {skillSlots.map((value, index) => (
+                      <FilterPickerRow
+                        key={`${monster.id}-skill-${index}`}
+                        idPrefix="workshop-monster-skill"
+                        index={index}
+                        options={allSkills.map(entry => ({ value: entry.id, label: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}` }))}
+                        value={value}
+                        disabled={!editable}
+                        placeholder="选择技能"
+                        taken={new Set(skillSlots.filter((entry, at) => Boolean(entry) && at !== index))}
+                        onChange={next => setSkillAt(index, next)}
+                        onRemove={skillSlots.length > 1 ? () => removeSkillSlot(index) : undefined}
+                      />
                     ))}
+                    <button id="workshop-add-monster-skill" type="button" className="ghost-btn workshop-picker-add" disabled={!editable || skillSlots.length >= 6} onClick={addSkillSlot}><Plus size={13} /> 添加技能</button>
                   </div>
                 </section>
               </div>
@@ -616,12 +686,24 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                 </div>
                 <label className="field"><span>说明</span><textarea id="workshop-mission-description" rows={3} value={mission.description} disabled={!editable} onChange={event => patchMission({ description: event.target.value })} /></label>
                 <section className="workshop-section">
-                  <header><h4>敌人（战斗委托 1–3 只）</h4><small>{mission.enemyIds.length}/3</small></header>
+                  <header><h4>敌人（战斗委托 1–3 只）</h4><small>{enemySlots.filter(Boolean).length}/3</small></header>
                   {mission.work === 'combat' && mission.enemyIds.length === 0 && <p className="workshop-muted">战斗委托至少需要一只魔物；保存时会自动补一只。</p>}
-                  <div className="workshop-skills">
-                    {allMonsters.map(entry => (
-                      <label key={entry.id} className="workshop-check"><input id={`workshop-mission-enemy-${entry.id}`} type="checkbox" checked={mission.enemyIds.includes(entry.id)} disabled={!editable || mission.work !== 'combat'} onChange={() => toggleEnemy(entry.id)} />{entry.name}</label>
+                  <div className="workshop-picker">
+                    {enemySlots.map((value, index) => (
+                      <FilterPickerRow
+                        key={`${mission.id}-enemy-${index}`}
+                        idPrefix="workshop-mission-enemy"
+                        index={index}
+                        options={allMonsters.map(entry => ({ value: entry.id, label: entry.name, note: `${entry.rank} · ${entry.element}` }))}
+                        value={value}
+                        disabled={!editable || mission.work !== 'combat'}
+                        placeholder="选择魔物"
+                        taken={new Set(enemySlots.filter((entry, at) => Boolean(entry) && at !== index))}
+                        onChange={next => setEnemyAt(index, next)}
+                        onRemove={enemySlots.length > 1 ? () => removeEnemySlot(index) : undefined}
+                      />
                     ))}
+                    <button id="workshop-add-mission-enemy" type="button" className="ghost-btn workshop-picker-add" disabled={!editable || mission.work !== 'combat' || enemySlots.length >= 3} onClick={addEnemySlot}><Plus size={13} /> 添加敌人</button>
                   </div>
                 </section>
                 <p className="workshop-muted">保存后进入夜间委托轮转池；也可以点右上「投放测试」立刻在当前夜晚生成一份。</p>

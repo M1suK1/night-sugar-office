@@ -813,6 +813,11 @@ try {
     await page.locator('#workshop-new').click();
     await page.locator('#workshop-name').fill('测试·夜斑蝶');
     await page.locator('#workshop-hp').fill('260');
+    await expect(page.locator('#workshop-monster-skill-0')).toBeVisible();
+    await page.locator('#workshop-add-monster-skill').click();
+    await expect(page.locator('#workshop-monster-skill-1')).toBeVisible();
+    await page.locator('#workshop-monster-skill-remove-1').click();
+    await expect(page.locator('#workshop-monster-skill-1')).toHaveCount(0);
     await page.locator('#workshop-add-rule').click();
     await page.locator('#workshop-rule-effect-0').selectOption('damageReduce');
     await page.locator('#workshop-rule-amount-0').fill('25');
@@ -832,7 +837,15 @@ try {
     await page.locator('#workshop-mission-requirement').selectOption('empathy');
     await page.locator('#workshop-mission-target').fill('80');
     await page.locator('#workshop-mission-work').selectOption('combat');
-    await page.locator('#workshop-mission-enemy-night-tram').check();
+    await expect(page.locator('#workshop-mission-enemy-0')).toBeVisible();
+    await page.locator('#workshop-mission-enemy-filter-0').fill('回声');
+    await expect(page.locator('#workshop-mission-enemy-0 option')).toHaveCount(2);
+    await page.locator('#workshop-mission-enemy-filter-0').fill('');
+    await page.locator('#workshop-mission-enemy-0').selectOption('night-tram');
+    await page.locator('#workshop-add-mission-enemy').click();
+    await expect(page.locator('#workshop-mission-enemy-1')).toBeVisible();
+    await page.locator('#workshop-mission-enemy-remove-1').click();
+    await expect(page.locator('#workshop-mission-enemy-1')).toHaveCount(0);
     await page.locator('#workshop-mission-reward').fill('900');
     await page.locator('#workshop-mission-district').selectOption('candy');
     await page.locator('#workshop-mission-window').selectOption('long');
