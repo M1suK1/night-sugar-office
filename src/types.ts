@@ -222,10 +222,25 @@ export interface IncidentOption {
 }
 export interface Incident {
   id: string; day: number; kind: 'faction' | 'environment' | 'girl';
-  source: 'llm' | 'rule'; title: string; body: string;
+  source: 'llm' | 'rule' | 'custom'; title: string; body: string;
   faction?: FactionId; girlId?: string; district?: DistrictId;
   options: IncidentOption[]; status: 'pending' | 'resolved'; storylineId?: string;
-  choiceId?: string; resolvedAt?: string;
+  choiceId?: string; resolvedAt?: string; cardId?: string;
+}
+
+/** 内容工坊里的弹窗事件卡；投放时快照成 Incident，之后删卡不会破坏存档。 */
+export interface IncidentCardEffect extends Omit<IncidentEffect, 'district'> {
+  district?: { id: DistrictId; targetPct?: number; rewardPct?: number; days: number };
+}
+export interface IncidentCardOption {
+  id: string; label: string; hint: string; effect: IncidentCardEffect;
+}
+export interface IncidentCard {
+  id: string; title: string; body: string; kind: Incident['kind'];
+  faction?: FactionId; district?: DistrictId; girlId?: string;
+  options: IncidentCardOption[];
+  trigger: 'manual' | 'pool'; weight: number; oncePerDay: boolean;
+  source: 'custom';
 }
 export type StoryTrigger =
   | { kind: 'mission'; title: string; description: string; district?: DistrictId; duration?: number }

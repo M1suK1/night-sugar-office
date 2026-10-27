@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Copy, FlaskConical, Lock, Play, Plus, Save, Sparkles, Trash2, X } from 'lucide-react';
-import type { Equipment, GameState, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
+import { AlertTriangle, Copy, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
+import type { Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
 import { items as itemRegistry, factionInfo } from '../../content/items';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
 import {
-  applyLibrary, contentUsage, emptyItem, emptyMission, emptyMonster, emptySkill, libraryCounts, ruleText, saveLibrary,
+  applyLibrary, contentUsage, emptyIncidentCard, emptyItem, emptyMission, emptyMonster, emptySkill, libraryCounts, ruleText, saveLibrary,
   type ContentLibrary, type WorkshopKind,
 } from '../../content/library';
 import { MonsterGlyph } from '../MonsterGlyph';
@@ -34,12 +34,19 @@ const CONSUMABLE_LABELS: Record<NonNullable<Equipment['effect']>, string> = { dr
 const MISSION_DIFFICULTIES: MissionTemplate['difficulty'][] = ['低危', '中危', '高危', '绝望'];
 const MISSION_WORK_LABELS: Record<MissionTemplate['work'], string> = { combat: '战斗', investigation: '调查' };
 const MISSION_WINDOW_LABELS: Record<NonNullable<MissionTemplate['window']>, string> = { urgent: '紧急', long: '长期' };
+const INCIDENT_KINDS: IncidentCard['kind'][] = ['faction', 'environment', 'girl'];
+const INCIDENT_KIND_LABELS: Record<IncidentCard['kind'], string> = { faction: '三方势力', environment: '环境变化', girl: '契约者状态' };
+const INCIDENT_TRIGGERS: IncidentCard['trigger'][] = ['manual', 'pool'];
+const INCIDENT_TRIGGER_LABELS: Record<IncidentCard['trigger'], string> = { manual: '手动投放', pool: '随机池（后续接入）' };
+const KIND_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备与消耗品', monster: '魔物', incident: '弹窗事件' };
+const KIND_NEW_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备', monster: '魔物', incident: '弹窗' };
 
 interface Props {
   state: GameState;
   library: ContentLibrary;
   onCommit: (library: ContentLibrary) => void;
   onDeployMission: (template: MissionTemplate) => void;
+  onDeployIncident: (card: IncidentCard) => void;
   onClose: () => void;
   onNotify: (message: string, ok?: boolean) => void;
 }
@@ -54,7 +61,7 @@ const baseMission = (option: ReturnType<typeof missionTemplates>[number]): Missi
   reward: 600, color: '#c9a7e8',
 });
 
-export function ContentWorkshopDialog({ state, library, onCommit, onDeployMission, onClose, onNotify }: Props) {
+export function ContentWorkshopDialog({ state, library, onCommit, onDeployMission, onDeployIncident, onClose, onNotify }: Props) {
   const [draft, setDraft] = useState<ContentLibrary>(library);
   const [kind, setKind] = useState<WorkshopKind>('mission');
   const [selected, setSelected] = useState<Record<WorkshopKind, string>>({
@@ -62,6 +69,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     item: library.items[0]?.id ?? itemRegistry[0]?.id ?? '',
     monster: library.monsters[0]?.id ?? monsterRegistry[0]?.id ?? '',
     mission: library.missions[0]?.id ?? missionTemplates()[0]?.id ?? '',
+    incident: library.incidents[0]?.id ?? '',
   });
   const [tab, setTab] = useState<'form' | 'preview'>('form');
 
@@ -72,20 +80,24 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     () => [...missionTemplates().filter(entry => !entry.id.startsWith('custom-')).map(baseMission), ...draft.missions],
     [draft.missions],
   );
+  const allIncidents = draft.incidents;
   const list: { id: string; name: string; note: string }[] = kind === 'skill'
     ? allSkills.map(entry => ({ id: entry.id, name: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}` }))
     : kind === 'item'
       ? allItems.map(entry => ({ id: entry.id, name: entry.name, note: `${factionInfo[entry.faction].name} · ${entry.slot}` }))
       : kind === 'monster'
         ? allMonsters.map(entry => ({ id: entry.id, name: entry.name, note: `${entry.rank} · ${entry.element}` }))
-        : allMissions.map(entry => ({ id: entry.id, name: entry.title, note: `${entry.difficulty} · ${MISSION_WORK_LABELS[entry.work]} · ${entry.duration} 分` }));
+        : kind === 'incident'
+          ? allIncidents.map(entry => ({ id: entry.id, name: entry.title, note: `${INCIDENT_KIND_LABELS[entry.kind]} · ${entry.options.length} 个选项` }))
+          : allMissions.map(entry => ({ id: entry.id, name: entry.title, note: `${entry.difficulty} · ${MISSION_WORK_LABELS[entry.work]} · ${entry.duration} 分` }));
   const currentId = selected[kind];
   const skill = allSkills.find(entry => entry.id === currentId) ?? allSkills[0];
   const item = allItems.find(entry => entry.id === currentId) ?? allItems[0];
   const monster = allMonsters.find(entry => entry.id === currentId) ?? allMonsters[0];
   const mission = allMissions.find(entry => entry.id === currentId) ?? allMissions[0];
-  const current = kind === 'skill' ? skill : kind === 'item' ? item : kind === 'monster' ? monster : mission;
-  const currentName = kind === 'mission' ? mission?.title : (current as Skill | Equipment | MonsterTemplate | undefined)?.name;
+  const incident = allIncidents.find(entry => entry.id === currentId) ?? allIncidents[0];
+  const current = kind === 'skill' ? skill : kind === 'item' ? item : kind === 'monster' ? monster : kind === 'incident' ? incident : mission;
+  const currentName = kind === 'mission' ? mission?.title : kind === 'incident' ? incident?.title : (current as Skill | Equipment | MonsterTemplate | undefined)?.name;
   const editable = Boolean(current && isCustom(current.id));
 
   const switchKind = (next: WorkshopKind) => {
@@ -114,6 +126,25 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     if (!mission || !isCustom(mission.id)) return;
     setDraft(prev => ({ ...prev, missions: prev.missions.map(entry => entry.id === mission.id ? { ...entry, ...patch } : entry) }));
   };
+  const patchIncident = (patch: Partial<IncidentCard>) => {
+    if (!incident || !isCustom(incident.id)) return;
+    setDraft(prev => ({ ...prev, incidents: prev.incidents.map(entry => entry.id === incident.id ? { ...entry, ...patch } : entry) }));
+  };
+  const patchIncidentOption = (index: number, patch: Partial<IncidentCard['options'][number]>) => {
+    if (!incident) return;
+    patchIncident({ options: incident.options.map((entry, at) => at === index ? { ...entry, ...patch } : entry) });
+  };
+  const patchIncidentEffect = (index: number, patch: Partial<IncidentCardEffect>) => {
+    const option = incident?.options[index];
+    if (!option) return;
+    patchIncidentOption(index, { effect: { ...option.effect, ...patch } });
+  };
+  const setIncidentDistrict = (index: number, patch: Partial<NonNullable<IncidentCardEffect['district']>>) => {
+    const option = incident?.options[index];
+    if (!option) return;
+    const base = option.effect.district ?? { id: 'candy' as const, days: 1 };
+    patchIncidentEffect(index, { district: { ...base, ...patch } });
+  };
   const patchRule = (index: number, patch: Partial<MonsterRule>) => {
     if (!monster) return;
     patchMonster({ rules: (monster.rules ?? []).map((entry, at) => at === index ? { ...entry, ...patch } : entry) });
@@ -131,6 +162,10 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     } else if (kind === 'monster') {
       const next = emptyMonster();
       setDraft(prev => ({ ...prev, monsters: [...prev.monsters, next] }));
+      select(next.id);
+    } else if (kind === 'incident') {
+      const next = emptyIncidentCard();
+      setDraft(prev => ({ ...prev, incidents: [...prev.incidents, next] }));
       select(next.id);
     } else {
       const next = emptyMission();
@@ -158,6 +193,13 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
       const next: MissionTemplate = { ...mission, id: `custom-mission-${Date.now().toString(36)}`, title: `${mission.title} 副本`, enemyIds: [...mission.enemyIds] };
       setDraft(prev => ({ ...prev, missions: [...prev.missions, next] }));
       select(next.id);
+    } else if (kind === 'incident' && incident) {
+      const next: IncidentCard = {
+        ...incident, id: `custom-incident-${Date.now().toString(36)}`, title: `${incident.title} 副本`,
+        options: incident.options.map(option => ({ ...option, effect: { ...option.effect, faction: option.effect.faction ? { ...option.effect.faction } : undefined, girl: option.effect.girl ? { ...option.effect.girl } : undefined, district: option.effect.district ? { ...option.effect.district } : undefined, territory: option.effect.territory ? { ...option.effect.territory } : undefined } })),
+      };
+      setDraft(prev => ({ ...prev, incidents: [...prev.incidents, next] }));
+      select(next.id);
     }
     setTab('form');
   };
@@ -173,6 +215,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     if (kind === 'item') setDraft(prev => ({ ...prev, items: prev.items.filter(entry => entry.id !== current.id) }));
     if (kind === 'monster') setDraft(prev => ({ ...prev, monsters: prev.monsters.filter(entry => entry.id !== current.id) }));
     if (kind === 'mission') setDraft(prev => ({ ...prev, missions: prev.missions.filter(entry => entry.id !== current.id) }));
+    if (kind === 'incident') setDraft(prev => ({ ...prev, incidents: prev.incidents.filter(entry => entry.id !== current.id) }));
     onNotify('已从草稿中移除，保存后生效。');
   };
 
@@ -227,6 +270,22 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     }
     onDeployMission(mission);
   };
+  const addIncidentOption = () => {
+    if (!incident) return;
+    patchIncident({ options: [...incident.options, { id: `opt-${incident.options.length + 1}`, label: '新的选择', hint: '', effect: {} }].slice(0, 3) });
+  };
+  const removeIncidentOption = (index: number) => {
+    if (!incident || incident.options.length <= 2) return;
+    patchIncident({ options: incident.options.filter((_, at) => at !== index) });
+  };
+  const deployIncident = () => {
+    if (!incident) return;
+    if (!incident.title.trim() || !incident.body.trim()) {
+      onNotify('弹窗需要标题和正文。', false);
+      return;
+    }
+    onDeployIncident(incident);
+  };
 
   return (
     <section className="workshop-layer" aria-label="内容工坊">
@@ -238,17 +297,17 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
             <p className="workshop-sub">{libraryCounts(draft)} · 保存后进入图鉴、商店货架与战斗池</p>
           </div>
           <div className="workshop-head-actions">
-            <button id="workshop-new" className="ghost-btn" onClick={createNew}><Plus size={14} /> 新建{kind === 'skill' ? '技能' : kind === 'item' ? '装备' : kind === 'monster' ? '魔物' : '委托'}</button>
+            <button id="workshop-new" className="ghost-btn" onClick={createNew}><Plus size={14} /> 新建{KIND_NEW_LABELS[kind]}</button>
             <button id="workshop-save" className="primary-btn" onClick={persist}><Save size={14} /> 保存内容库</button>
             <button id="workshop-close" className="icon-btn" onClick={onClose} aria-label="关闭内容工坊"><X size={18} /></button>
           </div>
         </header>
 
         <div className="workshop-tabs" role="tablist">
-          {(['mission', 'skill', 'item', 'monster'] as WorkshopKind[]).map(entry => (
+          {(['mission', 'incident', 'skill', 'item', 'monster'] as WorkshopKind[]).map(entry => (
             <button key={entry} id={`workshop-tab-${entry}`} role="tab" aria-selected={kind === entry} className={kind === entry ? 'active' : ''} onClick={() => switchKind(entry)}>
-              {entry === 'skill' ? '技能' : entry === 'item' ? '装备与消耗品' : entry === 'monster' ? '魔物' : '委托'}
-              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : allMissions.length}</em>
+              {KIND_LABELS[entry]}
+              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : entry === 'incident' ? allIncidents.length : allMissions.length}</em>
             </button>
           ))}
         </div>
@@ -277,6 +336,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                 <button id="workshop-duplicate" className="ghost-btn" onClick={duplicate}><Copy size={13} /> 复制为自制</button>
                 {editable && <button id="workshop-delete" className="ghost-btn danger" onClick={remove}><Trash2 size={13} /> 删除</button>}
                 {mission && kind === 'mission' && <button id="workshop-deploy" className="ghost-btn" onClick={deploy}><Play size={13} /> 投放测试</button>}
+                {incident && kind === 'incident' && <button id="workshop-deploy" className="ghost-btn" onClick={deployIncident}><Play size={13} /> 投放测试</button>}
                 <button id="workshop-tab-form" className={`ghost-btn ${tab === 'form' ? 'active' : ''}`} onClick={() => setTab('form')}>编辑</button>
                 <button id="workshop-tab-preview" className={`ghost-btn ${tab === 'preview' ? 'active' : ''}`} onClick={() => setTab('preview')}>预览</button>
               </div>
@@ -317,6 +377,28 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                       <ul>{(monster.rules ?? []).map((rule, index) => <li key={index}>{ruleText(rule)}</li>)}</ul>
                       <p className="workshop-muted">技能：{monster.skillIds.map(id => skillRegistry.find(entry => entry.id === id)?.name ?? id).join('、')}</p>
                     </div>
+                  </article>
+                )}
+                {kind === 'incident' && incident && (
+                  <article className="incident-card workshop-incident-card">
+                    <header className="incident-head">
+                      <span className={`incident-kind ${incident.kind}`}><AlertTriangle size={13} />{INCIDENT_KIND_LABELS[incident.kind]}</span>
+                      <span className="incident-source">工坊投放</span>
+                    </header>
+                    <h2>{incident.title}</h2>
+                    {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {factionInfo[incident.faction].envoy}</p>}
+                    {incident.district && <p className="incident-meta"><MapPin size={12} />{districts[incident.district].name}</p>}
+                    {incident.girlId && <p className="incident-meta"><Heart size={12} />{state.girls.find(girl => girl.id === incident.girlId)?.name ?? incident.girlId}</p>}
+                    <p className="incident-body">{incident.body || '还没有写正文。'}</p>
+                    <div className="incident-options">
+                      {incident.options.map((option, index) => (
+                        <div key={option.id} className="incident-option">
+                          <em>{index + 1}</em>
+                          <span><b>{option.label}</b><small>{option.hint || '没有补充说明。'}</small></span>
+                        </div>
+                      ))}
+                    </div>
+                    <footer className="incident-foot"><Sparkles size={12} />必须现在决定。处理完才能继续推进时间。</footer>
                   </article>
                 )}
                 {kind === 'mission' && mission && (
@@ -484,6 +566,53 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   </div>
                 </section>
                 <p className="workshop-muted">保存后进入夜间委托轮转池；也可以点右上「投放测试」立刻在当前夜晚生成一份。</p>
+              </div>
+            )}
+
+            {current && tab === 'form' && kind === 'incident' && incident && (
+              <div className="workshop-form">
+                <div className="workshop-grid">
+                  <label className="field"><span>标题</span><input id="workshop-incident-title" value={incident.title} disabled={!editable} onChange={event => patchIncident({ title: event.target.value })} /></label>
+                  <label className="field"><span>类型</span><select id="workshop-incident-kind" value={incident.kind} disabled={!editable} onChange={event => patchIncident({ kind: event.target.value as IncidentCard['kind'] })}>{INCIDENT_KINDS.map(value => <option key={value} value={value}>{INCIDENT_KIND_LABELS[value]}</option>)}</select></label>
+                  <label className="field"><span>触发方式</span><select id="workshop-incident-trigger" value={incident.trigger} disabled={!editable} onChange={event => patchIncident({ trigger: event.target.value as IncidentCard['trigger'] })}>{INCIDENT_TRIGGERS.map(value => <option key={value} value={value}>{INCIDENT_TRIGGER_LABELS[value]}</option>)}</select></label>
+                  <label className="field"><span>权重</span><input id="workshop-incident-weight" type="number" min="1" max="20" value={incident.weight} disabled={!editable} onChange={event => patchIncident({ weight: Math.min(20, Math.max(1, num(event.target.value, 5))) })} /></label>
+                  <label className="field"><span>势力</span><select id="workshop-incident-faction" value={incident.faction ?? ''} disabled={!editable} onChange={event => patchIncident({ faction: (event.target.value || undefined) as IncidentCard['faction'] })}><option value="">不绑定</option>{Object.entries(factionInfo).map(([value, info]) => <option key={value} value={value}>{info.name}</option>)}</select></label>
+                  <label className="field"><span>辖区</span><select id="workshop-incident-district" value={incident.district ?? ''} disabled={!editable} onChange={event => patchIncident({ district: (event.target.value || undefined) as IncidentCard['district'] })}><option value="">不绑定</option>{Object.values(districts).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                  <label className="field"><span>契约者</span><select id="workshop-incident-girl" value={incident.girlId ?? ''} disabled={!editable} onChange={event => patchIncident({ girlId: event.target.value || undefined })}><option value="">不绑定</option>{state.girls.map(girl => <option key={girl.id} value={girl.id}>{girl.name}</option>)}</select></label>
+                  <label className="workshop-check"><input id="workshop-incident-once" type="checkbox" checked={incident.oncePerDay} disabled={!editable} onChange={event => patchIncident({ oncePerDay: event.target.checked })} />每日最多一次</label>
+                </div>
+                <label className="field"><span>正文</span><textarea id="workshop-incident-body" rows={4} value={incident.body} disabled={!editable} onChange={event => patchIncident({ body: event.target.value })} /></label>
+                <section className="workshop-section">
+                  <header><h4>选项（2–3 个）</h4><button id="workshop-add-option" className="ghost-btn" disabled={!editable || incident.options.length >= 3} onClick={addIncidentOption}><Plus size={12} /> 添加选项</button></header>
+                  {incident.options.map((option, index) => (
+                    <div className="workshop-incident-option" key={index}>
+                      <div className="workshop-row">
+                        <input id={`workshop-incident-option-label-${index}`} value={option.label} disabled={!editable} onChange={event => patchIncidentOption(index, { label: event.target.value })} aria-label="选项文字" />
+                        <input id={`workshop-incident-option-hint-${index}`} value={option.hint} disabled={!editable} onChange={event => patchIncidentOption(index, { hint: event.target.value })} aria-label="选项提示" />
+                        <button id={`workshop-incident-option-remove-${index}`} className="icon-btn" disabled={!editable || incident.options.length <= 2} onClick={() => removeIncidentOption(index)} aria-label="删除选项"><Trash2 size={12} /></button>
+                      </div>
+                      <div className="workshop-stats">
+                        <label className="field"><span>星砂</span><input id={`workshop-incident-gold-${index}`} type="number" value={option.effect.gold ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { gold: num(event.target.value) })} /></label>
+                        <label className="field"><span>声望</span><input id={`workshop-incident-reputation-${index}`} type="number" value={option.effect.reputation ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { reputation: num(event.target.value) })} /></label>
+                        <label className="field"><span>势力好感</span><select id={`workshop-incident-effect-faction-${index}`} value={option.effect.faction?.id ?? ''} disabled={!editable} onChange={event => patchIncidentEffect(index, { faction: event.target.value ? { id: event.target.value as NonNullable<IncidentCardEffect['faction']>['id'], standing: option.effect.faction?.standing ?? 0 } : undefined })}><option value="">无</option>{Object.entries(factionInfo).map(([value, info]) => <option key={value} value={value}>{info.name}</option>)}</select></label>
+                        <label className="field"><span>势力数值</span><input id={`workshop-incident-standing-${index}`} type="number" value={option.effect.faction?.standing ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { faction: option.effect.faction ? { ...option.effect.faction, standing: num(event.target.value) } : undefined })} /></label>
+                        <label className="field"><span>疲劳</span><input id={`workshop-incident-fatigue-${index}`} type="number" value={option.effect.girl?.fatigue ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { girl: { ...option.effect.girl, fatigue: num(event.target.value) } })} /></label>
+                        <label className="field"><span>共情</span><input id={`workshop-incident-spirit-${index}`} type="number" value={option.effect.girl?.spirit ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { girl: { ...option.effect.girl, spirit: num(event.target.value) } })} /></label>
+                        <label className="field"><span>侵蚀</span><input id={`workshop-incident-corruption-${index}`} type="number" value={option.effect.girl?.corruption ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { girl: { ...option.effect.girl, corruption: num(event.target.value) } })} /></label>
+                        <label className="field"><span>好感</span><input id={`workshop-incident-bond-${index}`} type="number" value={option.effect.girl?.bond ?? 0} disabled={!editable} onChange={event => patchIncidentEffect(index, { girl: { ...option.effect.girl, bond: num(event.target.value) } })} /></label>
+                      </div>
+                      <div className="workshop-stats">
+                        <label className="field"><span>辖区影响</span><select id={`workshop-incident-district-effect-${index}`} value={option.effect.district?.id ?? ''} disabled={!editable} onChange={event => event.target.value ? setIncidentDistrict(index, { id: event.target.value as NonNullable<IncidentCardEffect['district']>['id'] }) : patchIncidentEffect(index, { district: undefined })}><option value="">无</option>{Object.values(districts).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                        <label className="field"><span>委托目标%</span><input id={`workshop-incident-target-${index}`} type="number" value={option.effect.district?.targetPct ?? 0} disabled={!editable} onChange={event => setIncidentDistrict(index, { targetPct: num(event.target.value) })} /></label>
+                        <label className="field"><span>报酬%</span><input id={`workshop-incident-reward-${index}`} type="number" value={option.effect.district?.rewardPct ?? 0} disabled={!editable} onChange={event => setIncidentDistrict(index, { rewardPct: num(event.target.value) })} /></label>
+                        <label className="field"><span>持续天数</span><input id={`workshop-incident-days-${index}`} type="number" min="1" max="7" value={option.effect.district?.days ?? 1} disabled={!editable} onChange={event => setIncidentDistrict(index, { days: Math.min(7, Math.max(1, num(event.target.value, 1))) })} /></label>
+                        <label className="field"><span>辖区易主</span><select id={`workshop-incident-territory-${index}`} value={option.effect.territory?.id ?? ''} disabled={!editable} onChange={event => patchIncidentEffect(index, { territory: event.target.value ? { id: event.target.value as NonNullable<IncidentCardEffect['territory']>['id'], faction: option.effect.territory?.faction ?? 'witch' } : undefined })}><option value="">无</option>{Object.values(districts).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                        <label className="field"><span>易主势力</span><select id={`workshop-incident-territory-faction-${index}`} value={option.effect.territory?.faction ?? ''} disabled={!editable || !option.effect.territory} onChange={event => patchIncidentEffect(index, { territory: option.effect.territory ? { ...option.effect.territory, faction: event.target.value as NonNullable<IncidentCardEffect['territory']>['faction'] } : undefined })}><option value="">无</option>{Object.entries(factionInfo).map(([value, info]) => <option key={value} value={value}>{info.name}</option>)}</select></label>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+                <p className="workshop-muted">投放后快照为当前存档的弹窗；随机池触发尚未接入调度器。</p>
               </div>
             )}
           </main>

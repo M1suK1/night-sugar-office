@@ -1,4 +1,4 @@
-import type { Element, Equipment, FactionId, GameState, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
+import type { Element, Equipment, FactionId, GameState, IncidentCard, IncidentCardEffect, IncidentEffect, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
 import { districts } from '../districts.ts';
 import { skillById, skills } from './skills.ts';
 import { itemById, items } from './items.ts';
@@ -16,9 +16,10 @@ export interface ContentLibrary {
   items: Equipment[];
   monsters: MonsterTemplate[];
   missions: MissionTemplate[];
+  incidents: IncidentCard[];
 }
 
-export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [], missions: [] });
+export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [], missions: [], incidents: [] });
 
 const FACTION_IDS: FactionId[] = ['witch', 'association', 'government'];
 const ELEMENTS: Element[] = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'];
@@ -37,6 +38,8 @@ const RULE_STATS: NonNullable<MonsterRule['stat']>[] = [...STAT_KEYS, 'hit'];
 const MISSION_DIFFICULTIES: MissionTemplate['difficulty'][] = ['低危', '中危', '高危', '绝望'];
 const MISSION_WORKS: MissionTemplate['work'][] = ['combat', 'investigation'];
 const MISSION_WINDOWS: NonNullable<MissionTemplate['window']>[] = ['urgent', 'long'];
+const INCIDENT_KINDS: IncidentCard['kind'][] = ['faction', 'environment', 'girl'];
+const INCIDENT_TRIGGERS: IncidentCard['trigger'][] = ['manual', 'pool'];
 
 const clamp = (min: number, max: number, value: number) => Math.max(min, Math.min(max, value));
 const text = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
@@ -51,7 +54,7 @@ const customId = (value: unknown, kind: string) => {
 };
 const color = (value: unknown, fallback: string) => (/^#[0-9a-fA-F]{6}$/.test(String(value)) ? String(value) : fallback);
 
-export function newContentId(kind: 'skill' | 'item' | 'monster' | 'mission'): string {
+export function newContentId(kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident'): string {
   const stamp = Date.now().toString(36);
   const salt = Math.floor(Math.random() * 46656).toString(36).padStart(3, '0');
   return `${CUSTOM_PREFIX}${kind}-${stamp}${salt}`;
@@ -91,6 +94,17 @@ export function emptyMission(): MissionTemplate {
     description: '', difficulty: '中危', duration: 60, requirement: 'insight', target: 60,
     work: 'investigation', enemyIds: [], rounds: 3, recommendedLevel: 3,
     window: 'urgent', reward: 600, color: '#c9a7e8',
+  };
+}
+
+export function emptyIncidentCard(): IncidentCard {
+  return {
+    id: newContentId('incident'), title: '未命名弹窗', body: '夜色里有人敲了敲门，留下一个必须现在决定的问题。',
+    kind: 'environment', options: [
+      { id: 'opt-1', label: '先听听看', hint: '把话听完', effect: { gold: -120, girl: { bond: 2 } } },
+      { id: 'opt-2', label: '让她离开', hint: '不惹麻烦', effect: { reputation: -1 } },
+    ],
+    trigger: 'manual', weight: 5, oncePerDay: false, source: 'custom',
   };
 }
 
@@ -261,6 +275,86 @@ export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set
   };
 }
 
+export function sanitizeIncidentEffect(raw: unknown): IncidentCardEffect {
+  const effect: IncidentCardEffect = {};
+  if (!raw || typeof raw !== 'object') return effect;
+  const value = raw as Record<string, unknown>;
+  const gold = Math.round(number(value.gold, 0, -3000, 3000));
+  if (gold) effect.gold = gold;
+  const reputation = Math.round(number(value.reputation, 0, -10, 10));
+  if (reputation) effect.reputation = reputation;
+  if (value.faction && typeof value.faction === 'object') {
+    const record = value.faction as Record<string, unknown>;
+    const standing = Math.round(number(record.standing, 0, -20, 20));
+    if (standing && FACTION_IDS.includes(record.id as FactionId)) effect.faction = { id: record.id as FactionId, standing };
+  }
+  if (value.girl && typeof value.girl === 'object') {
+    const record = value.girl as Record<string, unknown>;
+    const girl: NonNullable<IncidentEffect['girl']> = {};
+    const fatigue = Math.round(number(record.fatigue, 0, -50, 50));
+    const spirit = Math.round(number(record.spirit, 0, -50, 50));
+    const corruption = Math.round(number(record.corruption, 0, -20, 20));
+    const bond = Math.round(number(record.bond, 0, -10, 10));
+    if (fatigue) girl.fatigue = fatigue;
+    if (spirit) girl.spirit = spirit;
+    if (corruption) girl.corruption = corruption;
+    if (bond) girl.bond = bond;
+    if (Object.keys(girl).length) effect.girl = girl;
+  }
+  if (value.district && typeof value.district === 'object') {
+    const record = value.district as Record<string, unknown>;
+    if (typeof record.id === 'string' && record.id in districts) {
+      const district: NonNullable<IncidentCardEffect['district']> = { id: record.id as NonNullable<IncidentCardEffect['district']>['id'], days: Math.round(number(record.days, 1, 1, 7)) };
+      const targetPct = Math.round(number(record.targetPct, 0, -30, 30));
+      const rewardPct = Math.round(number(record.rewardPct, 0, -30, 30));
+      if (targetPct) district.targetPct = targetPct;
+      if (rewardPct) district.rewardPct = rewardPct;
+      effect.district = district;
+    }
+  }
+  if (value.territory && typeof value.territory === 'object') {
+    const record = value.territory as Record<string, unknown>;
+    if (typeof record.id === 'string' && record.id in districts && FACTION_IDS.includes(record.faction as FactionId)) {
+      effect.territory = { id: record.id as NonNullable<IncidentCardEffect['territory']>['id'], faction: record.faction as FactionId };
+    }
+  }
+  return effect;
+}
+
+export function sanitizeIncidentCard(raw: unknown): IncidentCard | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as Record<string, unknown>;
+  const id = customId(value.id, 'incident');
+  if (!id) return undefined;
+  const title = text(value.title, 30);
+  const body = text(value.body, 600);
+  if (!title || !body) return undefined;
+  const options: IncidentCard['options'] = [];
+  if (Array.isArray(value.options)) {
+    value.options.slice(0, 3).forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object') return;
+      const option = entry as Record<string, unknown>;
+      const label = text(option.label, 20);
+      if (!label) return;
+      options.push({ id: `opt-${index + 1}`, label, hint: text(option.hint, 60), effect: sanitizeIncidentEffect(option.effect) });
+    });
+  }
+  if (options.length < 2) return undefined;
+  const faction = FACTION_IDS.includes(value.faction as FactionId) ? value.faction as FactionId : undefined;
+  const district = typeof value.district === 'string' && value.district in districts ? value.district as NonNullable<IncidentCard['district']> : undefined;
+  return {
+    id, title, body,
+    kind: oneOf<IncidentCard['kind']>(value.kind, INCIDENT_KINDS, 'environment'),
+    faction, district,
+    girlId: typeof value.girlId === 'string' && value.girlId.trim() ? value.girlId.trim().slice(0, 64) : undefined,
+    options,
+    trigger: oneOf<IncidentCard['trigger']>(value.trigger, INCIDENT_TRIGGERS, 'manual'),
+    weight: Math.round(number(value.weight, 5, 1, 20)),
+    oncePerDay: value.oncePerDay === true,
+    source: 'custom',
+  };
+}
+
 export function sanitizeLibrary(raw: unknown): ContentLibrary {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const dedupe = <T extends { id: string }>(list: (T | undefined)[]): T[] => {
@@ -282,6 +376,7 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
     items: dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []),
     monsters: cleanMonsters,
     missions: dedupe(Array.isArray(value.missions) ? value.missions.map(entry => sanitizeMission(entry, monsterPool)) : []),
+    incidents: dedupe(Array.isArray(value.incidents) ? value.incidents.map(sanitizeIncidentCard) : []),
   };
 }
 
@@ -309,6 +404,7 @@ function purgeCustom<T extends { id: string }>(list: T[], map: Map<string, T>): 
 }
 
 let currentMissions: MissionTemplate[] = [];
+let currentIncidents: IncidentCard[] = [];
 
 /** 把内容库同步进运行期注册表；重复调用会替换同名自制条目。 */
 export function applyLibrary(library: ContentLibrary): void {
@@ -320,11 +416,17 @@ export function applyLibrary(library: ContentLibrary): void {
   for (const item of clean.items) { items.push(item); itemById.set(item.id, item); }
   for (const monster of clean.monsters) { monsters.push(monster); monsterById.set(monster.id, monster); }
   currentMissions = [...clean.missions];
+  currentIncidents = [...clean.incidents];
 }
 
 /** 当前注册的自制委托模板；game.ts 的轮转池会追加它们。 */
 export function customMissionTemplates(): MissionTemplate[] {
   return [...currentMissions];
+}
+
+/** 当前注册的自制弹窗事件卡；工坊与蓝图导入会读取它们。 */
+export function customIncidentCards(): IncidentCard[] {
+  return [...currentIncidents];
 }
 
 export function initContentLibrary(): ContentLibrary {
@@ -345,7 +447,7 @@ export function withCustomStock(stock: MarketStockEntry[]): MarketStockEntry[] {
   return kept;
 }
 
-export type WorkshopKind = 'skill' | 'item' | 'monster' | 'mission';
+export type WorkshopKind = 'skill' | 'item' | 'monster' | 'mission' | 'incident';
 
 /** 删除前检查当前存档里的引用，避免把正在使用的技能/装备/魔物删掉。 */
 export function contentUsage(state: GameState, kind: WorkshopKind, id: string): string[] {
@@ -365,6 +467,9 @@ export function contentUsage(state: GameState, kind: WorkshopKind, id: string): 
   if (kind === 'mission') {
     if (state.missions.some(mission => mission.templateId === id)) used.push('当前夜晚的委托');
   }
+  if (kind === 'incident') {
+    if (state.incidents.some(incident => incident.cardId === id)) used.push('当前弹窗记录');
+  }
   return used;
 }
 
@@ -383,5 +488,5 @@ export function ruleText(rule: MonsterRule): string {
 }
 
 export function libraryCounts(library: ContentLibrary): string {
-  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length} · 委托 ${library.missions.length}`;
+  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length} · 委托 ${library.missions.length} · 弹窗 ${library.incidents.length}`;
 }

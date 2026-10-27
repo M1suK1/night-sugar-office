@@ -139,6 +139,10 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .workshop-check input{width:13px;height:13px;min-height:0;accent-color:#e9b3c9}
 .workshop-skills{display:flex;flex-wrap:wrap;gap:8px 14px}
 .workshop-muted{font-size:10px;color:#7b7386;line-height:1.8}
+.workshop-incident-option{border:1px solid #ffffff0d;border-radius:7px;padding:10px;margin-bottom:8px;background:#08070c}
+.workshop-incident-option .workshop-row{grid-template-columns:1fr 1.4fr auto}
+.workshop-incident-option .workshop-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.workshop-incident-card{position:static;margin:0 auto;max-width:560px;box-shadow:none}
 .workshop-preview{display:flex;flex-direction:column;gap:12px}
 .workshop-card{border:1px solid #f4a0bd26;border-radius:10px;padding:16px;background:linear-gradient(150deg,#1a131c,#0d0b12);max-width:640px}
 .workshop-card header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployMissionTemplate, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -17,7 +17,7 @@ import { skills, getSkill } from '../src/content/skills.ts';
 import { getItem } from '../src/content/items.ts';
 import { getMonster } from '../src/content/monsters.ts';
 import { simulateBattle } from '../src/combat.ts';
-import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, ruleText, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
+import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -1684,6 +1684,37 @@ test('委托模板只收自制条目，能进入轮转池并投放成夜间委�
   applyLibrary(emptyLibrary());
   assert.equal(customMissionTemplates().length, 0);
   assert.ok(!missionTemplates().some(option => option.id.includes('custom-mission-test01')));
+});
+
+test('弹窗卡片只收自制条目，投放时把辖区天数换算成 untilDay', () => {
+  const raw = {
+    id: 'custom-incident-test01', title: '雨夜的请求', body: '有人敲响了事务所的门。', kind: 'faction' as const,
+    faction: 'witch' as const, district: 'candy' as const,
+    options: [
+      { label: '答应她', hint: '也许能换来情报。', effect: { gold: -100, reputation: 1, faction: { id: 'witch' as const, standing: 2 }, girl: { fatigue: -5, bond: 2 }, district: { id: 'candy' as const, targetPct: 10, rewardPct: 5, days: 3 } } },
+      { label: '拒绝', hint: '', effect: { reputation: -1 } },
+    ],
+    trigger: 'manual' as const, weight: 5, oncePerDay: true, source: 'custom' as const,
+  };
+  const card = sanitizeIncidentCard(raw);
+  assert.ok(card);
+  assert.equal(card.options.length, 2);
+  assert.deepEqual(card.options.map(option => option.id), ['opt-1', 'opt-2']);
+  assert.equal(sanitizeIncidentCard({ ...raw, id: 'incident-builtin' }), undefined);
+  assert.equal(sanitizeLibrary({ incidents: [{ ...raw, id: 'incident-builtin' }] }).incidents.length, 0);
+  const library = sanitizeLibrary({ incidents: [{ ...raw, id: 'custom-incident-test01' }] });
+  assert.equal(library.incidents.length, 1);
+  applyLibrary(library);
+  const state = createInitialState();
+  const incident = deployIncidentCard(state, library.incidents[0]);
+  assert.equal(incident.source, 'custom');
+  assert.equal(incident.cardId, 'custom-incident-test01');
+  assert.equal(incident.status, 'pending');
+  assert.equal(incident.options.length, 2);
+  assert.equal(incident.options[0].effect.gold, -100);
+  assert.equal(incident.options[0].effect.district?.untilDay, state.day + 3);
+  assert.deepEqual(contentUsage({ ...state, incidents: [incident] }, 'incident', 'custom-incident-test01'), ['当前弹窗记录']);
+  applyLibrary(emptyLibrary());
 });
 
 test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {

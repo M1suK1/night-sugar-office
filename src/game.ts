@@ -1,4 +1,4 @@
-import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
@@ -619,6 +619,36 @@ export function deployMissionTemplate(state: GameState, template: MissionTemplat
     girlId: undefined,
     attempts: 0,
     rounds: template.rounds,
+  };
+}
+
+/** 把工坊里的弹窗事件卡快照成当前夜晚的 Incident；之后删卡不会破坏已有存档。 */
+export function deployIncidentCard(state: GameState, card: IncidentCard): Incident {
+  return {
+    id: `incident-${card.id}-${state.day}-${state.minutes}-${state.incidents.length}`,
+    cardId: card.id,
+    day: state.day,
+    kind: card.kind,
+    source: 'custom',
+    title: card.title,
+    body: card.body,
+    faction: card.faction,
+    girlId: card.girlId,
+    district: card.district,
+    options: card.options.map((option, index) => {
+      const { district, ...rest } = option.effect;
+      const effect: IncidentEffect = { ...rest };
+      if (district) {
+        effect.district = {
+          id: district.id,
+          targetPct: district.targetPct,
+          rewardPct: district.rewardPct,
+          untilDay: state.day + district.days,
+        };
+      }
+      return { id: `opt-${index + 1}`, label: option.label, hint: option.hint, effect };
+    }),
+    status: 'pending',
   };
 }
 

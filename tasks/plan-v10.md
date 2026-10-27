@@ -582,3 +582,23 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 92/92、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`。
 
 下一步：M4 弹窗编辑器；以及 `src/game.ts` 的门面化拆分。
+
+---
+
+## 14. 实施记录（M4，已完成）
+
+按 m01513「ok继续」继续做到 M4 弹窗事件编辑器。
+
+落地：
+
+- 数据模型新增 `IncidentCard` / `IncidentCardOption` / `IncidentCardEffect`（`src/types.ts`）：标题、正文、类型、势力/辖区/契约者绑定、2–3 个选项、触发方式、权重与每日一次；效果的辖区使用相对天数 `days`，投放时换算成存档的 `untilDay`。`Incident` 增加 `source:'custom'` 与 `cardId`，保留来源追踪。
+- 内容库 schema 增 `incidents` 数组；`sanitizeIncidentCard` 只收 `custom-incident-` 前缀，选项限制 2–3 个并重编号，效果数值按存档边界收紧；`applyLibrary` 同步 `customIncidentCards()`；删除前 `contentUsage` 会检查当前存档的弹窗记录。
+- `deployIncidentCard` 把卡片快照成一条待处理的 `Incident`，不修改 state，由 App 插入；`IncidentDialog` 增加「工坊投放」来源标签。
+- 工坊新增第五页签「弹窗事件」：标题/正文/类型/势力/辖区/契约者、触发方式、权重、每日一次，选项可增删（2–3 个），每个选项可设星砂、声望、势力好感、契约者疲劳/共情/侵蚀/好感、辖区目标/报酬修正与持续天数、辖区易主；预览复用事件卡排版；「投放测试」立刻弹出并写入当前存档。
+- 弹窗随机池的 `trigger:'pool'` 字段已保存，但调度器尚未接入；本轮只完成手动投放。
+
+修改文件：`src/types.ts`、`src/content/library.ts`、`src/game.ts`、`src/components/IncidentDialog.tsx`、`src/components/workshop/ContentWorkshopDialog.tsx`、`src/App.tsx`、`src/dialogs.css`、`tests/game.test.ts`、`tests/browser.mjs`、`README.md`。
+
+验证：tsc 0、单测 93/93、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`、`artifacts/workshop-incident.png`。
+
+下一步：M5 内容包导出/导入；以及 `src/game.ts` 的门面化拆分。

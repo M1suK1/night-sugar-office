@@ -17,7 +17,7 @@ export function IncidentDialog({ incident, state, onChoose, onGirl }: { incident
       <div className="incident-card">
         <header className="incident-head">
           <span className={`incident-kind ${incident.kind}`}><AlertTriangle size={13} />{kindLabel[incident.kind]}</span>
-          <span className="incident-source">{incident.source === 'llm' ? '叙事者拟稿' : '事务规则'}</span>
+          <span className="incident-source">{incident.source === 'llm' ? '叙事者拟稿' : incident.source === 'custom' ? '工坊投放' : '事务规则'}</span>
         </header>
         <h2>{incident.title}</h2>
         {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {factionInfo[incident.faction].envoy}</p>}

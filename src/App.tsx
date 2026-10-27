@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
-import { act, buildTemplateArc, dateLabel, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
+import { act, buildTemplateArc, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
@@ -543,6 +543,21 @@ export default function App() {
               }, ...current.logs],
             }));
             notify(`「${mission.title}」已投放到今夜的地图。`);
+          }}
+          onDeployIncident={card => {
+            const incident = deployIncidentCard(state, card);
+            setState(current => ({
+              ...current,
+              incidents: [incident, ...current.incidents],
+              logs: [{
+                id: `log-workshop-${incident.id}`,
+                time: dateLabel(current.day, current.minutes),
+                kind: 'incident' as const,
+                text: `内容工坊投放了「${incident.title}」。`,
+              }, ...current.logs],
+            }));
+            setModal(null);
+            notify(`「${incident.title}」已经弹出。`);
           }}
           onCommit={next => {
             setLibrary(next);
