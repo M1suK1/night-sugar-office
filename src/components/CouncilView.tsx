@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Clock3, Coins, Heart, Moon, ShieldCheck, X } from 'lucide-react';
 import type { GameState, Opinion } from '../types';
+import { factionInfo } from '../content/items';
+import { opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from '../opinions';
 import { GirlPortrait } from './GirlPortrait';
 
 type Props = {
@@ -63,6 +65,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
   const speaker = current ? state.girls.find(girl => girl.id === current.authorId) ?? state.memorial.find(entry => entry.girl.id === current.authorId)?.girl : undefined;
   const assistant = state.girls.find(girl => girl.id === state.assistantId) ?? state.girls.find(girl => !girl.retired);
   const next = pending[index + 1];
+  const options = current ? resolveOpinionOptions(state, current) : [];
 
   useEffect(() => {
     setPhase('entering');
@@ -76,6 +79,8 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
 
   const decide = (optionId: 'accept' | 'defer' | 'reject') => {
     if (!current) return;
+    const option = options.find(entry => entry.id === optionId);
+    if (!option || !previewOpinionOption(state, current, option).ok) return;
     setPhase('leaving');
     onDecide(current.id, optionId);
     window.setTimeout(() => {
@@ -83,6 +88,23 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
       setPhase('entering');
     }, 320);
   };
+
+  useEffect(() => {
+    if (!current) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      const at = Number(event.key) - 1;
+      if (at < 0 || at > 2) return;
+      const option = options[at];
+      if (!option || !previewOpinionOption(state, current, option).ok) return;
+      event.preventDefault();
+      decide(option.id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [current, options, state]);
 
   return (
     <section className="council-stage" aria-label="议会">
@@ -108,30 +130,48 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
           <ul className="council-effort">
             {speaker && speaker.traits.slice(0, 3).map(trait => <li key={trait.id}><span className={`polarity ${trait.polarity}`}>{trait.name}</span>{trait.description}</li>)}
           </ul>
-          <p className="council-hint">决议会改变辖区归属、预算或她们的状态。右键（或 1/2/3）也可以直接选择。</p>
+          <p className="council-hint">决议会改变辖区归属、预算或她们的状态。按 1 / 2 / 3 也可以直接选择；资源不足的选项会锁定。</p>
         </aside>
 
         <div className={`council-speaker ${phase}`}>
           {current ? (
             <>
               <header className="council-topic">
-                <span className="council-topic-kind">{current.topic}</span>
+                <div className="council-topic-meta">
+                  <span className="council-topic-kind">{current.topic}</span>
+                  {current.faction && <span className={`council-topic-faction ${current.faction}`}>{factionInfo[current.faction]?.short ?? current.faction}</span>}
+                </div>
                 <h2>{current.title}</h2>
                 <p>{current.text}</p>
                 <small>{current.request}</small>
               </header>
               <div className="council-figure">
-                {speaker ? <GirlPortrait girl={{ ...speaker, expression: 'calm' }} variant="full" /> : <div className="council-figure-empty" />}
+                {speaker ? <GirlPortrait girl={{ ...speaker, expression: 'calm' }} variant="full" bare /> : <div className="council-figure-empty" />}
               </div>
               <div className="council-options">
-                {current.options.map((option, at) => {
+                {options.map((option, at) => {
                   const meta = optionMeta[option.id];
                   const Icon = meta.icon;
+                  const preview = previewOpinionOption(state, current, option);
+                  const tags = opinionOptionTags(option, state);
                   return (
-                    <button key={option.id} id={`council-option-${option.id}`} type="button" className={`council-option ${option.id}`} onClick={() => decide(option.id)}>
+                    <button
+                      key={option.id}
+                      id={`council-option-${option.id}`}
+                      type="button"
+                      className={`council-option ${option.id} ${preview.ok ? '' : 'unavailable'}`}
+                      disabled={!preview.ok}
+                      title={preview.ok ? undefined : preview.missing.join('；')}
+                      onClick={() => decide(option.id)}
+                    >
                       <em>{(at + 1)}</em>
                       <Icon size={15} />
-                      <span><b>{option.label}</b><small>{option.effect}</small></span>
+                      <span>
+                        <b>{option.label}</b>
+                        <small>{option.effect}</small>
+                        {tags.length > 0 && <span className="council-option-tags">{tags.map(tag => <i key={tag}>{tag}</i>)}</span>}
+                        {!preview.ok && <small className="council-option-missing">还差：{preview.missing.join('；')}</small>}
+                      </span>
                       <ArrowRight size={14} />
                     </button>
                   );

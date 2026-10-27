@@ -52,6 +52,9 @@ try {
     const before = (await stored()).opinions.filter(o => o.status === 'pending').length;
     if (before > 0) {
       await expect(page.locator('#council-option-accept')).toBeVisible();
+      await expect(page.locator('.council-option-tags')).toHaveCount(3);
+      await expect(page.locator('#council-option-accept .council-option-tags')).toContainText(/星砂|分钟|安定度|羁绊|态度/);
+      await expect(page.locator('#council-option-reject')).toContainText('扣掉相应资源');
       await layout('council');
       await page.screenshot({ path: 'artifacts/council.png', fullPage: true, animations: 'disabled' });
       await page.locator('#council-option-accept').click();

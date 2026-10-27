@@ -1,4 +1,4 @@
-import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
@@ -17,6 +17,7 @@ import { applyPct, districtAt, districts, type DistrictId } from './districts.ts
 import { loadBalance, rules } from './balance.ts';
 import { SHIFT_START, SHIFT_END, WAVE_AT, WAVE_SIZES, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt, LONG_MIN_DAYS, LONG_MAX_DAYS, type CommissionWindow } from './shift.ts';
 import { FACTION_ORDER, assignTerritories, canClaim, effectiveDistrictEffect, factionName, ownedDistricts, repairTerritories, type TerritoryMap } from './territories.ts';
+import { defaultOpinionOptions, opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from './opinions.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
@@ -402,15 +403,13 @@ function accruePension(state: GameState, days: number): void {
     if (state.day > girl.contractEndDay) girl.pensionMissed = Math.min(60, girl.pensionMissed + days);
   }
 }
-function makeOpinion(state: GameState, author: Girl, topic: Opinion['topic'], title: string, text: string, request: string): Opinion {
+function makeOpinion(state: GameState, author: Girl, topic: Opinion['topic'], title: string, text: string, request: string, context: { faction?: FactionId; district?: DistrictId } = {}): Opinion {
+  const district = context.district ?? (topic === '城市' ? 'candy' : undefined);
+  const faction = context.faction ?? (district ? state.territories[district] : undefined);
   return {
     id: `op-${state.day}-${hashText(author.id + title + state.minutes)}`, day: state.day, authorId: author.id, topic,
-    title, text, request, status: 'pending',
-    options: [
-      { id: 'accept', label: '批准', effect: '消耗少量星砂，羁绊提升' },
-      { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' },
-      { id: 'reject', label: '驳回', effect: '节省资源，羁绊下降' },
-    ],
+    title, text, request, status: 'pending', faction,
+    options: defaultOpinionOptions(topic, { authorId: author.id, authorName: author.name, faction, district }),
     assistantNote: state.assistantId === author.id ? `${author.name}亲自提交，附了一份写得很短的预算。` : undefined,
   };
 }
@@ -964,10 +963,11 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     if (node.kind === 'opinion') {
       if (node.data.kind !== 'opinion') return;
       const spec = node.data.spec;
+      const faction = spec.options.find(option => option.shift)?.shift?.faction;
       const opinion: Opinion = {
         id: 'op-' + story.id + '-' + node.id, day: state.day, authorId: girl.id, topic: spec.topic,
-        title: spec.title || node.title, text: spec.text, request: spec.request, status: 'pending',
-        options: spec.options.map((option) => ({ id: option.id, label: option.label, effect: option.effect, shift: option.shift })),
+        title: spec.title || node.title, text: spec.text, request: spec.request, status: 'pending', faction,
+        options: spec.options.map((option) => ({ id: option.id, label: option.label, effect: option.effect, shift: option.shift, changes: [], outcomes: [] })),
         storylineId: story.id,
       };
       state.opinions.unshift(opinion);
@@ -1322,7 +1322,7 @@ export function fireStoryTrigger(state: GameState, girl: Girl, trigger: StoryTri
     return;
   }
   if (trigger.kind === 'opinion') {
-    const opinion = makeOpinion(state, girl, trigger.topic, trigger.title.slice(0, 40), trigger.text.slice(0, 240), trigger.request.slice(0, 80));
+    const opinion = makeOpinion(state, girl, trigger.topic, trigger.title.slice(0, 40), trigger.text.slice(0, 240), trigger.request.slice(0, 80), { faction: trigger.shift?.faction, district: trigger.shift?.district });
     if (trigger.shift) opinion.options[0].shift = trigger.shift;
     state.opinions.unshift(opinion);
     return;
@@ -1503,13 +1503,18 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     version: 10, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
-    opinions: [{ id: 'op-seed-14', day: 14, authorId: 'ling', topic: '设施', title: '星象台的窗需要修', text: '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', request: '申请 900 星砂维修星象台。', status: 'pending', options: [{ id: 'accept', label: '批准', effect: '消耗 900 星砂，零青羁绊提升' }, { id: 'defer', label: '暂缓', effect: '不消耗资源，维持现状' }, { id: 'reject', label: '驳回', effect: '节省资源，零青羁绊下降' }], assistantNote: '零青把裂缝的位置画在了便签背面。' }], expeditions: [], councilDay: 14, pensionDebt: 0,
+    opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], storylines: [], events: [], treatments: [],
   };
+  const seedAuthor = state.girls.find(girl => girl.id === 'ling');
+  if (seedAuthor) {
+    const seedOpinion = makeOpinion(state, seedAuthor, '设施', '星象台的窗需要修', '上次的异常让它裂了一道缝。风声会干扰收听，我不想在关键的时候漏掉一段求救。', '申请 900 星砂维修星象台。', { district: 'candy' });
+    state.opinions = [{ ...seedOpinion, id: 'op-seed-14', assistantNote: '零青把裂缝的位置画在了便签背面。' }];
+  }
   syncShift(state);
   return state;
 }
@@ -1790,6 +1795,12 @@ function advanceClock(state: GameState, to: number): void {
     accruePension(state, days);
     for (const girl of state.girls) tickConditions(girl, days);
     for (let i = 0; i < days; i++) processDay(state);
+    for (const opinion of state.opinions) {
+      if (opinion.status === 'deferred' && (opinion.revisitDay ?? Infinity) <= state.day) {
+        opinion.status = 'pending';
+        state.logs.unshift({ id: `log-op-revisit-${opinion.id}-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `暂缓的议题「${opinion.title}」重新回到议事桌。` });
+      }
+    }
     if (state.day > state.councilDay) { state.councilDay = state.day; generateOpinions(state); }
   }
   bossTick(state, elapsed);
@@ -2051,6 +2062,65 @@ function talk(state: GameState, girlId: string, text: string, remote = false, re
   next.messages[girl.id] = messages.slice(-60);
   return { state: next, ok: true, message: gain ? `与${girl.name}的羁绊 +${gain}。` : '今晚已经聊得够多了，明天再继续吧。' };
 }
+function applyOpinionChanges(state: GameState, opinion: Opinion, option: OpinionOption): { gold: number; tags: string[] } {
+  let gold = 0;
+  for (const change of option.changes ?? []) {
+    if (change.kind === 'gold') {
+      state.gold = Math.max(0, state.gold + change.amount);
+      gold += change.amount;
+      if (change.amount !== 0) book(state, state.day, change.amount);
+    } else if (change.kind === 'reputation') {
+      state.reputation = Math.max(0, Math.min(100, state.reputation + change.amount));
+    } else if (change.kind === 'faction') {
+      const target = state.factions[change.faction];
+      if (target) target.standing = Math.max(0, Math.min(100, target.standing + change.amount));
+    } else if (change.kind === 'item') {
+      state.inventory[change.itemId] = Math.max(0, (state.inventory[change.itemId] ?? 0) + change.amount);
+    } else if (change.kind === 'girl') {
+      const girl = findGirl(state, change.girlId);
+      if (girl) {
+        if (change.field === 'bond') girl.bond = Math.max(0, Math.min(100, girl.bond + change.amount));
+        if (change.field === 'fatigue') girl.fatigue = Math.max(0, Math.min(100, girl.fatigue + change.amount));
+        if (change.field === 'corruption') girl.corruption = Math.max(0, Math.min(100, girl.corruption + change.amount));
+        if (change.field === 'hp') girl.hp = Math.max(0, Math.min(effectiveMaxHp(girl), girl.hp + change.amount));
+      }
+    }
+  }
+  for (const outcome of option.outcomes ?? []) {
+    if (outcome.kind === 'territory') {
+      shiftTerritory(state, outcome.district, outcome.faction, `议会决议「${opinion.title}」`);
+    } else if (outcome.kind === 'mission') {
+      const mission = deployMissionTemplate(state, outcome.template);
+      state.missions.push(mission);
+      state.logs.unshift({ id: `log-op-mission-${opinion.id}`, time: dateLabel(state.day, state.minutes), kind: 'dispatch', text: `议会决议追加了特殊委托「${mission.title}」。` });
+    } else if (outcome.kind === 'join') {
+      const level = Math.max(1, Math.min(12, Math.round(outcome.level)));
+      let candidate: Girl | undefined;
+      for (let attempt = 0; attempt < 24 && !candidate; attempt++) {
+        const next = makeCandidate(state, level, hashText(`${opinion.id}:join`) + attempt * 7919);
+        if (!state.girls.some(girl => girl.id === next.id) && !state.candidates.some(girl => girl.id === next.id)) candidate = next;
+      }
+      if (candidate) {
+        if (state.girls.filter(girl => !girl.dead).length < capacity(state)) {
+          state.girls.push({ ...candidate, cost: 0, status: 'idle', roomId: 'lounge', remaining: 0, contractEndDay: state.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, retired: false, retiredReason: undefined, candidateUntilDay: undefined });
+          state.logs.unshift({ id: `log-op-join-${opinion.id}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `议会带来了新的契约者「${candidate.name}」，没有收取签约金。` });
+        } else {
+          state.candidates.push({ ...candidate, cost: 0, custom: true, candidateUntilDay: state.day + 7 });
+          state.logs.unshift({ id: `log-op-join-${opinion.id}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `宿舍已满，新的契约者「${candidate.name}」留在候选名册，签约金为 0。` });
+        }
+      }
+    } else if (outcome.kind === 'leave') {
+      const girl = findGirl(state, outcome.girlId);
+      if (girl) {
+        girl.retired = true; girl.retiredReason = 'contract'; girl.status = 'retired'; girl.remaining = 0;
+        state.logs.unshift({ id: `log-op-leave-${opinion.id}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `议会决议结束了与「${girl.name}」的契约，她离开了值夜名册。` });
+      }
+    }
+  }
+  if (option.shift && !(option.outcomes ?? []).some(outcome => outcome.kind === 'territory')) shiftTerritory(state, option.shift.district, option.shift.faction, `议会决议「${opinion.title}」`);
+  return { gold, tags: opinionOptionTags(option, state) };
+}
+
 export function act(state: GameState, action: GameAction): ActionResult {
   switch (action.type) {
     case 'reset': {
@@ -2097,28 +2167,29 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}成为值班助理。` };
     }
     case 'decideOpinion': {
-      const next = clone(state); const opinion = next.opinions.find(o => o.id === action.opinionId);
+      const next = clone(state); let opinion = next.opinions.find(o => o.id === action.opinionId);
       if (!opinion || opinion.status !== 'pending') return { state, ok: false, message: '这项议题已经处理过了。' };
-      const author = findGirl(next, opinion.authorId);
-      if (action.decision === 'accept') {
-        const cost = opinion.topic === '经费' ? 600 : opinion.topic === '设施' ? 900 : opinion.topic === '同伴' ? 300 : 0;
-        if (next.gold < cost) return { state, ok: false, message: `批准这项议题需要 ${cost} 星砂。` };
-        next.gold -= cost; if (cost) book(next, next.day, -cost);
-        opinion.status = 'accepted';
-        if (author) author.bond = Math.min(100, author.bond + 3);
-        const accepted = opinion.options.find(option => option.id === 'accept');
-        if (accepted?.shift) shiftTerritory(next, accepted.shift.district, accepted.shift.faction, `议会决议「${opinion.title}」`);
-        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `批准议题「${opinion.title}」。${cost ? `支出 ${cost} 星砂。` : '未产生额外支出。'}`, delta: -cost });
-      } else if (action.decision === 'reject') {
-        opinion.status = 'rejected';
-        if (author) author.bond = Math.max(0, author.bond - 2);
-        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `驳回议题「${opinion.title}」。提出者没有当场说什么。` });
-      } else {
-        opinion.status = 'deferred';
-        next.logs.unshift({ id: `log-decide-${opinion.id}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `议题「${opinion.title}」暂时搁置，留待下个议事日。` });
+      const option = resolveOpinionOptions(next, opinion).find(entry => entry.id === action.decision);
+      if (!option) return { state, ok: false, message: '找不到这个选项。' };
+      const preview = previewOpinionOption(next, opinion, option);
+      if (!preview.ok) return { state, ok: false, message: `资源不足：${preview.missing.join('；')}` };
+      const decision = action.decision;
+      opinion.status = decision === 'accept' ? 'accepted' : decision === 'reject' ? 'rejected' : 'deferred';
+      if (decision === 'defer') opinion.revisitDay = next.day + 1;
+      const applied = applyOpinionChanges(next, opinion, option);
+      let working = next;
+      if (preview.minutes > 0) {
+        const moved = advance(next, preview.minutes);
+        if (!moved.ok) return { state, ok: false, message: moved.message };
+        working = moved.state;
       }
-      if (opinion.storylineId) resolveStoryWait(next, opinion.storylineId, 'opinion', opinion.id);
-      return { state: next, ok: true, message: `已处理「${opinion.title}」。` };
+      opinion = working.opinions.find(o => o.id === action.opinionId);
+      const verb = decision === 'accept' ? '批准' : decision === 'reject' ? '驳回' : '暂缓';
+      const detail = applied.tags.length ? ` ${applied.tags.join('，')}。` : '';
+      const revisit = decision === 'defer' ? ` 下个议事日（第 ${next.day + 1} 日）重新提出。` : '';
+      working.logs.unshift({ id: `log-decide-${opinion?.id ?? action.opinionId}`, time: dateLabel(working.day, working.minutes), kind: 'council', text: `${verb}议题「${opinion?.title ?? ''}」。${detail}${revisit}`, delta: applied.gold });
+      if (opinion?.storylineId && decision !== 'defer') resolveStoryWait(working, opinion.storylineId, 'opinion', opinion.id);
+      return { state: working, ok: true, message: `已处理「${opinion?.title ?? ''}」。` };
     }
     case 'startExpedition': {
       const next = clone(state);
@@ -2880,7 +2951,11 @@ export function loadState(raw: string | null): GameState {
     state.blank = value.blank === true;
     state.memorial ??= []; state.battles = Array.isArray(state.battles) ? state.battles.slice(0, 20) : [];
     state.packHash ??= createSeedPack().hash;
-    state.opinions = Array.isArray(state.opinions) ? state.opinions.slice(0, 30) : [];
+    state.opinions = Array.isArray(state.opinions) ? state.opinions.filter(opinion => opinion && typeof opinion.id === 'string' && Array.isArray(opinion.options)).slice(0, 30) : [];
+    for (const opinion of state.opinions) {
+      opinion.options = resolveOpinionOptions(state, opinion);
+      if (opinion.status === 'deferred' && typeof opinion.revisitDay !== 'number') opinion.revisitDay = state.day + 1;
+    }
     state.expeditions = Array.isArray(state.expeditions) ? state.expeditions.slice(0, 1) : [];
     state.councilDay ??= state.day; state.pensionDebt ??= 0;
     state.factions ??= { witch: { standing: 20, stockDay: state.day, envoyDay: state.day }, association: { standing: 50, stockDay: state.day, envoyDay: state.day }, government: { standing: 45, stockDay: state.day, envoyDay: state.day } };

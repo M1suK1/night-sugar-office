@@ -10,7 +10,7 @@ const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: st
   shy: { open: 0.55, tilt: -1, mouth: 'M-8 2 Q0 7 8 2' },
 };
 
-export function GirlPortrait({ girl, variant = 'card', className = '' }: { girl: Girl; variant?: 'card' | 'full' | 'avatar'; className?: string }) {
+export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: Girl; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
   const id = useId().replace(/:/g, '');
   const wardrobe = girl.wardrobe?.find(o => o.id === girl.outfitId);
   const outfitColor = wardrobe?.palette?.[0] ?? girl.color;
@@ -25,10 +25,10 @@ export function GirlPortrait({ girl, variant = 'card', className = '' }: { girl:
 
   const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : girl.portrait;
   if (portrait?.startsWith('data:')) {
-    return <span className={`girl-portrait ${variant} imported ${className}`}><img src={portrait} alt={`${girl.name}的立绘`} /></span>;
+    return <span className={`girl-portrait ${variant} imported ${bare ? 'bare' : ''} ${className}`}><img src={portrait} alt={`${girl.name}的立绘`} /></span>;
   }
   return (
-    <span className={`girl-portrait ${variant} ${girl.witch ? 'witch' : ''} ${className}`} style={{ '--portrait-color': outfitColor, '--portrait-accent': girl.color } as React.CSSProperties} aria-hidden="true">
+    <span className={`girl-portrait ${variant} ${girl.witch ? 'witch' : ''} ${bare ? 'bare' : ''} ${className}`} style={{ '--portrait-color': outfitColor, '--portrait-accent': girl.color } as React.CSSProperties} aria-hidden="true">
       <svg viewBox="0 0 260 340" preserveAspectRatio="xMidYMax meet" role="presentation">
         <defs>
           <linearGradient id={`bg-${id}`} x1="0" y1="0" x2="1" y2="1">
@@ -44,8 +44,8 @@ export function GirlPortrait({ girl, variant = 'card', className = '' }: { girl:
             <stop offset="0" stopColor="#241927" /><stop offset="1" stopColor="#09070d" />
           </radialGradient>
         </defs>
-        <rect width="260" height="340" fill={`url(#bg-${id})`} />
-        <rect width="260" height="340" fill={`url(#glow-${id})`} />
+        {!bare && <rect width="260" height="340" fill={`url(#bg-${id})`} />}
+        {!bare && <rect width="260" height="340" fill={`url(#glow-${id})`} />}
 
         {/* Baroque Labyrinth Halo & Filigree */}
         <g opacity="0.28" stroke="#f7f2f5" strokeWidth="0.6" fill="none">
@@ -117,9 +117,9 @@ export function GirlPortrait({ girl, variant = 'card', className = '' }: { girl:
           <circle cx="130" cy="236" r="18" strokeDasharray="2 3" />
         </g>}
         {girl.witch && <g fill="none" stroke="#ffd6e5" strokeWidth="2.6" opacity="0.92"><path d="M86 72 C70 46 66 32 62 16 C78 30 88 46 96 66" /><path d="M174 72 C190 46 194 32 198 16 C182 30 172 46 164 66" /></g>}
-        <path d="M0 340 H260" stroke="#f7f2f5" strokeWidth="1" opacity="0.28" />
+        {!bare && <path d="M0 340 H260" stroke="#f7f2f5" strokeWidth="1" opacity="0.28" />}
       </svg>
-      <span className="portrait-vignette" />
+      {!bare && <span className="portrait-vignette" />}
     </span>
   );
 }

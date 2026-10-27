@@ -19,6 +19,7 @@ import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { initiativeOf, simulateBattle } from '../src/combat.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
+import { defaultOpinionOptions, previewOpinionOption } from '../src/opinions.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -365,6 +366,49 @@ test('会客厅议题可以批准、驳回或暂缓', () => {
   const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-test', decision: 'reject' });
   assert.equal(rejected.state.opinions[0].status, 'rejected');
   assert.equal(rejected.state.girls.find(g => g.id === 'yue')!.bond, s.girls.find(g => g.id === 'yue')!.bond - 2);
+});
+test('驳回会同时扣掉星砂、降低羁绊与所属势力态度', () => {
+  const s = createInitialState(); s.factions.witch.standing = 50;
+  const options = defaultOpinionOptions('经费', { authorId: 'yue', authorName: '月', faction: 'witch' });
+  s.opinions = [{ id: 'op-reject', day: s.day, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '', request: '', status: 'pending', faction: 'witch', options }];
+  const before = { gold: s.gold, bond: s.girls.find(g => g.id === 'yue')!.bond, standing: s.factions.witch.standing };
+  const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-reject', decision: 'reject' });
+  assert.equal(rejected.ok, true);
+  assert.equal(rejected.state.gold, before.gold - 300);
+  assert.equal(rejected.state.girls.find(g => g.id === 'yue')!.bond, before.bond - 2);
+  assert.equal(rejected.state.factions.witch.standing, before.standing - 4);
+  assert.match(rejected.state.logs[0].text, /星砂/);
+});
+test('资源不足时批准与驳回锁定，暂缓保底并在下个议事日回归', () => {
+  const s = createInitialState(); s.gold = 0; s.factions.witch.standing = 0;
+  const options = defaultOpinionOptions('经费', { authorId: 'yue', authorName: '月', faction: 'witch' });
+  const opinion: Opinion = { id: 'op-poor', day: s.day, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '', request: '', status: 'pending', faction: 'witch', options };
+  s.opinions = [opinion];
+  assert.equal(previewOpinionOption(s, opinion, options[0]).ok, false);
+  assert.equal(previewOpinionOption(s, opinion, options[2]).ok, false);
+  assert.equal(previewOpinionOption(s, opinion, options[1]).ok, true);
+  const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-poor', decision: 'reject' });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /资源不足/);
+  const deferred = act(s, { type: 'decideOpinion', opinionId: 'op-poor', decision: 'defer' });
+  assert.equal(deferred.ok, true);
+  assert.equal(deferred.state.opinions[0].status, 'deferred');
+  assert.equal(deferred.state.opinions[0].revisitDay, s.day + 1);
+  const nextDay = act(deferred.state, { type: 'endNight' }).state;
+  assert.equal(nextDay.opinions.find(item => item.id === 'op-poor')!.status, 'pending');
+});
+test('议会选项可以扣装备与推进时间，时间不足时整条锁定', () => {
+  const s = createInitialState(); s.inventory['moon-weapon'] = 1; s.minutes = SHIFT_END - 20;
+  const option = { id: 'reject' as const, label: '驳回', effect: '赔偿', changes: [{ kind: 'item' as const, itemId: 'moon-weapon', amount: -1 }, { kind: 'minutes' as const, amount: 30 }] };
+  const opinion: Opinion = { id: 'op-gear', day: s.day, authorId: 'yue', topic: '同伴', title: '赔一件护符', text: '', request: '', status: 'pending', options: [option] };
+  s.opinions = [opinion];
+  assert.equal(previewOpinionOption(s, opinion, option).ok, false);
+  assert.equal(act(s, { type: 'decideOpinion', opinionId: 'op-gear', decision: 'reject' }).ok, false);
+  s.minutes = SHIFT_START;
+  const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-gear', decision: 'reject' });
+  assert.equal(rejected.ok, true);
+  assert.equal(rejected.state.inventory['moon-weapon'], 0);
+  assert.equal(rejected.state.minutes, SHIFT_START + 30);
 });
 
 

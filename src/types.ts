@@ -76,8 +76,29 @@ export interface Condition {
   description: string; remaining: number; removable: boolean;
   stat?: StatKey; amount?: number;
 }
+/** 议会决议的一项数值变化；负数表示需要支付或承受惩罚。 */
+export type OpinionChange =
+  | { kind: 'gold'; amount: number }
+  | { kind: 'reputation'; amount: number }
+  | { kind: 'faction'; faction: FactionId; amount: number }
+  | { kind: 'item'; itemId: string; amount: number }
+  | { kind: 'girl'; girlId: string; field: 'bond' | 'fatigue' | 'corruption' | 'hp'; amount: number }
+  /** 推进时钟的分钟数；正数表示跳过/消耗这段时间。 */
+  | { kind: 'minutes'; amount: number };
+
+/** 议会决议的结构性结果；与数值变化分开，便于界面明确展示不可逆后果。 */
+export type OpinionOutcome =
+  | { kind: 'territory'; district: DistrictId; faction: FactionId }
+  | { kind: 'mission'; template: MissionTemplate }
+  | { kind: 'join'; level: number }
+  | { kind: 'leave'; girlId: string };
+
 export interface OpinionOption {
   id: 'accept' | 'defer' | 'reject'; label: string; effect: string;
+  /** 批准的成本、驳回的惩罚，或通过后的收益。负数表示支付。 */
+  changes?: OpinionChange[];
+  /** 改变辖区、追加委托、新契约者入职或契约者离队。 */
+  outcomes?: OpinionOutcome[];
   /** 接受这条提案会把哪个辖区交给哪个势力。 */
   shift?: { district: DistrictId; faction: FactionId };
 }
@@ -85,6 +106,10 @@ export interface Opinion {
   id: string; day: number; authorId: string; topic: '经费' | '排班' | '设施' | '同伴' | '城市' | '私人心愿';
   title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired';
   options: OpinionOption[]; assistantNote?: string; storylineId?: string;
+  /** 议题所属势力；暂缓与驳回会同步影响它的态度。 */
+  faction?: FactionId;
+  /** 暂缓后重新回到议事桌的日期。 */
+  revisitDay?: number;
 }
 export interface Expedition {
   id: string; roomId: string; memberIds: string[];
