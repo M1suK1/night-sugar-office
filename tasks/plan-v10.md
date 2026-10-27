@@ -562,3 +562,23 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 91/91、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`、`artifacts/workshop-skill.png`、`artifacts/workshop-monster.png`。
 
 下一步：M3 委托编辑器、M4 弹窗编辑器；以及 `src/game.ts` 的门面化拆分（先做门面 + labels/save，再逐模块搬 `act`）。
+
+---
+
+## 13. 实施记录（M3，已完成）
+
+按 m01211「ok继续」继续做到 M3 委托编辑器；M4 弹窗编辑器仍未开工。
+
+落地：
+
+- 数据模型新增 `MissionTemplate`（`src/types.ts`）：id / 标题 / 分类 / 描述 / 难度 / 时长 / 判定属性与目标值 / 战斗或调查 / 敌人 id / 轮数 / 推荐等级 / 可空辖区 / 可空接取窗口 / 报酬 / 颜色；`Mission.templateId` 记录来源模板，用于删除前引用检查。
+- 内容库 schema 增 `missions` 数组，`sanitizeMission` 只收 `custom-mission-` 前缀，战斗委托至少保留一只合法敌人；保存时先建「内置 + 本次自制魔物」池，再清洗敌人 id。
+- `applyLibrary` 同步 `customMissionTemplates()`；`missionTemplates()` 与 `makeCommission` 的轮转池改为「内置 + 自制」；自制模板固定辖区/窗口时覆盖自动轮转，否则沿用原逻辑。`deployMissionTemplate` 供「投放测试」立刻生成一份委托。
+- 工坊新增「委托」页签（放在首位）：完整表单、敌人多选（1–3 只）、预览卡片、投放测试按钮；删除前用 `contentUsage` 检查当前夜晚是否还有该模板生成的委托。
+- 内置委托只读，可复制为自制；保存后蓝图「阶段委托」模板下拉也能选到自制委托。
+
+修改文件：`src/types.ts`、`src/content/library.ts`、`src/game.ts`、`src/components/workshop/ContentWorkshopDialog.tsx`、`src/App.tsx`、`tests/game.test.ts`、`tests/browser.mjs`、`README.md`。
+
+验证：tsc 0、单测 92/92、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`。
+
+下一步：M4 弹窗编辑器；以及 `src/game.ts` 的门面化拆分。

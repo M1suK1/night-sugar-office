@@ -388,6 +388,27 @@ export interface Mission {
   requiredGirlId?: string;
   /** 完成后发放的专属装备 id（已登记进物品表）。 */
   rewardEquipmentId?: string;
+  /** 由内容工坊的委托模板生成时，记录来源模板 id，便于删除前检查引用。 */
+  templateId?: string;
+}
+/** 内容工坊里的干净委托模板；注册时再转成带坐标与时限的委托快照。 */
+export interface MissionTemplate {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  difficulty: '低危' | '中危' | '高危' | '绝望';
+  duration: number;
+  requirement: StatKey;
+  target: number;
+  work: WorkKind;
+  enemyIds: string[];
+  rounds: number;
+  recommendedLevel: number;
+  district?: DistrictId;
+  window?: CommissionWindow;
+  reward: number;
+  color: string;
 }
 export interface Room { id: string; name: string; type: 'lounge' | 'clinic' | 'dorm' | 'observatory'; level: number; capacity: number; description: string }
 export interface Log { id: string; time: string; kind: 'dispatch' | 'finance' | 'care' | 'story' | 'base' | 'battle' | 'relationship' | 'memorial' | 'council' | 'expedition' | 'clinic' | 'incident' | 'territory'; text: string; delta?: number }

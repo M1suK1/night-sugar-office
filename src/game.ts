@@ -1,10 +1,11 @@
-import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, Log, MarketStockEntry, Mission, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
 import { ensureGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
+import { customMissionTemplates } from './content/library.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
@@ -478,7 +479,41 @@ function archive(state: GameState, kind: ChronicleEntry['kind'], title: string, 
 }
 // ---------------------------------------------------------------- 辖区与委托时段
 
-const commissionPool = createSeedPack().missions.filter(m => !m.boss);
+const baseCommissionPool = createSeedPack().missions.filter(m => !m.boss);
+
+/** 把自制委托模板转成可进入轮转池的委托快照；坐标与时限由 makeCommission 再算。 */
+function missionSeed(template: MissionTemplate): Mission {
+  return {
+    id: `custom-${template.id}`,
+    title: template.title,
+    category: template.category,
+    description: template.description,
+    x: 50,
+    y: 50,
+    difficulty: template.difficulty,
+    duration: template.duration,
+    reward: template.reward,
+    requirement: template.requirement,
+    target: template.target,
+    color: template.color,
+    status: 'open',
+    squad: [],
+    work: template.work,
+    enemyIds: [...template.enemyIds],
+    rounds: template.rounds,
+    attempts: 0,
+    recommendedLevel: template.recommendedLevel,
+    district: template.district,
+    window: template.window,
+    generated: false,
+    sourcePack: 'workshop',
+    templateId: template.id,
+  };
+}
+
+function commissionPool(): Mission[] {
+  return [...baseCommissionPool, ...customMissionTemplates().map(missionSeed)];
+}
 
 /** 蓝图「阶段委托」可以一键套用的现有委托模板。 */
 export interface MissionTemplateOption {
@@ -488,7 +523,7 @@ export interface MissionTemplateOption {
 }
 
 export function missionTemplates(): MissionTemplateOption[] {
-  return commissionPool.map(template => ({
+  return commissionPool().map(template => ({
     id: template.id,
     title: template.title,
     category: template.category,
@@ -520,11 +555,12 @@ export function districtPin(districtId: DistrictId, salt: string): { x: number; 
 
 /** 按辖区环境生成一份夜间委托。 */
 function makeCommission(state: GameState, wave: number, slot: number): Mission {
-  const regionId = districtOrderFor(state.day, wave, slot);
+  const pool = commissionPool();
+  const template = pool[hashText(`${state.day}:${wave}:${slot}:${districts[districtOrderFor(state.day, wave, slot)].id}`) % pool.length];
+  const regionId = template.district ?? districtOrderFor(state.day, wave, slot);
   const region = districts[regionId];
   const territory = effectiveDistrictEffect(state.territories, regionId);
-  const template = commissionPool[hashText(`${state.day}:${wave}:${slot}:${regionId}`) % commissionPool.length];
-  const window: CommissionWindow = slot === 0 ? 'long' : 'urgent';
+  const window: CommissionWindow = template.window ?? (slot === 0 ? 'long' : 'urgent');
   const spawnAt = shiftStartAt(state.day) + WAVE_AT[wave];
   const pin = districtPin(regionId, `${state.day}-${wave}-${slot}`);
   const longDays = window === 'long'
@@ -546,16 +582,43 @@ function makeCommission(state: GameState, wave: number, slot: number): Mission {
     y: pin.y,
     target,
     reward,
-    color: `rgb(${region.tint})`,
+    color: template.templateId ? template.color : `rgb(${region.tint})`,
     category: `${region.name} · ${template.category}`,
     status: 'open',
     squad: [],
     girlId: undefined,
     attempts: 0,
-    rounds: Math.max(2, Math.floor(template.duration / ROUND_MINUTES)),
+    rounds: template.rounds ?? Math.max(2, Math.floor(template.duration / ROUND_MINUTES)),
     generated: false,
     sourcePack: 'shift',
     recommendedLevel: template.recommendedLevel ?? 3,
+  };
+}
+
+/** 内容工坊「投放测试」：把一份自制模板直接变成当前夜晚可接的委托。 */
+export function deployMissionTemplate(state: GameState, template: MissionTemplate): Mission {
+  const regionId = template.district ?? districtOrderFor(state.day, state.shift.wave, 0);
+  const region = districts[regionId];
+  const pin = districtPin(regionId, `workshop-${template.id}-${state.day}-${state.minutes}-${state.missions.length}`);
+  const window = template.window ?? 'urgent';
+  const spawnAt = absoluteMinutes(state.day, state.minutes);
+  const longDays = window === 'long' ? LONG_MIN_DAYS : undefined;
+  return {
+    ...missionSeed(template),
+    id: `w-${state.day}-${state.minutes}-${state.missions.length}-${template.id}`,
+    district: regionId,
+    window,
+    longDays,
+    spawnedAt: spawnAt,
+    deadlineAt: deadlineFor(window, state.day, spawnAt, longDays),
+    x: pin.x,
+    y: pin.y,
+    category: `${region.name} · ${template.category}`,
+    status: 'open',
+    squad: [],
+    girlId: undefined,
+    attempts: 0,
+    rounds: template.rounds,
   };
 }
 
@@ -1215,7 +1278,8 @@ export function fireStoryTrigger(state: GameState, girl: Girl, trigger: StoryTri
     return;
   }
   const district = trigger.district ?? districtAt(20 + (hashText(girl.id) % 60), 25 + (hashText(trigger.title) % 50));
-  const template = commissionPool[hashText(`${girl.id}:${trigger.title}`) % commissionPool.length];
+  const pool = commissionPool();
+  const template = pool[hashText(`${girl.id}:${trigger.title}`) % pool.length];
   const pin = districtPin(district, `${girl.id}:${state.day}`);
   const spawnAt = now;
   state.missions.unshift({

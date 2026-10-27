@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployMissionTemplate, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -17,7 +17,7 @@ import { skills, getSkill } from '../src/content/skills.ts';
 import { getItem } from '../src/content/items.ts';
 import { getMonster } from '../src/content/monsters.ts';
 import { simulateBattle } from '../src/combat.ts';
-import { applyLibrary, contentUsage, emptyLibrary, ruleText, sanitizeItem, sanitizeLibrary, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
+import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, ruleText, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -1653,6 +1653,37 @@ test('内容库只收自制条目，并能注入注册表与商店货架', () =>
   assert.ok(contentUsage(state, 'skill', 'custom-skill-test01').includes('契约者技能栏'));
   applyLibrary(emptyLibrary());
   assert.equal(getSkill('custom-skill-test01').name, skills[0].name);
+});
+
+test('委托模板只收自制条目，能进入轮转池并投放成夜间委托', () => {
+  assert.equal(sanitizeMission({ ...emptyMission(), id: 'c-base' }), undefined);
+  const raw = {
+    id: 'custom-mission-test01', title: '测试委托·夜航', category: '测试', description: '测试用委托。',
+    difficulty: '高危', duration: 70, requirement: 'empathy', target: 80, work: 'combat',
+    enemyIds: ['night-tram'], rounds: 5, recommendedLevel: 4, district: 'candy', window: 'long',
+    reward: 900, color: '#123456',
+  };
+  const mission = sanitizeMission(raw);
+  assert.ok(mission);
+  assert.equal(mission.duration, 75);
+  assert.equal(mission.district, 'candy');
+  const library = sanitizeLibrary({ ...emptyLibrary(), missions: [raw] });
+  assert.equal(library.missions.length, 1);
+  applyLibrary(library);
+  assert.equal(customMissionTemplates().length, 1);
+  assert.ok(missionTemplates().some(option => option.id.includes('custom-mission-test01')));
+  const state = createInitialState();
+  const deployed = deployMissionTemplate(state, mission);
+  assert.equal(deployed.templateId, 'custom-mission-test01');
+  assert.equal(deployed.status, 'open');
+  assert.equal(deployed.district, 'candy');
+  assert.equal(deployed.window, 'long');
+  assert.deepEqual(deployed.enemyIds, ['night-tram']);
+  assert.ok((deployed.deadlineAt ?? 0) > (deployed.spawnedAt ?? 0));
+  assert.deepEqual(contentUsage({ ...state, missions: [deployed] }, 'mission', 'custom-mission-test01'), ['当前夜晚的委托']);
+  applyLibrary(emptyLibrary());
+  assert.equal(customMissionTemplates().length, 0);
+  assert.ok(!missionTemplates().some(option => option.id.includes('custom-mission-test01')));
 });
 
 test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {

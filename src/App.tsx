@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
-import { act, buildTemplateArc, importState, loadState, SAVE_KEY } from './game';
+import { act, buildTemplateArc, dateLabel, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
@@ -530,6 +530,20 @@ export default function App() {
           library={library}
           onClose={() => setModal(null)}
           onNotify={notify}
+          onDeployMission={template => {
+            const mission = deployMissionTemplate(state, template);
+            setState(current => ({
+              ...current,
+              missions: [mission, ...current.missions],
+              logs: [{
+                id: `log-workshop-${mission.id}`,
+                time: dateLabel(current.day, current.minutes),
+                kind: 'dispatch' as const,
+                text: `内容工坊投放了「${mission.title}」，它已经出现在今夜的地图上。`,
+              }, ...current.logs],
+            }));
+            notify(`「${mission.title}」已投放到今夜的地图。`);
+          }}
           onCommit={next => {
             setLibrary(next);
             setState(current => ({ ...current, marketStock: withCustomStock(current.marketStock) }));

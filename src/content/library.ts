@@ -1,4 +1,5 @@
-import type { Element, Equipment, FactionId, GameState, MarketStockEntry, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
+import type { Element, Equipment, FactionId, GameState, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
+import { districts } from '../districts.ts';
 import { skillById, skills } from './skills.ts';
 import { itemById, items } from './items.ts';
 import { monsterById, monsters } from './monsters.ts';
@@ -14,9 +15,10 @@ export interface ContentLibrary {
   skills: Skill[];
   items: Equipment[];
   monsters: MonsterTemplate[];
+  missions: MissionTemplate[];
 }
 
-export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [] });
+export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [], missions: [] });
 
 const FACTION_IDS: FactionId[] = ['witch', 'association', 'government'];
 const ELEMENTS: Element[] = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'];
@@ -32,6 +34,9 @@ const ITEM_EFFECTS: NonNullable<Equipment['effect']>[] = ['drug', 'heal', 'purif
 const RULE_TRIGGERS: MonsterRule['trigger'][] = ['roundStart', 'hit', 'always'];
 const RULE_EFFECTS: MonsterRule['effect'][] = ['heal', 'buff', 'haste', 'debuffAttacker', 'dot', 'immuneStun', 'damageReduce'];
 const RULE_STATS: NonNullable<MonsterRule['stat']>[] = [...STAT_KEYS, 'hit'];
+const MISSION_DIFFICULTIES: MissionTemplate['difficulty'][] = ['低危', '中危', '高危', '绝望'];
+const MISSION_WORKS: MissionTemplate['work'][] = ['combat', 'investigation'];
+const MISSION_WINDOWS: NonNullable<MissionTemplate['window']>[] = ['urgent', 'long'];
 
 const clamp = (min: number, max: number, value: number) => Math.max(min, Math.min(max, value));
 const text = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
@@ -46,7 +51,7 @@ const customId = (value: unknown, kind: string) => {
 };
 const color = (value: unknown, fallback: string) => (/^#[0-9a-fA-F]{6}$/.test(String(value)) ? String(value) : fallback);
 
-export function newContentId(kind: 'skill' | 'item' | 'monster'): string {
+export function newContentId(kind: 'skill' | 'item' | 'monster' | 'mission'): string {
   const stamp = Date.now().toString(36);
   const salt = Math.floor(Math.random() * 46656).toString(36).padStart(3, '0');
   return `${CUSTOM_PREFIX}${kind}-${stamp}${salt}`;
@@ -77,6 +82,15 @@ export function emptyMonster(): MonsterTemplate {
       palette: { body: '#34283f', shade: '#191221', rim: '#d9c2f2' }, aura: '故障', motif: '星',
     },
     codex: { habit: '', weakness: '' },
+  };
+}
+
+export function emptyMission(): MissionTemplate {
+  return {
+    id: newContentId('mission'), title: '未命名委托', category: '民间琐事',
+    description: '', difficulty: '中危', duration: 60, requirement: 'insight', target: 60,
+    work: 'investigation', enemyIds: [], rounds: 3, recommendedLevel: 3,
+    window: 'urgent', reward: 600, color: '#c9a7e8',
   };
 }
 
@@ -211,6 +225,42 @@ export function sanitizeMonster(raw: unknown, skillPool: Set<string> = new Set(s
   };
 }
 
+export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set(monsterById.keys())): MissionTemplate | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as Record<string, unknown>;
+  const id = customId(value.id, 'mission');
+  if (!id) return undefined;
+  const title = text(value.title, 24);
+  if (!title) return undefined;
+  const work = oneOf<MissionTemplate['work']>(value.work, MISSION_WORKS, 'investigation');
+  const enemyIds = Array.isArray(value.enemyIds)
+    ? [...new Set(value.enemyIds.filter((entry): entry is string => typeof entry === 'string' && monsterPool.has(entry)))].slice(0, 3)
+    : [];
+  if (work === 'combat' && enemyIds.length === 0) {
+    const fallback = monsterPool.has('monster-claw') ? 'monster-claw' : [...monsterPool][0];
+    if (!fallback) return undefined;
+    enemyIds.push(fallback);
+  }
+  const district = typeof value.district === 'string' && value.district in districts ? value.district as MissionTemplate['district'] : undefined;
+  return {
+    id, title,
+    category: text(value.category, 16) || '民间琐事',
+    description: text(value.description, 300),
+    difficulty: oneOf<MissionTemplate['difficulty']>(value.difficulty, MISSION_DIFFICULTIES, '中危'),
+    duration: Math.round(number(value.duration, 60, 15, 240) / 15) * 15,
+    requirement: oneOf<StatKey>(value.requirement, STAT_KEYS, 'insight'),
+    target: Math.round(number(value.target, 60, 30, 120)),
+    work,
+    enemyIds,
+    rounds: Math.round(number(value.rounds, 3, 2, 8)),
+    recommendedLevel: Math.round(number(value.recommendedLevel, 3, 1, 12)),
+    district,
+    window: value.window === undefined ? undefined : oneOf<NonNullable<MissionTemplate['window']>>(value.window, MISSION_WINDOWS, 'urgent'),
+    reward: Math.round(number(value.reward, 600, 0, 5000)),
+    color: color(value.color, '#c9a7e8'),
+  };
+}
+
 export function sanitizeLibrary(raw: unknown): ContentLibrary {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const dedupe = <T extends { id: string }>(list: (T | undefined)[]): T[] => {
@@ -223,12 +273,15 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
   };
   const cleanSkills = dedupe(Array.isArray(value.skills) ? value.skills.map(sanitizeSkill) : []);
   const skillPool = new Set([...skillById.keys(), ...cleanSkills.map(skill => skill.id)]);
+  const cleanMonsters = dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, skillPool)) : []);
+  const monsterPool = new Set([...monsterById.keys(), ...cleanMonsters.map(monster => monster.id)]);
   return {
     schemaVersion: LIBRARY_SCHEMA,
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
     skills: cleanSkills,
     items: dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []),
-    monsters: dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, skillPool)) : []),
+    monsters: cleanMonsters,
+    missions: dedupe(Array.isArray(value.missions) ? value.missions.map(entry => sanitizeMission(entry, monsterPool)) : []),
   };
 }
 
@@ -255,6 +308,8 @@ function purgeCustom<T extends { id: string }>(list: T[], map: Map<string, T>): 
   }
 }
 
+let currentMissions: MissionTemplate[] = [];
+
 /** 把内容库同步进运行期注册表；重复调用会替换同名自制条目。 */
 export function applyLibrary(library: ContentLibrary): void {
   const clean = sanitizeLibrary(library);
@@ -264,6 +319,12 @@ export function applyLibrary(library: ContentLibrary): void {
   for (const skill of clean.skills) { skills.push(skill); skillById.set(skill.id, skill); }
   for (const item of clean.items) { items.push(item); itemById.set(item.id, item); }
   for (const monster of clean.monsters) { monsters.push(monster); monsterById.set(monster.id, monster); }
+  currentMissions = [...clean.missions];
+}
+
+/** 当前注册的自制委托模板；game.ts 的轮转池会追加它们。 */
+export function customMissionTemplates(): MissionTemplate[] {
+  return [...currentMissions];
 }
 
 export function initContentLibrary(): ContentLibrary {
@@ -284,7 +345,7 @@ export function withCustomStock(stock: MarketStockEntry[]): MarketStockEntry[] {
   return kept;
 }
 
-export type WorkshopKind = 'skill' | 'item' | 'monster';
+export type WorkshopKind = 'skill' | 'item' | 'monster' | 'mission';
 
 /** 删除前检查当前存档里的引用，避免把正在使用的技能/装备/魔物删掉。 */
 export function contentUsage(state: GameState, kind: WorkshopKind, id: string): string[] {
@@ -300,6 +361,9 @@ export function contentUsage(state: GameState, kind: WorkshopKind, id: string): 
   if (kind === 'monster') {
     if (state.missions.some(mission => mission.enemyIds?.includes(id))) used.push('当前委托');
     if (state.battles.some(battle => battle.units.some(unit => unit.monster?.id === id))) used.push('战斗记录');
+  }
+  if (kind === 'mission') {
+    if (state.missions.some(mission => mission.templateId === id)) used.push('当前夜晚的委托');
   }
   return used;
 }
@@ -319,5 +383,5 @@ export function ruleText(rule: MonsterRule): string {
 }
 
 export function libraryCounts(library: ContentLibrary): string {
-  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length}`;
+  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length} · 委托 ${library.missions.length}`;
 }
