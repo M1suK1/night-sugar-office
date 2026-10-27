@@ -7,7 +7,7 @@ import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from 
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
 import {
-  applyLibrary, contentUsage, emptyIncidentCard, emptyItem, emptyMission, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
+  applyLibrary, contentUsage, emptyCombatMission, emptyIncidentCard, emptyInvestigationMission, emptyItem, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
   type ContentLibrary, type ImportStrategy, type WorkshopKind,
 } from '../../content/library';
 import { MonsterGlyph } from '../MonsterGlyph';
@@ -102,11 +102,12 @@ const baseMission = (option: ReturnType<typeof missionTemplates>[number]): Missi
 export function ContentWorkshopDialog({ state, library, onCommit, onDeployMission, onDeployIncident, onClose, onNotify }: Props) {
   const [draft, setDraft] = useState<ContentLibrary>(library);
   const [kind, setKind] = useState<WorkshopKind>('mission');
+  const [missionWork, setMissionWork] = useState<MissionTemplate['work']>('investigation');
   const [selected, setSelected] = useState<Record<WorkshopKind, string>>({
     skill: library.skills[0]?.id ?? skillRegistry[0]?.id ?? '',
     item: library.items[0]?.id ?? itemRegistry[0]?.id ?? '',
     monster: library.monsters[0]?.id ?? monsterRegistry[0]?.id ?? '',
-    mission: library.missions[0]?.id ?? missionTemplates()[0]?.id ?? '',
+    mission: (library.missions.find(entry => entry.work === 'investigation') ?? library.missions[0] ?? missionTemplates().find(entry => entry.work === 'investigation') ?? missionTemplates()[0])?.id ?? '',
     incident: library.incidents[0]?.id ?? '',
   });
   const [tab, setTab] = useState<'form' | 'preview'>('form');
@@ -117,6 +118,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
 
   const allSkills = useMemo(() => [...skillRegistry.filter(entry => !isCustom(entry.id)), ...draft.skills], [draft.skills]);
   const allItems = useMemo(() => [...itemRegistry.filter(entry => !isCustom(entry.id)), ...draft.items], [draft.items]);
+  const allGear = useMemo(() => allItems.filter(entry => entry.slot !== 'consumable'), [allItems]);
   const allMonsters = useMemo(() => [...monsterRegistry.filter(entry => !isCustom(entry.id)), ...draft.monsters], [draft.monsters]);
   const allMissions = useMemo(
     () => [...missionTemplates().filter(entry => !entry.id.startsWith('custom-')).map(baseMission), ...draft.missions],
@@ -131,7 +133,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
         ? allMonsters.map(entry => ({ id: entry.id, name: entry.name, note: `${entry.rank} · ${entry.element}` }))
         : kind === 'incident'
           ? allIncidents.map(entry => ({ id: entry.id, name: entry.title, note: `${INCIDENT_KIND_LABELS[entry.kind]} · ${entry.options.length} 个选项` }))
-          : allMissions.map(entry => ({ id: entry.id, name: entry.title, note: `${entry.difficulty} · ${MISSION_WORK_LABELS[entry.work]} · ${entry.duration} 分` }));
+          : allMissions.filter(entry => entry.work === missionWork).map(entry => ({ id: entry.id, name: entry.title, note: `${entry.difficulty} · ${MISSION_WORK_LABELS[entry.work]} · ${entry.duration} 分` }));
   const currentId = selected[kind];
   const skill = allSkills.find(entry => entry.id === currentId) ?? allSkills[0];
   const item = allItems.find(entry => entry.id === currentId) ?? allItems[0];
@@ -152,6 +154,13 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
   const switchKind = (next: WorkshopKind) => {
     setKind(next);
     setTab('form');
+  };
+  const switchMission = (work: MissionTemplate['work']) => {
+    setKind('mission');
+    setMissionWork(work);
+    setTab('form');
+    const next = allMissions.find(entry => entry.work === work);
+    if (next) setSelected(prev => ({ ...prev, mission: next.id }));
   };
   const select = (id: string) => setSelected(prev => ({ ...prev, [kind]: id }));
 
@@ -217,7 +226,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
       setDraft(prev => ({ ...prev, incidents: [...prev.incidents, next] }));
       select(next.id);
     } else {
-      const next = emptyMission();
+      const next = missionWork === 'combat' ? emptyCombatMission() : emptyInvestigationMission();
       setDraft(prev => ({ ...prev, missions: [...prev.missions, next] }));
       select(next.id);
     }
@@ -395,7 +404,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
             <p className="workshop-sub">{libraryCounts(draft)} · 保存后进入图鉴、商店货架与战斗池</p>
           </div>
           <div className="workshop-head-actions">
-            <button id="workshop-new" className="ghost-btn" onClick={createNew}><Plus size={14} /> 新建{KIND_NEW_LABELS[kind]}</button>
+            <button id="workshop-new" className="ghost-btn" onClick={createNew}><Plus size={14} /> 新建{kind === 'mission' ? `${MISSION_WORK_LABELS[missionWork]}委托` : KIND_NEW_LABELS[kind]}</button>
             <button id="workshop-export" className="ghost-btn" onClick={exportPack} title="导出全部自制内容为 JSON"><Download size={14} /> 导出</button>
             <button id="workshop-import" className="ghost-btn" onClick={() => importRef.current?.click()} title="从 JSON 内容包导入"><Upload size={14} /> 导入</button>
             <select id="workshop-import-strategy" className="workshop-import-select" value={strategy} onChange={event => setStrategy(event.target.value as ImportStrategy)} title="导入时的冲突处理方式">
@@ -421,10 +430,16 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
         </header>
 
         <div className="workshop-tabs" role="tablist">
-          {(['mission', 'incident', 'skill', 'item', 'monster'] as WorkshopKind[]).map(entry => (
+          {(['investigation', 'combat'] as const).map(work => (
+            <button key={work} id={`workshop-tab-${work}`} role="tab" aria-selected={kind === 'mission' && missionWork === work} className={kind === 'mission' && missionWork === work ? 'active' : ''} onClick={() => switchMission(work)}>
+              {MISSION_WORK_LABELS[work]}委托
+              <em>{allMissions.filter(entry => entry.work === work).length}</em>
+            </button>
+          ))}
+          {(['incident', 'skill', 'item', 'monster'] as WorkshopKind[]).map(entry => (
             <button key={entry} id={`workshop-tab-${entry}`} role="tab" aria-selected={kind === entry} className={kind === entry ? 'active' : ''} onClick={() => switchKind(entry)}>
               {KIND_LABELS[entry]}
-              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : entry === 'incident' ? allIncidents.length : allMissions.length}</em>
+              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : allIncidents.length}</em>
             </button>
           ))}
         </div>
@@ -523,10 +538,12 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                     <header><Play size={16} /><strong>{mission.title}</strong><em>{mission.difficulty} · {MISSION_WORK_LABELS[mission.work]}</em></header>
                     <p>{mission.description || '还没有写说明。'}</p>
                     <ul>
-                      <li>时长 {mission.duration} 分钟 · 判定 {STAT_LABELS[mission.requirement]} ≥ {mission.target}</li>
+                      <li>{mission.work === 'investigation' ? `调查判定 ${STAT_LABELS[mission.requirement]} ≥ ${mission.target}` : `战斗 ${mission.rounds} 轮 · 判定 ${STAT_LABELS[mission.requirement]} ≥ ${mission.target}`} · 时长 {mission.duration} 分钟</li>
                       <li>{mission.district ? districts[mission.district].name : '辖区自动轮转'} · {mission.window ? MISSION_WINDOW_LABELS[mission.window] : '窗口自动'}</li>
-                      <li>报酬 {mission.reward} 星砂 · 推荐等级 {mission.recommendedLevel} · {mission.rounds} 轮</li>
-                      <li>对手：{mission.enemyIds.length ? mission.enemyIds.map(id => allMonsters.find(entry => entry.id === id)?.name ?? id).join('、') : '无（调查委托）'}</li>
+                      <li>报酬 {mission.reward} 星砂 · 推荐等级 {mission.recommendedLevel}</li>
+                      {mission.rewardEquipmentId && <li>附赠装备：{allItems.find(entry => entry.id === mission.rewardEquipmentId)?.name ?? mission.rewardEquipmentId}</li>}
+                      {Boolean(mission.rewardGirlLevel) && <li>免费契约者：Lv.{mission.rewardGirlLevel}</li>}
+                      {mission.work === 'combat' && <li>对手：{mission.enemyIds.length ? mission.enemyIds.map(id => allMonsters.find(entry => entry.id === id)?.name ?? id).join('、') : '未指定（保存时自动补一只）'}</li>}
                     </ul>
                   </article>
                 )}
@@ -675,21 +692,24 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>委托标题</span><input id="workshop-mission-title" value={mission.title} disabled={!editable} onChange={event => patchMission({ title: event.target.value })} /></label>
                   <label className="field"><span>分类</span><input id="workshop-mission-category" value={mission.category} disabled={!editable} onChange={event => patchMission({ category: event.target.value })} /></label>
                   <label className="field"><span>难度</span><select id="workshop-mission-difficulty" value={mission.difficulty} disabled={!editable} onChange={event => patchMission({ difficulty: event.target.value as MissionTemplate['difficulty'] })}>{MISSION_DIFFICULTIES.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                  <label className="field"><span>类型</span><select id="workshop-mission-work" value={mission.work} disabled={!editable} onChange={event => patchMission({ work: event.target.value as MissionTemplate['work'] })}><option value="combat">战斗</option><option value="investigation">调查</option></select></label>
-                  <label className="field"><span>时长（分钟）</span><input id="workshop-mission-duration" type="number" step="15" min="15" max="240" value={mission.duration} disabled={!editable} onChange={event => patchMission({ duration: Math.round(num(event.target.value, 60) / 15) * 15 })} /></label>
+                  <div className="field"><span>模板类型</span><strong>{MISSION_WORK_LABELS[mission.work]}委托</strong><small className="workshop-muted">调查与战斗使用同一套字段结构，但分别在各自标签页里维护。</small></div>
                   <label className="field"><span>判定属性</span><select id="workshop-mission-requirement" value={mission.requirement} disabled={!editable} onChange={event => patchMission({ requirement: event.target.value as StatKey })}>{STAT_KEYS.map(value => <option key={value} value={value}>{STAT_LABELS[value]}</option>)}</select></label>
-                  <label className="field"><span>目标值</span><input id="workshop-mission-target" type="number" min="30" max="120" value={mission.target} disabled={!editable} onChange={event => patchMission({ target: num(event.target.value, 60) })} /></label>
-                  <label className="field"><span>轮数</span><input id="workshop-mission-rounds" type="number" min="2" max="8" value={mission.rounds} disabled={!editable} onChange={event => patchMission({ rounds: num(event.target.value, 3) })} /></label>
+                  {mission.work === 'investigation' && <label className="field"><span>目标值</span><input id="workshop-mission-target" type="number" min="30" max="120" value={mission.target} disabled={!editable} onChange={event => patchMission({ target: num(event.target.value, 60) })} /></label>}
+                  {mission.work === 'combat' && <label className="field"><span>轮数</span><input id="workshop-mission-rounds" type="number" min="2" max="8" value={mission.rounds} disabled={!editable} onChange={event => patchMission({ rounds: num(event.target.value, 3) })} /></label>}
+                  <label className="field"><span>时长（分钟）</span><input id="workshop-mission-duration" type="number" step="15" min="15" max="240" value={mission.duration} disabled={!editable} onChange={event => patchMission({ duration: Math.round(num(event.target.value, 60) / 15) * 15 })} /></label>
                   <label className="field"><span>推荐等级</span><input id="workshop-mission-level" type="number" min="1" max="12" value={mission.recommendedLevel} disabled={!editable} onChange={event => patchMission({ recommendedLevel: num(event.target.value, 3) })} /></label>
                   <label className="field"><span>报酬（星砂）</span><input id="workshop-mission-reward" type="number" min="0" value={mission.reward} disabled={!editable} onChange={event => patchMission({ reward: Math.max(0, num(event.target.value)) })} /></label>
+                  <label className="field"><span>附赠装备</span><select id="workshop-mission-reward-item" value={mission.rewardEquipmentId ?? ''} disabled={!editable} onChange={event => patchMission({ rewardEquipmentId: event.target.value || undefined })}><option value="">无</option>{allGear.map(entry => <option key={entry.id} value={entry.id}>{entry.name}（{entry.slot}）</option>)}</select></label>
+                  <label className="field"><span>免费契约者等级</span><input id="workshop-mission-reward-girl" type="number" min="0" max="12" value={mission.rewardGirlLevel ?? 0} disabled={!editable} onChange={event => patchMission({ rewardGirlLevel: Math.min(12, Math.max(0, Math.round(num(event.target.value, 0)))) })} /><small className="workshop-muted">0 表示没有这项奖励</small></label>
                   <label className="field"><span>辖区</span><select id="workshop-mission-district" value={mission.district ?? ''} disabled={!editable} onChange={event => patchMission({ district: (event.target.value || undefined) as MissionTemplate['district'] })}><option value="">自动轮转</option>{Object.values(districts).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
                   <label className="field"><span>接取窗口</span><select id="workshop-mission-window" value={mission.window ?? ''} disabled={!editable} onChange={event => patchMission({ window: (event.target.value || undefined) as MissionTemplate['window'] })}><option value="">按时段</option><option value="urgent">紧急</option><option value="long">长期</option></select></label>
                   <label className="field"><span>颜色</span><input id="workshop-mission-color" type="color" value={mission.color} disabled={!editable} onChange={event => patchMission({ color: event.target.value })} /></label>
                 </div>
+                <p className="workshop-muted">额外报酬在委托完成时发放：装备直接进入背包；契约者免费入职，宿舍席位不足时会留在候选名册，签约金为 0。</p>
                 <label className="field"><span>说明</span><textarea id="workshop-mission-description" rows={3} value={mission.description} disabled={!editable} onChange={event => patchMission({ description: event.target.value })} /></label>
-                <section className="workshop-section">
+                {mission.work === 'combat' && <section className="workshop-section">
                   <header><h4>敌人（战斗委托 1–3 只）</h4><small>{enemySlots.filter(Boolean).length}/3</small></header>
-                  {mission.work === 'combat' && mission.enemyIds.length === 0 && <p className="workshop-muted">战斗委托至少需要一只魔物；保存时会自动补一只。</p>}
+                  {mission.enemyIds.length === 0 && <p className="workshop-muted">战斗委托至少需要一只魔物；保存时会自动补一只。</p>}
                   <div className="workshop-picker">
                     {enemySlots.map((value, index) => (
                       <FilterPickerRow
@@ -698,16 +718,16 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                         index={index}
                         options={allMonsters.map(entry => ({ value: entry.id, label: entry.name, note: `${entry.rank} · ${entry.element}` }))}
                         value={value}
-                        disabled={!editable || mission.work !== 'combat'}
+                        disabled={!editable}
                         placeholder="选择魔物"
                         taken={new Set(enemySlots.filter((entry, at) => Boolean(entry) && at !== index))}
                         onChange={next => setEnemyAt(index, next)}
                         onRemove={enemySlots.length > 1 ? () => removeEnemySlot(index) : undefined}
                       />
                     ))}
-                    <button id="workshop-add-mission-enemy" type="button" className="ghost-btn workshop-picker-add" disabled={!editable || mission.work !== 'combat' || enemySlots.length >= 3} onClick={addEnemySlot}><Plus size={13} /> 添加敌人</button>
+                    <button id="workshop-add-mission-enemy" type="button" className="ghost-btn workshop-picker-add" disabled={!editable || enemySlots.length >= 3} onClick={addEnemySlot}><Plus size={13} /> 添加敌人</button>
                   </div>
-                </section>
+                </section>}
                 <p className="workshop-muted">保存后进入夜间委托轮转池；也可以点右上「投放测试」立刻在当前夜晚生成一份。</p>
               </div>
             )}
@@ -755,7 +775,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                     </div>
                   ))}
                 </section>
-                <p className="workshop-muted">投放后快照为当前存档的弹窗；随机池触发尚未接入调度器。</p>
+                <p className="workshop-muted">投放后快照为当前存档的弹窗；「随机池」卡会在每日开门时按权重抽取。</p>
               </div>
             )}
           </main>

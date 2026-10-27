@@ -17,7 +17,7 @@ import { skills, getSkill, findSkill } from '../src/content/skills.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { simulateBattle } from '../src/combat.ts';
-import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
+import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -1766,28 +1766,37 @@ test('内容包能完整导出读回，非法 JSON 与版本会被拒绝', () =>
 });
 
 test('导入冲突支持跳过、覆盖与另存新 id，并重映射技能引用', () => {
-  const current = sanitizeLibrary({ skills: [sanitizeSkill({ id: 'custom-skill-conf01', name: '旧星屑' })] });
+  const current = sanitizeLibrary({
+    skills: [sanitizeSkill({ id: 'custom-skill-conf01', name: '旧星屑' })],
+    items: [{ id: 'custom-item-conf01', name: '旧护符', faction: 'witch', slot: 'charm', price: 180 }],
+  });
   const incoming = sanitizeLibrary({
     skills: [{ id: 'custom-skill-conf01', name: '新星屑' }],
     items: [{ id: 'custom-item-conf01', name: '冲突护符', faction: 'witch', slot: 'charm', price: 200, skillId: 'custom-skill-conf01' }],
+    missions: [{ id: 'custom-mission-conf01', title: '冲突委托', category: '试作', work: 'investigation', rewardEquipmentId: 'custom-item-conf01' }],
   });
   assert.equal(incoming.items[0].skillId, 'custom-skill-conf01');
+  assert.equal(incoming.missions[0].rewardEquipmentId, 'custom-item-conf01');
   const skip = mergeContentPack(current, incoming, 'skip');
-  assert.equal(skip.conflicts, 1);
-  assert.equal(skip.skipped, 1);
+  assert.equal(skip.conflicts, 2);
+  assert.equal(skip.skipped, 2);
   assert.equal(skip.added, 1);
   assert.equal(skip.library.skills[0].name, '旧星屑');
   const overwrite = mergeContentPack(current, incoming, 'overwrite');
-  assert.equal(overwrite.replaced, 1);
+  assert.equal(overwrite.replaced, 2);
   assert.equal(overwrite.library.skills[0].name, '新星屑');
   const rename = mergeContentPack(current, incoming, 'rename');
-  assert.equal(rename.renamed, 1);
-  assert.equal(rename.added, 2);
+  assert.equal(rename.renamed, 2);
+  assert.equal(rename.added, 3);
   assert.equal(rename.library.skills.length, 2);
   const renamedSkill = rename.library.skills.find(entry => entry.name === '新星屑');
   assert.ok(renamedSkill);
   assert.notEqual(renamedSkill.id, 'custom-skill-conf01');
-  assert.equal(rename.library.items[0].skillId, renamedSkill.id);
+  const renamedItem = rename.library.items.find(entry => entry.name === '冲突护符');
+  assert.ok(renamedItem);
+  assert.notEqual(renamedItem.id, 'custom-item-conf01');
+  assert.equal(renamedItem.skillId, renamedSkill.id);
+  assert.equal(rename.library.missions[0].rewardEquipmentId, renamedItem.id, '委托奖励装备应跟随冲突改名');
 });
 
 test('缺失内容返回 undefined，旧读取函数只作为兜底', () => {
@@ -1883,4 +1892,56 @@ test('蓝图事件节点能从内容工坊弹窗卡导入并按卡结算', () =>
   assert.equal(incident.body, card.body);
   assert.deepEqual(incident.options.map(option => option.label), card.options.map(option => option.label));
   assert.ok(contentUsage(started.state, 'incident', card.id).includes('契约者故事蓝图'));
+});
+
+test('调查与战斗拆成独立模板，额外装备与免费契约者会随完成发放', () => {
+  assert.equal(emptyInvestigationMission().work, 'investigation');
+  assert.equal(emptyCombatMission().work, 'combat');
+  assert.equal(emptyCombatMission().title, '未命名战斗委托');
+
+  const item = sanitizeItem({
+    id: 'custom-item-reward01', name: '夜巡奖励护符', faction: 'witch', slot: 'charm', price: 400,
+    description: '完成委托后附赠。',
+  });
+  assert.ok(item);
+  const rawInvestigation = {
+    id: 'custom-mission-inv01', title: '测试·夜巡调查', category: '试作', work: 'investigation',
+    requirement: 'insight', target: 30, duration: 15, reward: 700, recommendedLevel: 2,
+    rewardEquipmentId: item.id, rewardGirlLevel: 3,
+  };
+  const rawCombat = {
+    id: 'custom-mission-com01', title: '测试·夜航战斗', category: '试作', work: 'combat',
+    enemyIds: ['night-tram'], rounds: 4, duration: 60, reward: 900,
+    rewardEquipmentId: 'missing-item', rewardGirlLevel: 99,
+  };
+  const library = sanitizeLibrary({ items: [item], missions: [rawInvestigation, rawCombat] });
+  assert.equal(library.missions.length, 2);
+  const investigation = library.missions.find(entry => entry.work === 'investigation');
+  const combat = library.missions.find(entry => entry.work === 'combat');
+  assert.ok(investigation && combat);
+  assert.equal(investigation.rewardEquipmentId, item.id);
+  assert.equal(investigation.rewardGirlLevel, 3);
+  assert.equal(combat.rewardEquipmentId, undefined, '未知装备奖励应被丢弃');
+  assert.equal(combat.rewardGirlLevel, 12, '奖励等级应夹在 1–12');
+
+  applyLibrary(library);
+  const state = createInitialState();
+  const deployed = deployMissionTemplate(state, investigation);
+  state.missions.push(deployed);
+  assert.ok(contentUsage(state, 'item', item.id).includes('当前委托的报酬'));
+  const girl = state.girls.find(entry => entry.id === 'yue')!;
+  girl.fatigue = 0; girl.hp = 100; girl.stats.insight = 120;
+  const beforeCount = state.girls.length;
+  const dispatched = act(state, { type: 'dispatch', girlIds: [girl.id], missionId: deployed.id });
+  assert.equal(dispatched.ok, true);
+  const done = act(dispatched.state, { type: 'advance', minutes: 30 });
+  assert.equal(done.ok, true);
+  assert.equal(done.state.missions.find(entry => entry.id === deployed.id)?.status, 'done');
+  assert.equal(done.state.inventory[item.id], 1, '奖励装备应进入背包');
+  assert.equal(done.state.girls.length, beforeCount + 1, '免费契约者应直接入职');
+  const recruit = done.state.girls.find(entry => !state.girls.some(before => before.id === entry.id));
+  assert.ok(recruit, '应能找到新加入的契约者');
+  assert.equal(recruit.cost, 0);
+  assert.equal(recruit.level, 3);
+  applyLibrary(emptyLibrary());
 });

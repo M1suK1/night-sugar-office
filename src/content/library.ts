@@ -90,10 +90,24 @@ export function emptyMonster(): MonsterTemplate {
 
 export function emptyMission(): MissionTemplate {
   return {
-    id: newContentId('mission'), title: '未命名委托', category: '民间琐事',
+    id: newContentId('mission'), title: '未命名调查委托', category: '民间琐事',
     description: '', difficulty: '中危', duration: 60, requirement: 'insight', target: 60,
     work: 'investigation', enemyIds: [], rounds: 3, recommendedLevel: 3,
-    window: 'urgent', reward: 600, color: '#c9a7e8',
+    window: 'urgent', reward: 600, rewardGirlLevel: 0, color: '#c9a7e8',
+  };
+}
+
+/** 调查委托：目标值与判定属性是核心，不需要敌人和战斗轮数。 */
+export function emptyInvestigationMission(): MissionTemplate {
+  return { ...emptyMission(), work: 'investigation' };
+}
+
+/** 战斗委托：敌人与轮数是核心，目标值只是生成时的占位。 */
+export function emptyCombatMission(): MissionTemplate {
+  return {
+    ...emptyMission(),
+    title: '未命名战斗委托', work: 'combat', requirement: 'magic', target: 60,
+    enemyIds: [], rounds: 3, duration: 60,
   };
 }
 
@@ -241,7 +255,7 @@ export function sanitizeMonster(raw: unknown, skillPool: Set<string> = new Set(s
   };
 }
 
-export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set(monsterById.keys())): MissionTemplate | undefined {
+export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set(monsterById.keys()), itemPool: Set<string> = new Set(itemById.keys())): MissionTemplate | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const value = raw as Record<string, unknown>;
   const id = customId(value.id, 'mission');
@@ -258,6 +272,10 @@ export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set
     enemyIds.push(fallback);
   }
   const district = typeof value.district === 'string' && value.district in districts ? value.district as MissionTemplate['district'] : undefined;
+  const rewardEquipmentId = typeof value.rewardEquipmentId === 'string' && itemPool.has(value.rewardEquipmentId)
+    ? value.rewardEquipmentId
+    : undefined;
+  const rewardGirlLevel = Math.round(number(value.rewardGirlLevel, 0, 0, 12));
   return {
     id, title,
     category: text(value.category, 16) || '民间琐事',
@@ -273,6 +291,8 @@ export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set
     district,
     window: value.window === undefined ? undefined : oneOf<NonNullable<MissionTemplate['window']>>(value.window, MISSION_WINDOWS, 'urgent'),
     reward: Math.round(number(value.reward, 600, 0, 5000)),
+    rewardEquipmentId,
+    rewardGirlLevel: rewardGirlLevel > 0 ? rewardGirlLevel : undefined,
     color: color(value.color, '#c9a7e8'),
   };
 }
@@ -369,15 +389,17 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
   };
   const cleanSkills = dedupe(Array.isArray(value.skills) ? value.skills.map(sanitizeSkill) : []);
   const skillPool = new Set([...skillById.keys(), ...cleanSkills.map(skill => skill.id)]);
+  const cleanItems = dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []);
+  const itemPool = new Set([...itemById.keys(), ...cleanItems.map(item => item.id)]);
   const cleanMonsters = dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, skillPool)) : []);
   const monsterPool = new Set([...monsterById.keys(), ...cleanMonsters.map(monster => monster.id)]);
   return {
     schemaVersion: LIBRARY_SCHEMA,
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
     skills: cleanSkills,
-    items: dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []),
+    items: cleanItems,
     monsters: cleanMonsters,
-    missions: dedupe(Array.isArray(value.missions) ? value.missions.map(entry => sanitizeMission(entry, monsterPool)) : []),
+    missions: dedupe(Array.isArray(value.missions) ? value.missions.map(entry => sanitizeMission(entry, monsterPool, itemPool)) : []),
     incidents: dedupe(Array.isArray(value.incidents) ? value.incidents.map(sanitizeIncidentCard) : []),
   };
 }
@@ -454,6 +476,7 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
   const base = sanitizeLibrary(current);
   const pack = sanitizeLibrary(incoming);
   const skillRename = new Map<string, string>();
+  const itemRename = new Map<string, string>();
   const monsterRename = new Map<string, string>();
   const nextId = (kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident') => newContentId(kind);
 
@@ -482,9 +505,13 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
   };
 
   const skillPlan = plan('skills', pack.skills, 'skill', skillRename);
-  const itemPlan = plan('items', pack.items.map(entry => ({ ...entry, skillId: entry.skillId ? skillRename.get(entry.skillId) ?? entry.skillId : undefined })), 'item', undefined);
+  const itemPlan = plan('items', pack.items.map(entry => ({ ...entry, skillId: entry.skillId ? skillRename.get(entry.skillId) ?? entry.skillId : undefined })), 'item', itemRename);
   const monsterPlan = plan('monsters', pack.monsters.map(entry => ({ ...entry, skillIds: entry.skillIds.map(id => skillRename.get(id) ?? id) })), 'monster', monsterRename);
-  const missionPlan = plan('missions', pack.missions.map(entry => ({ ...entry, enemyIds: entry.enemyIds.map(id => monsterRename.get(id) ?? id) })), 'mission', undefined);
+  const missionPlan = plan('missions', pack.missions.map(entry => ({
+    ...entry,
+    enemyIds: entry.enemyIds.map(id => monsterRename.get(id) ?? id),
+    rewardEquipmentId: entry.rewardEquipmentId ? itemRename.get(entry.rewardEquipmentId) ?? entry.rewardEquipmentId : undefined,
+  })), 'mission', undefined);
   const incidentPlan = plan('incidents', pack.incidents, 'incident', undefined);
 
   const apply = <T extends { id: string }>(kind: ItemKind, entries: Planned<T>[]): T[] => {
@@ -511,7 +538,7 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
       + incidentPlan.entries.filter(entry => entry.action === 'add').length,
     replaced: skillPlan.replaced + itemPlan.replaced + monsterPlan.replaced + missionPlan.replaced + incidentPlan.replaced,
     skipped: skillPlan.skipped + itemPlan.skipped + monsterPlan.skipped + missionPlan.skipped + incidentPlan.skipped,
-    renamed: skillPlan.renamed + monsterPlan.renamed,
+    renamed: skillPlan.renamed + itemPlan.renamed + monsterPlan.renamed,
     conflicts: skillPlan.conflicts + itemPlan.conflicts + monsterPlan.conflicts + missionPlan.conflicts + incidentPlan.conflicts,
   };
 }
@@ -596,6 +623,8 @@ export function contentUsage(state: GameState, kind: WorkshopKind, id: string): 
   if (kind === 'item') {
     if ((state.inventory[id] ?? 0) > 0) used.push('仓库库存');
     if (state.girls.some(girl => girl.equipment.weapon === id || girl.equipment.charm === id)) used.push('契约者装备');
+    if (state.missions.some(mission => mission.rewardEquipmentId === id)) used.push('当前委托的报酬');
+    if (currentMissions.some(mission => mission.rewardEquipmentId === id)) used.push('自制委托的报酬');
   }
   if (kind === 'monster') {
     if (state.missions.some(mission => mission.enemyIds?.includes(id))) used.push('当前委托');

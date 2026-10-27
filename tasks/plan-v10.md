@@ -648,3 +648,26 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 99/99、浏览器 49/49、构建通过。
 
 下一步：`src/game.ts` 的门面化拆分（先做门面与叶子模块，`act` 最后搬）；M6 议会提案编辑器与多场景角色事件编辑器仍不在本期。
+
+---
+
+## 17. 实施记录（委托模板拆分与额外报酬，已完成）
+
+按 m02701「委托：调查和战斗分成两个独立的模板，奖励报酬除了星砂还可以增加装备和免费的魔法少女」落地。
+
+落地：
+
+- **独立模板**：保留底层 `MissionTemplate.work`，新增 `emptyInvestigationMission()` 与 `emptyCombatMission()`；内容工坊把它拆成 `#workshop-tab-investigation` 与 `#workshop-tab-combat` 两个页签，列表按 `work` 过滤，新建时直接拿到对应默认值。调查表单只出现判定属性与目标值，战斗表单只出现轮数、敌人选择与「添加敌人」；标题、分类、难度、时长、推荐等级、星砂报酬、辖区、窗口、颜色与说明仍共用。
+- **额外报酬**：`Mission` / `MissionTemplate` 新增 `rewardEquipmentId` 与 `rewardGirlLevel`。工坊新增 `#workshop-mission-reward-item`（只列武器/护符，空值表示无）与 `#workshop-mission-reward-girl`（0–12，0 表示无）。`missionSeed` 把两项带进运行时委托；`grantTemplateRewards` 只在委托有 `templateId` 时触发，避免与故事委托的专属装备重复发放：装备进 `state.inventory`，契约者以 `cost: 0` 入职；宿舍满员时进入候选名册并保留 7 天。
+- **展示与校验**：`MissionDialog` 新增独立「附加报酬」区块，显示装备名与 `免费契约者 · Lv.X`；候选者档案在 `cost === 0` 时把按钮改为「免费缔结契约」。`sanitizeMission` 校验奖励装备必须存在于「内置 + 本次导入」装备池，等级夹在 1–12；`sanitizeLibrary` 改为先清洗装备再清洗委托，保证跨类引用可解析。`mergeContentPack` 为装备冲突改名增加 `itemRename` 映射，委托的 `rewardEquipmentId` 会跟随改名；`contentUsage` 把「当前委托的报酬」与「自制委托的报酬」计入删除引用。
+- **顺带清理**：工坊弹窗页脚不再声称随机池未接入；装备奖励下拉排除消耗品，避免把药水当专属装备发放。
+
+测试：
+
+- `tests/game.test.ts` 新增「调查与战斗拆成独立模板，额外装备与免费契约者会随完成发放」：覆盖两个默认模板、奖励装备清洗、等级夹取、投放后完成结算、背包装备 +1、免费契约者入职与 `contentUsage` 引用提示。
+- 扩展「导入冲突支持跳过、覆盖与另存新 id，并重映射技能引用」：装备冲突改名后，委托奖励装备 id 跟随重映射。
+- `tests/browser.mjs` 的内容工坊流程改为分别新建调查与战斗模板，保存后断言 `work`、敌人、`rewardEquipmentId`、`rewardGirlLevel`，刷新与导出后仍保留两份模板。
+
+验证：tsc 0、单测 100/100、浏览器 49/49、构建通过。
+
+下一步：`src/game.ts` 的门面化拆分；M6 议会提案编辑器与多场景角色事件编辑器仍不在本期。

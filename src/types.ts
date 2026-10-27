@@ -405,6 +405,8 @@ export interface Mission {
   requiredGirlId?: string;
   /** 完成后发放的专属装备 id（已登记进物品表）。 */
   rewardEquipmentId?: string;
+  /** 完成后免费加入事务所的契约者等级；0 或未设置表示没有这项奖励。 */
+  rewardGirlLevel?: number;
   /** 由内容工坊的委托模板生成时，记录来源模板 id，便于删除前检查引用。 */
   templateId?: string;
 }
@@ -425,6 +427,10 @@ export interface MissionTemplate {
   district?: DistrictId;
   window?: CommissionWindow;
   reward: number;
+  /** 额外报酬：完成时发放的装备 id；空表示没有。 */
+  rewardEquipmentId?: string;
+  /** 额外报酬：完成时免费加入的契约者等级；0 或未设置表示没有。 */
+  rewardGirlLevel?: number;
   color: string;
 }
 export interface Room { id: string; name: string; type: 'lounge' | 'clinic' | 'dorm' | 'observatory'; level: number; capacity: number; description: string }

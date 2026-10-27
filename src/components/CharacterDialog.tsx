@@ -337,7 +337,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             {girl.scars.length > 0 && <div className="memory-scars">{girl.scars.map(scar => <div key={scar.id} className={`memory-scar ${scar.kind}`}><Bandage size={13} /><span><b>{scar.name}</b><small>{scar.condition} · {scar.gainedAt}</small></span></div>)}</div>}
           </>}
         </div>
-        {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>缔结契约 · {girl.cost.toLocaleString()} 星砂<ArrowUpRight size={16} /></button> : <>
+        {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>{girl.cost > 0 ? `缔结契约 · ${girl.cost.toLocaleString()} 星砂` : '免费缔结契约'}<ArrowUpRight size={16} /></button> : <>
           <div className="dossier-footer">
           <div className="care-actions">
             <button id="girl-rest" className="btn" disabled={girl.status !== 'idle' || girl.fatigue === 0} onClick={() => onCare('resting')}><Moon size={15} /><span>安排休息<small>免费 · 90 分钟</small></span></button>

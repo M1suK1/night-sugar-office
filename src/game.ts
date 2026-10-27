@@ -505,6 +505,8 @@ function missionSeed(template: MissionTemplate): Mission {
     recommendedLevel: template.recommendedLevel,
     district: template.district,
     window: template.window,
+    rewardEquipmentId: template.rewardEquipmentId,
+    rewardGirlLevel: template.rewardGirlLevel,
     generated: false,
     sourcePack: 'workshop',
     templateId: template.id,
@@ -1568,6 +1570,7 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     state.completed.push(mission.id);
     mission.status = 'done';
     completeStoryMission(state, mission);
+    grantTemplateRewards(state, mission, at);
     if (mission.faction) {
       state.factions[mission.faction].standing = Math.min(100, state.factions[mission.faction].standing + 6);
       state.reputation = Math.max(0, Math.min(100, state.reputation + (mission.faction === 'witch' ? -2 : mission.faction === 'association' ? 2 : 1)));
@@ -1700,6 +1703,39 @@ function applySettleEnvironment(state: GameState, mission: Mission, squad: Girl[
     if (spiritDrain) girl.spirit = Math.max(0, girl.spirit + spiritDrain);
   }
 }
+
+/** 工坊委托的额外报酬：装备进背包，契约者直接入职；席位不足时留作免费候选者。 */
+function grantTemplateRewards(state: GameState, mission: Mission, at: { day: number; minutes: number }): void {
+  if (!mission.templateId) return;
+  if (mission.rewardEquipmentId) {
+    const item = items.find(entry => entry.id === mission.rewardEquipmentId);
+    if (item) {
+      state.inventory[item.id] = (state.inventory[item.id] ?? 0) + 1;
+      state.logs.unshift({ id: `log-mission-gear-${mission.id}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `委托「${mission.title}」的额外报酬「${item.name}」已放进事务所背包。` });
+    }
+  }
+  const rawLevel = Math.round(mission.rewardGirlLevel ?? 0);
+  if (rawLevel <= 0) return;
+  const level = Math.min(12, Math.max(1, rawLevel));
+  let candidate: Girl | undefined;
+  for (let attempt = 0; attempt < 24 && !candidate; attempt++) {
+    const next = makeCandidate(state, level, hashText(`${mission.id}:girl-reward`) + attempt * 7919);
+    if (!state.girls.some(girl => girl.id === next.id) && !state.candidates.some(girl => girl.id === next.id)) candidate = next;
+  }
+  if (!candidate) return;
+  if (state.girls.filter(girl => !girl.dead).length < capacity(state)) {
+    state.girls.push({
+      ...candidate, cost: 0, status: 'idle', roomId: 'lounge', remaining: 0,
+      contractEndDay: at.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0,
+      pensionMissed: 0, retired: false, retiredReason: undefined, candidateUntilDay: undefined,
+    });
+    state.logs.unshift({ id: `log-mission-girl-${mission.id}`, time: dateLabel(at.day, at.minutes), kind: 'story', text: `委托「${mission.title}」带回了一位新的契约者「${candidate.name}」。她没有收下签约金，直接住进了宿舍。` });
+  } else {
+    state.candidates.push({ ...candidate, cost: 0, custom: true, candidateUntilDay: at.day + 7 });
+    state.logs.unshift({ id: `log-mission-girl-${mission.id}`, time: dateLabel(at.day, at.minutes), kind: 'story', text: `委托「${mission.title}」带回了一位新的契约者「${candidate.name}」。宿舍已经住满，她暂时留在候选名册，签约金为 0。` });
+  }
+}
+
 function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): void {
   const success = squadChance(squad, mission) >= 50 && Math.max(...squad.map(g => g.stats[mission.requirement])) + (squad.length - 1) * 4 >= mission.target;
   const region = districtOfMission(mission);
@@ -1711,6 +1747,7 @@ function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], 
     state.completed.push(mission.id);
     mission.status = 'done';
     completeStoryMission(state, mission);
+    grantTemplateRewards(state, mission, at);
     state.logs.unshift({ id: `log-inv-${mission.id}-${mission.attempts}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `调查完成：${mission.title}。${squad.map(g => g.name).join('、')}带回了可以写进档案的答案。${region.name}的环境让这次行动${region.effect.rewardPct && region.effect.rewardPct > 0 ? '额外顺利' : '格外磨人'}。`, delta: mission.reward });
     for (const girl of squad) {
       grantExp(girl, investigationExp(mission.recommendedLevel));

@@ -63,14 +63,24 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         </div>
       </section>
 
+      {(mission.rewardEquipmentId || mission.rewardGirlLevel) && (
+        <section className="mission-story" aria-label="附加报酬">
+          <div className="modal-section-heading"><h3><Sparkles size={14} />附加报酬</h3><small>完成委托后一并发放</small></div>
+          <div className="story-grants">
+            {mission.rewardEquipmentId && <span>装备：{getItem(mission.rewardEquipmentId)?.name ?? '未命名遗物'}</span>}
+            {Boolean(mission.rewardGirlLevel) && <span>免费契约者 · Lv.{mission.rewardGirlLevel}</span>}
+          </div>
+          <p className="small-note">{mission.rewardGirlLevel ? '新契约者会直接加入事务所；宿舍住满时会留在候选名册，签约金为 0。' : '装备会直接放进事务所背包。'}</p>
+        </section>
+      )}
+
       {mission.storyGoal && (
         <section className="mission-story" aria-label="故事委托的目标">
           <div className="modal-section-heading"><h3><Sparkles size={14} />故事委托</h3><small>这一幕的明确目标</small></div>
           <p>{mission.storyGoal}</p>
-          {(mission.requiredGirlId || mission.rewardEquipmentId) && (
+          {mission.requiredGirlId && (
             <div className="story-grants">
-              {mission.requiredGirlId && <span>同行：{state.girls.find(girl => girl.id === mission.requiredGirlId)?.name ?? state.candidates.find(girl => girl.id === mission.requiredGirlId)?.name ?? '指定契约者'}</span>}
-              {mission.rewardEquipmentId && <span>专属装备：{getItem(mission.rewardEquipmentId)?.name ?? '未命名遗物'}</span>}
+              <span>同行：{state.girls.find(girl => girl.id === mission.requiredGirlId)?.name ?? state.candidates.find(girl => girl.id === mission.requiredGirlId)?.name ?? '指定契约者'}</span>
             </div>
           )}
         </section>
