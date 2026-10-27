@@ -1154,3 +1154,6 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .graph-beats li button:hover { background: #f3aec90f; }
 .graph-beats li i { color: #6f6178; font-style: normal; font-size: 9px; }
 .graph-beats li em { font-style: normal; font-size: 8px; color: #8d7f96; }
+
+.story-graph-canvas { cursor: default; }
+.story-graph-canvas:active { cursor: grabbing; }

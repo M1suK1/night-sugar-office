@@ -53,6 +53,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
   const [selection, setSelection] = useState<string[]>(initialId ? [initialId] : []);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const marqueeStart = useRef<{ x: number; y: number } | null>(null);
+  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const [linkFrom, setLinkFrom] = useState<{ nodeId: string; port: string } | null>(null);
   const [clipboard, setClipboard] = useState<StoryNode | null>(null);
   const [linking, setLinking] = useState<{ nodeId: string; port: string; x: number; y: number; moved: boolean } | null>(null);
@@ -63,6 +64,17 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
   const [beatsOpen, setBeatsOpen] = useState(false);
   const drag = useRef<{ ids: string[]; origins: Record<string, { x: number; y: number }>; cx: number; cy: number } | null>(null);
   const canvas = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const host = canvas.current;
+    if (!host) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setZoom(value => clampZoom(value + (event.deltaY > 0 ? -0.1 : 0.1)));
+    };
+    host.addEventListener('wheel', onWheel, { passive: false });
+    return () => host.removeEventListener('wheel', onWheel);
+  }, []);
 
   const node = graph.nodes.find(item => item.id === selected) ?? null;
   const issues = validateGraph(graph);
@@ -279,7 +291,16 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
           </aside>
 
           <div className="story-graph-canvas" ref={canvas} onClick={() => { if (linkFrom) setLinkFrom(null); }}
+            onContextMenu={event => event.preventDefault()}
             onPointerDown={event => {
+              if (event.button === 2) {
+                const host = canvas.current;
+                if (!host) return;
+                pan.current = { x: event.clientX, y: event.clientY, left: host.scrollLeft, top: host.scrollTop };
+                (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+                return;
+              }
+              if (event.button !== 0) return;
               if ((event.target as HTMLElement).closest('.graph-node, .graph-canvas-tools, .graph-dry')) return;
               const point = pointOnCanvas(event.clientX, event.clientY);
               if (!point) return;
@@ -288,12 +309,20 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
               (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
             }}
             onPointerMove={event => {
+              if (pan.current) {
+                const host = canvas.current;
+                if (!host) return;
+                host.scrollLeft = pan.current.left - (event.clientX - pan.current.x);
+                host.scrollTop = pan.current.top - (event.clientY - pan.current.y);
+                return;
+              }
               if (!marqueeStart.current) return;
               const point = pointOnCanvas(event.clientX, event.clientY);
               if (!point) return;
               setMarquee({ x0: marqueeStart.current.x, y0: marqueeStart.current.y, x1: point.x, y1: point.y });
             }}
             onPointerUp={() => {
+              if (pan.current) { pan.current = null; return; }
               if (marquee && marqueeStart.current) {
                 const left = Math.min(marquee.x0, marquee.x1);
                 const right = Math.max(marquee.x0, marquee.x1);
@@ -308,11 +337,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
               marqueeStart.current = null;
               setMarquee(null);
             }}
-            onWheel={event => {
-            if (!event.ctrlKey) return;
-            event.preventDefault();
-            setZoom(value => clampZoom(value + (event.deltaY > 0 ? -0.1 : 0.1)));
-          }}>
+          >
             <div className="graph-canvas-tools" onClick={event => event.stopPropagation()}>
               <button type="button" id="story-graph-zoom-out" onClick={() => setZoom(value => clampZoom(value - 0.1))}>−</button>
               <button type="button" id="story-graph-zoom-reset" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
