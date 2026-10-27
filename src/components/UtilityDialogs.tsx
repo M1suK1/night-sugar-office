@@ -3,7 +3,8 @@ import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings
 import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
-import { loadLlmConfig, saveLlmConfig, testLlmConnection, loadLlmPrompts, saveLlmPrompts, defaultPrompts, type LlmConfig, type LlmPrompts } from '../llm';
+import { loadLlmConfig, saveLlmConfig, testLlmConnection, type LlmConfig } from '../llm';
+import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
   const full=state.girls.length>=capacity(state),poor=state.gold<girl.cost;
@@ -20,10 +21,9 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:MapPin,title:'九块辖区，各有脾气',text:'点击地图上的辖区可以查看背景与「环境影响」：有的委托目标更低、报酬更高，有的更容易受伤。委托所属辖区决定这些修正。'},{Icon:Hourglass,title:'一夜只有六个小时',text:'事务所 20:00 开门、次日 02:00 打烊，午夜之后仍算同一夜。委托分三个时段（20:00 / 22:00 / 00:00）放出，紧急委托两小时内不接就会撤销；忙完后点「前往下一天」跳过白天。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。衣柜有四个格子，换装会同步立绘与头像。'},{Icon:Terminal,title:'终端与叙事者',text:'顶栏的 CMD 按钮或 Ctrl+K 可以打开事务所终端：help 查看命令，status 查看夜班状态，advance 推进时间，district 查询辖区，generate 呼叫叙事者。终端不会跳过打烊确认。'},{Icon:Moon,title:'叙事者只负责提案',text:'在设置里连接任意 OpenAI 兼容接口，并可从 SillyTavern 导入对话补全预设控制采样参数与主提示词。数值与结算仍由本地规则决定；屏幕右下角的面板能看到每次请求读了什么、思维链与成败。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
 type SettingsTab = 'general' | 'llm' | 'pools';
-export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate,autoGenerate,onAutoGenerate,onPresets}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:(prompts:LlmPrompts)=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void;onPresets:()=>void}) {
+export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate,autoGenerate,onAutoGenerate,onPresets}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:()=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void;onPresets:(scope?: PromptScope)=>void}) {
   const [tab, setTab] = useState<SettingsTab>('general');
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
-  const [prompts, setPrompts] = useState<LlmPrompts>(loadLlmPrompts);
   const [llmNote, setLlmNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [player, setPlayer] = useState<PlayerProfile>(loadPlayerProfile);
   const [busy, setBusy] = useState(false);
@@ -33,9 +33,8 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
   const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
   const update = (patch: Partial<LlmConfig>) => { const next = { ...llm, ...patch }; setLlm(next); saveLlmConfig(next); };
   const updatePlayer = (patch: Partial<PlayerProfile>) => { const next = { ...player, ...patch }; setPlayer(next); savePlayerProfile(next); };
-  const updatePrompt = (patch: Partial<LlmPrompts>) => { const next = { ...prompts, ...patch }; setPrompts(next); saveLlmPrompts(next); };
   const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
-  const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(prompts); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
+  const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
   return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2><div className="settings-tabs" role="tablist" aria-label="设置分类">{[{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }, { id: 'pools', label: '内容池', Icon: Boxes }].map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
     {tab === 'general' && <>
       <div className="settings-row"><div><b>减少动态效果</b><p>关闭漂浮与入场动画，保留必要的状态反馈。</p></div><button id="settings-reduced-motion" role="switch" aria-checked={reduced} aria-label="减少动态效果" className={`toggle ${reduced?'on':''}`} onClick={()=>onReduced(!reduced)}><i/></button></div>
@@ -57,15 +56,29 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
     </>}
     {tab === 'llm' && <div className="llm-settings">
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接任意 OpenAI 兼容接口。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
-      <button id="settings-open-presets" className="btn full preset-entry" onClick={onPresets}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
+      <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
       <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，可分别为「角色对话」和「提案生成」绑定不同预设。</p>
       <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/><small className="llm-field-hint">填到 /v1 即可；也可直接粘贴完整的 /chat/completions 地址。</small></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
       <div className="llm-prompts">
-        <div className="llm-prompts-head"><b>提示词</b><button id="settings-prompts-reset" className="llm-reset" onClick={() => { setPrompts({ ...defaultPrompts }); saveLlmPrompts({ ...defaultPrompts }); }}>恢复默认</button></div>
-        <label className="llm-field"><span>世界观与语气</span><textarea id="settings-prompt-world" rows={4} value={prompts.world} onChange={e => updatePrompt({ world: e.target.value })}/></label>
-        <label className="llm-field"><span>本次生成要求</span><textarea id="settings-prompt-daily" rows={3} value={prompts.daily} onChange={e => updatePrompt({ daily: e.target.value })}/></label>
+        <div className="llm-prompts-head"><b>提示词词条</b><button id="settings-prompts-reset" className="llm-reset" onClick={() => onPresets()}>打开全部词条</button></div>
+        <p className="llm-task-intro">世界观、语气与每个任务的写法都拆成了预设词条。点进某一项，只会看到并修改共用词条与该任务自己的词条；代码里的 JSON 输出契约始终最后追加。</p>
+        <div className="llm-task-grid">
+          {([
+            { scope: 'shared', label: '共用世界观与语气', hint: '所有任务最先注入' },
+            { scope: 'chat', label: '角色对话', hint: '会客厅与远程交谈' },
+            { scope: 'daily', label: '每日提案', hint: '今晚的魔物、少女、委托与议会' },
+            { scope: 'profile', label: '角色起草', hint: '新契约者档案与立绘解读' },
+            { scope: 'storyline', label: '个人故事线', hint: '四幕故事线的起点' },
+            { scope: 'event', label: '私人事件', hint: '角色日常的两场小事件' },
+            { scope: 'arc', label: '完整剧情', hint: '多段旁白与选项的剧情章节' },
+            { scope: 'incident', label: '突发事件', hint: '事务所桌上的三选一麻烦' },
+            { scope: 'outfit', label: '服装词条', hint: '看立绘写衣柜描述' },
+          ] as const).map(item => <button key={item.scope} id={`settings-prompt-${item.scope}`} type="button" className="llm-task" onClick={() => onPresets(item.scope)}>
+            <b>{item.label}</b><span>{item.hint}</span><em>编辑词条 →</em>
+          </button>)}
+        </div>
       </div>
       <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥与提示词仅存于 localStorage</span></div>
       {llmNote && <div id="settings-llm-result" className={`llm-result ${llmNote.ok ? 'ok' : 'error'}`} role="status">{llmNote.ok ? <Check size={14}/> : <AlertTriangle size={14}/>}{llmNote.text}</div>}

@@ -6,12 +6,50 @@
  */
 export type PromptRole = 'system' | 'user' | 'assistant';
 
+/** 词条用途：共用词条会进入所有请求，任务词条只进入对应生成器。 */
+export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit';
+
+export interface PromptScopeInfo {
+  id: PromptScope;
+  label: string;
+  hint: string;
+}
+
+export const PROMPT_SCOPES: PromptScopeInfo[] = [
+  { id: 'shared', label: '共用', hint: '世界观、语气、玩家档案等所有任务都会用到的词条' },
+  { id: 'chat', label: '角色对话', hint: '在事务所或外出时与角色交谈' },
+  { id: 'daily', label: '每日提案', hint: '每晚的魔物、候选少女、委托与议会提案' },
+  { id: 'profile', label: '角色起草', hint: '根据立绘起草新角色的档案' },
+  { id: 'storyline', label: '故事线', hint: '为一位角色规划四幕个人故事线' },
+  { id: 'event', label: '私人事件', hint: '角色详情页里的两场私人事件' },
+  { id: 'arc', label: '完整剧情', hint: '带选项与分支语气的完整角色剧情' },
+  { id: 'incident', label: '突发事件', hint: '需要立刻处理的夜间突发状况' },
+  { id: 'outfit', label: '服装词条', hint: '为立绘里的服装写衣柜描述' },
+];
+
+export const PROMPT_SCOPE_IDS = new Set<PromptScope>(PROMPT_SCOPES.map(scope => scope.id));
+
+export function isPromptScope(value: unknown): value is PromptScope {
+  return typeof value === 'string' && PROMPT_SCOPE_IDS.has(value as PromptScope);
+}
+
+/** 旧词条没有用途时按共用处理，保证升级不改变已有预设的行为。 */
+export function promptScope(entry: Pick<PromptEntry, 'scope'>): PromptScope {
+  return entry.scope ?? 'shared';
+}
+
+export function promptScopeLabel(scope: PromptScope): string {
+  return PROMPT_SCOPES.find(item => item.id === scope)?.label ?? '共用';
+}
+
 export interface PromptEntry {
   id: string;
   name: string;
   content: string;
   role: PromptRole;
   enabled: boolean;
+  /** 只注入对应任务；缺省 shared。 */
+  scope?: PromptScope;
   /** SillyTavern 的分隔条目：只用于视觉分组，不发送内容。 */
   marker?: boolean;
   builtin?: boolean;
@@ -219,6 +257,7 @@ function sanitizeEntry(raw: unknown, index: number): PromptEntry | null {
     content: content.slice(0, 8000),
     role: value.role === 'user' ? 'user' : value.role === 'assistant' ? 'assistant' : 'system',
     enabled: value.enabled === false ? false : value.disable !== true,
+    scope: isPromptScope(value.scope) ? value.scope : 'shared',
     marker,
     builtin: Boolean(value.builtin),
   };
@@ -229,11 +268,11 @@ function migratePrompts(settings: Record<string, unknown>): PromptEntry[] {
   const legacy: PromptEntry[] = [];
   const main = text(settings, 'main').trim();
   const jailbreak = text(settings, 'jailbreak').trim();
-  if (main) legacy.push({ id: 'main', name: '主提示（main）', content: main, role: 'system', enabled: true, builtin: true });
-  if (jailbreak) legacy.push({ id: 'jailbreak', name: '收尾约束（jailbreak）', content: jailbreak, role: 'system', enabled: true, builtin: true });
+  if (main) legacy.push({ id: 'main', name: '主提示（main）', content: main, role: 'system', enabled: true, scope: 'shared', builtin: true });
+  if (jailbreak) legacy.push({ id: 'jailbreak', name: '收尾约束（jailbreak）', content: jailbreak, role: 'system', enabled: true, scope: 'shared', builtin: true });
   if (!legacy.length) {
     legacy.push({
-      id: 'tone', name: '叙事语气', role: 'system', enabled: true, builtin: true,
+      id: 'tone', name: '叙事语气', role: 'system', enabled: true, scope: 'shared', builtin: true,
       content: '用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。',
     });
   }
@@ -251,48 +290,66 @@ export function presetPrompts(preset: ChatPreset | undefined): PromptEntry[] {
 }
 
 /** 实际参与拼装的词条：按 prompt_order 的顺序与启停；不在 order 里的词条不注入。 */
-export function activePrompts(preset: ChatPreset | undefined): PromptEntry[] {
+export function activePrompts(preset: ChatPreset | undefined, scope?: PromptScope): PromptEntry[] {
   const all = presetPrompts(preset);
   const order = preset?.promptOrder;
-  if (!order?.length) return all;
-  const byId = new Map(all.map(entry => [entry.id, entry]));
-  const ordered: PromptEntry[] = [];
-  for (const item of order) {
-    const entry = byId.get(item.identifier);
-    if (!entry) continue;
-    ordered.push({ ...entry, enabled: item.enabled });
-    byId.delete(item.identifier);
+  let ordered = all;
+  if (order?.length) {
+    const byId = new Map(all.map(entry => [entry.id, entry]));
+    ordered = [];
+    for (const item of order) {
+      const entry = byId.get(item.identifier);
+      if (!entry) continue;
+      ordered.push({ ...entry, enabled: item.enabled });
+      byId.delete(item.identifier);
+    }
   }
-  return ordered;
+  if (!scope) return ordered;
+  return ordered.filter(entry => {
+    const entryScope = promptScope(entry);
+    return entryScope === 'shared' || entryScope === scope;
+  });
+}
+
+function defaultPromptCopies(extra: PromptEntry[] = []): PromptEntry[] {
+  return [...DEFAULT_PROMPTS.map(entry => ({ ...entry })), ...extra.map(entry => ({ ...entry }))];
 }
 
 export function builtinPresets(): ChatPreset[] {
   const stamp = '2026-01-01T00:00:00.000Z';
   return [
     {
-      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true,
+      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
       settings: { temp_openai: 0.85, top_p_openai: 0.95, openai_max_tokens: 640, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
-      prompts: [
-        { id: 'player', name: '委托人档案', role: 'system', enabled: true, builtin: true, content: '{{player}}' },
-        { id: 'tone', name: '叙事语气', role: 'system', enabled: true, builtin: true, content: '用克制、具体的笔触叙述。少解释心理，让动作与对白说话。' },
-        { id: 'task', name: '本次任务', role: 'system', enabled: true, builtin: true, content: '{{context}}' },
-      ],
+      prompts: defaultPromptCopies(),
     },
     {
-      id: 'builtin-strict', name: '严格 JSON', description: '低温、短输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true,
+      id: 'builtin-strict', name: '严格 JSON', description: '低温、短输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
       settings: { temp_openai: 0.35, top_p_openai: 0.8, openai_max_tokens: 1400, openai_max_context: 12000, pres_pen_openai: 0, freq_pen_openai: 0, main: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。', jailbreak: '' },
-      prompts: [
-        { id: 'json', name: 'JSON 约束', role: 'system', enabled: true, builtin: true, content: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。' },
-      ],
+      prompts: defaultPromptCopies([
+        { id: 'json', name: 'JSON 约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。' },
+      ]),
     },
     {
-      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true,
+      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
       settings: { temp_openai: 0.65, top_p_openai: 0.9, openai_max_tokens: 420, openai_max_context: 9000, pres_pen_openai: 0.1, freq_pen_openai: 0.35, main: '', jailbreak: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
-      prompts: [
-        { id: 'restraint', name: '克制约束', role: 'system', enabled: true, builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
-      ],
+      prompts: defaultPromptCopies([
+        { id: 'restraint', name: '克制约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
+      ]),
     },
   ];
+}
+
+/** 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。 */
+export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
+  if ((preset.schema ?? 2) >= 3) return preset;
+  const prompts = presetPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
+  const ids = new Set(prompts.map(entry => entry.id));
+  const added = DEFAULT_PROMPTS.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
+  const all = [...prompts, ...added];
+  const order = (preset.promptOrder ?? prompts.map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
+    .concat(added.map(entry => ({ identifier: entry.id, enabled: entry.enabled })));
+  return { ...preset, schema: 3, prompts: all, promptOrder: order };
 }
 
 function sanitizePreset(raw: unknown): ChatPreset | null {
@@ -338,7 +395,7 @@ function sanitizePreset(raw: unknown): ChatPreset | null {
     : undefined;
   return {
     id: typeof value.id === 'string' && value.id ? value.id : presetId(),
-    schema: 2,
+    schema: typeof value.schema === 'number' ? value.schema : 2,
     name,
     description: typeof value.description === 'string' ? value.description.slice(0, 160) : undefined,
     settings,
@@ -352,15 +409,73 @@ function sanitizePreset(raw: unknown): ChatPreset | null {
   };
 }
 
+const LEGACY_PROMPT_KEY = 'night-sugar:llm-prompts';
+const LEGACY_PROMPT_MARKER = 'night-sugar:llm-prompts-migrated';
+const LEGACY_DEFAULT_DAILY = '为今晚提交一份提案：一只新的魔物、一位刚到市场的候选魔法少女、一条战斗委托。只描述名字、气质、愿望与外观，不要给任何数值、奖励或规则。';
+
+/** 旧版每日提案里与 v2 机制冲突的“只写文案、不要数值”要求。 */
+export function promptHasMechanicBan(content: string): boolean {
+  return /不要(?:给|写|包含|出现)[^。；\n]{0,24}(?:数值|奖励|规则|机制)/.test(content);
+}
+
+/** 去掉冲突句，保留同一段里其余有效要求。 */
+export function stripMechanicBan(content: string): string {
+  return content
+    .replace(/[^。；\n]*不要(?:给|写|包含|出现)[^。；\n]{0,24}(?:数值|奖励|规则|机制)[^。；\n]*[。；]?/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+/** 把旧版全局 world/daily 文本迁移进一份可编辑的自定义预设；只做一次。 */
+function migrateLegacyPromptText(presets: ChatPreset[]): ChatPreset[] {
+  try {
+    if (localStorage.getItem(LEGACY_PROMPT_MARKER)) return presets;
+    const raw = localStorage.getItem(LEGACY_PROMPT_KEY);
+    localStorage.setItem(LEGACY_PROMPT_MARKER, '1');
+    if (!raw) return presets;
+    const parsed = JSON.parse(raw) as { world?: unknown; daily?: unknown };
+    const world = typeof parsed.world === 'string' && parsed.world.trim() ? parsed.world.trim() : '';
+    const dailyRaw = typeof parsed.daily === 'string' ? parsed.daily.trim() : '';
+    const daily = dailyRaw && dailyRaw !== LEGACY_DEFAULT_DAILY ? dailyRaw : '';
+    if (!world && !daily) return presets;
+    const base = presets.find(preset => preset.id === 'builtin-balanced') ?? presets[0];
+    if (!base) return presets;
+    const stamp = now();
+    const migrated: ChatPreset = {
+      ...base,
+      id: `preset-legacy-${Date.now().toString(36)}`,
+      name: '迁移的旧提示词',
+      description: '从旧版「世界观与语气 / 本次生成要求」迁移；可在这里继续修改或删除。',
+      builtin: false,
+      schema: 3,
+      prompts: presetPrompts(base).map(entry => {
+        if (entry.id === 'world' && world) return { ...entry, content: world, builtin: false };
+        if (entry.id === 'daily' && daily) return { ...entry, content: daily, builtin: false };
+        return { ...entry, builtin: false };
+      }),
+      promptOrder: presetPrompts(base).map(entry => ({ identifier: entry.id, enabled: entry.enabled })),
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    savePresets([...presets.filter(preset => !preset.builtin), migrated]);
+    if (!localStorage.getItem(PRESET_BINDING)) {
+      saveBinding({ chat: migrated.id, generate: migrated.id, story: migrated.id });
+    }
+    return [...presets, migrated];
+  } catch {
+    return presets;
+  }
+}
+
 export function loadPresets(): ChatPreset[] {
   const builtins = builtinPresets();
   try {
     const raw = localStorage.getItem(PRESET_STORAGE);
-    if (!raw) return builtins;
+    if (!raw) return migrateLegacyPromptText(builtins);
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return builtins;
-    const custom = parsed.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset));
-    return [...builtins, ...custom];
+    if (!Array.isArray(parsed)) return migrateLegacyPromptText(builtins);
+    const custom = parsed.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset)).map(ensurePromptScopes);
+    return migrateLegacyPromptText([...builtins, ...custom]);
   } catch {
     return builtins;
   }
@@ -378,9 +493,27 @@ export function savePresets(presets: ChatPreset[]): boolean {
 
 export function createPreset(name = '新的预设'): ChatPreset {
   return {
-    id: presetId(), name, description: '', createdAt: now(), updatedAt: now(),
+    id: presetId(), name, description: '', createdAt: now(), updatedAt: now(), schema: 3,
     settings: { temp_openai: 0.8, top_p_openai: 0.95, openai_max_tokens: 600, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
-    prompts: migratePrompts({}),
+    prompts: DEFAULT_PROMPTS.map(entry => ({ ...entry, builtin: false })),
+    promptOrder: DEFAULT_PROMPTS.map(entry => ({ identifier: entry.id, enabled: entry.enabled })),
+  };
+}
+
+/** 复制一份可编辑预设；任务入口用它把只读内置预设变成用户自己的版本。 */
+export function duplicatePreset(source: ChatPreset, name = `${source.name} 副本`): ChatPreset {
+  const entries = activePrompts(source).map(entry => ({ ...entry, builtin: false }));
+  return {
+    ...source,
+    id: presetId(),
+    name,
+    description: source.description ?? '',
+    builtin: false,
+    schema: 3,
+    prompts: entries,
+    promptOrder: entries.map(entry => ({ identifier: entry.id, enabled: entry.enabled })),
+    createdAt: now(),
+    updatedAt: now(),
   };
 }
 
@@ -565,16 +698,23 @@ export function importPresetObject(data: unknown): PresetImportResult {
     const list = (ext as Record<string, unknown>).regex_scripts;
     return Array.isArray(list) ? list.length : 0;
   })();
-  const preset: ChatPreset = {
+  const importedPrompts = prompts.length ? prompts : undefined;
+  const imported: ChatPreset = {
     id: presetId(), name: String(name).slice(0, 40) || '导入的预设',
     description: typeof raw.description === 'string' ? raw.description.slice(0, 160) : `从 SillyTavern 预设导入（${Object.keys(settings).length} 个字段）`,
-    settings, api: importedApi, prompts: prompts.length ? prompts : undefined, promptOrder,
-    regex: regex.length ? regex : undefined,
+    settings, api: importedApi, prompts: importedPrompts, promptOrder,
+    regex: regex.length ? regex : undefined, schema: 3,
     createdAt: now(), updatedAt: now(),
   };
+  // ST 文件没有 schema 3，导入时补齐本作任务词条；本作导出的 schema 3 文件保持原样。
+  const preset = Number(raw.schema ?? 0) < 3 ? ensurePromptScopes({ ...imported, schema: 2 }) : imported;
 
   const warnings: string[] = [];
   const unsupported: PresetUnsupportedEntry[] = [];
+  const addedScopeEntries = Math.max(0, presetPrompts(preset).length - (importedPrompts?.length ?? 0));
+  if (addedScopeEntries) {
+    warnings.push(`导入了 ${addedScopeEntries} 条任务默认词条（已标记为默认），可在「提示词词条」里按用途修改或停用。`);
+  }
   const maxTokensRaw = Number(settings.openai_max_tokens ?? settings.max_tokens ?? 0);
   if (Number.isFinite(maxTokensRaw) && maxTokensRaw > 32768) {
     warnings.push(`最大输出 ${maxTokensRaw} tokens 超过本作上限 32768，已按 32768 使用。`);
@@ -624,6 +764,7 @@ export function exportPresetJson(preset: ChatPreset): string {
     name: entry.name,
     content: entry.content,
     role: entry.role,
+    scope: promptScope(entry),
     system_prompt: entry.role === 'system' ? entry.content : '',
     marker: Boolean(entry.marker),
     disable: !entry.enabled,
@@ -646,7 +787,7 @@ export function exportPresetJson(preset: ChatPreset): string {
     settings.api = { endpoint: preset.api.endpoint ?? '', model: preset.api.model ?? '' };
   }
   return JSON.stringify({
-    schema: 2, ...settings, name: preset.name, description: preset.description ?? '',
+    schema: 3, ...settings, name: preset.name, description: preset.description ?? '',
     prompt_order: [{ character_id: 100001, order: promptOrder }],
   }, null, 2);
 }
@@ -729,27 +870,81 @@ export function boundPreset(kind: 'chat' | 'generate' | 'story', presets = loadP
     ?? presets[0];
 }
 
-/** 把预设词条拼到系统提示词之后；旧预设的 main / jailbreak 也在这里兜底。 */
-export function withPresetPrompts(system: string, runtime: PresetRuntime, vars: Record<string, string | undefined> = {}): { system: string; used: string[]; missing: string[] } {
-  const parts = [system.trim()];
-  const entries = runtime.entries?.length ? runtime.entries : [];
-  if (entries.length) {
-    const rendered = renderPresetSystem(entries, vars);
-    if (rendered.system) parts.push(`【预设词条】\n${rendered.system}`);
-    return { system: parts.filter(Boolean).join('\n\n'), used: rendered.used, missing: rendered.missing };
-  }
-  const main = (runtime.main ?? '').trim();
-  const jailbreak = (runtime.jailbreak ?? '').trim();
-  if (main) parts.push(`【预设·主提示】\n${main}`);
-  if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
-  return { system: parts.filter(Boolean).join('\n\n'), used: [], missing: [] };
+export const DEFAULT_WORLD = '你是《夜糖事务所》的夜班叙事者。故事发生在永远停在深夜的樱雾市：魔法少女以契约换取力量，代价是灵魂慢慢被侵蚀。语气温柔、克制、带一点危险的甜味。不要写露骨内容，不要替玩家做决定。';
+
+/** 共用词条 + 每个任务各一条默认词条；按用途注入，互不串味。 */
+export const DEFAULT_PROMPTS: PromptEntry[] = [
+  { id: 'world', name: '世界观', role: 'system', enabled: true, scope: 'shared', builtin: true, content: DEFAULT_WORLD },
+  { id: 'player', name: '委托人档案', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '{{player}}' },
+  { id: 'tone', name: '叙事语气', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。' },
+  { id: 'task', name: '本次任务', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '{{context}}' },
+  { id: 'chat', name: '角色对话', role: 'system', enabled: true, scope: 'chat', builtin: true, content: '你现在只扮演对方，不以旁白、作者或 AI 的身份说话。用中文回应 1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型。' },
+  { id: 'daily', name: '每日提案', role: 'system', enabled: true, scope: 'daily', builtin: true, content: '为今晚的夜班提案担任编辑。先想清楚：谁在什么处境下提出这件事，她为什么非要今晚说，她希望所长付出什么。文案要具体、克制、有生活质感；机制数值必须服从下方输出契约，不要只写气氛。' },
+  { id: 'profile', name: '角色起草', role: 'system', enabled: true, scope: 'profile', builtin: true, content: '为一位刚登记的魔法少女起草档案。先看立绘，再写她给人的第一印象；外貌、服装、元素、职阶、性格必须互相吻合。文案克制，不写露骨内容，不替玩家做决定。' },
+  { id: 'storyline', name: '故事线', role: 'system', enabled: true, scope: 'storyline', builtin: true, content: '为一位魔法少女写一条可以分四幕推进的个人故事线。基调克制、具体、有生活质感，不要写成英雄史诗。从她的目标、特性与当前关系里找一个最小的裂缝开始。' },
+  { id: 'event', name: '私人事件', role: 'system', enabled: true, scope: 'event', builtin: true, content: '写一段可以从角色详情页进入的私人事件，分两场。每场以一句有画面感的旁白开场，再给 2–4 行对话。不要用旁白解释心理，让台词自己说。' },
+  { id: 'arc', name: '完整剧情', role: 'system', enabled: true, scope: 'arc', builtin: true, content: '写一段完整的角色剧情，像二游里的羁绊事件：有场景、有对话、有她慢慢说出口的东西，最后收束。玩家会在每一段做一次选择，选择会影响下一段的语气，但故事必须是完整的。' },
+  { id: 'incident', name: '突发事件', role: 'system', enabled: true, scope: 'incident', builtin: true, content: '生成一件必须立刻决定的事：三方势力之一提出要求，或环境突然变化，或某位少女的状态出了岔子。写具体的人、地点与时间压力，三个选项的代价与收益必须真的不同。' },
+  { id: 'outfit', name: '服装词条', role: 'system', enabled: true, scope: 'outfit', builtin: true, content: '为附带的立绘里的这套服装写一条衣柜词条。只写衣服本身，不要写人物身份、剧情或数值。用夜糖事务所的口吻。' },
+];
+
+function scopedEntries(runtime: PresetRuntime, scope: PromptScope): PromptEntry[] {
+  const all = runtime.entries?.length ? runtime.entries : [];
+  const shared = all.filter(entry => promptScope(entry) === 'shared');
+  if (scope === 'shared') return shared;
+  const task = all.filter(entry => promptScope(entry) === scope);
+  return [...shared, ...task];
 }
 
-export const DEFAULT_PROMPTS: PromptEntry[] = [
-  { id: 'world', name: '世界观', role: 'system', enabled: true, content: '{{world}}' },
-  { id: 'player', name: '委托人档案', role: 'system', enabled: true, content: '{{player}}' },
-  { id: 'tone', name: '叙事语气', role: 'system', enabled: true, content: '用克制、具体的笔触叙述。少解释心理，让动作与对白说话。' },
-  { id: 'task', name: '本次任务', role: 'system', enabled: true, content: '{{context}}' },
-];
+/** 从共用词条里解析 {{world}} 的值；没有世界观词条时用内置底稿。 */
+export function resolvePresetWorld(runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}): string {
+  const entries = scopedEntries(runtime, scope);
+  const worldEntry = entries.find(entry => !entry.marker && entry.enabled && (entry.id === 'world' || entry.name.includes('世界观')));
+  if (!worldEntry) return DEFAULT_WORLD;
+  const rendered = renderPresetSystem([worldEntry], { ...vars, world: undefined }).system.trim();
+  return rendered || DEFAULT_WORLD;
+}
+
+export interface ComposedPrompt {
+  system: string;
+  used: string[];
+  missing: string[];
+  world: string;
+  entries: number;
+  tokens: number;
+}
+
+/**
+ * 固定的系统提示顺序：共用词条 → 本任务词条 → 代码输出契约。
+ * 旧预设的 main / jailbreak 只在没有可渲染词条时兜底。
+ */
+export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}): ComposedPrompt {
+  const entries = scopedEntries(runtime, scope).filter(entry => entry.enabled && !entry.marker);
+  const world = resolvePresetWorld(runtime, scope, vars);
+  const rendered = renderPresetSystem(entries, { ...vars, world });
+  const parts: string[] = [];
+  if (rendered.system.trim()) parts.push(rendered.system.trim());
+  else {
+    const main = (runtime.main ?? '').trim();
+    const jailbreak = (runtime.jailbreak ?? '').trim();
+    if (main) parts.push(`【预设·主提示】\n${main}`);
+    if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
+  }
+  if (contract.trim()) parts.push(contract.trim());
+  return {
+    system: parts.filter(Boolean).join('\n\n'),
+    used: rendered.used,
+    missing: rendered.missing,
+    world,
+    entries: entries.length,
+    tokens: promptTokens(parts.join('\n\n')),
+  };
+}
+
+/** 兼容旧调用：把 contract 放到词条之后。 */
+export function withPresetPrompts(system: string, runtime: PresetRuntime, vars: Record<string, string | undefined> = {}, scope: PromptScope = 'shared'): { system: string; used: string[]; missing: string[] } {
+  const composed = composeTaskSystem(system, runtime, scope, vars);
+  return { system: composed.system, used: composed.used, missing: composed.missing };
+}
 
 export { now as presetNow, presetId as newPresetId, entryId as newEntryId };

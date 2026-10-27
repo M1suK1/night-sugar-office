@@ -104,6 +104,25 @@ const EMPTY_RUNTIME: PresetRuntime = {
   wiFormat: '{0}', scenarioFormat: '{{scenario}}', personalityFormat: '{{personality}}', regex: [],
 };
 
+/**
+ * 固定拼装顺序：共用词条 → 任务词条 → 场景/性格/世界书 → 代码输出契约。
+ * 代码契约永远在最后，预设词条不能覆盖 JSON 字段与枚举。
+ */
+function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptScope, extra: Record<string, string | undefined> = {}, context?: string) {
+  const world = resolvePresetWorld(runtime, scope, extra);
+  const vars = promptVars({ ...extra, world, context });
+  if (vars.scenario) vars.scenario = applyFormat(runtime.scenarioFormat, vars.scenario);
+  if (vars.personality) vars.personality = applyFormat(runtime.personalityFormat, vars.personality);
+  const contextParts = [
+    vars.scenario ? `【场景】\n${vars.scenario}` : '',
+    vars.personality ? `【角色性格】\n${vars.personality}` : '',
+    vars.worldbook ? `【世界书】\n${applyFormat(runtime.wiFormat, vars.worldbook)}` : '',
+  ].filter(Boolean);
+  const fullContract = [...contextParts, contract.trim()].filter(Boolean).join('\n\n');
+  const composed = composeTaskSystem(fullContract, runtime, scope, vars);
+  return { system: composed.system, vars, world, composed };
+}
+
 function presetParams(preset?: PresetRuntime): LlmCallParams | undefined {
   if (!preset) return undefined;
   const params: LlmCallParams = {};
@@ -122,10 +141,10 @@ export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolea
   return result;
 }
 
-export async function generateDaily(config: LlmConfig, prompts: LlmPrompts, state: GameState, context?: string, preset?: PresetRuntime): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
+export async function generateDaily(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateDailyCore(config, prompts, state, context, preset, meta);
+  const result = await generateDailyCore(config, state, context, preset, meta);
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: config.endpoint,
@@ -136,10 +155,10 @@ export async function generateDaily(config: LlmConfig, prompts: LlmPrompts, stat
   return result;
 }
 
-export async function generateGirlProfile(config: LlmConfig, prompts: LlmPrompts, portrait?: string, hint?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+export async function generateGirlProfile(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateGirlProfileCore(config, prompts, portrait, hint, preset, meta);
+  const result = await generateGirlProfileCore(config, portrait, hint, preset, meta);
   recordLlmLog({
     kind: '角色起草', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: config.endpoint,
@@ -154,7 +173,7 @@ export interface DialogueContext {
   girl: Girl; state: GameState; text: string; remote?: boolean;
 }
 
-export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+export async function generateDialogue(config: LlmConfig, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   const started = Date.now();
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = resolvePresetConfig(runtime, config);
@@ -179,25 +198,17 @@ export async function generateDialogue(config: LlmConfig, prompts: LlmPrompts, {
   });
   const skillNames = girl.skills.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、');
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.description}）`).join('；');
-  const system = `${prompts.world}
-
-你现在只扮演「${girl.name}」，不要以旁白、作者或 AI 的身份说话。
-身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}，等级 ${girl.level}。
+  const body = `身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}，等级 ${girl.level}。
 外貌：${girl.appearance ?? '不详'}。性格：${girl.personality ?? '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
 登场台词：${girl.quote ?? '没有留下出场白'}。当前目标：${girl.goal ?? '没有写下来的愿望'}。特性：${traitText || '无'}。技能：${skillNames || '未记录'}。
 对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
 与同伴的关系：${peers.join('；') || '还没有特别亲近的同伴'}。
 经历的战斗：${battles.join(' ') || '还没有参加过战斗'}。
 状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕：${girl.scars.map(scar => scar.name).join('、')}` : ''}。
-${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}
-只输出她这一次的回应：中文，1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型，不要输出 JSON。`;
+${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}`;
   const MAX_CONTEXT = runtime.maxContext;
   const recentHistory: typeof history = [];
-  const baseVars = promptVars({ world: prompts.world, char: girlBrief(girl), context: '与委托人的对话' });
-  const presetSystem = withPresetPrompts(system, runtime, baseVars).system;
-  const baseSystem = baseVars.worldbook && !presetSystem.includes(baseVars.worldbook)
-    ? `${presetSystem}\n\n【世界书】\n${applyFormat(runtime.wiFormat, baseVars.worldbook)}`
-    : presetSystem;
+  const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话');
   let used = baseSystem.length + text.length;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
@@ -428,31 +439,6 @@ async function chat(config: LlmConfig, messages: ChatMessage[], options: LlmCall
   }
 }
 
-export interface LlmPrompts {
-  world: string;
-  daily: string;
-}
-
-export const defaultPrompts: LlmPrompts = {
-  world: '你是《夜糖事务所》的夜班叙事者。故事发生在永远停在深夜的樱雾市：魔法少女以契约换取力量，代价是灵魂慢慢被侵蚀。语气温柔、克制、带一点危险的甜味。不要写露骨内容，不要替玩家做决定。',
-  daily: '为今晚提交一份提案：一只新的魔物、一位刚到市场的候选魔法少女、一条战斗委托。只描述名字、气质、愿望与外观，不要给任何数值、奖励或规则。',
-};
-
-export function loadLlmPrompts(): LlmPrompts {
-  try {
-    const raw = localStorage.getItem('night-sugar:llm-prompts');
-    if (!raw) return { ...defaultPrompts };
-    const parsed = JSON.parse(raw) as Partial<LlmPrompts>;
-    return { world: typeof parsed.world === 'string' ? parsed.world : defaultPrompts.world, daily: typeof parsed.daily === 'string' ? parsed.daily : defaultPrompts.daily };
-  } catch {
-    return { ...defaultPrompts };
-  }
-}
-
-export function saveLlmPrompts(prompts: LlmPrompts) {
-  try { localStorage.setItem('night-sugar:llm-prompts', JSON.stringify(prompts)); } catch { /* session only */ }
-}
-
 const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'] as const;
 const archetypes = ['输出', '守护', '治愈', '控制', '侦查'] as const;
 
@@ -499,24 +485,16 @@ interface JsonCallOutcome {
  * 预设里 1400 的上限很容易把正文 JSON 截断，所以识别到 length 时自动放大额度重试一次。
  */
 async function chatJson(
-  config: LlmConfig, prompts: LlmPrompts, preset: PresetRuntime | undefined, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
 ): Promise<JsonCallOutcome> {
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = resolvePresetConfig(runtime, config);
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
   if (tokenFloor > (params.maxTokens ?? 900)) params = { ...params, maxTokens: tokenFloor };
-  const vars = { ...promptVars({ world: prompts.world, context: typeof user === 'string' ? user.slice(0, 240) : '图像输入', ...(extra ?? {}) }) };
-  if (extra?.scenario) vars.scenario = applyFormat(runtime.scenarioFormat, vars.scenario ?? '');
-  if (extra?.personality) vars.personality = applyFormat(runtime.personalityFormat, vars.personality ?? '');
-  const presetSystem = withPresetPrompts(`${prompts.world}\n\n${body}`, runtime, vars).system;
-  const withStoryVars = [
-    presetSystem,
-    vars.scenario && !presetSystem.includes(vars.scenario) ? `【场景】\n${vars.scenario}` : '',
-    vars.personality && !presetSystem.includes(vars.personality) ? `【角色性格】\n${vars.personality}` : '',
-  ].filter(Boolean).join('\n\n');
+  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入');
   let messages: ChatMessage[] = applyRegexToMessages([
-    { role: 'system', content: vars.worldbook && !withStoryVars.includes(vars.worldbook) ? `${withStoryVars}\n\n【世界书】\n${applyFormat(runtime.wiFormat, vars.worldbook)}` : withStoryVars },
+    { role: 'system', content: system },
     { role: 'user', content: user },
   ], runtime.regex);
   let result = await chat(cfg, messages, { params });
@@ -544,18 +522,18 @@ function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
   return `${prefix}模型没有返回可解析的 JSON。可以在叙事引擎面板里查看这次请求，再重试一次。`;
 }
 
-async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
+async function generateDailyCore(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const system = `${prompts.daily}\n\n${buildNightPrompt(state)}`;
+  const system = buildNightPrompt(state);
   const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
-  const outcome = await chatJson(config, prompts, preset, system, user, ['世界观 + 预设 + 今晚机制目录', '用户请求：今晚的提案'], meta, undefined, 2600);
+  const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 2600);
   if (!outcome.result.ok) return { ok: false, message: `生成失败：${outcome.result.message}` };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('生成失败：', outcome) };
   let validation = validateNightProposal(outcome.raw, state);
   let source = outcome;
   if (!validation.ok) {
     const repairBody = `${system}\n\n【上一次提案（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略任何字段；所有 id 必须来自上面的目录。`;
-    const repaired = await chatJson(config, prompts, preset, repairBody, '请只提交修正后的完整 JSON。', ['世界观 + 预设 + 今晚机制目录', '修复上一次提案'], meta, undefined, 2600);
+    const repaired = await chatJson(config, preset, 'daily', repairBody, '请只提交修正后的完整 JSON。', ['共用词条 + 每日提案词条 + 今晚机制目录', '修复上一次提案'], meta, { context: '修复今晚的提案' }, 2600);
     if (!repaired.result.ok) return { ok: false, message: `提案未通过校验，修复请求失败：${repaired.result.message}` };
     if (!repaired.raw) return { ok: false, message: `提案未通过校验，且修复输出无法解析。${jsonFailureMessage('', repaired)}` };
     source = repaired;
@@ -722,24 +700,23 @@ function parseIncidentEffect(raw: unknown): IncidentEffect {
 }
 
 async function callJson(
-  config: LlmConfig, prompts: LlmPrompts, preset: PresetRuntime | undefined, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>,
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>,
 ): Promise<{ ok: true; raw: Record<string, unknown> } | { ok: false; message: string }> {
-  const outcome = await chatJson(config, prompts, preset, body, user, labels, meta, extra);
+  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra);
   if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('', outcome) };
   return { ok: true, raw: outcome.raw };
 }
 
-export async function generateStoryline(config: LlmConfig, prompts: LlmPrompts, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryline } | { ok: false; message: string }> {
+export async function generateStoryline(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryline } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `为一位魔法少女写一条可以分四幕推进的个人故事线。基调克制、具体、有生活质感，不要写成英雄史诗。
-先读她的档案：${girlBrief(girl)}
+  const body = `先读她的档案：${girlBrief(girl)}
 ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","premise":"","tone":"","beats":[{"title":"","summary":"","scene":"","hook":"","mission":{"title":"","goal":"","difficulty":"简单|常规|棘手|危险","duration":90,"district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","requirement":"magic|insight|agility|empathy"},"choices":[{"label":"","intent":"","effect":{"gold":0,"reputation":0,"bond":0,"corruption":0,"trait":"","trigger":{"kind":"dialogue|event|mission|opinion|incident"}}}]}]}
 要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清"她要在这场委托里做到什么"，不能是空泛的情绪；duration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。`;
-  const result = await callJson(config, prompts, preset, body, `请为${girl.name}写这条故事线。`, ['世界观 + 预设 + 故事线规则', `档案：${girl.name}`], meta, {
+  const result = await callJson(config, preset, 'storyline', body, `请为${girl.name}写这条故事线。`, ['共用词条 + 故事线词条 + 结构契约', `档案：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: girl.personality,
     scenario: direction?.trim() ?? '',
@@ -785,16 +762,16 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
   return { ok: true, data };
 }
 
-export async function generateIncident(config: LlmConfig, prompts: LlmPrompts, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedIncident } | { ok: false; message: string }> {
+export async function generateIncident(config: LlmConfig, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedIncident } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const girls = state.girls.filter(girl => !girl.dead).slice(0, 6).map(girl => `${girl.name}（关系 ${girl.bond}，侵蚀 ${girl.corruption}，疲劳 ${girl.fatigue}）`).join('；');
-  const body = `现在是第 ${state.day} 日 ${Math.floor((state.minutes % 1440) / 60).toString().padStart(2, '0')}:${String(state.minutes % 60).padStart(2, '0')}，夜糖事务所正在营业。请生成一件必须立刻决定的事：三方势力（月蚀、星灯协会、市役所）之一提出要求，或环境突然变化，或某位少女的状态出了岔子。
+  const body = `现在是第 ${state.day} 日 ${Math.floor((state.minutes % 1440) / 60).toString().padStart(2, '0')}:${String(state.minutes % 60).padStart(2, '0')}，夜糖事务所正在营业。
 在册契约者：${girls || '（还没有契约者）'}；安定度 ${state.reputation}；星砂 ${state.gold}。
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","body":"","options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"girl":""}}]}
 要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–120 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
-  const result = await callJson(config, prompts, preset, body, '请把这件事放到我的桌上。', ['世界观 + 预设 + 事件规则', '当前局势'], meta, {
+  const result = await callJson(config, preset, 'incident', body, '请把这件事放到我的桌上。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，事务所营业中`,
   });
   if (!result.ok) {
@@ -821,16 +798,15 @@ export async function generateIncident(config: LlmConfig, prompts: LlmPrompts, s
   return { ok: true, data };
 }
 
-export async function generateEvent(config: LlmConfig, prompts: LlmPrompts, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
+export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `写一段可以从角色详情页进入的私人事件，分两场，每场以一句有画面感的旁白开场，再给 2–4 行对话。不要旁白解释心理，让台词自己说。
-角色：${girlBrief(girl)}
+  const body = `角色：${girlBrief(girl)}
 ${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}]}]}
 要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行。`;
-  const result = await callJson(config, prompts, preset, body, `请写下${girl.name}的这段事件。`, ['世界观 + 预设 + 事件规则', `角色：${girl.name}`], meta, {
+  const result = await callJson(config, preset, 'event', body, `请写下${girl.name}的这段事件。`, ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: girl.personality,
     scenario: storyline ? `${storyline.title}——${storyline.premise}` : '',
@@ -892,18 +868,17 @@ export interface StoryArcInput {
 const ARC_TARGETS = '至少 4 段，每段旁白 260–520 字、2–4 行对话、2–3 个选项；全文合计不少于 1200 字';
 
 /** 分幕剧情：一次生成 4–5 段完整剧情，选项带明确后果。 */
-export async function generateStoryArc(config: LlmConfig, prompts: LlmPrompts, girl: Girl, input: StoryArcInput, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryArc } | { ok: false; message: string }> {
+export async function generateStoryArc(config: LlmConfig, girl: Girl, input: StoryArcInput, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryArc } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `写一段完整的角色剧情，像二游里的羁绊事件：有场景、有对话、有她慢慢说出口的东西，最后收束。玩家会在每一段做一次选择，选择会影响下一段的语气，但故事必须是完整的。
-角色：${girlBrief(girl)}
+  const body = `角色：${girlBrief(girl)}
 ${input.storylineTitle ? `故事线：${input.storylineTitle}${input.premise ? `——${input.premise}` : ''}` : ''}
 ${input.beatTitle ? `这一幕：${input.beatTitle}${input.beatHook ? `——${input.beatHook}` : ''}` : ''}
 ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.memory.slice(0, 1600)}` : ''}
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","summary":"","passages":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}],"choices":[{"label":"","intent":"","effect":{"bond":2}}]}]}
 要求：${ARC_TARGETS}；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」这类表演提示；effect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6；summary 用 60–120 字概括这一段剧情。`;
-  const result = await callJson(config, prompts, preset, body, `请写下${girl.name}的这段剧情。`, ['世界观 + 预设 + 剧情规则', `角色：${girl.name}`, '前情与这一幕'], meta, {
+  const result = await callJson(config, preset, 'arc', body, `请写下${girl.name}的这段剧情。`, ['共用词条 + 完整剧情词条 + 结构契约', `角色：${girl.name}`, '前情与这一幕'], meta, {
     char: girlBrief(girl),
     personality: girl.personality,
     scenario: [input.premise, input.beatTitle, input.beatHook].filter(Boolean).join('\n'),
@@ -955,15 +930,14 @@ export interface GeneratedOutfit {
 }
 
 /** 看图写一条衣柜词条：套装名 + 50–90 字的材质/剪裁/配饰描述。 */
-export async function generateOutfitDescription(config: LlmConfig, prompts: LlmPrompts, portrait: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedOutfit } | { ok: false; message: string }> {
+export async function generateOutfitDescription(config: LlmConfig, portrait: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedOutfit } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const body = `为附带的立绘里的这套服装写一条衣柜词条。只写衣服本身，不要写人物身份、剧情或数值。
-只输出一个 JSON 对象，不要 Markdown 代码块：
+  const body = `只输出一个 JSON 对象，不要 Markdown 代码块：
 {"name":"","description":""}
 要求：name 是 4–10 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 50–90 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。`;
-  const outcome = await chatJson(config, prompts, preset, body, [{ type: 'text', text: '请为这套服装写一条衣柜词条。' }, { type: 'image_url', image_url: { url: portrait } }], ['世界观 + 预设 + 服装词条规则（含立绘）', '用户请求：补充服装描述'], meta);
+  const outcome = await chatJson(config, preset, 'outfit', body, [{ type: 'text', text: '请为这套服装写一条衣柜词条。' }, { type: 'image_url', image_url: { url: portrait } }], ['共用词条 + 服装词条 + 结构契约（含立绘）', '用户请求：补充服装描述'], meta);
   const result = outcome.result;
   if (!result.ok) {
     if (/image|vision|multimodal|图像|图片/i.test(result.message)) {
@@ -996,7 +970,7 @@ export interface GeneratedGirlProfile {
   focus: StatKey; skillIds: string[]; traits: DraftTrait[];
 }
 
-async function generateGirlProfileCore(config: LlmConfig, prompts: LlmPrompts, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const skillList = skills.filter(s => s.school !== 'monster').map(s => `${s.id}(${s.name})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
@@ -1007,9 +981,9 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
     ? '先观察附带的立绘：发色与发型、瞳色、服装轮廓与配色、配饰、兽耳或尾巴、姿态与表情。appearance 必须具体描述这些可见特征；outfitDescription 必须写到颜色、材质与穿法；element、archetype、personality 和 title 都要从画面气质推断，不能与立绘冲突。'
     : '这次没有立绘，请只根据世界观与文字要求起草，不要假装看见图片。';
   const hintRule = hint?.trim() ? `\n玩家对画面的额外要求（优先满足）：${hint.trim()}` : '';
-  const outcome = await chatJson(config, prompts, preset, `为玩家正在登记的新魔法少女起草一份档案。只写气质与文案，不要给数值。\n${visualRule}${hintRule}\n\n${schema}`, portrait
+  const outcome = await chatJson(config, preset, 'profile', `${visualRule}${hintRule}\n\n${schema}`, portrait
     ? [{ type: 'text', text: '请根据这张立绘起草这位新契约者，确保外貌、服装、元素与职阶都和画面一致。' }, { type: 'image_url', image_url: { url: portrait } }]
-    : '请起草这位新契约者。', ['世界观 + 预设 + 起草规则（含立绘）', '用户请求：起草新契约者'], meta);
+    : '请起草这位新契约者。', ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：起草新契约者'], meta);
   const result = outcome.result;
   if (!result.ok) {
     if (portrait && /image|vision|multimodal|图像|图片/i.test(result.message)) {
@@ -1051,7 +1025,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
 }
 
 import {
-  applyFormat, applyRegexScripts, applyRegexToMessages, promptTokens, resolvePresetConfig, withPresetPrompts, type PresetRuntime,
+  applyFormat, applyRegexScripts, applyRegexToMessages, composeTaskSystem, promptTokens, resolvePresetConfig, resolvePresetWorld, type PresetRuntime, type PromptScope,
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';

@@ -22,10 +22,10 @@ import { BattleReport } from './components/BattleReport';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig, loadLlmPrompts, type LlmPrompts } from './llm';
+import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, loadBinding, loadPresets, presetRuntime, saveBinding, savePresets, type ChatPreset, type PresetBinding } from './presets';
+import { boundPreset, duplicatePreset, loadBinding, loadPresets, presetRuntime, saveBinding, savePresets, type ChatPreset, type PresetBinding, type PromptScope } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -55,7 +55,8 @@ type Modal =
   | { type: 'story-editor'; id: string }
   | { type: 'story-graph'; id: string }
   | { type: 'codex'; id?: string }
-  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'presets' | 'end-night' | 'workshop' };
+  | { type: 'presets'; scope?: PromptScope; presetId?: string }
+  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' };
 
 function readSave() { try { return loadState(localStorage.getItem(SAVE_KEY)); } catch { return loadState(null); } }
 function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
@@ -122,14 +123,14 @@ export default function App() {
     if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
     lastGeneratedDay.current = state.day;
     if (generatingRef.current || !loadLlmConfig().apiKey) return;
-    void generateContent(loadLlmPrompts(), 'auto');
+    void generateContent('auto');
   }, [state.day, autoGenerate]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
     if (state.day <= lastIncidentDay.current) { lastIncidentDay.current = state.day; return; }
     lastIncidentDay.current = state.day;
     if (state.incidents.some(item => item.status === 'pending') || !loadLlmConfig().apiKey) return;
-    void generateIncident(loadLlmConfig(), loadLlmPrompts(), state, presetRuntime(boundPreset('story', presets, binding))).then(result => {
+    void generateIncident(loadLlmConfig(), state, presetRuntime(boundPreset('story', presets, binding))).then(result => {
       if (!result.ok) return;
       const incident: Incident = { id: `inc-llm-${state.day}-${Date.now()}`, day: state.day, kind: 'faction', source: 'llm', title: result.data.title, body: result.data.body, options: result.data.options.map((option, index) => ({ id: `o${index + 1}`, label: option.label, hint: option.hint, effect: option.effect })), status: 'pending' };
       const applied = act(state, { type: 'addIncident', incident });
@@ -151,7 +152,7 @@ export default function App() {
       const preset = presetRuntime(boundPreset('story', presets, binding));
       const memory = story ? [story.title, story.premise, ...story.beats.filter(item => item.index < story.stage).map(item => `${item.title}：${item.hook}`)].join('\n') : '';
       const result = config.apiKey
-        ? await generateStoryArc(config, loadLlmPrompts(), target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset)
+        ? await generateStoryArc(config, target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset)
         : { ok: false as const, message: '' };
       if (!result.ok && config.apiKey) notify(result.message || '叙事者没有写完，改用模板剧情。', false);
       const passages: StoryPassage[] = result.ok
@@ -178,15 +179,34 @@ export default function App() {
 
   const notify = (message: string, ok = true) => setToast({ message, ok, id: Date.now() });
 
+  /** 从设置页的任务入口打开预设：内置预设只读，先复制成绑定到对应场景的可编辑副本。 */
+  const openPresetScope = (scope?: PromptScope) => {
+    if (!scope) { setModal({ type: 'presets' }); return; }
+    const kind: 'chat' | 'generate' | 'story' = scope === 'chat' ? 'chat'
+      : scope === 'daily' || scope === 'profile' || scope === 'outfit' ? 'generate' : 'story';
+    const current = boundPreset(kind, presets, binding);
+    if (!current) { setModal({ type: 'presets', scope }); return; }
+    if (!current.builtin) { setModal({ type: 'presets', scope, presetId: current.id }); return; }
+    const copy = duplicatePreset(current);
+    const nextPresets = [...presets, copy];
+    const nextBinding = { ...binding, [kind]: copy.id };
+    setPresets(nextPresets);
+    setBinding(nextBinding);
+    savePresets(nextPresets);
+    saveBinding(nextBinding);
+    setModal({ type: 'presets', scope, presetId: copy.id });
+    notify(`已将「${current.name}」复制为可编辑副本，并绑定到${kind === 'chat' ? '角色对话' : kind === 'generate' ? '提案生成' : '故事生成'}。`);
+  };
+
   const describeOutfit = async (portrait: string) => {
     const config = loadLlmConfig();
     if (!config.apiKey.trim()) { notify('填写 API 密钥后，叙事者才能看图写服装描述。', false); return null; }
-    const result = await generateOutfitDescription(config, loadLlmPrompts(), portrait, presetRuntime(boundPreset('generate', presets, binding)));
+    const result = await generateOutfitDescription(config, portrait, presetRuntime(boundPreset('generate', presets, binding)));
     if (!result.ok) { notify(result.message, false); return null; }
     notify(result.data.name ? `叙事者写好了「${result.data.name}」。` : '叙事者写好了这套服装的描述。');
     return result.data;
   };
-  const generateContent = async (prompts: LlmPrompts, mode: 'manual' | 'auto' = 'manual'): Promise<{ ok: boolean; message: string }> => {
+  const generateContent = async (mode: 'manual' | 'auto' = 'manual'): Promise<{ ok: boolean; message: string }> => {
     if (generatingRef.current) return { ok: false, message: '叙事者还在写上一份提案。' };
     const gate = canAcceptGeneratedContent(state);
     if (!gate.ok) {
@@ -196,7 +216,7 @@ export default function App() {
     generatingRef.current = true;
     setGenerating(true);
     try {
-      const result = await generateDaily(loadLlmConfig(), prompts, state, worldBrief(state), presetRuntime(boundPreset('generate', presets, binding)));
+      const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), presetRuntime(boundPreset('generate', presets, binding)));
       if (!result.ok) {
         if (mode === 'auto') notify(`夜间自动补充停笔：${result.message}`, false);
         return { ok: false, message: result.message };
@@ -233,7 +253,7 @@ export default function App() {
     notify(pendingProposal.warnings.length ? `提案已采纳；其中 ${pendingProposal.warnings.length} 处数值由本地规则裁剪。` : '提案已采纳，今晚的新内容已经入场。');
   };
   const draftGirlProfile = async (portrait?: string, hint?: string) => {
-    const result = await generateGirlProfile(loadLlmConfig(), loadLlmPrompts(), portrait, hint, presetRuntime(boundPreset('generate', presets, binding)));
+    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, presetRuntime(boundPreset('generate', presets, binding)));
     return result.ok ? { ok: true, message: '', profile: result.data } : { ok: false, message: result.message };
   };
   const perform = (action: GameAction, quiet = false) => {
@@ -251,7 +271,7 @@ export default function App() {
     if (!target) return false;
     const config = loadLlmConfig();
     if (config.apiKey.trim()) {
-      const result = await generateDialogue(config, loadLlmPrompts(), { girl: target, state, text, remote }, presetRuntime(boundPreset('chat', presets, binding)));
+      const result = await generateDialogue(config, { girl: target, state, text, remote }, presetRuntime(boundPreset('chat', presets, binding)));
       if (result.ok) return perform({ type: 'talk', girlId: id, text, remote, reply: result.text }, true);
       notify(`叙事者没有回应：${result.message} 已切回本地剧情。`, false);
     }
@@ -336,7 +356,7 @@ export default function App() {
         return `已切换到${target === 'dispatch' ? '派遣' : target === 'base' ? '基地' : target === 'market' ? '市场' : '记录'}页。`;
       }
       case 'generate': case '生成': {
-        const result = await generateContent(loadLlmPrompts());
+        const result = await generateContent();
         return result.message || (result.ok ? '叙事者写完了新的内容。' : '生成失败。');
       }
       case 'preset': case '预设': {
@@ -383,7 +403,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     if (target.storyPlan?.beats?.length) { perform({ type: 'startStoryline', girlId }); return; }
-    const result = await generateStoryline(loadLlmConfig(), loadLlmPrompts(), target, undefined, presetRuntime(boundPreset('story', presets, binding)));
+    const result = await generateStoryline(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('story', presets, binding)));
     if (!result.ok) { perform({ type: 'startStoryline', girlId }); notify(`${result.message} 先用模板起了个头。`, false); return; }
     const data = result.data;
     const storyline: Storyline = {
@@ -399,7 +419,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     const storyline = state.storylines.find(item => item.girlId === girlId && item.status === 'active');
-    const result = await generateEvent(loadLlmConfig(), loadLlmPrompts(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, presetRuntime(boundPreset('story', presets, binding)));
+    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, presetRuntime(boundPreset('story', presets, binding)));
     const stamp = Date.now();
     const data = result.ok ? result.data : undefined;
     const fallbackTitle = storyline ? `${storyline.title} · 夜路` : '夜路';
@@ -549,8 +569,8 @@ export default function App() {
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={() => setModal({ type: 'presets' })} />}
-      {modal.type === 'presets' && <PresetDialog presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
+      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
+      {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
       {modal?.type === 'story-graph' && selectedGirl && (
@@ -618,7 +638,7 @@ export default function App() {
       )}
 
     {pendingProposal && <Dialog label="今晚的提案" onClose={() => { if (!generating) setPendingProposal(null); }} wide>
-      <ProposalDialog state={state} proposal={pendingProposal} busy={generating} onAccept={acceptProposal} onDiscard={() => setPendingProposal(null)} onRegenerate={() => { void generateContent(loadLlmPrompts(), 'manual').then(result => { if (!result.ok) notify(result.message, false); }); }} />
+      <ProposalDialog state={state} proposal={pendingProposal} busy={generating} onAccept={acceptProposal} onDiscard={() => setPendingProposal(null)} onRegenerate={() => { void generateContent('manual').then(result => { if (!result.ok) notify(result.message, false); }); }} />
     </Dialog>}
     <LlmConsole />
     {cmdOpen && <CommandConsole onRun={runCommand} onClose={() => setCmdOpen(false)} />}

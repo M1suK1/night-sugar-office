@@ -1198,3 +1198,18 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 
 .story-graph-canvas { cursor: default; }
 .story-graph-canvas:active { cursor: grabbing; }
+
+/* 提示词按用途拆分：设置页任务入口 */
+.llm-task-intro { margin: 0; color: #9b8ba2; font-size: 9px; line-height: 1.7; }
+.llm-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.llm-task { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; padding: 8px 9px; border: 1px solid #ffffff12; border-radius: 5px; background: #ffffff04; color: #d9cbe0; cursor: pointer; }
+.llm-task:hover { border-color: #f3aec94d; background: #f3aec90a; }
+.llm-task b { font-size: 10px; font-weight: 500; }
+.llm-task span { grid-column: 1 / -1; color: #85758d; font-size: 8.5px; line-height: 1.5; }
+.llm-task em { font-style: normal; color: #b98ca5; font-size: 8.5px; white-space: nowrap; }
+.preset-scope-filter { width: auto; padding: 4px 7px; border: 1px solid #ffffff1c; border-radius: 4px; background: #17131d; color: #d8c9dd; font-size: 9.5px; }
+.preset-entry-scope { width: 78px; padding: 2px 4px; border: 1px solid #ffffff16; border-radius: 3px; background: #17131d; color: #cfc2d4; font-size: 9px; }
+.preset-entry-warning { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 6px 8px; border: 1px solid #d6a35c4a; border-radius: 4px; background: #d6a35c0d; color: #d9bd93; font-size: 9px; line-height: 1.5; }
+.preset-entry-warning button { flex: none; border: 1px solid #d6a35c66; border-radius: 3px; background: transparent; color: #f0d2a6; font-size: 8.5px; padding: 2px 6px; cursor: pointer; }
+.preset-entry-warning button:hover { background: #d6a35c1a; }
+@media (max-width: 700px) { .llm-task-grid { grid-template-columns: 1fr; } .preset-entry-warning { align-items: flex-start; flex-direction: column; } }

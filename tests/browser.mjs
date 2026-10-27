@@ -651,14 +651,14 @@ try {
     await page.locator('#preset-item-builtin-balanced').click();
     await page.locator('#preset-duplicate').click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(3);
+    await expect(page.locator('.preset-entry')).toHaveCount(12);
     await page.locator('#preset-entry-add').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(4);
-    await page.locator('#preset-entry-content-3').fill('{{player}} 这一句会引用玩家档案。');
+    await expect(page.locator('.preset-entry')).toHaveCount(13);
+    await page.locator('#preset-entry-content-12').fill('{{player}} 这一句会引用玩家档案。');
     await page.locator('#preset-entry-enabled-0').click();
     await expect(page.locator('#preset-entry-enabled-0')).toHaveAttribute('aria-pressed', 'false');
-    await page.locator('#preset-entry-up-3').click();
-    await expect(page.locator('#preset-entry-content-2')).toHaveValue(/玩家档案/);
+    await page.locator('#preset-entry-up-12').click();
+    await expect(page.locator('#preset-entry-content-11')).toHaveValue(/玩家档案/);
     await expect(page.locator('.preset-token-total')).toContainText('tokens');
     await expect(page.locator('#preset-bind-story')).toHaveValue('builtin-balanced');
     await page.locator('#preset-bind-story').selectOption({ label: '均衡叙事 副本' });
@@ -704,8 +704,35 @@ try {
     await expect(page.locator('.preset-report.ok')).toContainText('已导入');
     await page.locator('.preset-list button', { hasText: '旧版预设' }).click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(1);
+    await expect(page.locator('.preset-entry')).toHaveCount(13);
     await expect(page.locator('#preset-entry-content-0')).toHaveValue(/旧版主体/);
+    await page.locator('#modal-close').click();
+  });
+
+  await check('任务提示词按用途编辑，并标出旧数值禁令', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-prompt-daily').click();
+    await expect(page.locator('#preset-tab-prompts')).toHaveClass(/active/);
+    await expect(page.locator('#preset-scope-filter')).toHaveValue('daily');
+    await expect(page.locator('#preset-name')).toHaveValue(/副本/);
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').generate)).toContain('preset-');
+    await expect(page.locator('.preset-entry')).toHaveCount(1);
+    await expect(page.locator('.preset-entry textarea')).toHaveValue(/为今晚的夜班提案/);
+    await page.locator('#modal-close').click();
+
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('.preset-list button', { hasText: '均衡叙事 副本' }).click();
+    await page.locator('#preset-tab-prompts').click();
+    await page.locator('#preset-scope-filter').selectOption('daily');
+    await page.locator('.preset-entry textarea').fill('为今晚提交一份提案。只描述名字与外观，不要给任何数值、奖励或规则。');
+    await expect(page.locator('.preset-entry-warning')).toContainText('完整生成冲突');
+    await page.locator('[id^="preset-entry-fix-ban-"]').click();
+    await expect(page.locator('.preset-entry-warning')).toHaveCount(0);
+    await expect(page.locator('.preset-entry textarea')).not.toHaveValue(/任何数值/);
+    await page.screenshot({ path: 'artifacts/preset-scopes.png', animations: 'disabled' });
     await page.locator('#modal-close').click();
   });
 
@@ -728,7 +755,7 @@ try {
     await page.locator('#modal-close').click();
   });
 
-  await check('导出预设带 schema 2 且剥离密钥', async () => {
+  await check('导出预设带 schema 3 与用途且剥离密钥', async () => {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-open-presets').click();
@@ -742,10 +769,37 @@ try {
     const file = await download.path();
     const exported = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(exported);
-    expect(parsed.schema).toBe(2);
+    expect(parsed.schema).toBe(3);
     expect(exported.includes('sk-secret-test')).toBe(false);
+    expect(parsed.prompts.some(entry => entry.scope === 'daily')).toBe(true);
     expect(Array.isArray(parsed.extensions?.regex_scripts)).toBe(true);
     await page.locator('#modal-close').click();
+  });
+
+  await check('旧版世界观与每日要求会迁移成可编辑预设', async () => {
+    await page.evaluate(() => {
+      localStorage.setItem('night-sugar:llm-prompts', JSON.stringify({ world: '旧世界：霓虹灯下的樱雾市，夜班永不结束。', daily: '为今晚写一份只谈气氛的提案，不要给任何数值。' }));
+      localStorage.removeItem('night-sugar:presets');
+      localStorage.removeItem('night-sugar:llm-prompts-migrated');
+      localStorage.removeItem('night-sugar:preset-binding');
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('.preset-list button', { hasText: '迁移的旧提示词' }).click();
+    await page.locator('#preset-tab-prompts').click();
+    await expect(page.locator('.preset-entry textarea').first()).toHaveValue(/霓虹灯下的樱雾市/);
+    await expect(page.locator('#preset-entry-content-5')).toHaveValue(/只谈气氛/);
+    await page.screenshot({ path: 'artifacts/preset-legacy-migration.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+    await page.evaluate(() => {
+      localStorage.removeItem('night-sugar:llm-prompts');
+      localStorage.removeItem('night-sugar:presets');
+      localStorage.removeItem('night-sugar:llm-prompts-migrated');
+      localStorage.removeItem('night-sugar:preset-binding');
+    });
+    await page.reload({ waitUntil: 'networkidle' });
   });
 
   await check('玩家档案写入后可在刷新后保留', async () => {

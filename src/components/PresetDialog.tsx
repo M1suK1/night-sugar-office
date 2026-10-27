@@ -1,14 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
-  DEFAULT_PROMPTS, PROMPT_VARIABLES, applyRegexScripts, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
-  promptTokens, SAMPLING_FIELDS, samplingValue, activePrompts,
-  type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type RegexScript,
+  DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_VARIABLES, applyRegexScripts, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
+  promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
+  type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type RegexScript,
 } from '../presets';
 
 interface Props {
   presets: ChatPreset[];
   binding: PresetBinding;
+  initialScope?: PromptScope;
+  initialPresetId?: string;
   onPresets: (next: ChatPreset[]) => void;
   onBinding: (next: PresetBinding) => void;
   onNotify: (message: string, ok?: boolean) => void;
@@ -16,14 +18,16 @@ interface Props {
 
 const ROLE_LABEL: Record<PromptEntry['role'], string> = { system: '系统', user: '用户', assistant: '助手' };
 
-export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify }: Props) {
-  const [selectedId, setSelectedId] = useState(() => presets[0]?.id ?? '');
-  const [tab, setTab] = useState<'sampling' | 'prompts' | 'advanced'>('sampling');
+export function PresetDialog({ presets, binding, initialScope, initialPresetId, onPresets, onBinding, onNotify }: Props) {
+  const [selectedId, setSelectedId] = useState(() => (initialPresetId && presets.some(item => item.id === initialPresetId) ? initialPresetId : presets[0]?.id ?? ''));
+  const [tab, setTab] = useState<'sampling' | 'prompts' | 'advanced'>(initialScope ? 'prompts' : 'sampling');
+  const [scopeFilter, setScopeFilter] = useState<PromptScope | 'all'>(initialScope ?? 'all');
   const [draft, setDraft] = useState('');
   const [report, setReport] = useState<{ ok: boolean; text: string; notes?: string[]; unsupported?: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const preset = presets.find(item => item.id === selectedId) ?? presets[0];
   const entries = useMemo(() => (preset ? presetPrompts(preset) : []), [preset]);
+  const visibleEntries = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => scopeFilter === 'all' || promptScope(entry) === scopeFilter);
   const editable = Boolean(preset && !preset.builtin);
   const totalTokens = entries.reduce((sum, entry) => sum + (entry.enabled && !entry.marker ? promptTokens(entry.content) : 0), 0);
   const [regexSample, setRegexSample] = useState('（她把杯子放下）这一晚的剧情到这里就结束了。<think_nya>她的声音很轻</think_nya>');
@@ -40,10 +44,19 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
 
   const patchEntries = (next: PromptEntry[]) => {
     if (!preset || !editable) return;
-    replace({ ...preset, prompts: next });
+    // 词条列表本身就是编辑顺序：同步 promptOrder，保证上下移动与注入顺序一致。
+    replace({ ...preset, prompts: next, promptOrder: next.map(entry => ({ identifier: entry.id, enabled: entry.enabled })) });
   };
 
   const patchEntry = (id: string, patch: Partial<PromptEntry>) => patchEntries(entries.map(entry => entry.id === id ? { ...entry, ...patch } : entry));
+  const resetScope = () => {
+    if (!preset || !editable) return;
+    const scope = scopeFilter === 'all' ? undefined : scopeFilter;
+    const defaults = DEFAULT_PROMPTS.filter(entry => !scope || promptScope(entry) === scope);
+    const kept = scope ? entries.filter(entry => promptScope(entry) !== scope) : [];
+    patchEntries([...kept, ...defaults.map((entry, index) => ({ ...entry, id: newEntryId(kept.length + index) }))]);
+    onNotify(scope ? `已恢复「${promptScopeLabel(scope)}」的默认词条。` : '已恢复全部默认词条。');
+  };
   const patchApi = (patch: Partial<PresetApi>) => {
     if (!preset || !editable) return;
     replace({ ...preset, api: { ...preset.api, ...patch } });
@@ -62,15 +75,7 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
 
   const duplicate = () => {
     if (!preset) return;
-    const copy: ChatPreset = {
-      ...preset,
-      id: `preset-${Date.now().toString(36)}`,
-      name: `${preset.name} 副本`,
-      builtin: false,
-      prompts: presetPrompts(preset).map(entry => ({ ...entry, builtin: false })),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const copy = duplicatePreset(preset);
     onPresets([...presets, copy]);
     setSelectedId(copy.id);
     onNotify(`已复制「${preset.name}」，可以自由修改。`);
@@ -146,7 +151,7 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
         <button type="button" id="preset-new" className="preset-new" onClick={() => {
           const created: ChatPreset = {
             id: `preset-${Date.now().toString(36)}`, name: '新的预设', description: '',
-            settings: { ...(preset?.settings ?? {}), temp_openai: 0.8 }, prompts: DEFAULT_PROMPTS.map(entry => ({ ...entry, id: newEntryId(0) })),
+            settings: { ...(preset?.settings ?? {}), temp_openai: 0.8 }, prompts: DEFAULT_PROMPTS.map(entry => ({ ...entry, id: newEntryId(0), builtin: false })),
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
           };
           onPresets([...presets, created]);
@@ -250,12 +255,17 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
               </div>
             </section></div> : <div className="preset-entries">
           <div className="preset-entry-toolbar">
-            <button type="button" id="preset-entry-add" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '新词条', content: '', role: 'system', enabled: true }])}><Plus size={12}/>添加词条</button>
-            <button type="button" id="preset-entry-add-marker" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '—— 分隔 ——', content: '', role: 'system', enabled: true, marker: true }])}><Plus size={12}/>分隔标记</button>
-            <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm('恢复成默认词条？当前编辑会被覆盖。')) patchEntries(DEFAULT_PROMPTS.map(entry => ({ ...entry, id: newEntryId(0) }))); }}><RotateCcw size={12}/>恢复默认</button>
-            <span className="preset-order-note">注入 {activePrompts(preset).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
+            <button type="button" id="preset-entry-add" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '新词条', content: '', role: 'system', enabled: true, scope: scopeFilter === 'all' ? 'shared' : scopeFilter }])}><Plus size={12}/>添加词条</button>
+            <button type="button" id="preset-entry-add-marker" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '—— 分隔 ——', content: '', role: 'system', enabled: true, marker: true, scope: scopeFilter === 'all' ? 'shared' : scopeFilter }])}><Plus size={12}/>分隔标记</button>
+            <select id="preset-scope-filter" className="preset-scope-filter" value={scopeFilter} onChange={event => setScopeFilter(event.target.value as PromptScope | 'all')}>
+              <option value="all">全部用途</option>
+              {PROMPT_SCOPES.map(scope => <option key={scope.id} value={scope.id}>{scope.label}</option>)}
+            </select>
+            <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm(scopeFilter === 'all' ? '恢复成默认词条？当前编辑会被覆盖。' : `恢复「${promptScopeLabel(scopeFilter as PromptScope)}」的默认词条？该用途下的编辑会被覆盖。`)) resetScope(); }}><RotateCcw size={12}/>{scopeFilter === 'all' ? '恢复全部默认' : '恢复本用途'}</button>
+            <span className="preset-order-note">注入 {activePrompts(preset, scopeFilter === 'all' ? undefined : scopeFilter).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
             <span className="preset-token-total">约 {totalTokens} tokens</span>
           </div>
+          {scopeFilter !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === scopeFilter)?.hint}。代码里的 JSON 输出契约会自动追加在本用途词条之后，不需要写进词条。</p>}
 
           <div className="preset-entry-vars">
             <span>可用变量</span>
@@ -266,12 +276,15 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
             }}>{`{{${variable.key}}}`}</button>)}
           </div>
 
-          {entries.length === 0 && <p className="small-note">还没有词条。添加一条，或恢复默认。</p>}
+          {visibleEntries.length === 0 && <p className="small-note">这个用途还没有词条。添加一条，或恢复本用途默认。</p>}
           <ol className="preset-entry-list">
-            {entries.map((entry, index) => <li key={entry.id} className={`preset-entry ${entry.enabled ? '' : 'off'} ${entry.marker ? 'marker' : ''}`}>
+            {visibleEntries.map(({ entry, index }) => <li key={entry.id} className={`preset-entry ${entry.enabled ? '' : 'off'} ${entry.marker ? 'marker' : ''}`}>
               <div className="preset-entry-head">
                 <button type="button" id={`preset-entry-enabled-${index}`} className={`preset-eye ${entry.enabled ? 'on' : ''}`} aria-pressed={entry.enabled} aria-label={entry.enabled ? '停用词条' : '启用词条'} disabled={!editable} onClick={() => patchEntry(entry.id, { enabled: !entry.enabled })}>●</button>
                 <input id={`preset-entry-name-${index}`} className="preset-entry-name" value={entry.name} maxLength={40} readOnly={!editable} onChange={event => patchEntry(entry.id, { name: event.target.value })} />
+                {!entry.marker && <select id={`preset-entry-scope-${index}`} className="preset-entry-scope" value={promptScope(entry)} disabled={!editable} aria-label="词条用途" onChange={event => patchEntry(entry.id, { scope: event.target.value as PromptScope })}>
+                  {PROMPT_SCOPES.map(scope => <option key={scope.id} value={scope.id}>{scope.label}</option>)}
+                </select>}
                 {!entry.marker && <select id={`preset-entry-role-${index}`} className="preset-entry-role" value={entry.role} disabled={!editable} onChange={event => patchEntry(entry.id, { role: event.target.value as PromptEntry['role'] })}>
                   {(['system', 'user', 'assistant'] as const).map(role => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
                 </select>}
@@ -283,6 +296,10 @@ export function PresetDialog({ presets, binding, onPresets, onBinding, onNotify 
                 </div>
               </div>
               {!entry.marker && <textarea id={`preset-entry-content-${index}`} className="preset-entry-content" rows={3} value={entry.content} readOnly={!editable} placeholder="词条内容；可以写 {{world}}、{{player}}、{{context}} 等变量。" onChange={event => patchEntry(entry.id, { content: event.target.value })} />}
+              {!entry.marker && promptHasMechanicBan(entry.content) && <div className="preset-entry-warning">
+                <span>这条要求会禁止模型写数值、奖励或规则，和夜班提案 v2 的完整生成冲突。</span>
+                <button type="button" id={`preset-entry-fix-ban-${index}`} disabled={!editable} onClick={() => patchEntry(entry.id, { content: stripMechanicBan(entry.content) })}>移除这一句</button>
+              </div>}
             </li>)}
           </ol>
           <p className="small-note">词条按顺序拼进系统提示词，再交给模型。空变量会被跳过；推理模型会把思维链计入输出额度，剧情类预设建议把「最大输出」设到 2000 以上。</p>

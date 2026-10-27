@@ -4,13 +4,13 @@ import { createInitialState, act, loadState, importState, capacity, chance, squa
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
-import { DEFAULT_PROMPTS, activePrompts, applyFormat, applyRegexScripts, builtinPresets, expandPresetMacros, pickRegexScripts, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, presetPrompts, presetRuntime, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PROMPTS, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
+import { generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
 import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
@@ -655,7 +655,7 @@ test('自定义登记自动填表会校验叙事者输出并补齐技能与特�
     choices: [{ message: { content: [{ type: 'text', text: JSON.stringify(profile) }] } }],
   }), { status: 200, headers: { 'content-type': 'application/json' } });
   try {
-    const result = await generateGirlProfile({ endpoint: 'https://mock.local/v1', apiKey: 'x', model: 'mock' }, { world: '夜', daily: '写一位新人' });
+    const result = await generateGirlProfile({ endpoint: 'https://mock.local/v1', apiKey: 'x', model: 'mock' });
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.data.name, '纸灯');
@@ -678,7 +678,7 @@ test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试',
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(nightProposal()) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const result = await generateDaily({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'custom-model' }, { world: 'w', daily: 'd' }, createInitialState());
+    const result = await generateDaily({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'custom-model' }, createInitialState());
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.data.candidate.name, '纸灯');
     assert.equal(calls.length, 2);
@@ -704,7 +704,7 @@ test('提案硬错误会带原始 JSON 修复一次，修好后采纳', async ()
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const result = await generateDaily({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, { world: 'w', daily: 'd' }, base);
+    const result = await generateDaily({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, base);
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
     const repairPrompt = calls[1].messages.map((message: { content: string }) => message.content).join('\n');
@@ -756,7 +756,7 @@ test('叙事输出被 length 截断时会放大 token 额度重试一次', async
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(profile) }, finish_reason: 'stop' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, { world: 'w', daily: 'd' }, undefined, undefined, { id: 'truncate-test', name: '截断测试', maxTokens: 400, maxContext: 4000 });
+    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, undefined, undefined, { id: 'truncate-test', name: '截断测试', maxTokens: 400, maxContext: 4000 });
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
     assert.equal(calls[0].max_tokens, 400);
@@ -784,7 +784,7 @@ test('角色起草会把立绘作为图像内容发送给视觉模型', async ()
   }) as typeof fetch;
   try {
     const portrait = 'data:image/webp;base64,AAAA';
-    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, { world: 'w', daily: 'd' }, portrait);
+    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, portrait);
     assert.equal(result.ok, true);
     const content = calls[0].messages[1].content;
     assert.equal(Array.isArray(content), true);
@@ -804,7 +804,7 @@ test('服装词条：把立绘作为图像内容发送，读回名称与描述',
   }) as typeof fetch;
   try {
     const portrait = 'data:image/webp;base64,AAAA';
-    const result = await generateOutfitDescription({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, { world: 'w', daily: 'd' }, portrait);
+    const result = await generateOutfitDescription({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, portrait);
     assert.equal(result.ok, true);
     if (result.ok) { assert.equal(result.data.name, '莓色夜巡'); assert.ok(result.data.description.includes('糖晶')); }
     const content = calls[0].messages[1].content;
@@ -868,7 +868,7 @@ test('对话上下文包含角色特性、同伴关系、完整历史与战斗�
     return new Response(JSON.stringify({ choices: [{ message: { content: '她轻轻点头。' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const result = await generateDialogue({ endpoint: 'https://mock.local/v1', apiKey: 'k', model: 'mock' }, defaultPrompts, { girl: yue, state: withHistory, text: '今晚怎么样？' });
+    const result = await generateDialogue({ endpoint: 'https://mock.local/v1', apiKey: 'k', model: 'mock' }, { girl: yue, state: withHistory, text: '今晚怎么样？' });
     assert.equal(result.ok, true);
     const body = JSON.parse(payload) as { messages: { role: string; content: string }[] };
     const system = body.messages[0].content;
@@ -1039,7 +1039,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.equal(runtime.topP, 0.98);
   assert.equal(runtime.maxTokens, 32768);
   assert.equal(runtime.maxContext, 400000);
-  assert.equal(activePrompts(flat.preset).length, 4);
+  assert.equal(activePrompts(flat.preset).length, 16);
   const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
   assert.ok(wrapped.system.includes('月见桃 的叙事者'));
   assert.ok(!wrapped.system.includes('注释'));
@@ -1052,7 +1052,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.ok(warned.warnings.some(text => text.includes('SPreset')));
   assert.equal(warned.unsupported.length, 1);
   const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
-  assert.equal(again.preset?.promptOrder?.length, 4);
+  assert.equal(again.preset?.promptOrder?.length, 16);
   assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
 });
 
@@ -1289,13 +1289,16 @@ test('预设词条替换变量，缺失变量与分隔标记不进入系统提�
 test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
   const entries = presetPrompts(legacy.preset);
-  assert.equal(entries.length, 2);
+  assert.equal(entries.length, 14);
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
   assert.ok(wrapped.system.includes('系统底稿'));
   assert.ok(wrapped.system.includes('旧主提示'));
-  assert.equal(DEFAULT_PROMPTS.length, 4);
+  assert.equal(DEFAULT_PROMPTS.length, 12);
+  assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'tone', 'task']);
+  assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'chat').length, 1);
+  assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily').length, 1);
   const summary = playerSummary({ name: '白鸟', alias: '所长', pronoun: '他', appearance: '旧风衣', personality: '寡言', background: '接手事务所', relation: '同事' });
   assert.ok(summary.includes('白鸟（所长）'));
   assert.ok(summary.includes('旧风衣'));
@@ -1545,7 +1548,7 @@ test('prompt_order 决定注入顺序与启停，ST 宏会被展开', () => {
   assert.equal(imported.ok, true);
   if (!imported.ok || !imported.preset) return;
   const ordered = activePrompts(imported.preset!);
-  assert.deepEqual(ordered.map(entry => entry.id), ['third', 'first', 'second']);
+  assert.deepEqual(ordered.slice(0, 3).map(entry => entry.id), ['third', 'first', 'second']);
   assert.equal(renderPresetSystem(ordered, {}).system.includes('停用'), false);
   const built = withPresetPrompts('基础', presetRuntime(imported.preset!), { user: '白鸟', char: '月见桃，绯色回响。' });
   assert.match(built.system, /白鸟 与 月见桃/);
@@ -1579,7 +1582,7 @@ test('预设接口选择：本地免密钥，远程缺密钥回退全局', () =>
   assert.equal(result.preset?.regex?.length, 1);
   assert.match(result.warnings.join('\n'), /1 条正则无法解析/);
   assert.match(result.warnings.join('\n'), /工具调用/);
-});test('预设导出带 schema 2 与正则，且剥离密钥', () => {
+});test('预设导出带 schema 3 与用途，且剥离密钥', () => {
   const preset = importPresetObject({
     name: '导出测试',
     temperature: 0.7,
@@ -1589,15 +1592,61 @@ test('预设接口选择：本地免密钥，远程缺密钥回退全局', () =>
   assert.equal(preset.ok, true);
   if (!preset.ok || !preset.preset) return;
   const exported = JSON.parse(exportPresetJson(preset.preset));
-  assert.equal(exported.schema, 2);
+  assert.equal(exported.schema, 3);
   assert.equal('apiKey' in (exported.api ?? {}), false);
   assert.equal(exported.api?.model, 'm1');
   assert.equal(exported.extensions.regex_scripts[0].findRegex, '/（[^）]*）/g');
+  assert.ok(exported.prompts.some((entry: { scope?: string }) => entry.scope === 'daily'));
+  assert.ok(exported.prompts.some((entry: { scope?: string }) => entry.scope === 'chat'));
   const round = importPresetObject(exported);
   assert.equal(round.ok, true);
   if (!round.ok || !round.preset) return;
   assert.equal(round.preset.regex?.[0]?.targets.join(','), 'input,output');
-});test('ST 正则按 placement 与 destination 生效，预设可带独立接口', () => {
+});
+
+test('任务词条按用途注入，代码契约始终放在最后', () => {
+  const runtime = presetRuntime(builtinPresets()[0]);
+  const daily = composeTaskSystem('CONTRACT-JSON', runtime, 'daily', { player: '白鸟', context: '今晚的提案' });
+  assert.ok(daily.system.includes('为今晚的夜班提案'));
+  assert.ok(daily.system.includes('CONTRACT-JSON'));
+  assert.ok(daily.system.trim().endsWith('CONTRACT-JSON'));
+  assert.equal(daily.system.includes('你现在只扮演对方'), false);
+  const chat = composeTaskSystem('CONTRACT-CHAT', runtime, 'chat', { player: '白鸟', context: '会客厅' });
+  assert.ok(chat.system.includes('你现在只扮演对方'));
+  assert.ok(chat.system.includes('CONTRACT-CHAT'));
+  assert.ok(chat.system.trim().endsWith('CONTRACT-CHAT'));
+  assert.equal(chat.system.includes('为今晚的夜班提案'), false);
+  const chatEntries = activePrompts(builtinPresets()[0], 'chat');
+  assert.ok(chatEntries.every(entry => promptScope(entry) === 'shared' || promptScope(entry) === 'chat'));
+  assert.equal(chatEntries.some(entry => promptScope(entry) === 'daily'), false);
+});
+
+test('旧每日提案的“不要数值”要求会被标记并可移除', () => {
+  const legacy = '为今晚提交一份提案。只描述名字、气质、愿望与外观，不要给任何数值、奖励或规则。';
+  assert.equal(promptHasMechanicBan(legacy), true);
+  const cleaned = stripMechanicBan(legacy);
+  assert.equal(promptHasMechanicBan(cleaned), false);
+  assert.ok(cleaned.includes('为今晚提交一份提案'));
+  assert.ok(!cleaned.includes('任何数值'));
+  assert.equal(promptHasMechanicBan('把机制数值写清楚，奖励与规则必须具体。'), false);
+});
+
+test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
+  const imported = importPresetObject({ name: '只有主提示', settings: { temp_openai: 0.6, prompts: [{ identifier: 'main', content: '只写夜晚。' }] } });
+  assert.equal(imported.ok, true);
+  if (!imported.ok || !imported.preset) return;
+  assert.equal(imported.preset.schema, 3);
+  assert.ok(imported.warnings.some(text => text.includes('默认词条')));
+  const entries = presetPrompts(imported.preset);
+  assert.equal(entries.length, 13);
+  assert.equal(entries.filter(entry => entry.scope === 'daily').length, 1);
+  assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
+  const runtime = presetRuntime(imported.preset);
+  assert.equal(runtime.entries.length, 13);
+  assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
+});
+
+test('ST 正则按 placement 与 destination 生效，预设可带独立接口', () => {
   const parsed = importPresetObject({
     name: '正则预设',
     prompts: [{ identifier: 'main', content: '主提示' }],
@@ -1656,7 +1705,6 @@ test('剧情请求按预设的 scenario/personality 格式串拼装，并使用�
   try {
     const result = await generateStoryArc(
       { endpoint: 'https://global.local/v1', apiKey: 'g', model: 'global' },
-      { world: '夜糖事务所。', daily: '' },
       girl,
       { premise: '雨夜', beatTitle: '第一幕', beatHook: '她站在门口' },
       presetRuntime(preset),
