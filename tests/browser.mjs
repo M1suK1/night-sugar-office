@@ -6,13 +6,22 @@ fs.mkdirSync('artifacts', { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, deviceScaleFactor: 1 });
 const errors = [], failures = [], results = [];
+let currentFlow = '启动';
 page.on('pageerror', e => errors.push(e.message));
-page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+page.on('console', m => { if (m.type() === 'error') errors.push(`${currentFlow} | ${m.text()} @ ${m.location().url}`); });
 page.on('requestfailed', r => failures.push(`${r.method()} ${r.url()}: ${r.failure()?.errorText}`));
 const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar-office:v1')));
 const stored = async () => { await page.waitForTimeout(120); return state(); };
 const close = async () => { if (await page.locator('dialog[open]').count()) await page.locator('#modal-close').click(); };
-async function check(name, fn) { try { await fn(); results.push({ name, pass: true }); console.log(`PASS ${name}`); } catch (e) { results.push({ name, pass: false, error: e.message }); console.error(`FAIL ${name}: ${e.message}`); await page.screenshot({ path: 'artifacts/failure.png', fullPage: true, animations: 'disabled' }); throw e; } }
+async function settleIncidents() {
+  for (let i = 0; i < 4; i++) {
+    const overlay = page.locator('.incident-overlay');
+    if (!(await overlay.count())) return;
+    await page.locator('.incident-option').first().click();
+    await page.waitForTimeout(250);
+  }
+}
+async function check(name, fn) { currentFlow = name; try { await settleIncidents(); await fn(); results.push({ name, pass: true }); console.log(`PASS ${name}`); } catch (e) { results.push({ name, pass: false, error: e.message }); console.error(`FAIL ${name}: ${e.message}`); await page.screenshot({ path: 'artifacts/failure.png', fullPage: true, animations: 'disabled' }); throw e; } }
 async function layout(label) {
   const issues = await page.evaluate(() => { const seen = new Set(), duplicates = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) duplicates.push(e.id); seen.add(e.id); } const missing = [...document.querySelectorAll('button,input,textarea,select,a')].filter(e => !e.id).map(e => `${e.tagName}:${e.textContent?.slice(0, 24)}`); return { width: innerWidth, scroll: document.documentElement.scrollWidth, duplicates, missing }; });
   expect(issues.duplicates, `${label} duplicate IDs`).toEqual([]); expect(issues.missing, `${label} interactive IDs`).toEqual([]); expect(issues.scroll, `${label} horizontal overflow`).toBeLessThanOrEqual(issues.width + 1);
@@ -20,19 +29,41 @@ async function layout(label) {
 try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
-  await check('首页地图、七项委托与分类筛选', async () => {
-    await expect(page.locator('.mission-pin')).toHaveCount(7);
+  await page.locator('#start-standard').click();
+  await expect(page.locator('.map-viewport')).toBeVisible();
+  await check('首页地图、首批时段委托与分类筛选', async () => {
+    const open = (await stored()).missions.filter(m => m.status === 'open');
+    await expect(page.locator('.mission-pin')).toHaveCount(open.length);
     await expect(page.locator('.girl-roster-card')).toHaveCount(4);
     await page.locator('#map-filter-combat').click();
-    await expect(page.locator('.mission-pin:not(.filtered)')).toHaveCount(4);
+    await expect(page.locator('.mission-pin:not(.filtered)')).toHaveCount(open.filter(m => m.work === 'combat').length);
     await page.locator('#map-filter-investigation').click();
-    await expect(page.locator('.mission-pin:not(.filtered)')).toHaveCount(3);
+    await expect(page.locator('.mission-pin:not(.filtered)')).toHaveCount(open.filter(m => m.work === 'investigation').length);
     await page.locator('#map-filter-all').click();
     const broken = await page.locator('img').evaluateAll(imgs => imgs.filter(i => !i.complete || i.naturalWidth === 0).map(i => i.src));
     expect(broken).toEqual([]); await layout('desktop');
     await page.screenshot({ path: 'artifacts/dispatch-desktop.png', fullPage: true, animations: 'disabled' });
   });
-  await check('人物档案：四页、技能池、疤痕槽与关系七阶键盘导航', async () => {
+  await check('会客厅：独立页面、三栏布局与决议落账', async () => {
+    await page.locator('#nav-council').click();
+    await expect(page.locator('.council-stage')).toBeVisible();
+    await expect(page.locator('.council-side')).toBeVisible();
+    await expect(page.locator('.council-assistant')).toBeVisible();
+    const before = (await stored()).opinions.filter(o => o.status === 'pending').length;
+    if (before > 0) {
+      await expect(page.locator('#council-option-accept')).toBeVisible();
+      await layout('council');
+      await page.screenshot({ path: 'artifacts/council.png', fullPage: true, animations: 'disabled' });
+      await page.locator('#council-option-accept').click();
+      await page.waitForTimeout(900);
+      const after = (await stored()).opinions.filter(o => o.status === 'pending').length;
+      expect(after).toBe(before - 1);
+    } else {
+      await layout('council');
+      await page.screenshot({ path: 'artifacts/council.png', fullPage: true, animations: 'disabled' });
+    }
+    await page.locator('#nav-dispatch').click();
+  });  await check('人物档案：四页、技能池、疤痕槽与关系七阶键盘导航', async () => {
     await page.locator('#roster-girl-yue').hover(); await expect(page.locator('#tooltip-yue')).toBeVisible();
     await page.locator('#roster-girl-yue').click();
     await expect(page.locator('dialog')).toBeVisible();
@@ -54,10 +85,12 @@ try {
     await page.locator('#assign-yue').click(); await page.locator('#assign-tang').click();
     await expect(page.locator('#dispatch-confirm')).toBeEnabled();
     await page.locator('#dispatch-confirm').click();
-    expect((await stored()).missions.find(m => m.id === 'candy').squad).toEqual(['yue', 'tang']);
+    const candy = (await stored()).missions.find(m => m.id === 'candy');
+    expect(candy.squad).toEqual(['yue', 'tang']);
+    const goldBeforeCandy = (await stored()).gold;
     await page.locator('#advance-time-30').click(); await page.locator('#advance-time-30').click();
     await expect.poll(async () => (await stored()).missions.find(m => m.id === 'candy').status).toBe('done');
-    expect((await stored()).gold).toBe(13520);
+    expect((await stored()).gold).toBe(goldBeforeCandy + candy.reward);
   });
   await check('三人战斗编队、自动战斗与报告回放', async () => {
     await page.locator('#mission-station').click();
@@ -76,7 +109,7 @@ try {
     await expect(page.locator('.battle-outcome')).toContainText('击退');
     const saved = await stored();
     expect(saved.battles[0].outcome).toBe('repelled');
-    expect(saved.missions.find(m => m.id === 'station').status).toBe('open');
+    expect(['open', 'expired']).toContain(saved.missions.find(m => m.id === 'station').status);
     await page.locator('#battle-close').click();
   });
   await check('图鉴与纪念墙始终可从侧栏进入', async () => {
@@ -147,13 +180,13 @@ try {
   await check('自动推进开关与操作指南', async () => {
     await page.locator('#toggle-auto-time').click(); await expect(page.locator('#toggle-auto-time')).toHaveAttribute('aria-pressed', 'true');
     await page.locator('#toggle-auto-time').click();
-    await page.locator('#open-help').click(); await expect(page.locator('.help-items>div')).toHaveCount(4);
+    await page.locator('#open-help').click(); await expect(page.locator('.help-items>div')).toHaveCount(6);
     await page.keyboard.press('Escape'); await expect(page.locator('#open-help')).toBeFocused();
   });
   await check('响应式 1024、768、390、320 无横向溢出', async () => {
     for (const width of [1024, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const nav of ['dispatch', 'base', 'market', 'records']) { await page.locator(`#nav-${nav}`).click(); await layout(`${width}-${nav}`); if (width === 390) await page.screenshot({ path: `artifacts/${nav}-mobile.png`, fullPage: true, animations: 'disabled' }); }
+      for (const nav of ['dispatch', 'base', 'council', 'market', 'records']) { await page.locator(`#nav-${nav}`).click(); await layout(`${width}-${nav}`); if (width === 390) await page.screenshot({ path: `artifacts/${nav}-mobile.png`, fullPage: true, animations: 'disabled' }); }
       if (width === 390) { await page.locator('#nav-dispatch').click(); await page.locator('#roster-girl-tang').click(); await layout('mobile character'); await close(); }
     }
     await page.setViewportSize({ width: 1440, height: 1080 });
@@ -172,8 +205,8 @@ try {
     await expect(page.locator('.growth-hero')).toContainText(/当前目标/);
     await expect(page.locator('.contract-grid')).toContainText('退休金标准');
     await expect(page.locator('#girl-renew')).toBeEnabled();
-    await expect(page.locator('#clinic-heal')).toBeEnabled();
     await expect(page.locator('#clinic-clone')).toBeDisabled();
+    await expect(page.locator('.clinic-panel')).toBeVisible();
     await layout('growth dossier');
     await page.screenshot({ path: 'artifacts/character-growth.png', fullPage: true, animations: 'disabled' });
     await close();
@@ -299,7 +332,8 @@ try {
     await expect(page.locator('.corruption-inline')).toBeVisible();
     await expect(page.locator('.corruption-inline')).toContainText('侵蚀度');
     await page.locator('#dossier-tab-appearance').click();
-    await expect(page.locator('.wardrobe-tile')).toHaveCount(3);
+    await expect(page.locator('.wardrobe-tile')).toHaveCount(4);
+    await expect(page.locator('#dossier-wardrobe-import')).toBeVisible();
     await expect(page.locator('.expression-tile')).toHaveCount(6);
     await page.locator('#dossier-outfit-casual').click();
     await page.locator('#dossier-expression-shy').click();
@@ -397,6 +431,13 @@ try {
     await page.locator('#nav-market').click();
     await page.locator('#av-market-custom').click();
     await page.setInputFiles('#custom-portrait-file', 'artifacts/fixture-portrait.png');
+    await page.locator('#custom-gate-cutout').click();
+    await expect(page.locator('.cutout-preview')).toBeVisible();
+    const cutPair = await page.locator('.cutout-figure img').evaluateAll(nodes => nodes.map(node => node.getAttribute('src')));
+    expect(cutPair[0]).not.toBe(cutPair[1]);
+    await page.locator('#cutout-apply').click();
+    await expect(page.locator('.cutout-preview')).toHaveCount(0);
+    await expect(page.locator('.custom-gate-draft img')).toHaveAttribute('src', /^data:image\/png/);
     await page.locator('#custom-gate-manual').click();
     await page.locator('#custom-name').fill('门口登记');
     await page.locator('#custom-next').click();
@@ -480,7 +521,550 @@ try {
     await expect(page.locator('#import-save-confirm')).toHaveCount(0);
     await page.screenshot({ path: 'artifacts/save-import.png', animations: 'disabled' });
   });
-  await check('无浏览器错误或失败资源请求', async () => { expect(errors).toEqual([]); expect(failures).toEqual([]); });
+  await check('地图九辖区：地形边界、区域面板与环境影响', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('.district-shape')).toHaveCount(9);
+    await page.locator('.district-shape .district-fill').first().dispatchEvent('click');
+    await expect(page.locator('.district-panel')).toBeVisible();
+    await expect(page.locator('.district-panel .district-effect').first()).toBeVisible();
+    await page.screenshot({ path: 'artifacts/districts.png', animations: 'disabled' });
+    await page.locator('#district-panel-close').click();
+    await expect(page.locator('.district-panel')).toHaveCount(0);
+  });
+  await check('事务所终端：CMD 按钮可查询状态、辖区并推进时间', async () => {
+    await page.locator('#open-command').click();
+    await expect(page.locator('#cmd-input')).toBeVisible();
+    await page.locator('#cmd-input').fill('status');
+    await page.locator('#cmd-input').press('Enter');
+    await expect(page.locator('#cmd-output')).toContainText('第 14 日');
+    await expect(page.locator('#cmd-output')).toContainText('距打烊');
+    await page.locator('#cmd-input').fill('district candy');
+    await page.locator('#cmd-input').press('Enter');
+    await expect(page.locator('#cmd-output')).toContainText('糖果公园');
+    const beforeMinutes = (await stored()).minutes;
+    await page.locator('#cmd-input').fill('advance 30');
+    await page.locator('#cmd-input').press('Enter');
+    await expect.poll(async () => (await stored()).minutes).toBe(beforeMinutes + 30);
+    await page.screenshot({ path: 'artifacts/command-console.png', animations: 'disabled' });
+    await page.locator('#cmd-input').press('Escape');
+    await expect(page.locator('#cmd-input')).toHaveCount(0);
+    await page.keyboard.press('Control+K');
+    await expect(page.locator('#cmd-input')).toBeVisible();
+    await page.locator('#cmd-close').click();
+    await expect(page.locator('#cmd-input')).toHaveCount(0);
+  });
+  await check('打烊交接：二次确认后进入下一天 20:00 并放出第一批委托', async () => {
+    await page.locator('#end-night').click();
+    await expect(page.locator('#end-night-confirm')).toBeVisible();
+    await page.locator('#end-night-confirm').click();
+    await expect.poll(async () => (await stored()).day).toBe(15);
+    const s = await stored();
+    expect(s.minutes).toBe(20 * 60);
+    expect(s.shift.wave).toBe(1);
+    expect(s.missions.some(m => m.id.startsWith('c-15-0-'))).toBe(true);
+    await expect(page.locator('.shift-clock')).toContainText('第 15 日');
+  });
+  await check('叙事引擎控制台可折叠，预设可导入 SillyTavern 对话补全预设', async () => {
+    await page.locator('#llm-console-toggle').click();
+    await expect(page.locator('#llm-filter-failed')).toBeVisible();
+    await expect(page.locator('.llm-console-tip')).toContainText('保留最近 40 次');
+    const beforeBox = await page.locator('.llm-console').boundingBox();
+    const handle = await page.locator('#llm-console-resize').boundingBox();
+    await page.mouse.move(handle.x + 6, handle.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(handle.x - 90, handle.y - 70, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => (await page.locator('.llm-console').boundingBox()).width).toBeGreaterThan(beforeBox.width + 40);
+    await expect.poll(async () => (await page.locator('.llm-console').boundingBox()).height).toBeGreaterThan(beforeBox.height + 30);
+    const savedSize = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-console-size') ?? 'null'));
+    expect(savedSize.w).toBeGreaterThan(beforeBox.width);
+    await page.locator('#llm-console-toggle').click();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await expect(page.locator('#preset-item-builtin-balanced')).toBeVisible();
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length);
+    await page.locator('#preset-import-paste').fill(JSON.stringify({ name: '浏览器预设', temp_openai: 0.5, top_p_openai: 0.9, main: '保持短句', wi_format: '[WI]', extensions: { SPreset: {} }, prompts: [{ identifier: 'tool', content: '调用 game_content 输出。' }] }));
+    await page.locator('#preset-import-paste-run').click();
+    await expect(page.locator('.preset-report.ok')).toContainText('已导入');
+    await expect(page.locator('.preset-report.ok')).toContainText('wi_format');
+    await expect(page.locator('.preset-notes')).toContainText('SPreset');
+    await expect(page.locator('.preset-unsupported')).toContainText('game_content');
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length)).toBeGreaterThan(before);
+    await page.screenshot({ path: 'artifacts/presets.png', animations: 'disabled' });
+    await close();
+  });
+  await check('预设词条可增删排序，并绑定给剧情引擎', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('#preset-item-builtin-balanced').click();
+    await page.locator('#preset-duplicate').click();
+    await page.locator('#preset-tab-prompts').click();
+    await expect(page.locator('.preset-entry')).toHaveCount(3);
+    await page.locator('#preset-entry-add').click();
+    await expect(page.locator('.preset-entry')).toHaveCount(4);
+    await page.locator('#preset-entry-content-3').fill('{{player}} 这一句会引用玩家档案。');
+    await page.locator('#preset-entry-enabled-0').click();
+    await expect(page.locator('#preset-entry-enabled-0')).toHaveAttribute('aria-pressed', 'false');
+    await page.locator('#preset-entry-up-3').click();
+    await expect(page.locator('#preset-entry-content-2')).toHaveValue(/玩家档案/);
+    await expect(page.locator('.preset-token-total')).toContainText('tokens');
+    await expect(page.locator('#preset-bind-story')).toHaveValue('builtin-balanced');
+    await page.locator('#preset-bind-story').selectOption({ label: '均衡叙事 副本' });
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').story)).toContain('preset-');
+    await page.screenshot({ path: 'artifacts/preset-entries.png', animations: 'disabled' });
+    await page.locator('#preset-tab-advanced').click();
+    await page.locator('#preset-api-endpoint').fill('https://api.example.invalid/v1');
+    await page.locator('#preset-api-model').fill('story-local');
+    await page.locator('#preset-regex-add').click();
+    await page.locator('#preset-regex-name-0').fill('去掉旁白括号');
+    await page.locator('#preset-regex-find-0').fill('/（[^）]*）/g');
+    await page.locator('#preset-regex-replace-0').fill('');
+    await page.locator('#preset-regex-input-0').check();
+    await page.locator('#preset-format-scenario').fill('【场景】\n{0}');
+    await expect.poll(async () => page.evaluate(() => {
+      const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      const item = list.find(preset => preset.name === '均衡叙事 副本');
+      return item?.api?.model ?? '';
+    })).toBe('story-local');
+    await expect.poll(async () => page.evaluate(() => {
+      const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      const item = list.find(preset => preset.name === '均衡叙事 副本');
+      return item?.regex?.[0]?.targets?.join(',') ?? '';
+    })).toBe('output,input');
+    await page.screenshot({ path: 'artifacts/preset-advanced.png', animations: 'disabled' });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('.preset-list button', { hasText: '均衡叙事 副本' }).click();
+    await page.locator('#preset-tab-advanced').click();
+    await expect(page.locator('#preset-api-model')).toHaveValue('story-local');
+    await expect(page.locator('#preset-regex-name-0')).toHaveValue('去掉旁白括号');
+    await expect(page.locator('#preset-format-scenario')).toHaveValue('【场景】\n{0}');
+    await page.locator('#modal-close').click();
+  });
+  await check('旧版预设（无词条）导入后自动迁移出 main 词条', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('#preset-import-paste').fill(JSON.stringify({ name: '旧版预设', temperature: 0.66, main: '旧版主体：先描述环境，再给对白。' }));
+    await page.locator('#preset-import-paste-run').click();
+    await expect(page.locator('.preset-report.ok')).toContainText('已导入');
+    await page.locator('.preset-list button', { hasText: '旧版预设' }).click();
+    await page.locator('#preset-tab-prompts').click();
+    await expect(page.locator('.preset-entry')).toHaveCount(1);
+    await expect(page.locator('#preset-entry-content-0')).toHaveValue(/旧版主体/);
+    await page.locator('#modal-close').click();
+  });
+
+  await check('正则预览区分发给模型与界面显示', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('.preset-list button', { hasText: '均衡叙事 副本' }).click();
+    await page.locator('#preset-tab-advanced').click();
+    await page.locator('#preset-regex-add').click();
+    await page.locator('#preset-regex-name-1').fill('仅显示改名');
+    await page.locator('#preset-regex-find-1').fill('剧情');
+    await page.locator('#preset-regex-replace-1').fill('故事');
+    await page.locator('#preset-regex-display-only-1').check();
+    await page.locator('#preset-regex-sample').fill('（她把杯子放下）这一晚的剧情到这里就结束了。');
+    await expect(page.locator('#preset-regex-preview-prompt')).toContainText('这一晚的剧情');
+    await expect(page.locator('#preset-regex-preview-prompt')).not.toContainText('（她把杯子放下）');
+    await expect(page.locator('#preset-regex-preview-display')).toContainText('这一晚的故事');
+    await page.screenshot({ path: 'artifacts/preset-regex-preview.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+  });
+
+  await check('导出预设带 schema 2 且剥离密钥', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-open-presets').click();
+    await page.locator('.preset-list button', { hasText: '均衡叙事 副本' }).click();
+    await page.locator('#preset-tab-advanced').click();
+    await page.locator('#preset-api-key').fill('sk-secret-test');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('#preset-export').click(),
+    ]);
+    const file = await download.path();
+    const exported = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(exported);
+    expect(parsed.schema).toBe(2);
+    expect(exported.includes('sk-secret-test')).toBe(false);
+    expect(Array.isArray(parsed.extensions?.regex_scripts)).toBe(true);
+    await page.locator('#modal-close').click();
+  });
+
+  await check('玩家档案写入后可在刷新后保留', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-player-name').fill('白鸟');
+    await page.locator('#settings-player-alias').fill('所长');
+    await page.locator('#settings-player-appearance').fill('总是穿着旧风衣，左手戴一只停摆的表。');
+    await page.locator('#settings-player-background').fill('三年前签下这间事务所，再没离开过这条街。');
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:player-profile') ?? '{}').name)).toBe('白鸟');
+    await page.screenshot({ path: 'artifacts/player-profile.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await expect(page.locator('#settings-player-name')).toHaveValue('白鸟');
+    await page.locator('#modal-close').click();
+  });
+  await check('衣柜导入：去背景预览、逐套编辑与移出', async () => {
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-wardrobe-manage').click();
+    await page.setInputFiles('#wardrobe-file-input', 'artifacts/fixture-portrait.png');
+    await expect(page.locator('.wardrobe-stage')).toHaveCount(1);
+    await page.locator('#wardrobe-stage-name-0').fill('测试礼装');
+    await page.locator('#wardrobe-stage-cut-0').click();
+    await expect(page.locator('.cutout-preview')).toBeVisible();
+    await page.locator('#cutout-apply').click();
+    await expect(page.locator('.wardrobe-stage-thumb img')).toHaveAttribute('src', /^data:image\/png/);
+    await page.locator('#wardrobe-stage-remove-0').click();
+    await expect(page.locator('.wardrobe-stage')).toHaveCount(0);
+    await page.screenshot({ path: 'artifacts/wardrobe-stage.png', animations: 'disabled' });
+    await page.locator('#wardrobe-import-close').click();
+    await close();
+  });
+  await check('衣柜中的服装可以删除', async () => {
+    const before = (await stored()).girls.find(g => g.id === 'yue').wardrobe.length;
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-wardrobe-manage').click();
+    await page.locator('[id^="wardrobe-remove-"]').first().click();
+    await expect.poll(async () => (await stored()).girls.find(g => g.id === 'yue').wardrobe.length).toBe(before - 1);
+    await page.locator('#wardrobe-import-close').click();
+    await close();
+  });
+  await check('魔法少女详情页导入衣柜并占满四格', async () => {
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-wardrobe-import').click();
+    await expect(page.locator('#wardrobe-paste')).toBeVisible();
+    await page.locator('#wardrobe-paste').fill(JSON.stringify([
+      { name: '莓色礼装', description: '樱色的短披肩。', palette: ['#e8a7c2'], layerKey: 'formal' },
+      { name: '雨夜斗篷', description: '带盐味的深蓝。', palette: ['#5a7fa8'], layerKey: 'casual' },
+    ]));
+    await page.locator('#wardrobe-paste-run').click();
+    await expect(page.locator('#wardrobe-import-confirm')).toBeEnabled();
+    await page.locator('#wardrobe-import-confirm').click();
+    await expect.poll(async () => (await stored()).girls.find(g => g.id === 'yue').wardrobe.length).toBe(4);
+    const names = (await stored()).girls.find(g => g.id === 'yue').wardrobe.map(item => item.name);
+    expect(names).toContain('莓色礼装');
+    await page.screenshot({ path: 'artifacts/wardrobe-import.png', animations: 'disabled' });
+    await close();
+    await close();
+  });
+  await check('世界书：编辑词条、命中预览、数值规则持久化', async () => {
+    await page.locator('#open-worldbook').click();
+    await expect(page.locator('.worldbook-view')).toBeVisible();
+    await expect(page.locator('#worldbook-entry-wound')).toBeVisible();
+    await page.locator('#worldbook-entry-clinic').click();
+    const stamp = `治疗按小时恢复。改于${Date.now() % 100000}`;
+    await page.locator('#worldbook-content').fill(stamp);
+    await page.locator('#worldbook-trigger').fill('她需要去诊所治疗');
+    await expect(page.locator('.wb-hit', { hasText: '诊所' })).toHaveCount(1);
+    await page.screenshot({ path: 'artifacts/worldbook-entries.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#worldbook-new').click();
+    await expect(page.locator('.wb-item')).toHaveCount(15);
+    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(15);
+    await page.locator('#worldbook-tab-balance').click();
+    await page.locator('#balance-clinicBase').fill('150');
+    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);
+    await page.screenshot({ path: 'artifacts/worldbook.png', fullPage: true, animations: 'disabled' });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-worldbook').click();
+    await expect(page.locator('.worldbook-view')).toBeVisible();
+    await page.locator('#worldbook-entry-clinic').click();
+    await expect(page.locator('#worldbook-content')).toHaveValue(stamp);
+    await page.locator('#worldbook-tab-balance').click();
+    await expect(page.locator('#balance-clinicBase')).toHaveValue('150');
+    await page.locator('#nav-dispatch').click();
+  });
+  await check('故事线会发布带目标的故事委托，完成后触发剧情事件', async () => {
+    const before = await stored();
+    before.girls.find(g => g.id === 'yue').bond = 60;
+    before.storylines = []; before.events = []; before.incidents = [];
+    before.missions = before.missions.filter(m => !m.storylineId);
+    await page.evaluate(() => {
+      const presets = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      for (const preset of presets) if (preset.api) preset.api.apiKey = '';
+      localStorage.setItem('night-sugar:presets', JSON.stringify(presets));
+      localStorage.setItem('night-sugar:preset-binding', JSON.stringify({ chat: 'builtin-balanced', generate: 'builtin-strict', story: 'builtin-balanced' }));
+      localStorage.removeItem('night-sugar:llm-config');
+    });
+    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-story-start').click();
+    await expect(page.locator('.story-mission')).toBeVisible();
+    await expect(page.locator('.story-mission')).toContainText('故事委托');
+    await page.locator('.story-mission').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'artifacts/story-panel.png', fullPage: false, animations: 'disabled' });
+    const started = await stored();
+    const story = started.storylines.find(item => item.girlId === 'yue');
+    const mission = started.missions.find(item => item.storylineId === story.id);
+    expect(mission.storyBeatId).toBe('beat-1');
+    expect(mission.window).toBe('long');
+    expect(mission.storyGoal.length).toBeGreaterThan(4);
+    await page.locator('#dossier-story-mission').click();
+    await expect(page.locator('.mission-story')).toContainText('这一幕的明确目标');
+    await page.screenshot({ path: 'artifacts/story-mission.png', fullPage: false, animations: 'disabled' });
+    await page.locator('#modal-close').click();
+    await page.keyboard.press('Escape');
+    // 打烊后故事委托仍在（不随普通委托清理）
+    await page.locator('#end-night').click();
+    await page.locator('#end-night-confirm').click();
+    await page.waitForTimeout(300);
+    const next = await stored();
+    expect(next.missions.some(item => item.storylineId === story.id)).toBe(true);
+    expect(next.storylines[0].status).toBe('active');
+    await settleIncidents();
+  });
+
+  await check('分幕剧情：无 Key 也有四段模板剧情，选择到底后收束', async () => {
+    const base = await stored();
+    base.storylines = []; base.incidents = []; base.missions = [];
+    base.events = [{ id: 'ev-arc-test', girlId: 'yue', title: '临时的一晚', hook: '她把伞收起来，水滴了一路。', scenes: [], stage: 0, status: 'active', day: base.day, source: 'template', badge: true, mode: 'story', passages: [], passageIndex: 0, pending: true }];
+    const yue = base.girls.find(g => g.id === 'yue');
+    yue.eventBadge = '新'; yue.status = 'idle'; yue.remaining = 0;
+    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), base);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-event-enter').scrollIntoViewIfNeeded();
+    await page.locator('#dossier-event-enter').dispatchEvent('click');
+    await expect(page.locator('.story-player')).toBeVisible();
+    await page.locator('#story-choice-p1-a, #story-choice-p1-b').first().waitFor({ timeout: 8000 });
+    await page.screenshot({ path: 'artifacts/story-player.png', fullPage: false, animations: 'disabled' });
+    for (let index = 0; index < 4; index += 1) {
+      const choice = page.locator('.story-choices .story-choice').first();
+      await choice.waitFor();
+      await choice.click();
+      await page.waitForTimeout(120);
+    }
+    await expect(page.locator('#story-close')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/story-player-end.png', fullPage: false, animations: 'disabled' });
+    await page.locator('#story-close').click();
+    const done = await stored();
+    const event = done.events.find(item => item.id === 'ev-arc-test');
+    expect(event.status).toBe('done');
+    expect(event.passages.length).toBe(4);
+    const yueAfter = done.girls.find(g => g.id === 'yue');
+    expect(yueAfter.bond).toBeGreaterThan(60);
+  });
+
+  await check('故事蓝图：可加节点、校验并保存进卡片', async () => {
+    await page.evaluate(() => { localStorage.setItem('night-sugar-office:started', '1'); });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(() => {
+      const key = 'night-sugar-office:v1';
+      const s = JSON.parse(localStorage.getItem(key));
+      s.storylines = []; s.events = []; s.incidents = [];
+      const yue = s.girls.find(g => g.id === 'yue');
+      yue.bond = 60;
+      localStorage.setItem(key, JSON.stringify(s));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-story-graph').click();
+    await expect(page.locator('.story-graph-modal')).toBeVisible();
+    const before = await page.locator('.graph-node').count();
+    await page.locator('#story-graph-add-choice').click();
+    await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 1);
+
+    // 复制 / 粘贴
+    await page.locator('#story-graph-copy').click();
+    await page.locator('#story-graph-paste').click();
+    await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 2);
+
+    // 键盘复制粘贴
+    await page.locator('.graph-node').last().click();
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 3);
+
+    // 拖端口连线
+    const choiceNode = page.locator('.graph-node.choice').last();
+    const choiceId = await choiceNode.getAttribute('data-node-id');
+    const targetNode = page.locator('.graph-node.end').first();
+    const targetId = await targetNode.getAttribute('data-node-id');
+    const beforeEdges = await page.locator('.story-graph-edges path.graph-edge:not(.linking)').count();
+    const port = choiceNode.locator('.graph-port:not(.in)').first();
+    await targetNode.scrollIntoViewIfNeeded();
+    await port.scrollIntoViewIfNeeded();
+    const portBox = await port.boundingBox();
+    const targetBox = await targetNode.boundingBox();
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect.poll(async () => page.locator('.story-graph-edges path.graph-edge:not(.linking)').count()).toBeGreaterThan(beforeEdges);
+
+    // 换一个目标重连：同一条出口直接覆盖旧线，不新增边
+    const replacement = page.locator('.graph-node.reward').first();
+    const replacementId = await replacement.getAttribute('data-node-id');
+    const edgesBeforeReplace = await page.locator('.story-graph-edges path.graph-edge:not(.linking)').count();
+    await replacement.scrollIntoViewIfNeeded();
+    await port.scrollIntoViewIfNeeded();
+    // 点出口再点目标：直接覆盖同一条出口的旧连线
+    await port.click();
+    await replacement.click();
+    await expect.poll(async () => page.locator('.story-graph-edges path.graph-edge:not(.linking)').count()).toBe(edgesBeforeReplace);
+
+    await page.locator('#story-graph-zoom-in').click();
+    await page.locator('#story-graph-zoom-in').click();
+    await expect(page.locator('#story-graph-zoom-reset')).toContainText('120%');
+    await page.locator('#story-graph-zoom-reset').click();
+
+    await page.locator('#story-graph-auto-layout').click();
+    await page.locator('#story-graph-fit').click();
+
+    // 空白处框选两个以上节点
+    const canvasBox = await page.locator('.story-graph-canvas').boundingBox();
+    await page.mouse.move(canvasBox.x + 12, canvasBox.y + 56);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x + 720, canvasBox.y + 420, { steps: 10 });
+    await page.mouse.up();
+    await expect.poll(async () => page.locator('.graph-node.on').count()).toBeGreaterThan(1);
+
+    await page.locator('#story-graph-dryrun').click();
+    await expect(page.locator('.graph-dry')).toBeVisible();
+    await expect.poll(async () => page.locator('.graph-dry-step').count()).toBeGreaterThan(4);
+    await page.locator('#story-graph-dry-close').click();
+
+    await page.locator('#story-graph-beats').click();
+    await expect(page.locator('.graph-beats')).toBeVisible();
+    await expect.poll(async () => page.locator('.graph-beats li').count()).toBeGreaterThan(1);
+    await page.locator('#story-graph-beats-close').click();
+
+    await page.locator('#story-graph-validate').click();
+    await expect(page.locator('.story-graph-issues')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/story-graph-flow.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#story-graph-save').click();
+    const saved = await stored();
+    const graph = saved.girls.find(g => g.id === 'yue')?.storyPlan?.graph;
+    expect(graph?.nodes?.length).toBeGreaterThan(before);
+    expect(graph?.edges?.some(edge => edge.from === choiceId && edge.to === replacementId)).toBe(true);
+    expect(graph?.edges?.some(edge => edge.from === choiceId && edge.to === targetId)).toBe(false);
+  });
+
+  await check('故事线手稿：人工设计后保存到卡片，并按手稿开场', async () => {
+  await page.evaluate(() => {
+    const raw = localStorage.getItem('night-sugar-office:v1');
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    s.storylines = []; s.events = []; s.incidents = [];
+    const girl = s.girls.find(g => g.id === 'yue') ?? s.girls[0];
+    girl.bond = 60; girl.storyPlan = undefined;
+    localStorage.setItem('night-sugar-office:v1', JSON.stringify(s));
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('#roster-girl-yue').click();
+  await page.locator('#dossier-story-edit').click();
+  await expect(page.locator('.story-plan-modal')).toBeVisible();
+  await page.locator('#story-plan-title').fill('未寄出的信');
+  await page.locator('#story-plan-premise').fill('她有一封没寄出的信。');
+  const titles = ['等到灯灭', '那件旧事', '没说出口的', '天亮之前'];
+  for (let i = 0; i < 4; i += 1) {
+    await page.locator(`#story-plan-beat-title-${i}`).fill(titles[i]);
+    await page.locator(`#story-plan-beat-hook-${i}`).fill(`第 ${i + 1} 幕的信。`);
+    await page.locator(`#story-plan-beat-scene-${i}`).fill('夜班的钟走到一半，她出现在门口。');
+  }
+  await page.screenshot({ path: 'artifacts/story-plan-editor.png', fullPage: false, animations: 'disabled' });
+  await page.locator('#story-plan-save').click();
+  await expect(page.locator('#dossier-story-plan')).toContainText('未寄出的信');
+  await expect(page.locator('#dossier-story-start')).toContainText('按手稿开场');
+  await page.screenshot({ path: 'artifacts/story-plan-dossier.png', animations: 'disabled' });
+  await page.locator('#dossier-story-start').click();
+  await expect(page.locator('.story-beat')).toBeVisible();
+  const saved = await stored();
+  expect(saved.girls.find(g => g.id === 'yue')?.storyPlan?.title).toBe('未寄出的信');
+  const story = saved.storylines.find(item => item.status === 'active');
+  expect(story?.source).toBe('manual');
+  expect(story?.beats.length).toBe(4);
+  await close();
+});
+await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按时回血', async () => {
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.setItem('night-sugar-office:started', '1');
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      raw.girls.forEach(g => { g.status = 'idle'; g.remaining = 0; g.retired = false; });
+      const yue = raw.girls.find(g => g.id === 'yue');
+      yue.hp = 40;
+      raw.gold = 4000; raw.treatments = [];
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await settleIncidents();
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-growth').click();
+    const missing = 80;
+    const cost = 120 + missing * 9;
+    await expect(page.locator('#clinic-row-yue')).toContainText(`缺 ${missing} 点生命`);
+    await expect(page.locator('#clinic-treat-yue')).toContainText(String(cost));
+    await expect(page.locator('#clinic-kink-yue')).toContainText('320');
+    await expect(page.locator('#clinic-kink-yue')).toContainText('2 小时');
+    await page.locator('.growth-clinic').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'artifacts/clinic.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#clinic-treat-yue').click();
+    await expect.poll(async () => (await stored()).treatments.length).toBe(1);
+    const started = await stored();
+    expect(started.girls.find(g => g.id === 'yue').status).toBe('healing');
+    expect(started.gold).toBe(4000 - 840);
+    await close();
+    await page.locator('#advance-time-30').click();
+    await page.locator('#advance-time-30').click();
+    const mid = (await stored()).girls.find(g => g.id === 'yue');
+    expect(mid.hp).toBeGreaterThan(40);
+    expect(mid.hp).toBeLessThan(mid.maxHp);
+    await page.locator('#open-command').click();
+    await page.locator('#cmd-input').fill('advance 180'); await page.locator('#cmd-run').click();
+    await page.waitForTimeout(600);
+    await page.locator('#cmd-input').fill('advance 180'); await page.locator('#cmd-run').click();
+    await page.waitForTimeout(900);
+    await page.locator('#cmd-close').click();
+    await expect.poll(async () => (await stored()).treatments.length).toBe(0);
+    const healed = (await stored()).girls.find(g => g.id === 'yue');
+    expect(healed.status).toBe('idle');
+    expect(healed.hp).toBe(healed.maxHp);
+    await page.locator('#open-command').click();
+    await page.locator('#cmd-input').fill('end'); await page.locator('#cmd-run').click();
+    await page.locator('#end-night-confirm').click();
+    await expect.poll(async () => (await stored()).minutes).toBe(20 * 60);
+    await settleIncidents();
+  });
+  await check('叙事引擎快照能按 prompt_order 显示预设槽位', async () => {
+    await page.evaluate(() => {
+      const entry = {
+        id: 'slot-test-1', at: new Date().toISOString(), kind: '角色剧情', ok: true, model: 'mock-story',
+        endpoint: 'https://mock.local/v1', status: 200, durationMs: 1200, message: '测试槽位顺序',
+        request: { sections: [{ label: '世界观 + 预设 + 剧情规则', text: '系统提示' }], params: { temperature: 1.08, max_tokens: 32768 }, messageCount: 1, slots: [
+          { index: 1, name: 'main', role: 'system', tokens: 320, enabled: true, marker: false },
+          { index: 2, name: 'jailbreak', role: 'system', tokens: 96, enabled: false, marker: false },
+          { index: 3, name: 'dialogueExamples', role: 'system', tokens: 0, enabled: true, marker: true },
+        ] },
+      };
+      localStorage.setItem('night-sugar:llm-log', JSON.stringify([entry]));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#llm-console-toggle').click();
+    await page.locator('.llm-entry').first().click();
+    await expect(page.locator('#llm-slot-1')).toContainText('main');
+    await expect(page.locator('#llm-slot-2')).toHaveClass(/off/);
+    await expect(page.locator('#llm-slot-3')).toHaveClass(/marker/);
+    await page.screenshot({ path: 'artifacts/llm-slots.png', animations: 'disabled' });
+    await page.locator('#llm-console-toggle').click();
+  });
+  await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();
 }

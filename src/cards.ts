@@ -1,4 +1,5 @@
 import type { Expression, Girl, GirlCard, Outfit, StatKey } from './types';
+import { sanitizeStoryPlan } from './storyplan.ts';
 import { skillById } from './content/skills.ts';
 import { traitById } from './content/traits.ts';
 
@@ -22,7 +23,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
     girl: {
       name: girl.name, codename: girl.codename, title: girl.title, element: girl.element, archetype: girl.archetype,
       color: girl.color, quote: girl.quote, goal: girl.goal, appearance: girl.appearance, personality: girl.personality,
-      outfitDescription: girl.outfitDescription, level: girl.level,
+      outfitDescription: girl.outfitDescription, level: girl.level, storyPlan: girl.storyPlan ? { ...girl.storyPlan, beats: girl.storyPlan.beats.map(beat => ({ ...beat })) } : undefined,
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
       portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
       wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
@@ -70,6 +71,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       skillIds: [...g.skillIds], traitIds: [...g.traitIds], portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',
       expression: EXPRESSIONS.includes(g.expression as Expression) ? g.expression : 'calm',
+      storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
     },
   };
   return { ok: true, card: normalized };

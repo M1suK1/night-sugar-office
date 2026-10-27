@@ -1,16 +1,27 @@
-import { useState } from 'react';
-import { Radar, Candy, TrainFront, Eclipse, Cat, Mail, Plus, Minus, LocateFixed, ArrowUpRight, List, Map as MapIcon, Sparkles, Clock3, MoveUpRight, Crosshair, Radio, Check, Swords, ScanEye, Users, Skull } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Radar, Candy, TrainFront, Eclipse, Cat, Mail, Plus, Minus, LocateFixed, ArrowUpRight, List, Map as MapIcon, Sparkles, Clock3, MoveUpRight, Crosshair, Radio, Check, Swords, ScanEye, Users, Skull, Hourglass, MapPin, Wind } from 'lucide-react';
 import type { GameState, Mission } from '../types';
 import { getMonster } from '../content/monsters';
+import { districts, districtOrder, effectLines, districtOfMission, type DistrictId } from '../districts';
+import { missionDeadlineLabel } from '../game';
+import { factionColor, factionName } from '../territories';
+import { windowLabel } from '../shift';
 
 const icons = { candy: Candy, station: TrainFront, mirror: Eclipse, cat: Cat, tower: Mail };
 type Filter = 'all' | 'combat' | 'investigation' | 'urgent' | 'active';
 
 export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState; onMission: (id: string) => void; onDropGirl: (girlId: string, missionId: string) => void }) {
-  const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null), [focus, setFocus] = useState<DistrictId | null>(null);
   const open = state.missions.filter(m => m.status === 'open').length;
-  const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
+  const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
   const threat = (m: Mission) => (m.enemyIds ?? []).reduce((sum, id) => sum + getMonster(id).maxHp, 0);
+  const pins = useMemo(() => state.missions.map(m => ({ mission: m, district: districtOfMission(m).id })), [state.missions]);
+  const focused = focus ? districts[focus] : null;
+  const focusedMissions = focus ? pins.filter(p => p.district === focus && p.mission.status !== 'done' && p.mission.status !== 'expired') : [];
+  const districtCount = (id: DistrictId) => pins.filter(p => p.district === id && (p.mission.status === 'open' || p.mission.status === 'active')).length;
+
+  const toggleFocus = (id: DistrictId) => setFocus(current => current === id ? null : id);
+
   return <section className="dispatch-map" aria-label="樱雾市派遣地图">
     <div className="map-heading">
       <div className="section-title"><Radar size={18} /><h2>城市感应地图</h2><span className="tiny-badge">{open} 个待处理</span></div>
@@ -23,30 +34,51 @@ export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState
     {list ? <div className="mission-list-view">
       {state.missions.filter(visible).map(m => {
         const Icon = icons[m.id as keyof typeof icons] ?? (m.work === 'combat' ? Swords : ScanEye);
+        const region = districtOfMission(m);
+        const deadline = missionDeadlineLabel(m, state);
         return <button id={`mission-list-${m.id}`} className="mission-list-row" key={m.id} onClick={() => onMission(m.id)}>
           <Icon size={24} />
-          <div><small>{m.category} · {m.difficulty} · {m.work === 'combat' ? `${m.squad.length || m.attempts > 0 ? m.squad.length : '—'} 人编队` : '调查'}</small><h3>{m.title}</h3><span>{m.duration} 分钟 · {m.reward} 星砂{m.work === 'combat' && m.enemyIds ? ` · ${m.enemyIds.length} 个魔物` : ''}</span></div>
-          <span className={`pill work-${m.work}`}>{m.status === 'done' ? '已完成' : m.status === 'active' ? '派遣中' : m.work === 'combat' ? '战斗' : '调查'}</span>
+          <div>
+            <small>{region.name} · {m.category} · {m.difficulty} · {m.work === 'combat' ? `${m.squad.length} 人编队` : '调查'}</small>
+            <h3>{m.title}</h3>
+            <span>{m.duration} 分钟 · {m.reward} 星砂{m.window ? ` · ${windowLabel[m.window]}委托` : ''}{deadline && m.status === 'open' ? ` · ${deadline}` : ''}</span>
+          </div>
+          <span className={`pill work-${m.work}`}>{m.status === 'expired' ? '已过期' : m.status === 'done' ? '已完成' : m.status === 'active' ? '派遣中' : m.window === 'urgent' ? '紧急' : m.work === 'combat' ? '战斗' : '调查'}</span>
           <ArrowUpRight size={18} />
         </button>;
       })}
       {!state.missions.some(visible) && <div className="map-empty"><Radar /><h3>这个筛选项下没有委托</h3><p>切换到「全部委托」，或推进时间等待新的心愿信号。</p></div>}
     </div> : <div className={`map-viewport ${over ? 'is-drag-over' : ''}`}>
       <div className="map-world" style={{ transform: `scale(${zoom})` }}>
-        <img className="city-art" src="/art/city.svg" alt="樱雾市夜间街区，穿城河流连接糖果街、月见广场和旧钟楼" draggable={false} />
+        <img className="city-art" src="/art/city.svg" alt="樱雾市夜间街区，穿城河流连接糖果公园、旧钟楼与南十字街区" draggable={false} />
         <div className="map-grain" />
+        <svg className="district-layer" viewBox="0 0 1100 780" preserveAspectRatio="none" aria-label="辖区边界">
+          {districtOrder.map(id => {
+            const region = districts[id];
+            const count = districtCount(id);
+            return <g key={id} className={`district-shape ${focus === id ? 'focused' : ''} ${count ? 'has-work' : ''}`} style={{ '--district-tint': region.tint } as React.CSSProperties}>
+              <polygon className="district-owner" points={region.points} style={{ fill: factionColor[state.territories[id]] }} aria-hidden="true" />`r`n              <polygon className="district-fill" points={region.points} onClick={() => toggleFocus(id)} />
+              <polygon className="district-edge" points={region.points} />
+              <text className="district-name" x={region.label.x} y={region.label.y} onClick={() => toggleFocus(id)}>{region.name}</text>
+              {count > 0 && <g className="district-count" transform={`translate(${region.label.x} ${region.label.y + 14})`}><rect x={-9} y={-9} width={18} height={13} rx={3} /><text x={0} y={1}>{count}</text></g>}
+            </g>;
+          })}
+        </svg>
         <svg className="mission-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{state.missions.filter(m => m.status === 'active').map(m => <path key={m.id} d={`M 53 88 Q ${m.x - 10} 76 ${m.x} ${m.y}`} fill="none" stroke={m.color} strokeWidth=".22" strokeDasharray=".6 .6" />)}</svg>
-        <span className="district-label district-west">旧城区</span><span className="district-label district-river">星见川</span><span className="district-label district-south">南十字街区</span>
         {state.missions.map(m => {
           const Icon = icons[m.id as keyof typeof icons] ?? (m.work === 'combat' ? Swords : ScanEye);
           const squad = m.squad.map(id => state.girls.find(g => g.id === id)).filter(Boolean);
-          return <button id={`mission-${m.id}`} key={m.id} className={`mission-pin ${m.category === '紧急委托' ? 'urgent' : ''} ${m.status} work-${m.work} ${over === m.id ? 'drop-target' : ''} ${!visible(m) ? 'filtered' : ''}`} style={{ left: `${m.x}%`, top: `${m.y}%`, '--pin-color': m.color } as React.CSSProperties} onClick={() => onMission(m.id)} aria-label={`${m.title}，${m.work === 'combat' ? '战斗委托' : '调查委托'}，${m.status === 'open' ? m.difficulty : m.status === 'active' ? '派遣中' : '已完成'}`} onDragOver={e => { if (m.status === 'open') { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(m.id); } }} onDragLeave={() => setOver(null)} onDrop={e => { e.preventDefault(); setOver(null); const id = e.dataTransfer.getData('text/girl-id'); if (id) onDropGirl(id, m.id); }}>
+          const region = districtOfMission(m);
+          const deadline = missionDeadlineLabel(m, state);
+          const expired = m.status === 'expired';
+          return <button id={`mission-${m.id}`} key={m.id} disabled={expired} className={`mission-pin ${m.window === 'urgent' ? 'urgent' : ''} ${m.status} work-${m.work} ${over === m.id ? 'drop-target' : ''} ${!visible(m) ? 'filtered' : ''}`} style={{ left: `${m.x}%`, top: `${m.y}%`, '--pin-color': m.color } as React.CSSProperties} onClick={() => onMission(m.id)} aria-label={`${region.name}，${m.title}，${m.work === 'combat' ? '战斗委托' : '调查委托'}${deadline ? `，${deadline}` : ''}`} onDragOver={e => { if (m.status === 'open') { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(m.id); } }} onDragLeave={() => setOver(null)} onDrop={e => { e.preventDefault(); setOver(null); const id = e.dataTransfer.getData('text/girl-id'); if (id) onDropGirl(id, m.id); }}>
             <span className="pin-orbit" />
-            <span className="pin-symbol">{m.status === 'done' ? <Check size={20} /> : <Icon size={21} />}</span>
+            <span className="pin-symbol">{expired ? <Hourglass size={19} /> : m.status === 'done' ? <Check size={20} /> : <Icon size={21} />}</span>
             <span className="pin-caption">
-              <small>{m.status === 'active' ? `${squad.map(g => g!.name).join('、') || '契约者'} · 出勤中` : m.status === 'done' ? '事件已归档' : `${m.work === 'combat' ? '战斗' : '调查'} · ${m.category}`}{m.category === '紧急委托' && m.status === 'open' && <b>优先</b>}</small>
+              <small>{expired ? `${region.name} · 信号已消散` : m.status === 'active' ? `${squad.map(g => g!.name).join('、') || '契约者'} · 出勤中` : `${region.name} · ${m.window ? windowLabel[m.window] : m.work === 'combat' ? '战斗' : '调查'}`}{m.window === 'urgent' && m.status === 'open' && <b>限时</b>}</small>
               <strong>{m.title}</strong>
               <em><Clock3 size={10} />{m.duration} 分钟<span>+{m.reward} 星砂</span></em>
+              {deadline && (m.status === 'open' || m.status === 'active') && <span className={`pin-deadline ${m.window === 'urgent' ? 'urgent' : ''}`}><Hourglass size={10} />{m.status === 'active' ? '派遣中' : `接取${deadline}`}</span>}
               {m.work === 'combat' && m.status === 'open' && <span className="pin-threat"><Skull size={10} />{m.enemyIds?.length ?? 0} 魔物 · 威胁 {threat(m)}</span>}
               {m.status === 'open' && m.work === 'combat' && <span className="pin-slots"><Users size={10} />队伍 0 / 3</span>}
               {m.worsened && <span className="pin-wounded">带伤 · 下次 −20%</span>}
@@ -55,13 +87,31 @@ export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState
         })}
         <div className="base-map-marker"><div><Cat size={20} /><StarMark /></div><span>夜糖事务所</span><small>我们的归处</small></div>
       </div>
+      {focused && <aside className="district-panel" id={`district-panel-${focused.id}`} aria-label={`${focused.name}辖区详情`}>
+        <header>
+          <span className="district-panel-eyebrow"><MapPin size={11} />辖区 · {focused.terrain}</span>
+          <button id="district-panel-close" onClick={() => setFocus(null)} aria-label="收起辖区详情">×</button>
+        </header>
+        <h3>{focused.name}<small>{focused.subtitle}</small></h3>
+        <p>{focused.description}</p>
+        <div className="district-effects" role="list" aria-label="环境影响">
+          {effectLines(focused.effect).map(line => <span role="listitem" key={line.label} className={`district-effect tone-${line.tone}`}><b>{line.label}</b><em>{line.value}</em></span>)}
+        </div>
+        <footer>
+          <span><Wind size={11} />本夜可接委托 {focusedMissions.length} 件</span>
+          <small>{focusedMissions.map(m => m.mission.title).slice(0, 2).join(' · ') || '暂时没有心愿信号'}</small>
+        </footer>
+      </aside>}
       <div className="map-coordinate"><Crosshair size={12} /><span>35° 41′ N · 139° 42′ E</span></div>
       <div className="map-compass"><span>北</span><MoveUpRight size={24} /></div>
-      <div className="map-zoom"><button id="map-zoom-in" onClick={() => setZoom(z => Math.min(1.5, z + .1))} disabled={zoom >= 1.5} aria-label="放大地图"><Plus size={17} /></button><button id="map-zoom-out" onClick={() => setZoom(z => Math.max(1, z - .1))} disabled={zoom <= 1} aria-label="缩小地图"><Minus size={17} /></button><button id="map-reset-view" onClick={() => setZoom(1)} aria-label="还原地图"><LocateFixed size={16} /></button></div>
+      <div className="map-zoom"><button id="map-zoom-in" onClick={() => setZoom(z => Math.min(1.5, z + .1))} disabled={zoom >= 1.5} aria-label="放大地图"><Plus size={17} /></button><button id="map-zoom-out" onClick={() => setZoom(z => Math.max(1, z - .1))} disabled={zoom <= 1} aria-label="缩小地图"><Minus size={17} /></button><button id="map-reset-view" onClick={() => { setZoom(1); setFocus(null); }} aria-label="还原地图"><LocateFixed size={16} /></button></div>
       <div className="map-location"><span>樱雾市</span><small>月光覆盖区 / 东七区</small></div>
-      <div className="map-legend"><span><i className="legend-pink" />待处理</span><span><i className="legend-blue" />派遣中</span><span><i className="legend-gray" />已完成</span></div>
+      <div className="map-legend"><span><i className="legend-pink" />待处理</span><span><i className="legend-blue" />派遣中</span><span><i className="legend-gray" />已归档</span></div>
+          <div className="map-legend territory"><span><i style={{ background: factionColor.witch }} />{factionName.witch}</span><span><i style={{ background: factionColor.association }} />{factionName.association}</span><span><i style={{ background: factionColor.government }} />{factionName.government}</span></div>
     </div>}
-    <div className="map-footnote"><span><Radio size={13} />把契约者拖至任务点，或点击任务开始编队</span><span>夜间结界稳定 <i /></span></div>
+    <div className="map-footnote"><span><Radio size={13} />点选辖区查看环境与背景；把契约者拖至任务点即可编队</span><span>夜间结界稳定 <i /></span></div>
+    {!list && <p className="map-window-note"><Hourglass size={11} />紧急委托两小时内必须接下，否则自动撤销；长期委托整晚有效，打烊时统一结算。</p>}
   </section>;
 }
+
 function StarMark() { return <Sparkles size={10} className="base-star" />; }

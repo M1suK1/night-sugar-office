@@ -2,6 +2,8 @@ import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission,
 import { getSkill } from './content/skills.ts';
 import { getMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
+import { districtAt, districts } from './districts.ts';
+import { SHIFT_START } from './shift.ts';
 
 export const ROUND_MINUTES = 15;
 const clamp = (min: number, max: number, v: number) => Math.max(min, Math.min(max, v));
@@ -25,11 +27,14 @@ function hashText(text: string): number {
   return hash >>> 0;
 }
 export function battleSeed(mission: Mission, girls: Girl[], day: number, minutes: number): number {
-  return hashText(`${mission.id}|${girls.map(g => g.id).sort().join(',')}|${day}|${minutes}|${mission.attempts}`);
+  // 不把具体分钟算进种子：同一夜、同一编队、同一份委托不应因为几点出发而变成另一场战斗。
+  void minutes;
+  return hashText(`${mission.id}|${girls.map(g => g.id).sort().join(',')}|${day}|${mission.attempts}`);
 }
 export function addClock(day: number, minutes: number, add: number): { day: number; minutes: number } {
-  const total = minutes + add;
-  return { day: day + Math.floor(total / 1440), minutes: ((total % 1440) + 1440) % 1440 };
+  const to = day * 1440 + minutes + add;
+  const nextDay = Math.floor((to - SHIFT_START) / 1440);
+  return { day: nextDay, minutes: to - nextDay * 1440 };
 }
 export function spiritMax(girl: Girl): number {
   const scarPenalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'maxSpirit' ? Math.abs(s.effect.amount) : 0), 0);
@@ -63,9 +68,9 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
   };
 }
-function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = []): BattleUnit {
+function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0): BattleUnit {
   const monster = pool.find(m => m.id === id) ?? getMonster(id);
-  const scale = wounded ? 0.8 : 1;
+  const scale = (wounded ? 0.8 : 1) * Math.max(0.4, 1 + hpPct / 100);
   const maxHp = Math.round(monster.maxHp * scale);
   return {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
@@ -158,9 +163,11 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   const seed = battleSeed(mission, girls, day, minutes);
   const rng = seededRandom(seed);
   const rounds = mission.rounds ?? Math.max(2, Math.floor(mission.duration / ROUND_MINUTES));
+  const region = districts[mission.district ?? districtAt(mission.x, mission.y)];
+  const env = region.effect;
   const units = [
     ...girls.map(unitFromGirl),
-    ...(mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [])),
+    ...(mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [], env.enemyHpPct ?? 0)),
   ];
   const startedAt = { day, minutes };
   const state: BattleState = {
@@ -253,7 +260,9 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           const magic = statOf(unit, 'magic');
           const variance = 0.9 + rng() * 0.2;
           const mitigation = target.portrait === 'mirror-nun' ? 0.85 : 1;
-          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation));
+          // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
+          const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
+          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain));
           const shield = skill.resource === 'spirit' ? 0 : Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), raw);
           const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, raw) : Math.min(target.hp, absorb(target, raw));
           if (skill.resource === 'spirit') target.spirit -= dealt;

@@ -1,11 +1,12 @@
 import { useId, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Cat, Check, ChevronRight, Coins, Compass, Copy, Cross, Crosshair, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { pensionFor } from '../contracts';
 import { GirlPortrait } from '../components/GirlPortrait';
+import { ClinicPanel } from '../components/ClinicPanel';
 import './aux-views.css';
 
 type BaseViewProps = {
@@ -18,10 +19,11 @@ type BaseViewProps = {
   onRecallExpedition: (id: string) => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onAcceptTask: (faction: FactionId) => void;
-  onClinic?: (girlId: string, mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
-  onCare?: (girlId: string, mode: 'healing' | 'resting') => void;
+  onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  onCare?: (girlId: string, mode: 'resting') => void;
   onAssistant?: (girlId?: string) => void;
   onUseItem?: (girlId: string, itemId: string) => void;
+  onCouncil?: () => void;
 };
 type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
 type Metric = 'income' | 'expense' | 'reputation';
@@ -32,8 +34,8 @@ const hm = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2,
 const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息', retired: '已退役', expedition: '星象台远行' };
 const roomIcons = { lounge: Cat, clinic: HeartPulse, dorm: BedDouble, observatory: Telescope };
 const metricNames: Record<Metric, string> = { income: '委托收入', expense: '经营支出', reputation: '城市安定度' };
-const kindNames: Record<LogKind, string> = { dispatch: '派遣', finance: '收支', story: '故事', care: '照护', base: '基地', battle: '战斗', relationship: '关系', memorial: '悼念', council: '议事', expedition: '远行', clinic: '诊所' };
-const kindIcons = { dispatch: Crosshair, finance: Coins, story: MessageCircle, care: HeartPulse, base: House, battle: Swords, relationship: Heart, memorial: Flower2, council: Users, expedition: Telescope, clinic: HeartPulse };
+const kindNames: Record<LogKind, string> = { dispatch: '派遣', finance: '收支', story: '故事', care: '照护', base: '基地', battle: '战斗', relationship: '关系', memorial: '悼念', council: '议事', expedition: '远行', clinic: '诊所', incident: '事件', territory: '辖区' };
+const kindIcons = { dispatch: Crosshair, finance: Coins, story: MessageCircle, care: HeartPulse, base: House, battle: Swords, relationship: Heart, memorial: Flower2, council: Users, expedition: Telescope, clinic: HeartPulse, incident: AlertTriangle, territory: MapPin };
 const outcomeNames = { victory: '战斗胜利', repelled: '暂时击退', defeat: '战斗失败', draw: '僵持收场' } as const;
 const factionIds: FactionId[] = ['witch', 'association', 'government'];
 const factionEffects: Record<FactionId, string> = {
@@ -99,6 +101,7 @@ export function BaseView({
   onCare,
   onAssistant,
   onUseItem,
+  onCouncil,
 }: BaseViewProps) {
   const [selectedId, setSelectedId] = useState(state.rooms[0]?.id ?? 'lounge');
   const [loungeTab, setLoungeTab] = useState<'pending' | 'envoys' | 'resolved' | 'minutes'>('pending');
@@ -218,6 +221,7 @@ export function BaseView({
               <div className="av-module-panel">
                 <div className="av-module-subbar">
                   <span>值班助理：<b>{assistant ? assistant.name : '未任命'}</b></span>
+                  {onCouncil && <button id="enter-council" type="button" className="av-mini-pill council-enter" onClick={onCouncil}>进入会客厅议事 →</button>}
                   {onAssistant && (
                     <div className="av-assistant-picks">
                       {active.filter(g => g.bond >= 40).map(g => (
@@ -333,7 +337,7 @@ export function BaseView({
           <div className="av-module-console">
             <div className="av-module-tabs" role="tablist" aria-label="月光诊所功能模块">
               <button id="av-clinic-tab-care" type="button" role="tab" aria-selected={clinicTab === 'care'} className={clinicTab === 'care' ? 'active' : ''} onClick={() => setClinicTab('care')}>
-                治疗与疗养 (240/360)
+                治疗
               </button>
               <button id="av-clinic-tab-surgery" type="button" role="tab" aria-selected={clinicTab === 'surgery'} className={clinicTab === 'surgery' ? 'active' : ''} onClick={() => setClinicTab('surgery')}>
                 记忆重塑与复制
@@ -345,71 +349,48 @@ export function BaseView({
 
             {clinicTab === 'care' && (
               <div className="av-module-panel">
-                <p className="av-module-hint">快速治疗 240 星砂（回满生命与共情并清除负面状态）；深度疗养 360 星砂（清空疲劳）。</p>
-                <div className="av-module-list">
-                  {active.map(g => (
-                    <div key={g.id} className="av-module-row">
-                      <div className="av-module-person">
-                        <strong>{g.name} <small>Lv.{g.level} · {statusText[g.status]}</small></strong>
-                        <span>HP {g.hp}/{g.maxHp} · 疲劳 {g.fatigue} · 侵蚀 {g.corruption ?? 0}%</span>
-                      </div>
-                      <div className="av-module-actions">
-                        <button
-                          id={`av-clinic-heal-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={state.gold < 240 || g.status !== 'idle' || !onClinic}
-                          onClick={() => onClinic?.(g.id, 'heal')}
-                        >
-                          <Cross size={11} />治疗 240
-                        </button>
-                        <button
-                          id={`av-clinic-rest-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={state.gold < 360 || g.status !== 'idle' || !onClinic}
-                          onClick={() => onClinic?.(g.id, 'rest')}
-                        >
-                          <Moon size={11} />疗养 360
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <p className="av-module-hint">按缺失血量收费，按小时线性恢复；治疗期间不能出勤，也不会恢复疲劳（疲劳归宿舍）。只列出受伤的契约者。</p>
+                <ClinicPanel
+                  state={state}
+                  girls={active}
+                  onGirl={id => onGirl?.(id)}
+                  onTreat={(girlId, kink) => onClinic?.(girlId, 'treat', kink)}
+                />
               </div>
             )}
 
             {clinicTab === 'surgery' && (
               <div className="av-module-panel">
                 <p className="av-module-hint">记忆重塑 4,000 星砂（抹除精神疤痕，等级与关系归初）；复制契约 18,000 星砂（Lv.3+ 生成 1 级镜像复制体）。</p>
-                <div className="av-module-list">
+                <div className="girl-card-grid">
                   {active.map(g => (
-                    <div key={g.id} className="av-module-row">
-                      <div className="av-module-person">
-                        <strong>{g.name} <small>Lv.{g.level} · 疤痕 {g.scars.length}/5</small></strong>
-                        <span>{g.cloneOf ? '复制体契约者' : '原体契约者'} · 羁绊 {g.bond}</span>
+                    <article key={g.id} className="girl-card">
+                      <div className="girl-card-face"><GirlPortrait girl={g} variant="avatar" /></div>
+                      <div className="girl-card-body">
+                        <strong>{g.name} <small>Lv.{g.level}</small></strong>
+                        <span>疤痕 {g.scars.length}/5 · {g.cloneOf ? '复制体' : '原体'} · 羁绊 {g.bond}</span>
+                        <div className="girl-card-actions">
+                          <button
+                            id={`av-clinic-wipe-${g.id}`}
+                            type="button"
+                            className="av-btn av-btn-small"
+                            disabled={state.gold < 4000 || g.status !== 'idle' || !onClinic}
+                            onClick={() => onClinic?.(g.id, 'wipe')}
+                          >
+                            <Brain size={11} />重塑 4,000
+                          </button>
+                          <button
+                            id={`av-clinic-clone-${g.id}`}
+                            type="button"
+                            className="av-btn av-btn-small"
+                            disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf) || !onClinic}
+                            onClick={() => onClinic?.(g.id, 'clone')}
+                          >
+                            <Copy size={11} />复制 18,000
+                          </button>
+                        </div>
                       </div>
-                      <div className="av-module-actions">
-                        <button
-                          id={`av-clinic-wipe-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={state.gold < 4000 || g.status !== 'idle' || !onClinic}
-                          onClick={() => onClinic?.(g.id, 'wipe')}
-                        >
-                          <Brain size={11} />重塑 4,000
-                        </button>
-                        <button
-                          id={`av-clinic-clone-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf) || !onClinic}
-                          onClick={() => onClinic?.(g.id, 'clone')}
-                        >
-                          <Copy size={11} />复制 18,000
-                        </button>
-                      </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
               </div>
@@ -418,34 +399,35 @@ export function BaseView({
             {clinicTab === 'supplies' && (
               <div className="av-module-panel">
                 <p className="av-module-hint">月蚀抑制剂库存：{state.inventory['moon-drug'] ?? 0} 支 · 净化课程：{state.inventory['purify-course'] ?? 0} 份 · 星灯治疗包：{state.inventory['star-kit'] ?? 0} 份。</p>
-                <div className="av-module-list">
+                <div className="girl-card-grid">
                   {active.map(g => (
-                    <div key={g.id} className="av-module-row">
-                      <div className="av-module-person">
+                    <article key={g.id} className="girl-card">
+                      <div className="girl-card-face"><GirlPortrait girl={g} variant="avatar" /></div>
+                      <div className="girl-card-body">
                         <strong>{g.name} <small>{g.witch ? (inWithdrawal(g) ? `断药第 ${g.withdrawalDays} 日` : `药效余 ${drugDaysLeft(g, state.day)} 日`) : `侵蚀 ${g.corruption ?? 0}%`}</small></strong>
                         <span>阶段：{corruptionLabels[corruptionStage(g.corruption ?? 0)]}</span>
+                        <div className="girl-card-actions">
+                          <button
+                            id={`av-clinic-drug-${g.id}`}
+                            type="button"
+                            className="av-btn av-btn-small"
+                            disabled={!g.witch || !(state.inventory['moon-drug'] > 0) || !onUseItem}
+                            onClick={() => onUseItem?.(g.id, 'moon-drug')}
+                          >
+                            <Syringe size={11} />注射抑制剂
+                          </button>
+                          <button
+                            id={`av-clinic-purify-${g.id}`}
+                            type="button"
+                            className="av-btn av-btn-small"
+                            disabled={(g.corruption ?? 0) <= 0 || !(state.inventory['purify-course'] > 0) || !onUseItem}
+                            onClick={() => onUseItem?.(g.id, 'purify-course')}
+                          >
+                            <Sparkles size={11} />净化 −8
+                          </button>
+                        </div>
                       </div>
-                      <div className="av-module-actions">
-                        <button
-                          id={`av-clinic-drug-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={!g.witch || !(state.inventory['moon-drug'] > 0) || !onUseItem}
-                          onClick={() => onUseItem?.(g.id, 'moon-drug')}
-                        >
-                          <Syringe size={11} />注射抑制剂
-                        </button>
-                        <button
-                          id={`av-clinic-purify-${g.id}`}
-                          type="button"
-                          className="av-btn av-btn-small"
-                          disabled={(g.corruption ?? 0) <= 0 || !(state.inventory['purify-course'] > 0) || !onUseItem}
-                          onClick={() => onUseItem?.(g.id, 'purify-course')}
-                        >
-                          <Sparkles size={11} />净化 −8
-                        </button>
-                      </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
               </div>
@@ -467,23 +449,26 @@ export function BaseView({
             {dormTab === 'rest' && (
               <div className="av-module-panel">
                 <p className="av-module-hint">在晚安宿舍休息 90 分钟可恢复 60 点疲劳并平复 5 点灵魂侵蚀度（免费）。</p>
-                <div className="av-module-list">
+                <div className="girl-card-grid">
                   {active.map(g => (
-                    <div key={g.id} className="av-module-row">
-                      <div className="av-module-person">
+                    <article key={g.id} className="girl-card">
+                      <div className="girl-card-face"><GirlPortrait girl={g} variant="avatar" /></div>
+                      <div className="girl-card-body">
                         <strong>{g.name} <small>{statusText[g.status]}</small></strong>
-                        <span>疲劳 {g.fatigue}/100 · 灵魂侵蚀 {g.corruption ?? 0}%（{corruptionLabels[corruptionStage(g.corruption ?? 0)]}）</span>
+                        <span>疲劳 {g.fatigue}/100 · 侵蚀 {g.corruption ?? 0}%</span>
+                        <div className="girl-card-actions">
+                          <button
+                            id={`av-dorm-rest-${g.id}`}
+                            type="button"
+                            className="av-btn av-btn-small"
+                            disabled={g.status !== 'idle' || (g.fatigue === 0 && (g.corruption ?? 0) === 0) || !onCare}
+                            onClick={() => onCare?.(g.id, 'resting')}
+                          >
+                            <Moon size={11} />安排休息
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        id={`av-dorm-rest-${g.id}`}
-                        type="button"
-                        className="av-btn av-btn-small"
-                        disabled={g.status !== 'idle' || (g.fatigue === 0 && (g.corruption ?? 0) === 0) || !onCare}
-                        onClick={() => onCare?.(g.id, 'resting')}
-                      >
-                        <Moon size={11} />安排休息
-                      </button>
-                    </div>
+                    </article>
                   ))}
                 </div>
               </div>

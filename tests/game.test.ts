@@ -1,13 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
+import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
+import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
+import { DEFAULT_PROMPTS, activePrompts, applyFormat, applyRegexScripts, builtinPresets, expandPresetMacros, pickRegexScripts, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, presetPrompts, presetRuntime, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, materializeDaily } from '../src/llm.ts';
+import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
-import type { Opinion, Scar } from '../src/types.ts';
+import { storyPlanTemplate } from '../src/storyplan.ts';
+import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
+import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
+import type { Incident, Mission, Opinion, Outfit, Scar, Storyline } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
   id: `scar-${id}-old`, name: '陈旧伤', kind: 'physical', condition: '旧伤在阴雨天发作',
@@ -17,11 +25,14 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 6);
+  assert.equal(s.version, 10);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
-  assert.equal(s.missions.length, 7);
+  assert.equal(s.missions.length, 10);
+  assert.equal(s.minutes, 20 * 60);
+  assert.ok(s.missions.slice(0, 3).every(m => m.id.startsWith('c-14-0-') && m.deadlineAt !== undefined && m.district));
+  assert.ok(s.missions.every(m => m.district && m.window && m.deadlineAt !== undefined));
   assert.equal(capacity(s), 6);
   assert.ok(s.missions.some(m => m.work === 'combat') && s.missions.some(m => m.work === 'investigation'));
   assert.ok(s.girls.every(g => g.name && g.skill && g.portrait && g.skills.length === 3));
@@ -55,20 +66,25 @@ test('调查委托推进完成后只结算一次收入与日志', () => {
   const done = act(r.state, { type: 'advance', minutes: 120 });
   assert.equal(done.ok, true);
   assert.equal(done.state.girls.find(g => g.id === 'yue')!.status, 'idle');
-  assert.equal(done.state.gold, s.gold + 680);
+  assert.equal(done.state.gold, s.gold + 734);
   assert.ok(done.state.completed.includes('candy'));
   assert.equal(done.state.missions.find(m => m.id === 'candy')!.status, 'done');
   const gold = done.state.gold;
   assert.equal(act(done.state, { type: 'advance', minutes: 15 }).state.gold, gold);
 });
-test('跨午夜推进按调查实际完成时刻记录收入', () => {
-  const initial = createInitialState(); initial.minutes = 23 * 60 + 10;
+test('午夜前推进在打烊那一刻停下，跨日交给打烊交接', () => {
+  const initial = createInitialState(); initial.minutes = 25 * 60 + 10;
   const dispatched = act(initial, { type: 'dispatch', girlIds: ['yue', 'tang'], missionId: 'candy' }).state;
-  const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
-  assert.equal(result.day, 15); assert.equal(result.minutes, 10);
-  assert.equal(result.samples.find(x => x.day === 14)!.income, initial.samples.at(-1)!.income + 680);
-  assert.equal(result.samples.find(x => x.day === 15)?.income ?? 0, 0);
-  assert.equal(result.logs.find(l => l.delta === 680)!.time, '第 14 日 · 23:55');
+  const closed = act(dispatched, { type: 'advance', minutes: 60 }).state;
+  assert.equal(closed.day, 14); assert.equal(closed.minutes, 26 * 60);
+  assert.equal(closed.samples.find(x => x.day === 14)!.income, initial.samples.at(-1)!.income + 734);
+  assert.equal(closed.logs.find(l => l.delta === 734)!.time, '第 14 日 · 01:55');
+  assert.equal(act(closed, { type: 'advance', minutes: 5 }).ok, false);
+  const next = act(closed, { type: 'endNight' });
+  assert.equal(next.ok, true);
+  assert.equal(next.state.day, 15); assert.equal(next.state.minutes, 20 * 60);
+  assert.ok(next.state.missions.some(m => m.id.startsWith('c-15-0-')));
+  assert.ok(next.state.girls.filter(g => !g.retired && g.status === 'idle').every(g => g.fatigue >= 0));
 });
 test('战斗胜利移除事件、发放全额收益并提升关系与经验', () => {
   const s = createInitialState();
@@ -81,7 +97,7 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
   assert.ok(battle.events.length > 0);
   assert.ok((battle.frames?.length ?? 0) >= battle.round);
   assert.equal(battle.startedAt.day, 14);
-  assert.equal(result.gold, goldBefore + 1240 - 88); // 跨日支付退役栀子的退休金
+  assert.equal(result.gold, goldBefore + 1240);
   assert.equal(result.missions.find(m => m.id === 'mirror')!.status, 'done');
   assert.ok(result.completed.includes('mirror'));
   const yue = result.girls.find(g => g.id === 'yue')!;
@@ -95,11 +111,11 @@ test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
   const s = createInitialState();
   const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'station' }).state;
   const goldBefore = dispatched.gold;
-  const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
+  const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
   assert.equal(battle.outcome, 'repelled');
-  assert.equal(result.gold, goldBefore + Math.round(920 * 0.8) - 88);
+  assert.equal(result.gold, goldBefore + 736);
   assert.equal(mission.status, 'open');
   assert.equal(mission.worsened, true);
   assert.equal(mission.attempts, 1);
@@ -108,21 +124,19 @@ test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
 });
 test('战斗失败保留事件、施加疤痕并降低血量上限', () => {
   const s = createInitialState();
-  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'arcade' }).state;
+  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue'], missionId: 'arcade' }).state;
   const goldBefore = dispatched.gold;
-  const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
+  const result = act(dispatched, { type: 'advance', minutes: 90 }).state;
   const battle = result.battles[0];
   assert.equal(battle.outcome, 'defeat');
-  assert.equal(result.gold, goldBefore - 88);
+  assert.equal(result.gold, goldBefore);
   assert.equal(result.missions.find(m => m.id === 'arcade')!.status, 'open');
-  for (const id of ['yue', 'tang', 'ling']) {
-    const girl = result.girls.find(g => g.id === id)!;
-    assert.equal(girl.scars.length, 1);
-    assert.ok(girl.maxHp < girl.baseMaxHp);
-    assert.ok(girl.hp >= 0);
-    assert.equal(result.memorial.length, 0);
-  }
-  assert.equal(battle.scars?.length, 3);
+  const girl = result.girls.find(g => g.id === 'yue')!;
+  assert.equal(girl.scars.length, 1);
+  assert.ok(girl.maxHp < girl.baseMaxHp);
+  assert.ok(girl.hp >= 0);
+  assert.equal(result.memorial.length, 0);
+  assert.equal(battle.scars?.length, 1);
   assert.ok(result.logs.some(l => l.kind === 'memorial' && l.text.includes('疤痕')));
 });
 test('第五道疤痕导致死亡，释放席位并进入纪念墙', () => {
@@ -133,13 +147,13 @@ test('第五道疤痕导致死亡，释放席位并进入纪念墙', () => {
     girl.baseMaxHp = girl.maxHp = 50;
     girl.scars = girl.scars.map((scar, index) => ({ ...scar, id: `scar-${id}-${index}` }));
   }
-  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'arcade' }).state;
+  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'station' }).state;
   const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
   assert.equal(result.battles[0].outcome, 'defeat');
   assert.equal(result.memorial.length, 3);
   assert.deepEqual(result.girls.map(g => g.id), ['wu', 'zhi']);
   assert.equal(result.reputation, 58);
-  assert.deepEqual(result.missions.find(m => m.id === 'arcade')!.squad, []);
+  assert.deepEqual(result.missions.find(m => m.id === 'station')!.squad, []);
   assert.ok(result.memorial.every(m => m.girl.dead && m.girl.scars.length === 5 && m.lastBattleId === result.battles[0].id));
 });
 test('满四道疤痕可以退役，退役后无法再派遣', () => {
@@ -153,17 +167,51 @@ test('满四道疤痕可以退役，退役后无法再派遣', () => {
   assert.equal(act(retired.state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' }).ok, false);
   assert.equal(act(createInitialState(), { type: 'retire', girlId: 'yue' }).ok, false);
 });
-test('治疗与休息按实际时间恢复，不足条件时拒绝', () => {
-  const s = createInitialState(); s.girls[0].hp = 30;
-  const h = act(s, { type: 'care', girlId: 'yue', mode: 'healing' });
-  assert.equal(h.ok, true); assert.equal(h.state.gold, s.gold - 180);
-  const healed = act(h.state, { type: 'advance', minutes: 60 }).state;
-  assert.equal(healed.girls[0].hp, s.girls[0].maxHp);
-  s.girls[0].fatigue = 75;
+test('诊所按缺失血量收费并按时长回血，治疗中拒绝出勤', () => {
+  const s = createInitialState(); const girl = s.girls[0];
+  girl.hp = 30; girl.fatigue = 40;
+  const quote = clinicQuote(girl);
+  assert.equal(quote.missing, 90);
+  assert.equal(quote.cost, 930);
+  assert.equal(quote.minutes, 300);
+  const h = act(s, { type: 'clinic', girlId: 'yue', mode: 'treat' });
+  assert.equal(h.ok, true);
+  assert.equal(h.state.gold, s.gold - 930);
+  const treating = h.state.girls[0];
+  assert.equal(treating.status, 'healing');
+  assert.equal(treating.remaining, 300);
+  assert.equal(treatmentFor(h.state, 'yue')?.paid, 930);
+  assert.equal(act(h.state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' }).ok, false);
+  const later = act(h.state, { type: 'advance', minutes: 60 }).state.girls[0];
+  assert.ok(later.hp > 30 && later.hp < 100, `一小时应只回一部分，实际 ${later.hp}`);
+  assert.ok(later.fatigue >= 40, '治疗不回疲劳');
+  const done = act(act(h.state, { type: 'advance', minutes: 180 }).state, { type: 'advance', minutes: 120 }).state;
+  assert.equal(done.girls[0].status, 'idle');
+  assert.equal(done.girls[0].hp, done.girls[0].maxHp);
+  assert.equal(treatmentFor(done, 'yue'), undefined);
+  const poor = { ...s, gold: 0 };
+  assert.equal(act(poor, { type: 'clinic', girlId: 'yue', mode: 'treat' }).ok, false);
+  assert.equal(act(s, { type: 'clinic', girlId: 'yue', mode: 'treat', kink: true }).state.treatments[0].kink, true);
+});
+test('癖好护理两小时后结束：不回血、不留特性、只涨羁绊', () => {
+  const s = createInitialState(); s.girls[0].hp = 40;
+  const bondBefore = s.girls[0].bond;
+  const started = act(s, { type: 'clinic', girlId: 'yue', mode: 'treat', kink: true });
+  assert.equal(started.ok, true);
+  const done = act(started.state, { type: 'advance', minutes: 120 }).state;
+  assert.equal(done.girls[0].status, 'idle', '2 小时后结束');
+  assert.equal(done.girls[0].hp, 40, '癖好护理不回血');
+  assert.ok(!done.girls[0].traits.some(trait => trait.id === 'clinic-kink'), '不应留下永久特性');
+  assert.equal(done.girls[0].bond, Math.min(100, bondBefore + 4));
+});
+test('休息只恢复疲劳并降低侵蚀', () => {
+  const s = createInitialState(); s.girls[0].fatigue = 75; s.girls[0].corruption = 20; s.girls[0].hp = 50;
   const rest = act(s, { type: 'care', girlId: 'yue', mode: 'resting' });
-  assert.equal(act(rest.state, { type: 'advance', minutes: 90 }).state.girls[0].fatigue, 15);
-  s.gold = 0; s.girls[0].hp = 10;
-  assert.equal(act(s, { type: 'care', girlId: 'yue', mode: 'healing' }).ok, false);
+  assert.equal(rest.ok, true);
+  const rested = act(rest.state, { type: 'advance', minutes: 90 }).state.girls[0];
+  assert.equal(rested.fatigue, 63);
+  assert.equal(rested.corruption, 15);
+  assert.equal(rested.hp, 50);
 });
 test('雇佣扣款、去重并遵守基地容量', () => {
   const s = createInitialState(); s.gold = 20000;
@@ -186,9 +234,12 @@ test('本地剧情拒绝空输入，保存玩家与角色消息并限制长度',
   assert.equal(r.state.messages.yue.at(-1)?.role, 'girl'); assert.ok(r.state.girls[0].bond > s.girls[0].bond);
   assert.equal(act(s, { type: 'talk', girlId: 'yue', text: '字'.repeat(201) }).ok, false);
 });
-test('跨日推进记录新日期，拒绝负数、过小及过大推进量', () => {
-  const s = createInitialState(); s.minutes = 23 * 60 + 45;
-  const r = act(s, { type: 'advance', minutes: 30 }); assert.equal(r.state.day, s.day + 1); assert.equal(r.state.minutes, 15);
+test('推进在打烊时停下，午夜之后仍算同一夜', () => {
+  const late = createInitialState(); late.minutes = 23 * 60 + 45;
+  const crossed = act(late, { type: 'advance', minutes: 30 }).state;
+  assert.equal(crossed.day, 14); assert.equal(crossed.minutes, 24 * 60 + 15);
+  const s = createInitialState(); s.minutes = 25 * 60 + 45;
+  const r = act(s, { type: 'advance', minutes: 30 }); assert.equal(r.state.day, 14); assert.equal(r.state.minutes, 26 * 60);
   assert.equal(act(s, { type: 'advance', minutes: -5 }).ok, false);
   assert.equal(act(s, { type: 'advance', minutes: NaN }).ok, false);
   assert.equal(act(s, { type: 'advance', minutes: 0.5 }).ok, false);
@@ -246,7 +297,11 @@ test('退休金按日划拨，欠约累积到契约状态', () => {
   assert.equal(retired.ok, true);
   assert.equal(retired.state.girls.find(g => g.id === 'yue')!.retired, true);
   const before = retired.state.gold; let current = retired.state;
-  for (let i = 0; i < 100; i++) current = act(current, { type: 'advance', minutes: 180 }).state;
+  for (let i = 0; i < 100; i++) {
+    const pending = current.incidents.find(item => item.status === 'pending');
+    if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0].id }).state;
+    current = act(current, { type: 'endNight' }).state;
+  }
   assert.ok(current.gold < before, '退役金应该造成持续支出');
   assert.ok(current.logs.some(log => log.text.includes('退休金')));
   assert.ok(current.gold < before - Math.round(pensionFor(yue) / 10) * 8);
@@ -346,7 +401,7 @@ test('势力货架每日三个货位、每格限购一次并跨日刷新', () =>
   assert.match(again.message, /售出|售罄/);
   const duplicated = Array.from({ length: 120 }, (_, index) => makeFactionStock('witch', 14 + index)).find(list => new Set(list.map(entry => entry.itemId)).size < 3);
   assert.ok(duplicated, '货架应允许同一天出现重复物品');
-  const refreshed = act(bought.state, { type: 'advance', minutes: 180 }).state;
+  const refreshed = act(bought.state, { type: 'endNight' }).state;
   assert.equal(refreshed.day, 15);
   const nextWitch = refreshed.marketStock.filter(entry => entry.faction === 'witch');
   assert.equal(nextWitch.length, 3);
@@ -374,7 +429,7 @@ test('断药期禁止派遣，抑制剂立即解除', () => {
 test('自定义契约者登记为一级并进入候选名册', () => {
   const s = createInitialState();
   const before = s.candidates.length;
-  const draft = { name: '夜见灯', codename: '宵灯', title: '新登记契约者', element: '星光系' as const, archetype: '输出' as const, color: '#f49abd', quote: '请多指教。', goal: '完成第一次委托', appearance: '短发', personality: '认真', outfitDescription: '夜色制服', stats: { magic: 75, insight: 65, agility: 60, empathy: 60 }, skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traits: ['cat-sense', 'protective', 'silent'], portrait: '' };
+  const draft = { name: '夜见灯', codename: '宵灯', title: '新登记契约者', element: '星光系' as const, archetype: '输出' as const, color: '#f49abd', quote: '请多指教。', goal: '完成第一次委托', appearance: '短发', personality: '认真', outfitDescription: '夜色制服', stats: { magic: 75, insight: 65, agility: 60, empathy: 60 }, skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traits: [{ name: '猫一样的直觉', description: '先于别人察觉不对劲。', polarity: 'good' as const }, { name: '护短', description: '同伴受威胁时会失去分寸。', polarity: 'neutral' as const }, { name: '寡言', description: '很少解释自己的判断。', polarity: 'bad' as const }], portrait: '' };
   const r = act(s, { type: 'createGirl', draft });
   assert.equal(r.ok, true);
   assert.equal(r.state.candidates.length, before + 1);
@@ -467,7 +522,8 @@ test('自定义登记自动填表会校验叙事者输出并补齐技能与特�
       assert.equal(result.data.archetype, '治愈');
       assert.equal(result.data.focus, 'empathy');
       assert.equal(new Set(result.data.skillIds).size, 3);
-      assert.equal(new Set(result.data.traitIds).size, 3);
+      assert.equal(result.data.traits.length, 3);
+      assert.ok(result.data.traits.every(trait => trait.name && trait.description));
     }
   } finally { globalThis.fetch = original; }
 });
@@ -485,6 +541,37 @@ test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试',
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
     assert.equal('temperature' in calls[1], false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('叙事输出被 length 截断时会放大 token 额度重试一次', async () => {
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  const profile = {
+    name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈',
+    quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。',
+    personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy', skillIds: ['glimmer-spear'],
+    traits: [{ name: '夜读', description: '熄灯后才开始写字。', polarity: 'neutral' }],
+  };
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '先观察立绘：银白发……{"name":"纸灯","appearance":"短发' }, finish_reason: 'length' }],
+        usage: { prompt_tokens: 900, completion_tokens: 400 },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(profile) }, finish_reason: 'stop' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, { world: 'w', daily: 'd' }, undefined, undefined, { id: 'truncate-test', name: '截断测试', maxTokens: 400, maxContext: 4000 });
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].max_tokens, 400);
+    assert.equal(calls[1].max_tokens, 3200);
+    assert.equal(calls[1].messages.at(-1).role, 'user');
   } finally {
     globalThis.fetch = original;
   }
@@ -518,6 +605,26 @@ test('角色起草会把立绘作为图像内容发送给视觉模型', async ()
   }
 });
 
+test('服装词条：把立绘作为图像内容发送，读回名称与描述', async () => {
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ name: '莓色夜巡', description: '樱色的短披肩，边缘缝着细小的糖晶，走起路来像把夜色晃出一层甜味。' }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const portrait = 'data:image/webp;base64,AAAA';
+    const result = await generateOutfitDescription({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'vision-model' }, { world: 'w', daily: 'd' }, portrait);
+    assert.equal(result.ok, true);
+    if (result.ok) { assert.equal(result.data.name, '莓色夜巡'); assert.ok(result.data.description.includes('糖晶')); }
+    const content = calls[0].messages[1].content;
+    assert.equal(Array.isArray(content), true);
+    assert.equal(content[1].type, 'image_url');
+    assert.equal(content[1].image_url.url, portrait);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 test('编年史缓存生成内容并在存档中保留', () => {
   const base = createInitialState();
   const content = materializeDaily({
@@ -598,4 +705,821 @@ test('严格存档导入接受 v6，拒绝损坏与截断文件', () => {
   assert.equal(importState('{"version":6,"girls":[]}'), null);
   assert.equal(importState('not json'), null);
   assert.equal(importState(JSON.stringify({ ...state, version: 2 })), null);
+});
+
+test('九个辖区按 city.svg 地形覆盖全城，坐标归入正确辖区', () => {
+  assert.equal(districtOrder.length, 9);
+  assert.equal(new Set(districtOrder).size, 9);
+  assert.equal(districtAt(24, 27), 'candy');
+  assert.equal(districtAt(66, 25), 'station');
+  assert.equal(districtAt(42, 51), 'clocktower');
+  assert.equal(districtAt(12, 52), 'oldtown');
+  assert.equal(districtAt(76, 62), 'cathedral');
+  assert.equal(districtAt(58, 72), 'docks');
+  assert.equal(districtAt(88, 22), 'plaza');
+  const names = districtOrder.map(id => districts[id].name);
+  assert.equal(new Set(names).size, 9);
+  assert.ok(districtOrder.every(id => districts[id].description.length >= 30));
+  assert.ok(effectLines(districts.docks.effect).some(line => line.label.includes('伤害')));
+  assert.ok(districts.oldtown.points.length >= 6 && districts.oldtown.name.includes('旧城'));
+});
+
+test('辖区环境影响委托目标、报酬与截止时间', () => {
+  const state = createInitialState();
+  const base: Mission = {
+    id: 'probe', title: '测试信号', category: '调查', description: '', x: 76, y: 62,
+    difficulty: '★★', duration: 30, reward: 1000, requirement: 'insight', target: 100,
+    color: '#fff', status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 3,
+  };
+  const short = annotateMission(state, base);
+  assert.equal(short.district, 'cathedral');
+  assert.equal(short.window, 'urgent');
+  assert.equal(short.target, 106);
+  assert.equal(short.reward, 1000);
+  assert.equal(short.deadlineAt, state.day * 1440 + state.minutes + 120);
+  const long = annotateMission(state, { ...base, duration: 120, x: 24, y: 27 });
+  assert.equal(long.district, 'candy');
+  assert.equal(long.window, 'long');
+  assert.equal(long.target, 94);
+  assert.equal(long.reward, 1080);
+  assert.equal(long.deadlineAt, deadlineFor('long', state.day, state.minutes));
+});
+
+test('委托按三个时段放号，紧急委托到点失效且不能派遣', () => {
+  let s = createInitialState();
+  assert.equal(WAVE_AT.length, 3);
+  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-0-')).length, 3);
+  assert.equal(s.missions.filter(m => m.status === 'expired').length, 0);
+  s = act(s, { type: 'advance', minutes: 120 }).state;
+  assert.equal(s.minutes, 22 * 60);
+  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-1-')).length, 2);
+  assert.ok(s.missions.some(m => m.status === 'expired'));
+  s = act(s, { type: 'advance', minutes: 120 }).state;
+  assert.equal(s.minutes, 24 * 60);
+  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-2-')).length, 2);
+  const expired = s.missions.filter(m => m.status === 'expired');
+  assert.ok(expired.length >= 2);
+  const denied = act(s, { type: 'dispatch', missionId: expired[0].id, squad: ['yue'] });
+  assert.equal(denied.ok, false);
+});
+
+test('自定义契约礼装占衣柜一格，衣柜上限四格', () => {
+  assert.equal(WARDROBE_LIMIT, 4);
+  const outfit = customOutfitFor({
+    color: '#f3aec9', outfitDescription: '黑缎长裙与银色月纹披肩',
+    portrait: 'data:image/webp;base64,AAAA',
+  });
+  assert.equal(outfit.id, 'custom');
+  assert.equal(outfit.custom, true);
+  assert.equal(outfit.description, '黑缎长裙与银色月纹披肩');
+  assert.ok(outfit.portrait?.startsWith('data:image/'));
+  assert.equal(outfit.palette[0], '#f3aec9');
+  const state = createInitialState();
+  const yue = state.girls.find(g => g.id === 'yue');
+  assert.ok(yue);
+  assert.equal(yue.wardrobe.length, 3);
+  assert.equal(yue.wardrobe.filter(item => item.id === 'custom').length, 0);
+  const named = customOutfitFor({ color: '#ffffff', outfitDescription: '白' });
+  assert.equal(named.portrait, undefined);
+});
+
+test('衣柜导入支持合并、替换与满额截断，并至少保留一格', () => {
+  const state = createInitialState();
+  const extra: Outfit[] = [
+    { id: 'w1', name: '晚礼服', description: '测试', palette: ['#111'], layerKey: 'formal' },
+    { id: 'w2', name: '雨衣', description: '测试', palette: ['#222'], layerKey: 'casual' },
+    { id: 'w3', name: '旧制服', description: '测试', palette: ['#333'], layerKey: 'uniform' },
+  ];
+  const merged = act(state, { type: 'importWardrobe', girlId: 'yue', outfits: extra });
+  assert.equal(merged.ok, true);
+  assert.equal(merged.state.girls.find(g => g.id === 'yue')!.wardrobe.length, 4);
+  assert.ok(merged.message.includes('2 套'));
+  const replaced = act(merged.state, { type: 'importWardrobe', girlId: 'yue', mode: 'replace', outfits: extra.slice(0, 2) });
+  assert.equal(replaced.ok, true);
+  const replacedGirl = replaced.state.girls.find(g => g.id === 'yue')!;
+  assert.equal(replacedGirl.wardrobe.length, 2);
+  assert.equal(replacedGirl.outfitId, 'w1');
+  let cur = replaced.state;
+  while (cur.girls.find(g => g.id === 'yue')!.wardrobe.length > 1) {
+    const left = cur.girls.find(g => g.id === 'yue')!.wardrobe;
+    const strip = act(cur, { type: 'removeOutfit', girlId: 'yue', outfitId: left[0].id });
+    assert.equal(strip.ok, true);
+    cur = strip.state;
+  }
+  const last = cur.girls.find(g => g.id === 'yue')!.wardrobe[0];
+  const refused = act(cur, { type: 'removeOutfit', girlId: 'yue', outfitId: last.id });
+  assert.equal(refused.ok, false);
+});
+
+test('SillyTavern 预设导入采样参数、主提示与忽略清单', () => {
+  const st = JSON.stringify({
+    name: '月见台预设', temp_openai: 0.45, top_p_openai: 0.8, openai_max_tokens: 320,
+    openai_max_context: 6000, pres_pen_openai: 0.4, main: '主提示文本', jailbreak: '约束文本',
+    wi_format: '[WI]', top_k_openai: 40,
+  });
+  const parsed = importPresetJson(st);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.preset?.name, '月见台预设');
+  assert.ok(parsed.ignored.includes('wi_format'));
+  const runtime = presetRuntime(parsed.preset);
+  assert.equal(runtime.temperature, 0.45);
+  assert.equal(runtime.topP, 0.8);
+  assert.equal(runtime.maxTokens, 320);
+  assert.equal(runtime.maxContext, 6000);
+  assert.equal(runtime.presencePenalty, 0.4);
+  assert.equal(runtime.main, '主提示文本');
+  const wrapped = withPresetPrompts('原始系统提示', runtime);
+  assert.ok(wrapped.system.includes('原始系统提示'));
+  assert.ok(wrapped.system.includes('主提示文本'));
+  assert.ok(wrapped.system.includes('约束文本'));
+  assert.equal(builtinPresets().length, 3);
+  const nested = importPresetObject({ name: 'ST 导出', settings: { temp_openai: 1.1, prompts: [{ identifier: 'main', content: '嵌套主提示' }] } });
+  assert.equal(nested.preset?.prompts?.[0]?.content, '嵌套主提示');
+  const clamped = presetRuntime({ ...parsed.preset!, settings: { ...parsed.preset!.settings, temp_openai: 9, openai_max_tokens: 1 } });
+  assert.equal(clamped.temperature, 2);
+  assert.equal(clamped.maxTokens, 64);
+});
+
+test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => {
+  const flat = importPresetJson(JSON.stringify({
+    name: 'Reborn 风格', temperature: 1.08, top_p: 0.98, openai_max_tokens: 65535, openai_max_context: 2000000,
+    prompts: [
+      { identifier: 'main', name: '主提示', content: '你是 {{char}} 的叙事者。{{// 注释\n跨行 }}', role: 'system' },
+      { identifier: 'userpersona', name: '用户', content: '{{user}} 是所长。', role: 'system' },
+      { identifier: 'unused', name: '未在顺序里', content: '不该出现。', role: 'system' },
+      { identifier: 'vars', name: '变量', content: '{{setvar::x::1}}设定块', role: 'system' },
+    ],
+    prompt_order: [{ character_id: 100000, order: [{ identifier: 'unused', enabled: true }] }, { character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'userpersona', enabled: true }, { identifier: 'vars', enabled: true }, { identifier: 'unused', enabled: false }] }],
+  }));
+  assert.equal(flat.ok, true);
+  const runtime = presetRuntime(flat.preset);
+  assert.equal(runtime.temperature, 1.08);
+  assert.equal(runtime.topP, 0.98);
+  assert.equal(runtime.maxTokens, 32768);
+  assert.equal(runtime.maxContext, 400000);
+  assert.equal(activePrompts(flat.preset).length, 4);
+  const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
+  assert.ok(wrapped.system.includes('月见桃 的叙事者'));
+  assert.ok(!wrapped.system.includes('注释'));
+  assert.ok(wrapped.system.includes('白鸟 是所长'));
+  assert.ok(!wrapped.system.includes('不该出现'));
+  assert.ok(!wrapped.system.includes('setvar'));
+  const macro = expandPresetMacros('{{char}} / {{user}} / {{getvar::x}}', { user: '所长', char: '月见桃，绯色回响。' });
+  assert.equal(macro.text, '月见桃 / 所长 / ');
+  const warned = importPresetObject({ name: '工具预设', extensions: { SPreset: {} }, prompts: [{ identifier: 'tool', content: '调用 game_content 输出。' }] });
+  assert.ok(warned.warnings.some(text => text.includes('SPreset')));
+  assert.equal(warned.unsupported.length, 1);
+  const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
+  assert.equal(again.preset?.promptOrder?.length, 4);
+  assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
+});
+
+test('LLM 请求快照按标签记录实际读取的内容', () => {
+  const snapshot = requestSnapshot(
+    [{ role: 'system', content: '系统提示' }, { role: 'user', content: '今晚怎么样？' }],
+    { model: 'mock', temperature: 0.7 },
+    ['世界观与角色卡', '玩家这句话'],
+  );
+  assert.equal(snapshot.messageCount, 2);
+  assert.deepEqual(snapshot.sections.map(section => section.label), ['世界观与角色卡', '玩家这句话']);
+  assert.equal(snapshot.sections[0].text, '系统提示');
+  assert.equal(snapshot.params.temperature, 0.7);
+});
+
+test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
+  assert.equal(SHIFT_START, 20 * 60);
+  assert.equal(SHIFT_END, 26 * 60);
+  assert.equal(clockLabel(1500), '01:00');
+  assert.equal(shiftPhase(1200), 'open');
+  assert.equal(shiftPhase(1320), 'deep');
+  assert.equal(shiftPhase(1440), 'midnight');
+  assert.equal(shiftPhase(1500), 'closing');
+  assert.equal(shiftPhase(1560), 'closed');
+  assert.equal(dateLabel(14, 1500), '第 14 日 · 01:00');
+  const s = createInitialState(); s.minutes = SHIFT_END - 30;
+  const r = act(s, { type: 'advance', minutes: 180 });
+  assert.equal(r.state.day, 14); assert.equal(r.state.minutes, SHIFT_END);
+  const next = act(r.state, { type: 'endNight' });
+  assert.equal(next.state.day, 15); assert.equal(next.state.minutes, SHIFT_START);
+});
+
+test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
+  const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
+  const loaded = loadState(JSON.stringify(s));
+  assert.equal(loaded.version, 10);
+  assert.equal(loaded.minutes, SHIFT_START);
+  const midnight = createInitialState(); midnight.minutes = 1500;
+  assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
+  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 11 })), null);
+});
+
+// ── v6：势力辖区 ────────────────────────────────────────────────
+test('势力辖区每局随机、三方各三片，且有占领上限', () => {
+  const map = assignTerritories('territory-seed');
+  const counts = territoryCounts(map);
+  assert.equal(Object.keys(map).length, 9);
+  assert.deepEqual([...FACTION_ORDER].map(id => counts[id]).sort(), [3, 3, 3]);
+  const drafted = { ...map };
+  for (const id of Object.keys(drafted) as (keyof typeof drafted)[]) drafted[id] = 'witch';
+  assert.equal(canClaim(drafted, 'witch'), false);
+  const repaired = repairTerritories(drafted, 'territory-seed');
+  assert.ok(Object.values(repaired).every(value => FACTION_ORDER.includes(value)));
+  assert.equal(effectiveDistrictEffect(map, 'candy').rewardPct, (districts.candy.effect.rewardPct ?? 0) + (factionEffect[map.candy].rewardPct ?? 0));
+  assert.equal(ownedDistricts(map, map.candy).includes('candy'), true);
+});
+
+test('接受议会决议可以改变辖区归属并记入台账', () => {
+  const s = createInitialState();
+  const opinion = s.opinions.find(item => item.status === 'pending');
+  assert.ok(opinion);
+  const owner = Object.entries(s.territories).find(([, faction]) => faction !== 'witch')![0] as keyof typeof s.territories;
+  opinion!.options = opinion!.options.map(option => option.id === 'accept' ? { ...option, shift: { district: owner, faction: 'witch' } } : option);
+  const r = act(s, { type: 'decideOpinion', opinionId: opinion!.id, decision: 'accept' });
+  assert.equal(r.ok, true);
+  assert.equal(r.state.territories[owner], 'witch');
+  assert.ok(r.state.territoryLog.some(entry => entry.district === owner && entry.to === 'witch'));
+});
+
+// ── v6：长期委托与打烊保留 ──────────────────────────────────────
+test('长期委托按天计算截止时间并可跨夜保留', () => {
+  const s = createInitialState();
+  const long = s.missions.find(mission => mission.window === 'long' && (mission.longDays ?? 0) >= 2);
+  assert.ok(long, '开局应有一条 2–7 天的长期委托');
+  assert.equal(long!.deadlineAt, shiftCloseAt(s.day + (long!.longDays ?? LONG_MIN_DAYS) - 1));
+  assert.ok((long!.longDays ?? 0) >= LONG_MIN_DAYS && (long!.longDays ?? 0) <= LONG_MAX_DAYS);
+  const next = act(s, { type: 'endNight' }).state;
+  const kept = next.missions.find(mission => mission.id === long!.id);
+  assert.ok(kept, '未过期的长期委托应保留到下一夜');
+  assert.equal(kept!.status, 'open');
+  assert.ok(kept!.deadlineAt! > next.day * 1440 + SHIFT_START);
+});
+
+// ── v6：空白档案 ────────────────────────────────────────────────
+test('空白档案只有会客厅与启动资金，并放行首次登记', () => {
+  const s = act(createInitialState(), { type: 'reset', mode: 'blank' }).state;
+  assert.equal(s.blank, true);
+  assert.equal(s.girls.length, 0);
+  assert.equal(s.candidates.length, 0);
+  assert.equal(s.gold, 6000);
+  assert.equal(s.reputation, 0);
+  assert.equal(s.rooms.length, 1);
+  assert.equal(s.rooms[0].type, 'lounge');
+  const draft = { name: '初灯', codename: '首夜', title: '刚签下名字的人', element: '星光系' as const, archetype: '输出' as const, color: '#f49abd', quote: '请多指教。', goal: '活过第一晚', appearance: '短发', personality: '紧张', outfitDescription: '借来的制服', stats: { magic: 65, insight: 65, agility: 65, empathy: 65 }, skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traits: [{ name: '手心出汗', description: '第一次出任务。', polarity: 'neutral' as const }], portrait: '' };
+  const created = act(s, { type: 'createGirl', draft });
+  assert.equal(created.ok, true);
+  assert.equal(created.state.candidates.length, 1);
+});
+
+// ── v6：魔女化立绘 ──────────────────────────────────────────────
+test('魔女化立绘在侵蚀 40 后解锁，可切换与还原', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(girl => girl.id === 'yue')!;
+  yue.corruption = 20;
+  const forbidden = act(s, { type: 'setWitchForm', girlId: 'yue', outfit: { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch' } });
+  assert.equal(forbidden.ok, false);
+  const unlocked = structuredClone(s);
+  unlocked.girls.find(girl => girl.id === 'yue')!.corruption = 45;
+  const on = act(unlocked, { type: 'setWitchForm', girlId: 'yue', outfit: { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch' } });
+  assert.equal(on.ok, true);
+  const witch = on.state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(witch.witch, true);
+  assert.equal(witch.witchForm?.form, 'witch');
+  assert.equal(act(on.state, { type: 'setWitchForm', girlId: 'yue', outfit: null }).state.girls.find(girl => girl.id === 'yue')!.witch, false);
+});
+
+// ── v6：角色故事线 ──────────────────────────────────────────────
+test('故事线需要羁绊，逐幕选择会推进并在落幕时归档', () => {
+  const s = createInitialState();
+  s.girls.find(girl => girl.id === 'yue')!.bond = 8;
+  assert.equal(act(s, { type: 'startStoryline', girlId: 'yue' }).ok, false);
+  const ready = structuredClone(s);
+  ready.girls.find(girl => girl.id === 'yue')!.bond = 50;
+  const started = act(ready, { type: 'startStoryline', girlId: 'yue' });
+  assert.equal(started.ok, true);
+  let current = started.state;
+  const storyline = current.storylines.find(item => item.girlId === 'yue')!;
+  assert.equal(storyline.beats.length, 4);
+  assert.equal(storyline.source, 'template');
+  assert.ok(storyline.beats.every(beat => beat.mission?.goal), '模板故事线也要给出明确目标');
+  // v7：带委托的幕不再直接给选项，这里移除 mission 以覆盖旧的纯选项路径。
+  const legacy = structuredClone(current);
+  const legacyStory = legacy.storylines.find(item => item.id === storyline.id)!;
+  legacyStory.beats.forEach(beat => { beat.mission = undefined; });
+  current = legacy;
+  for (const beat of legacyStory.beats) {
+    const choice = beat.choices[0];
+    current = act(current, { type: 'decideStoryChoice', storylineId: legacyStory.id, beatId: beat.id, choiceId: choice.id }).state;
+  }
+  const done = current.storylines.find(item => item.id === storyline.id)!;
+  assert.equal(done.status, 'done');
+  assert.ok(current.chronicle.some(entry => entry.title.includes(storyline.title)));
+});
+
+// ── v6：强制事件弹窗 ────────────────────────────────────────────
+test('强制事件会阻塞推进，处理后才可继续并可结算效果', () => {
+  const s = createInitialState();
+  s.gold = 5000;
+  const incident: Incident = {
+    id: 'inc-test-1', day: s.day, kind: 'faction', source: 'rule', title: '代行者的账单', body: '市役所希望你先垫付一笔修缮费。', faction: 'government',
+    options: [{ id: 'o1', label: '先垫付', hint: '−800 星砂，安定度 +6', effect: { gold: -800, reputation: 6 } }], status: 'pending',
+  };
+  const added = act(s, { type: 'addIncident', incident });
+  assert.equal(added.ok, true);
+  const blocked = act(added.state, { type: 'advance', minutes: 30 });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /必须立刻决定/);
+  const resolved = act(added.state, { type: 'resolveIncident', incidentId: 'inc-test-1', optionId: 'o1' });
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.state.gold, 4200);
+  assert.equal(resolved.state.reputation, s.reputation + 6);
+  assert.equal(act(resolved.state, { type: 'advance', minutes: 30 }).ok, true);
+});
+
+test('打烊时会把手上的异常摆上桌面', () => {
+  const s = createInitialState();
+  s.girls.find(girl => girl.id === 'yue')!.fatigue = 96;
+  const next = act(s, { type: 'endNight' }).state;
+  assert.ok(next.incidents.some(item => item.status === 'pending' && item.source === 'rule'));
+});
+
+// ── v6：角色事件 ────────────────────────────────────────────────
+test('角色事件带角标、逐场推进并可做出选择', () => {
+  const s = createInitialState();
+  const event = {
+    id: 'ev-test', girlId: 'yue', title: '灯下的第二杯茶', hook: '她把杯子推过来。', day: s.day, source: 'template' as const, badge: true, stage: 0, status: 'active' as const,
+    scenes: [
+      { id: 's1', title: '第一场', narration: '茶杯还热着。', lines: [{ speaker: '月见桃', tone: 'soft', text: '「坐吧。」' }], choices: [{ id: 'c1', label: '坐下', intent: '温柔', effect: { bond: 4 } }, { id: 'c2', label: '站着', intent: '克制', effect: { corruption: 1 } }] },
+      { id: 's2', title: '第二场', narration: '灯芯爆了一下。', lines: [{ speaker: '月见桃', text: '「明天也来吗？」' }], choices: [{ id: 'c3', label: '会来', intent: '承诺', effect: { bond: 6 } }] },
+    ],
+  };
+  const added = act(s, { type: 'addCharacterEvent', event });
+  assert.equal(added.ok, true);
+  assert.equal(added.state.girls.find(girl => girl.id === 'yue')!.eventBadge, '新');
+  const moved = act(added.state, { type: 'advanceEvent', eventId: 'ev-test' });
+  assert.equal(moved.state.events[0].stage, 1);
+  const chosen = act(moved.state, { type: 'resolveEvent', eventId: 'ev-test', choiceId: 'c3' });
+  assert.equal(chosen.ok, true);
+  assert.equal(chosen.state.events[0].status, 'done');
+  assert.equal(chosen.state.girls.find(girl => girl.id === 'yue')!.eventBadge, undefined);
+});
+
+test('势力辖区可以按回合修复，缺片时用种子补齐', () => {
+  const map = assignTerritories('repair-seed');
+  const partial = { candy: map.candy } as Record<string, 'witch' | 'association' | 'government'>;
+  const repaired = repairTerritories(partial as never, 'repair-seed');
+  assert.equal(Object.keys(repaired).length, 9);
+  assert.equal(repaired.candy, map.candy);
+});
+test('预设词条：导出再导入保持顺序、角色、禁用与分隔标记', () => {
+  const preset: ChatPreset = {
+    id: 'p1', name: '词条往返', settings: { temp_openai: 0.5 }, createdAt: 'a', updatedAt: 'b',
+    prompts: [
+      { id: 'a', name: '甲', content: '第一段', role: 'system', enabled: true },
+      { id: 'm', name: '分隔', content: '', role: 'system', enabled: true, marker: true },
+      { id: 'b', name: '乙', content: '第二段', role: 'user', enabled: false },
+    ],
+  };
+  const round = importPresetJson(exportPresetJson(preset));
+  assert.equal(round.ok, true);
+  const entries = presetPrompts(round.preset);
+  assert.deepEqual(entries.map(entry => entry.id), ['a', 'm', 'b']);
+  assert.equal(entries[1].marker, true);
+  assert.equal(entries[2].enabled, false);
+  assert.equal(entries[2].role, 'user');
+});
+
+test('预设词条替换变量，缺失变量与分隔标记不进入系统提示', () => {
+  const entries = [
+    { id: 'a', name: '档案', content: '委托人：{{player}}', role: 'system' as const, enabled: true },
+    { id: 'm', name: '分隔', content: '', role: 'system' as const, enabled: true, marker: true },
+    { id: 'b', name: '缺省', content: '辖区：{{district}}', role: 'system' as const, enabled: true },
+    { id: 'c', name: '停用', content: '不该出现', role: 'system' as const, enabled: false },
+  ];
+  const rendered = renderPresetSystem(entries, { player: '白鸟' });
+  assert.ok(rendered.system.includes('委托人：白鸟'));
+  assert.ok(!rendered.system.includes('{{district}}'));
+  assert.ok(!rendered.system.includes('不该出现'));
+  assert.deepEqual(rendered.used.sort(), ['district', 'player']);
+  assert.deepEqual(rendered.missing, ['district']);
+  assert.ok(promptTokens('今夜有雨') >= 4);
+});
+
+test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
+  const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
+  const entries = presetPrompts(legacy.preset);
+  assert.equal(entries.length, 2);
+  assert.ok(entries[0].content.includes('旧主提示'));
+  assert.ok(entries[1].content.includes('旧约束'));
+  const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
+  assert.ok(wrapped.system.includes('系统底稿'));
+  assert.ok(wrapped.system.includes('旧主提示'));
+  assert.equal(DEFAULT_PROMPTS.length, 4);
+  const summary = playerSummary({ name: '白鸟', alias: '所长', pronoun: '他', appearance: '旧风衣', personality: '寡言', background: '接手事务所', relation: '同事' });
+  assert.ok(summary.includes('白鸟（所长）'));
+  assert.ok(summary.includes('旧风衣'));
+  assert.equal(playerSummary({ name: '', alias: '', pronoun: '', appearance: '', personality: '', background: '', relation: '' }), '');
+});
+test('世界书内置 14 条，默认只启用 6 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 14);
+  const defaults = defaultWorldbook();
+  assert.equal(defaults.filter(entry => entry.enabled).length, 6);
+  assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
+  assert.ok(defaults.some(entry => entry.id === 'clinic'));
+});
+
+test('世界书按关键词命中，常驻优先进入且超预算会跳过', () => {
+  const entries = [
+    { id: 'clinic', name: '诊所', keys: ['治疗'], content: '治疗按小时恢复。', enabled: true, constant: false, priority: 3, order: 0 },
+    { id: 'night', name: '夜班', keys: ['午夜'], content: '夜班六小时。', enabled: true, constant: true, priority: 9, order: 0 },
+    { id: 'off', name: '停用', keys: ['治疗'], content: '不该出现。', enabled: false, constant: false, priority: 1, order: 0 },
+  ];
+  const hit = worldbookContext('她需要治疗', entries);
+  assert.deepEqual(hit.hits.map(entry => entry.id), ['night', 'clinic']);
+  assert.equal(hit.hits[0].reason, 'constant');
+  assert.ok(hit.text.includes('### 诊所'));
+  const tight = worldbookContext('她需要治疗', entries, 8);
+  assert.equal(tight.hits.length, 0);
+  assert.equal(tight.dropped, 2);
+});
+
+test('世界书与 SillyTavern 导出格式往返，并夹取非法字段', () => {
+  const source = { entries: { 0: { uid: 0, key: ['夜班', '值班'], comment: '夜班规则', content: '六小时。', constant: true, disable: false, order: 3, priority: 7 } } };
+  const imported = importWorldbookJson(JSON.stringify(source));
+  assert.equal(imported.ok, true);
+  const entry = imported.entries![0];
+  assert.deepEqual(entry.keys, ['夜班', '值班']);
+  assert.equal(entry.name, '夜班规则');
+  assert.equal(entry.constant, true);
+  assert.equal(entry.order, 3);
+  const back = JSON.parse(exportWorldbookJson(imported.entries!));
+  assert.deepEqual(back.entries['0'].key, ['夜班', '值班']);
+  assert.equal(back.entries['0'].disable, false);
+  const bad = sanitizeWorldbookEntry({ content: 'x', priority: 'oops', order: 9999 }, 0);
+  assert.equal(bad!.enabled, true);
+  assert.equal(bad!.priority, 50);
+  assert.ok(bad!.order <= 999);
+});
+
+test('数值规则夹取越界值，并修正长期委托上下限', () => {
+  const rules = sanitizeBalance({ clinicBase: -50, clinicPerHp: 999, squadLimit: 9, corruptionThreshold: 0, longMinDays: 9, longMaxDays: 1 });
+  assert.equal(rules.clinicBase, 0);
+  assert.equal(rules.clinicPerHp, 60);
+  assert.equal(rules.squadLimit, 5);
+  assert.equal(rules.corruptionThreshold, 10);
+  assert.equal(rules.longMaxDays, rules.longMinDays);
+  assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
+  assert.equal(BALANCE_FIELDS.length, 10);
+  clearBalanceCache();
+});
+
+test('故事线每一幕发布带明确目标的特殊委托', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(girl => girl.id === 'yue')!;
+  yue.bond = 60;
+  const started = act(s, { type: 'startStoryline', girlId: 'yue' });
+  assert.equal(started.ok, true);
+  const story = started.state.storylines[0];
+  assert.ok(story.beats.every(beat => beat.mission?.title && beat.mission.goal), '每一幕都要有明确目标');
+  const mission = started.state.missions.find(item => item.storylineId === story.id);
+  assert.ok(mission, '第一幕应立刻发出委托');
+  assert.equal(mission.storyBeatId, 'beat-1');
+  assert.equal(mission.window, 'long');
+  assert.equal(mission.work, 'investigation');
+  assert.ok((mission.storyGoal ?? '').length > 0);
+  assert.ok(mission.reward > 0 && mission.duration >= 60);
+  assert.equal(act(started.state, { type: 'deleteMission', missionId: mission.id }).ok, false, '故事委托不能删除');
+  const night = act(started.state, { type: 'endNight' }).state;
+  assert.ok(night.missions.some(item => item.id === mission.id), '故事委托跨夜保留');
+  assert.equal(night.storylines[0].status, 'active');
+});
+
+test('故事委托完成后生成剧情事件，事件结束才推进下一幕', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(girl => girl.id === 'yue')!;
+  yue.bond = 60;
+  const started = act(s, { type: 'startStoryline', girlId: 'yue' }).state;
+  const story = started.storylines[0];
+  const mission = started.missions.find(item => item.storylineId === story.id)!;
+  const copy = JSON.parse(JSON.stringify(started)) as typeof started;
+  const target = copy.missions.find(item => item.id === mission.id)!;
+  const event = completeStoryMission(copy, target)!;
+  assert.ok(event, '完成委托应生成事件');
+  const beat = copy.storylines[0].beats[0];
+  assert.equal(beat.status, 'done');
+  assert.equal(beat.eventId, event.id);
+  assert.equal(copy.storylines[0].stage, 0, '事件没结束前不推进');
+  assert.equal(copy.girls.find(girl => girl.id === 'yue')!.eventBadge, '新');
+  let after = act(copy, { type: 'advanceEvent', eventId: event.id }).state;
+  after = act(after, { type: 'advanceEvent', eventId: event.id }).state;
+  assert.equal(after.storylines[0].stage, 1, '事件结束后进入第二幕');
+  assert.ok(after.missions.some(item => item.storyBeatId === 'beat-2'), '第二幕的委托应发出');
+});
+
+
+test('故事委托可以指定同行者、专属魔物与专属装备', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(girl => girl.id === 'yue')!;
+  yue.bond = 60;
+  s.gold = 99999;
+  const started = act(s, { type: 'startStoryline', girlId: 'yue' }).state;
+  const story = started.storylines[0];
+  const beat = story.beats[0];
+  const monster = {
+    id: 'story-mon-test', name: '纸蛾', epithet: '没寄出的信', rank: '游荡' as const, element: '梦境系' as const,
+    color: '#c9a2d8', maxHp: 260, maxSpirit: 60,
+    stats: { magic: 90, insight: 80, agility: 88, empathy: 70 },
+    skillIds: ['paper-cut', 'static-veil'], trait: '只在她回头时出现。', description: '从信封里飞出来的东西。',
+    spec: { bodyPlan: 'moth' as const, scale: 1, appendages: 6, core: '糖' as const, palette: { body: '#3a2638', shade: '#241726', rim: '#f3aec9' }, aura: '花瓣' as const, motif: '糖' as const },
+    codex: { habit: '沿着旧路来回飞。', weakness: '被叫出名字就会散。' },
+  };
+  beat.mission = {
+    ...beat.mission!,
+    companion: { name: '纸鸢', codename: '信使', element: '梦境系', appearance: '总抱着一叠旧信。', personality: '说话很轻。', outfitDescription: '洗旧的邮差外套。' },
+    monsters: [monster],
+    rewardEquipment: { id: 'relic-test', name: '她的旧发卡', faction: 'witch', slot: 'charm', price: 0, standingReq: 0, description: '从信里掉出来的。', maxHpBonus: 5 },
+    followUpEvent: { title: '信的另一面', hook: '她把信翻过来，背面还有一行字。' },
+    followUpIncident: {
+      id: 'inc-test', day: 14, kind: 'girl', source: 'rule', title: '她想去寄这封信', body: '她站在门口，等你点头。',
+      options: [
+        { id: 'o1', label: '陪她去', hint: '花掉一点星砂', effect: { gold: -300, bond: 3 } },
+        { id: 'o2', label: '让她自己去', hint: '她需要独处', effect: { corruption: 2 } },
+      ],
+      status: 'pending',
+    },
+  };
+  beat.missionId = undefined;
+  const state = structuredClone(started);
+  const mission = spawnStoryBeat(state, state.storylines[0])!;
+  assert.ok(mission, '应发出带注入物的故事委托');
+  assert.equal(mission.work, 'combat');
+  assert.ok(mission.enemyIds?.includes('story-mon-test'));
+  assert.ok(state.customMonsters?.some(item => item.id === 'story-mon-test'));
+  assert.ok(mission.rewardEquipmentId);
+  const candidate = state.candidates.find(girl => girl.id === mission.requiredGirlId);
+  assert.ok(candidate, '应落一位新候选者');
+  assert.equal(candidate.name, '纸鸢');
+  assert.equal(act(state, { type: 'dispatch', missionId: mission.id, girlIds: ['yue'] }).ok, false, '缺少指定同行者时应拒绝');
+  const hired = act(state, { type: 'hire', girlId: candidate.id });
+  assert.equal(hired.ok, true);
+  const dispatched = act(hired.state, { type: 'dispatch', missionId: mission.id, girlIds: ['yue', candidate.id] });
+  assert.equal(dispatched.ok, true);
+  const copy = structuredClone(dispatched.state);
+  const target = copy.missions.find(item => item.id === mission.id)!;
+  target.status = 'done';
+  const event = completeStoryMission(copy, target)!;
+  assert.ok(copy.inventory[mission.rewardEquipmentId!] >= 1, '专属装备应进背包');
+  assert.ok(copy.incidents.some(item => item.status === 'pending' && item.id.startsWith('inc-story-')), '应摆出后续强制事件');
+  assert.ok(event.scenes.length >= 3, '额外事件应追加到事件场次里');
+});
+
+test('手写剧本随契约卡导出导入，并可直接按手稿开场', () => {
+  const s = createInitialState();
+  const yue = s.girls[0];
+  const plan = storyPlanTemplate('未寄出的信', '她有一封没寄出的信。');
+  plan.tone = '克制的温柔';
+  plan.beats = plan.beats.map((beat, index) => ({
+    ...beat,
+    title: ['等到灯灭', '那件旧事', '没说出口的', '天亮之前'][index],
+    summary: '她把话留在桌上。',
+    scene: '夜班的钟走到一半，她出现在门口。',
+    hook: '信纸边缘有一道被反复折过的痕。',
+    choices: [
+      { id: 'c1', label: '把椅子往她那边挪一点', intent: '先接住她', effect: { bond: 3 } },
+      { id: 'c2', label: '先不催她，去倒一杯热水', intent: '给她时间', effect: { bond: 1, corruption: 1 } },
+    ],
+    mission: index === 0 ? { title: '未寄出的信', goal: '陪她把信送到旧城区。', category: '故事委托', difficulty: '常规', duration: 90 } : undefined,
+  }));
+
+  const saved = act(s, { type: 'setStoryPlan', girlId: yue.id, plan });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.state.girls[0].storyPlan?.title, '未寄出的信');
+
+  const card = parseGirlCard(JSON.stringify(buildGirlCard(saved.state.girls[0], { day: saved.state.day, packHash: saved.state.packHash })));
+  assert.equal(card.ok, true);
+  if (card.ok) {
+    assert.equal(card.card.girl.storyPlan?.title, '未寄出的信');
+    assert.equal(card.card.girl.storyPlan?.beats.length, 4);
+    assert.equal(card.card.girl.storyPlan?.beats[0].hook, '信纸边缘有一道被反复折过的痕。');
+  }
+
+  const ready = structuredClone(saved.state);
+  ready.girls[0].bond = 60;
+  const started = act(ready, { type: 'startStoryline', girlId: yue.id });
+  assert.equal(started.ok, true);
+  const story = started.state.storylines[0];
+  assert.equal(story.source, 'manual');
+  assert.ok(story.graph && story.run);
+  assert.ok(story.beats.length >= 4);
+  const missionBeat = story.beats.find(beat => beat.missionId);
+  assert.ok(missionBeat);
+  assert.equal(started.state.missions.some(mission => mission.storyBeatId === missionBeat?.id), true);
+
+  const cleared = act(started.state, { type: 'setStoryPlan', girlId: yue.id, plan: null });
+  assert.equal(cleared.state.girls[0].storyPlan, undefined);
+});
+
+test('无 Key 的模板剧情有四段上千字，逐段选择后收束并推进故事线', () => {
+  const s = createInitialState();
+  const yue = s.girls.find(girl => girl.id === 'yue')!;
+  yue.bond = 60;
+  const started = act(s, { type: 'startStoryline', girlId: 'yue' }).state;
+  const state = structuredClone(started);
+  const story = state.storylines[0];
+  const mission = spawnStoryBeat(state, story)!;
+  const event = completeStoryMission(state, mission)!;
+  assert.equal(event.mode, 'story');
+  assert.equal(event.passages?.length, 0);
+  const arc = buildTemplateArc(state.girls.find(girl => girl.id === 'yue')!, story.premise, event.hook);
+  assert.equal(arc.length, 4);
+  const total = arc.reduce((sum, passage) => sum + passage.narration.length, 0);
+  assert.ok(total >= 1000, `模板剧情应上千字，实际 ${total}`);
+  const begun = act(state, { type: 'beginStoryEvent', eventId: event.id, passages: arc, summary: '这一晚收束。' });
+  assert.ok(begun.ok);
+  let cur = begun.state;
+  for (let index = 0; index < arc.length; index += 1) {
+    const current = cur.events.find(item => item.id === event.id)!;
+    const passage = current.passages![current.passageIndex ?? 0];
+    const chosen = act(cur, { type: 'chooseStoryPassage', eventId: event.id, choiceId: passage.choices[0].id });
+    assert.ok(chosen.ok, chosen.ok ? '' : chosen.message);
+    cur = chosen.state;
+  }
+  const finished = cur.events.find(item => item.id === event.id)!;
+  assert.equal(finished.status, 'done');
+  assert.ok((cur.storylines[0].stage ?? 0) >= 1, '剧情收束后应推进故事线');
+});
+test('prompt_order 决定注入顺序与启停，ST 宏会被展开', () => {
+  const imported = importPresetObject({
+    prompt_order: [{ character_id: 100001, order: [
+      { identifier: 'third', enabled: true },
+      { identifier: 'first', enabled: true },
+      { identifier: 'second', enabled: false },
+    ] }],
+    prompts: [
+      { identifier: 'first', name: '一', content: '{{user}} 与 {{char}}', role: 'system', enabled: true },
+      { identifier: 'second', name: '二', content: '停用', role: 'system', enabled: true },
+      { identifier: 'third', name: '三', content: '{{setvar::x::}}{{comment}}', role: 'system', enabled: true },
+    ],
+  });
+  assert.equal(imported.ok, true);
+  if (!imported.ok || !imported.preset) return;
+  const ordered = activePrompts(imported.preset!);
+  assert.deepEqual(ordered.map(entry => entry.id), ['third', 'first', 'second']);
+  assert.equal(renderPresetSystem(ordered, {}).system.includes('停用'), false);
+  const built = withPresetPrompts('基础', presetRuntime(imported.preset!), { user: '白鸟', char: '月见桃，绯色回响。' });
+  assert.match(built.system, /白鸟 与 月见桃/);
+  assert.equal(built.system.includes('{{setvar'), false);
+});
+
+test('applyFormat 单占位原样放入，{0} 才包装', () => {
+  assert.equal(applyFormat('{{scenario}}', '场景内容'), '场景内容');
+  assert.equal(applyFormat('【场景】\n{0}', '场景内容'), '【场景】\n场景内容');
+  assert.equal(applyFormat('', '内容'), '内容');
+});
+
+test('预设接口选择：本地免密钥，远程缺密钥回退全局', () => {
+  const local = resolvePresetConfig({ api: { endpoint: 'http://127.0.0.1:11434/v1', model: 'local' } }, { endpoint: 'https://global', apiKey: 'g', model: 'g' });
+  assert.equal(local.endpoint, 'http://127.0.0.1:11434/v1');
+  assert.equal(local.model, 'local');
+  const remote = resolvePresetConfig({ api: { endpoint: 'https://preset', model: 'p' } }, { endpoint: 'https://global', apiKey: 'g', model: 'g' });
+  assert.equal(remote.endpoint, 'https://global');
+  assert.equal(remote.model, 'g');
+});test('导入会统计坏正则，并对工具调用词条给出警告', () => {
+  const result = importPresetObject({
+    name: '兼容检查',
+    extensions: { regex_scripts: [
+      { scriptName: '好的', findRegex: '/（[^）]*）/g', replaceString: '', placement: [2] },
+      { scriptName: '坏的', findRegex: '/（[^）/g', replaceString: '', placement: [1] },
+    ] },
+    prompts: [{ identifier: 'tool', name: '工具', content: '请调用 game_content 返回 JSON', role: 'system', enabled: true }],
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.preset?.regex?.length, 1);
+  assert.match(result.warnings.join('\n'), /1 条正则无法解析/);
+  assert.match(result.warnings.join('\n'), /工具调用/);
+});test('预设导出带 schema 2 与正则，且剥离密钥', () => {
+  const preset = importPresetObject({
+    name: '导出测试',
+    temperature: 0.7,
+    api: { endpoint: 'https://example.invalid/v1', apiKey: 'sk-secret-value', model: 'm1' },
+    extensions: { regex_scripts: [{ scriptName: '去括号', findRegex: '/（[^）]*）/g', replaceString: '', placement: [1, 2] }] },
+  });
+  assert.equal(preset.ok, true);
+  if (!preset.ok || !preset.preset) return;
+  const exported = JSON.parse(exportPresetJson(preset.preset));
+  assert.equal(exported.schema, 2);
+  assert.equal('apiKey' in (exported.api ?? {}), false);
+  assert.equal(exported.api?.model, 'm1');
+  assert.equal(exported.extensions.regex_scripts[0].findRegex, '/（[^）]*）/g');
+  const round = importPresetObject(exported);
+  assert.equal(round.ok, true);
+  if (!round.ok || !round.preset) return;
+  assert.equal(round.preset.regex?.[0]?.targets.join(','), 'input,output');
+});test('ST 正则按 placement 与 destination 生效，预设可带独立接口', () => {
+  const parsed = importPresetObject({
+    name: '正则预设',
+    prompts: [{ identifier: 'main', content: '主提示' }],
+    extensions: {
+      regex_scripts: [
+        { id: 'r1', scriptName: '去掉思维链标签', findRegex: '/<think_[^>]*>[\\s\\S]*?<\\/think_[^>]*>/g', replaceString: '', placement: [2], disabled: false },
+        { id: 'r2', scriptName: '玩家口癖', findRegex: '/我/g', replaceString: '咱', placement: [1], disabled: false },
+        { id: 'r3', scriptName: '仅显示的样式', findRegex: '/夜糖/g', replaceString: '夜糖事务所', placement: [2], markdownOnly: true },
+        { id: 'bad', scriptName: '坏正则', findRegex: '/(/g', replaceString: '', placement: [2] },
+      ],
+    },
+  });
+  assert.equal(parsed.ok, true);
+  const scripts = pickRegexScripts(parsed.preset!.settings);
+  assert.equal(scripts.length, 3);
+  assert.ok(parsed.warnings.some(text => text.includes('无法解析')));
+  assert.equal(applyRegexScripts('我说夜糖', scripts, 'input', 'prompt'), '咱说夜糖');
+  const output = '<think_nya>想</think_nya>夜糖';
+  assert.equal(applyRegexScripts(output, scripts, 'output', 'prompt'), '夜糖');
+  assert.equal(applyRegexScripts('夜糖', scripts, 'output', 'display'), '夜糖事务所');
+  const local = resolvePresetConfig({ api: { endpoint: 'http://127.0.0.1:8000/v1', model: 'local-model' } }, { endpoint: 'https://api.example.com', apiKey: 'global', model: 'global-model' });
+  assert.equal(local.model, 'local-model');
+  const remote = resolvePresetConfig({ api: { endpoint: 'https://api.example.com', model: 'm' } }, { endpoint: 'https://fallback', apiKey: 'k', model: 'f' });
+  assert.equal(remote.model, 'f');
+  const withKey = resolvePresetConfig({ api: { endpoint: 'https://api.example.com', apiKey: 'sk-x', model: 'm' } }, { endpoint: 'https://fallback', apiKey: 'k', model: 'f' });
+  assert.equal(withKey.model, 'm');
+  assert.equal(withKey.apiKey, 'sk-x');
+  const exported = exportPresetJson({ ...parsed.preset!, api: { endpoint: 'https://api.example.com', apiKey: 'sk-secret', model: 'm' } });
+  assert.ok(!exported.includes('sk-secret'));
+  assert.ok(exported.includes('"endpoint"'));
+});
+test('剧情请求按预设的 scenario/personality 格式串拼装，并使用预设接口与正则', async () => {
+  const original = globalThis.fetch;
+  let seenBody: { model?: string; temperature?: number; messages?: { role: string; content: string }[] } | null = null;
+  const narration = '她把伞收起来，水滴在门槛上碎成一排细小的声音，像有人在很远的地方数着拍子。'.repeat(10);
+  const arc = {
+    title: '雨停之前', hook: '她站在门口', summary: '一段收束',
+    passages: [0, 1, 2, 3].map(index => ({
+      title: `第 ${index + 1} 段`, narration,
+      lines: [{ speaker: '月见桃', tone: '轻声', text: '你还在。' }],
+      choices: [{ label: '让她进来', intent: '靠近', effect: { bond: 2 } }, { label: '先不说话', intent: '退开', effect: { corruption: 1 } }],
+    })),
+  };
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(arc) }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const preset = {
+    id: 'preset-story', name: '剧情预设', description: '', createdAt: '', updatedAt: '',
+    settings: { temperature: 0.77, openai_max_tokens: 2048, scenario_format: '【场景】\n{0}', personality_format: '【性格】{0}' },
+    prompts: [{ id: 'p1', name: '结构', content: '{{personality}}\n---\n{{scenario}}', role: 'system', enabled: true }],
+    api: { endpoint: 'https://story.local/v1', apiKey: 'sk-story', model: 'story-model' },
+    regex: [{ id: 'r1', name: '口癖', find: '/剧情/g', replace: '故事', targets: ['input'], enabled: true }],
+  } as ChatPreset;
+  const girl = createInitialState().girls[0];
+  try {
+    const result = await generateStoryArc(
+      { endpoint: 'https://global.local/v1', apiKey: 'g', model: 'global' },
+      { world: '夜糖事务所。', daily: '' },
+      girl,
+      { premise: '雨夜', beatTitle: '第一幕', beatHook: '她站在门口' },
+      presetRuntime(preset),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(seenBody?.model, 'story-model');
+    assert.equal(seenBody?.temperature, 0.77);
+    const system = String(seenBody?.messages?.[0]?.content ?? '');
+    assert.ok(system.includes('【性格】'));
+    assert.ok(system.includes('【场景】'));
+    assert.ok(!system.includes('{{personality}}'));
+    const user = String(seenBody?.messages?.at(-1)?.content ?? '');
+    assert.ok(user.includes('故事'));
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('蓝图故事线按图推进：逐幕分岔、奖励结算后收束', () => {
+  const s = createInitialState();
+  const girl = s.girls[0];
+  const plan = storyPlanTemplate('分岔的夜', '她在两个门口之间停下。');
+  plan.beats = plan.beats.map(beat => ({ ...beat, mission: undefined }));
+  const saved = act(s, { type: 'setStoryPlan', girlId: girl.id, plan });
+  assert.equal(saved.ok, true);
+  const ready = structuredClone(saved.state);
+  ready.girls[0].bond = 60;
+  const started = act(ready, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(started.ok, true);
+  let state = started.state;
+  const storyId = state.storylines[0].id;
+  const bondBefore = state.girls[0].bond;
+  for (let step = 0; step < 4; step += 1) {
+    const story = state.storylines.find(item => item.id === storyId);
+    assert.equal(story?.run?.waiting?.kind, 'choice');
+    const node = story?.graph?.nodes.find(item => item.id === story.run?.waiting?.ref);
+    assert.ok(node && node.data.kind === 'choice');
+    if (!node || node.data.kind !== 'choice') return;
+    const option = node.data.options[0];
+    assert.ok(option);
+    const moved = act(state, { type: 'chooseStoryPort', storylineId: storyId, port: option.id });
+    assert.equal(moved.ok, true);
+    state = moved.state;
+  }
+  const finished = state.storylines.find(item => item.id === storyId);
+  assert.equal(finished?.status, 'done');
+  assert.ok(state.girls[0].bond > bondBefore);
 });

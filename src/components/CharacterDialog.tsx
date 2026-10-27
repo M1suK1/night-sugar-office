@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
@@ -7,6 +8,7 @@ import { effectText, getSkill, resourceLabels, tierLabels } from '../content/ski
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
 import { expNeeded, progressLabel } from '../progression';
 import { GirlPortrait } from './GirlPortrait';
+import { ClinicPanel } from './ClinicPanel';
 import { getItem, items } from '../content/items';
 
 const dossierTabs = [
@@ -29,12 +31,21 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onEquip, onUseItem, onUnequip, onExportCard }: {
-  girl: Girl; state: GameState; onCare: (mode: 'healing' | 'resting') => void;
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch }: {
+  girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
-  onClinic: (mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
+  onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
+  onWardrobe: () => void;
+  onStory: () => void;
+  onStoryEdit: () => void;
+  onStoryGraph: () => void;
+  onStoryChoice: (storylineId: string, beatId: string, choiceId: string) => void;
+  onStoryPort: (storylineId: string, port: string) => void;
+  onStoryMission: (missionId: string) => void;
+  onEvent: () => void;
+  onWitch: () => void;
   onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onExportCard: () => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
@@ -54,6 +65,13 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
   const gear = items.filter(item => (item.slot === 'weapon' || item.slot === 'charm') && (state.inventory[item.id] ?? 0) > 0);
   const corruptionLabel = girl.witch ? '魔女化' : corruptionTier === 2 ? '第三阶段' : corruptionTier === 1 ? '第二阶段' : '第一阶段';
+  const storyline = state.storylines.find(item => item.girlId === girl.id && item.status === 'active');
+  const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
+  const beat = current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
+  const graphChoice = storyline?.graph && storyline.run?.waiting?.kind === 'choice'
+    ? storyline.graph.nodes.find(node => node.id === storyline.run?.waiting?.ref)
+    : undefined;
+  const witchOutfit = girl.witchForm;
 
   function equipFromInventory(itemId: string, slot: 'weapon' | 'charm') {
     const item = getItem(itemId);
@@ -128,6 +146,58 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <p>{girl.scars.length >= 4 ? '第 5 道疤痕会带来不可逆的死亡。她仍可以申请退役，转任事务所文职。' : `每道疤痕让血量上限降低约 8%。当前上限 ${girl.maxHp} / 基础 ${girl.baseMaxHp}。`}</p>
             </div>
             <p className="dossier-description">{girl.description}</p>
+            <section className="story-panel" aria-labelledby="story-title">
+              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{girl.storyPlan ? '手稿由你写下 · 开场后按幕推进' : '由叙事者按她的过去写四幕 · 每幕的选项会落到状态上'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${storyline.beats.length} 幕` : '未开启'}</em></div>
+              {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
+              {storyline && beat ? (
+                <div className="story-beat">
+                  <b>{beat.title}</b>
+                  {beat.summary && <p>{beat.summary}</p>}
+                  <small>{beat.scene}</small>
+                  {beat.mission ? (
+                    <div className={`story-mission ${beat.status ?? 'open'}`}>
+                      <small>{beat.status === 'done' ? '这一幕的委托已完成 · 事件在头像角标' : beat.missionId ? '委托已在地图上 · 完成后触发她的剧情事件' : '委托准备中'}</small>
+                      <b>{beat.mission.title}</b>
+                      <p>{beat.mission.goal}</p>
+                      <span>{beat.mission.difficulty} · {beat.mission.duration} 分钟 · {beat.mission.category ?? '故事委托'}</span>
+                      {(beat.mission.companion || beat.mission.monsters?.length || beat.mission.rewardEquipment || beat.mission.followUpIncident || beat.mission.followUpEvent) && (
+                        <span className="story-grant-tags">
+                          {beat.mission.companion && <em>新契约者 · {beat.mission.companion.name}</em>}
+                          {beat.mission.requiredGirlId && <em>指定同行</em>}
+                          {Boolean(beat.mission.monsters?.length) && <em>专属魔物 · {beat.mission.monsters!.length}</em>}
+                          {beat.mission.rewardEquipment && <em>专属装备 · {beat.mission.rewardEquipment.name}</em>}
+                          {beat.mission.followUpIncident && <em>后续弹窗</em>}
+                          {beat.mission.followUpEvent && <em>额外事件</em>}
+                        </span>
+                      )}
+                      {beat.missionId && beat.status !== 'done' && <button id="dossier-story-mission" type="button" className="btn" onClick={() => onStoryMission(beat.missionId as string)}>查看这份委托</button>}
+                    </div>
+                  ) : (
+                    <div className="story-choices">
+                      {beat.choices.map(choice => <button key={choice.id} id={`dossier-story-choice-${choice.id}`} type="button" className="btn" onClick={() => onStoryChoice(storyline.id, beat.id, choice.id)}>{choice.label}</button>)}
+                      {graphChoice?.data.kind === 'choice' && graphChoice.data.options.map(option => (
+                        <button key={option.id} id={`dossier-story-port-${option.id}`} type="button" className="btn" onClick={() => onStoryPort(storyline.id, option.id)}>{option.label || '继续'}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                {girl.storyPlan && (
+                  <div className="story-plan-card" id="dossier-story-plan">
+                    <b>{girl.storyPlan.title}</b>
+                    <small>{girl.storyPlan.beats.length} 幕手稿 · 随契约卡一起导出</small>
+                    <span className="story-plan-tags">{girl.storyPlan.beats.map((planBeat, planIndex) => <em key={planBeat.id}>{planIndex + 1}. {planBeat.title || '未命名'}</em>)}</span>
+                  </div>
+                )}
+                <div className="story-start-row">
+                  <button id="dossier-story-start" type="button" className="btn" disabled={girl.bond < 20} onClick={onStory}>{girl.storyPlan ? '按手稿开场' : '开启角色故事线'}{girl.bond < 20 ? '（羁绊需 20）' : ''}</button>
+                  <button id="dossier-story-edit" type="button" className="btn ghost" onClick={onStoryEdit}>{girl.storyPlan ? '编辑手稿' : '自己写一条'}</button>
+                  <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph}>蓝图编辑</button>
+                </div>
+                </>
+              )}
+            </section>
             <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : girl.status === 'expedition' ? '星象台远行中 · 每 60 分钟回报一次' : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
           </>}
           {tab === 'ability' && <>
@@ -192,29 +262,36 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             {girl.retired && girl.retiredReason === 'contract' && <button id="girl-rehire" className="btn full" onClick={onRehire}><UserRoundCheck size={15} />返聘 · {600 + girl.level * 120} 星砂</button>}
             {girl.retired && <p className="small-note"><Phone size={12} />已退役，可进行远程联络。每次通话 40 星砂，每日首次提升羁绊。</p>}
             {!candidate && <button id="girl-assistant-toggle" className={`btn full ${isAssistant ? 'active' : ''}`} onClick={onAssistant}><ShieldCheck size={15} />{isAssistant ? '取消值班助理' : '设为值班助理'} · 需羁绊 40</button>}
-            <div className="modal-section-heading"><h3>月光诊所</h3><small>花一点星砂，换她一个完整的夜晚</small></div>
-            <div className="clinic-grid">
-              <button id="clinic-heal" className="clinic-action" disabled={state.gold < 240 || (girl.status !== 'idle' && !girl.retired)} onClick={() => onClinic('heal')}><Cross size={16} /><b>快速治疗</b><small>240 星砂 · 回满血量与共情</small></button>
-              <button id="clinic-rest" className="clinic-action" disabled={state.gold < 360 || girl.status !== 'idle'} onClick={() => onClinic('rest')}><Moon size={16} /><b>深度疗养</b><small>360 星砂 · 三天，清空疲劳</small></button>
-              <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性重置</small></button>
-              <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
             </div>
             </div>
-            </div>
+            <section className="growth-clinic">
+              <div className="modal-section-heading"><h3>月光诊所</h3><small>按缺失血量收费，按小时恢复；治疗期间不能派遣</small></div>
+              <ClinicPanel state={state} girls={[girl]} onTreat={(_girlId, kink) => onClinic('treat', kink)} />
+              <div className="clinic-grid">
+                <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性重置</small></button>
+                <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
+              </div>
+            </section>
           </>}
           {tab === 'appearance' && <>
             <div className="appearance-page">
               <section className="appearance-section" aria-labelledby="wardrobe-title">
-                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>最多三套 · 换装同步立绘与头像</small></div><em>{Math.min(3, girl.wardrobe.length)} / 3</em></div>
+                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>四格礼装 · 换装同步立绘与头像</small></div><em>{Math.min(4, girl.wardrobe.length)} / 4</em></div>
                 <div className="wardrobe-grid">
-                  {girl.wardrobe.slice(0, 3).map(outfit => (
+                  {girl.wardrobe.slice(0, 4).map(outfit => (
                     <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id ? 'picked' : ''}`} aria-pressed={girl.outfitId === outfit.id} onClick={() => onChangeOutfit(outfit.id)}>
                       <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id }} variant="avatar" /></span>
-                      <span className="wardrobe-copy"><b>{outfit.name}</b><small title={outfit.description}>{outfit.description}</small></span>
+                      <span className="wardrobe-copy"><b>{outfit.name}{outfit.custom && <em className="wardrobe-tag">契约礼装</em>}</b><small title={outfit.description}>{outfit.description}</small></span>
                       {girl.outfitId === outfit.id && <span className="wardrobe-check"><BadgeCheck size={12} /></span>}
                     </button>
                   ))}
+                  {girl.wardrobe.length < 4 && <button id="dossier-wardrobe-import" type="button" className="wardrobe-tile wardrobe-add" onClick={onWardrobe}><span className="wardrobe-preview"><PackageOpen size={18} /></span><span className="wardrobe-copy"><b>导入衣柜</b><small>立绘、JSON 或从其他契约者复制</small></span></button>}
+                  {(witchOutfit || girl.corruption >= rules().corruptionThreshold) && <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch}>
+                    <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: Boolean(witchOutfit), portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
+                    <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已解锁 · 点击切换') : '侵蚀 40 解锁'}</small></span>
+                  </button>}
                 </div>
+                <button id="dossier-wardrobe-manage" type="button" className="llm-reset wardrobe-manage" onClick={onWardrobe}>管理衣柜 · 导入 / 删除</button>
               </section>
 
               <section className="appearance-section" aria-labelledby="expression-title">
@@ -266,7 +343,6 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>缔结契约 · {girl.cost.toLocaleString()} 星砂<ArrowUpRight size={16} /></button> : <>
           <div className="dossier-footer">
           <div className="care-actions">
-            <button id="girl-heal" className="btn" disabled={girl.status !== 'idle' || girl.hp === girl.maxHp} onClick={() => onCare('healing')}><Cross size={15} /><span>送去治疗<small>180 星砂 · 60 分钟</small></span></button>
             <button id="girl-rest" className="btn" disabled={girl.status !== 'idle' || girl.fatigue === 0} onClick={() => onCare('resting')}><Moon size={15} /><span>安排休息<small>免费 · 90 分钟</small></span></button>
           </div>
           <div className="dossier-primary-actions">

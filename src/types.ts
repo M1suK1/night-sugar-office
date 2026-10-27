@@ -1,8 +1,12 @@
+import type { DistrictId } from './districts';
+import type { CommissionWindow } from './shift';
+
 export type StatKey = 'magic' | 'insight' | 'agility' | 'empathy';
 export type Element = '星光系' | '糖霜系' | '月影系' | '梦境系' | '自然系' | '赤焰系' | '魔物';
 export type Archetype = '输出' | '守护' | '控制' | '治愈' | '侦查' | '魔物';
 export type GirlStatus = 'idle' | 'mission' | 'healing' | 'resting' | 'retired' | 'expedition';
 export type WorkKind = 'combat' | 'investigation';
+export type MissionStatus = 'open' | 'active' | 'done' | 'expired';
 export type GoalKind = '战斗' | '调查' | '社交' | '生活' | '成长';
 export type SkillResource = 'hp' | 'spirit';
 export type SkillSide = 'enemy' | 'ally' | 'self';
@@ -11,9 +15,20 @@ export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen'
 export type TraitPolarity = 'positive' | 'negative' | 'neutral';
 export type Expression = 'calm' | 'smile' | 'surprise' | 'sad' | 'angry' | 'shy';
 export type FactionId = 'witch' | 'association' | 'government';
+export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {
   id: string; name: string; description: string;
   palette: string[]; layerKey: string;
+  /** 礼装形态：普通礼装或魔女形态。 */
+  form?: OutfitForm;
+  /** 这套衣服专属的立绘（data URL）。有它就不再走程序化立绘。 */
+  portrait?: string;
+  /** 与立绘同批生成的外形规格，用于头像/详情页。 */
+  portraitSpec?: PortraitSpec;
+  /** 来自角色卡或衣柜包，导出时原样带走。 */
+  imported?: boolean;
+  /** 自定义礼装：立绘沿用本人的 `girl.portrait`。 */
+  custom?: boolean;
 }
 export interface Equipment {
   id: string; name: string; faction: FactionId; slot: 'weapon' | 'charm' | 'consumable';
@@ -28,12 +43,17 @@ export interface BossState {
   id: string; appearedDay: number; lastTick: number; deadline: number;
   missionId: string; defeated?: boolean;
 }
+export interface DraftTrait {
+  name: string;
+  description: string;
+  polarity: TraitPolarity;
+}
 export interface GirlDraft {
   name: string; codename: string; title: string; element: Element; archetype: Archetype;
   color: string; quote: string; goal: string;
   appearance: string; personality: string; outfitDescription: string;
-  stats: Record<StatKey, number>; skillIds: string[]; traits: string[];
-  portrait?: string; appearanceSpec?: PortraitSpec;
+  stats: Record<StatKey, number>; skillIds: string[]; traits: DraftTrait[];
+  portrait?: string; appearanceSpec?: PortraitSpec; portraitHint?: string;
 }
 
 export interface GirlCard {
@@ -43,6 +63,7 @@ export interface GirlCard {
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
+    portraitHint?: string; witchForm?: Outfit; storyPlan?: StoryPlan;
   };
 }
 
@@ -57,16 +78,191 @@ export interface Condition {
 }
 export interface OpinionOption {
   id: 'accept' | 'defer' | 'reject'; label: string; effect: string;
+  /** 接受这条提案会把哪个辖区交给哪个势力。 */
+  shift?: { district: DistrictId; faction: FactionId };
 }
 export interface Opinion {
   id: string; day: number; authorId: string; topic: '经费' | '排班' | '设施' | '同伴' | '城市' | '私人心愿';
   title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired';
-  options: OpinionOption[]; assistantNote?: string;
+  options: OpinionOption[]; assistantNote?: string; storylineId?: string;
 }
 export interface Expedition {
   id: string; roomId: string; memberIds: string[];
   startedDay: number; startedMinutes: number; cyclesDone: number;
   lastSettledDay: number; lastSettledMinutes: number;
+}
+
+export interface StoryEffect {
+  gold?: number; reputation?: number; bond?: number; corruption?: number;
+  trait?: { name: string; description: string };
+  trigger?: StoryTrigger;
+}
+export interface StoryChoice {
+  id: string; label: string; intent: string; effect: StoryEffect;
+}
+/** 故事线每一幕必须给出的委托目标；App 会据此生成特殊委托。 */
+export interface StoryCompanion {
+  name: string; codename: string; element: Element; archetype?: Archetype;
+  appearance: string; personality: string; outfitDescription: string;
+  color?: string; quote?: string;
+}
+export interface StoryMissionSpec {
+  title: string; goal: string; category: string; difficulty: string;
+  duration: number; district?: DistrictId; requirement?: StatKey; target?: number;
+  /** 需先缔结契约、且必须编入小队的少女；给了 `companion` 会先落一位新候选者。 */
+  requiredGirlId?: string;
+  companion?: StoryCompanion;
+  /** 这条委托会把它们登记进图鉴并作为对手。 */
+  monsters?: MonsterTemplate[];
+  /** 完成时发放的专属装备。 */
+  rewardEquipment?: Equipment;
+  /** 完成时立刻摆到桌上的强制事件。 */
+  followUpIncident?: Incident;
+  /** 完成时额外交付的角色事件钩子（排在常规剧情事件之后）。 */
+  followUpEvent?: { title: string; hook: string };
+}
+export interface StoryBeat {
+  id: string; index: number; title: string; summary: string; scene: string;
+  hook: string; choices: StoryChoice[];
+  resolvedChoiceId?: string; resolvedAt?: string;
+  /** 这一幕要完成的委托；缺失时该幕按纯剧情推进。 */
+  mission?: StoryMissionSpec;
+  /** 已为该幕发出的委托 id。 */
+  missionId?: string;
+  /** 委托是否完成、剧情事件是否已生成。 */
+  status?: 'locked' | 'open' | 'done';
+  eventId?: string;
+}
+export interface Storyline {
+  id: string; girlId: string; title: string; premise: string; tone: string;
+  beats: StoryBeat[]; stage: number; status: 'active' | 'done' | 'abandoned';
+  createdAt: string; day: number; source: 'llm' | 'template' | 'manual';
+  graph?: StoryGraph;
+  run?: StoryRun;
+}
+
+export type StoryNodeKind =
+  | 'start' | 'scene' | 'choice' | 'mission' | 'incident'
+  | 'opinion' | 'event' | 'reward' | 'wait' | 'end';
+
+export interface StoryIncidentSpec {
+  kind: Incident['kind'];
+  title: string; body: string;
+  faction?: FactionId; district?: DistrictId;
+  options: { label: string; hint: string; effect: IncidentEffect }[];
+}
+export interface StoryOpinionSpec {
+  topic: Opinion['topic']; title: string; text: string; request: string;
+  options: { id: 'accept' | 'defer' | 'reject'; label: string; effect: string; shift?: { district: DistrictId; faction: FactionId } }[];
+}
+
+export type StoryNodeData =
+  | { kind: 'start' }
+  | { kind: 'scene'; narration: string; lines: { speaker: string; tone?: string; text: string }[] }
+  | { kind: 'choice'; prompt?: string; options: { id: string; label: string; intent?: string; effect?: StoryEffect }[] }
+  | { kind: 'mission'; spec: StoryMissionSpec }
+  | { kind: 'incident'; spec: StoryIncidentSpec }
+  | { kind: 'opinion'; spec: StoryOpinionSpec }
+  | { kind: 'event'; title: string; hook: string }
+  | { kind: 'reward'; effect: StoryEffect; equipmentId?: string; trait?: { name: string; description: string } }
+  | { kind: 'wait'; days?: number; minutes?: number }
+  | { kind: 'end'; summary?: string };
+
+export interface StoryNode {
+  id: string;
+  kind: StoryNodeKind;
+  x: number; y: number;
+  title: string;
+  note?: string;
+  data: StoryNodeData;
+}
+
+export interface StoryEdge {
+  id: string;
+  from: string; fromPort: string;
+  to: string;
+}
+
+export interface StoryGraph {
+  version: 1;
+  nodes: StoryNode[];
+  edges: StoryEdge[];
+  entry: string;
+}
+
+export type StoryWaitKind = 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait';
+export interface StoryRun {
+  cursor: string;
+  waiting?: { kind: StoryWaitKind; ref: string; until?: number };
+  visited: string[];
+  steps: number;
+  stalled?: boolean;
+}
+
+export interface StoryPlan {
+  title: string; premise: string; tone: string; beats: StoryBeat[];
+  graph?: StoryGraph;
+}
+export interface IncidentEffect {
+  gold?: number; reputation?: number;
+  faction?: { id: FactionId; standing: number };
+  girl?: { fatigue?: number; spirit?: number; corruption?: number; bond?: number };
+  district?: { id: DistrictId; targetPct?: number; rewardPct?: number; untilDay: number };
+  territory?: { id: DistrictId; faction: FactionId };
+  missionId?: string;
+}
+export interface IncidentOption {
+  id: string; label: string; hint: string; effect: IncidentEffect;
+}
+export interface Incident {
+  id: string; day: number; kind: 'faction' | 'environment' | 'girl';
+  source: 'llm' | 'rule'; title: string; body: string;
+  faction?: FactionId; girlId?: string; district?: DistrictId;
+  options: IncidentOption[]; status: 'pending' | 'resolved'; storylineId?: string;
+  choiceId?: string; resolvedAt?: string;
+}
+export type StoryTrigger =
+  | { kind: 'mission'; title: string; description: string; district?: DistrictId; duration?: number }
+  | { kind: 'opinion'; topic: Opinion['topic']; title: string; text: string; request: string; shift?: { district: DistrictId; faction: FactionId } }
+  | { kind: 'incident'; incidentKind: Incident['kind']; title: string; body: string; options: IncidentOption[] }
+  | { kind: 'event'; title: string; hook: string }
+  | { kind: 'dialogue'; topic: string; prompt: string }
+  | { kind: 'territory'; district: DistrictId; faction: FactionId };
+
+export interface EventLine { speaker: string; tone?: string; text: string }
+export interface EventScene {
+  id: string; title: string; narration: string;
+  lines: EventLine[]; choices?: StoryChoice[];
+}
+export interface StoryPassage {
+  id: string;
+  title?: string;
+  narration: string;
+  lines: { speaker: string; tone?: string; text: string }[];
+  choices: { id: string; label: string; intent?: string; effect?: StoryEffect }[];
+}
+export interface CharacterEvent {
+  id: string; girlId: string; storylineId?: string;
+  title: string; hook: string; scenes: EventScene[];
+  stage: number; status: 'active' | 'done' | 'abandoned';
+  day: number; source: 'llm' | 'template'; badge: boolean;
+  /** scenes = 旧的逐场事件；story = 分幕剧情，按 passageIndex 推进。 */
+  mode?: 'scenes' | 'story';
+  passages?: StoryPassage[];
+  passageIndex?: number;
+  chosen?: string[];
+  summary?: string;
+  pending?: boolean;
+  storyNodeId?: string;
+}
+export interface PendingTalk { topic: string; prompt: string; day: number }
+
+/** 诊所的一次治疗：按小时线性回血，期间不能派遣。 */
+export interface Treatment {
+  id: string; girlId: string;
+  startedAt: number; endsAt: number;
+  hpStart: number; hpTarget: number;
+  paid: number; kink: boolean;
 }
 
 export interface SkillEffect {
@@ -120,13 +316,21 @@ export interface Girl {
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   retired?: boolean; dead?: boolean; diedAt?: string; archetype?: Archetype; quote?: string;
   lastTalkDay?: number; talksToday?: number;
-  goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[];
+  goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[]; storyPlan?: StoryPlan;
   cloneOf?: string; generation?: number;
   clinicRest?: boolean;
   contractEndDay: number; contractDays: number; contractRenewals: number;
   retiredReason?: 'contract' | 'injury'; pensionMissed: number;
   appearance: string; personality: string; outfitDescription: string;
   wardrobe: Outfit[]; outfitId: string; expression: Expression;
+  /** 魔女形态礼装；独立于四格衣柜。 */
+  witchForm?: Outfit;
+  /** 立绘生成时的一句话参考。 */
+  portraitHint?: string;
+  /** 有进行中的特殊角色事件。 */
+  eventBadge?: string;
+  /** 故事线触发的「有话想说」。 */
+  pendingTalk?: PendingTalk;
   corruption: number; witch?: boolean; drugUntilDay?: number; withdrawalDays?: number;
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
@@ -138,13 +342,34 @@ export interface Memorial {
 export interface Mission {
   id: string; title: string; category: string; description: string; x: number; y: number;
   difficulty: string; duration: number; reward: number; requirement: StatKey; target: number;
-  color: string; status: 'open' | 'active' | 'done'; girlId?: string; squad: string[];
+  color: string; status: MissionStatus; girlId?: string; squad: string[];
   work: WorkKind; enemyIds?: string[]; rounds?: number; attempts: number; worsened?: boolean;
   lastOutcome?: 'victory' | 'repelled' | 'defeat' | 'draw'; generated?: boolean; sourcePack?: string;
   recommendedLevel: number; faction?: FactionId; envoy?: boolean; boss?: boolean;
+  /** 所属辖区；缺省时由坐标反推。 */
+  district?: DistrictId;
+  /** 接受时限：紧急（短）或长期（整晚）。 */
+  window?: CommissionWindow;
+  /** 第几个时段放出（0 起）。 */
+  wave?: number;
+  /** 放出时刻与截止时刻，均为「日 × 1440 + 分钟」的绝对分钟。 */
+  spawnedAt?: number;
+  deadlineAt?: number;
+  /** 长期委托跨几个业务日（2–7）。 */
+  longDays?: number;
+  /** 由角色故事线生成的委托。 */
+  storylineId?: string;
+  /** 对应故事线的具体一幕。 */
+  storyBeatId?: string;
+  /** 这一幕要达成的目标，显示在委托详情里。 */
+  storyGoal?: string;
+  /** 必须编入小队的少女（故事线指定同行者）。 */
+  requiredGirlId?: string;
+  /** 完成后发放的专属装备 id（已登记进物品表）。 */
+  rewardEquipmentId?: string;
 }
 export interface Room { id: string; name: string; type: 'lounge' | 'clinic' | 'dorm' | 'observatory'; level: number; capacity: number; description: string }
-export interface Log { id: string; time: string; kind: 'dispatch' | 'finance' | 'care' | 'story' | 'base' | 'battle' | 'relationship' | 'memorial' | 'council' | 'expedition' | 'clinic'; text: string; delta?: number }
+export interface Log { id: string; time: string; kind: 'dispatch' | 'finance' | 'care' | 'story' | 'base' | 'battle' | 'relationship' | 'memorial' | 'council' | 'expedition' | 'clinic' | 'incident' | 'territory'; text: string; delta?: number }
 export interface Sample { day: number; income: number; expense: number; reputation: number }
 export interface Message { role: 'girl' | 'player' | 'system'; text: string }
 
@@ -188,11 +413,13 @@ export interface MarketStockEntry {
   id: string; itemId: string; faction: FactionId; sold: boolean;
 }
 export interface ChronicleEntry {
-  id: string; day: number; at: string; kind: '魔物' | '少女' | '事件' | '议程' | '代表' | '登记';
+  id: string; day: number; at: string; kind: '魔物' | '少女' | '事件' | '议程' | '代表' | '登记' | '辖区' | '关系';
   title: string; summary: string;
 }
+export interface TerritoryShift { day: number; minutes: number; district: DistrictId; from: FactionId; to: FactionId }
+export interface ShiftState { day: number; wave: number }
 export interface GameState {
-  version: 6; day: number; minutes: number; gold: number; reputation: number;
+  version: 10; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; packHash: string;
@@ -206,10 +433,23 @@ export interface GameState {
   customSkills: Skill[];
   customMonsters: MonsterTemplate[];
   chronicle: ChronicleEntry[];
+  /** 当晚委托时段已经放到第几个。 */
+  shift: ShiftState;
+  /** 九辖区归属；每格必须有主。 */
+  territories: Record<DistrictId, FactionId>;
+  /** 最近 10 次易主。 */
+  territoryLog: TerritoryShift[];
+  incidents: Incident[];
+  storylines: Storyline[];
+  events: CharacterEvent[];
+  /** 进行中的诊所治疗。 */
+  treatments: Treatment[];
+  /** 空白档案开局。 */
+  blank?: boolean;
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
-  | { type: 'care'; girlId: string; mode: 'healing' | 'resting' }
+  | { type: 'care'; girlId: string; mode: 'resting' }
   | { type: 'advance'; minutes: number }
   | { type: 'hire'; girlId: string }
   | { type: 'build'; roomId?: string }
@@ -221,7 +461,7 @@ export type GameAction =
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
-  | { type: 'clinic'; girlId: string; mode: 'heal' | 'rest' | 'wipe' | 'clone' }
+  | { type: 'clinic'; girlId: string; mode: 'treat' | 'wipe' | 'clone'; kink?: boolean }
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
@@ -239,5 +479,24 @@ export type GameAction =
   | { type: 'createGirl'; draft: GirlDraft }
   | { type: 'importCard'; card: GirlCard }
   | { type: 'setVariant'; girlId: string; key: string; dataUrl: string }
-  | { type: 'reset' };
+  | { type: 'endNight' }
+  | { type: 'importWardrobe'; girlId: string; outfits: Outfit[]; outfitId?: string; mode?: 'merge' | 'replace'; source?: string }
+  | { type: 'removeOutfit'; girlId: string; outfitId: string }
+  | { type: 'renameOutfit'; girlId: string; outfitId: string; name: string; description?: string }
+  | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null }
+  | { type: 'addIncident'; incident: Incident }
+  | { type: 'resolveIncident'; incidentId: string; optionId: string }
+  | { type: 'startStoryline'; girlId: string; direction?: string }
+  | { type: 'setStoryPlan'; girlId: string; plan: StoryPlan | null }
+  | { type: 'addStoryline'; storyline: Storyline }
+  | { type: 'decideStoryChoice'; storylineId: string; beatId: string; choiceId: string }
+  | { type: 'advanceStoryline'; storylineId: string }
+  | { type: 'addCharacterEvent'; event: CharacterEvent }
+  | { type: 'startCharacterEvent'; eventId: string }
+  | { type: 'advanceEvent'; eventId: string }
+  | { type: 'beginStoryEvent'; eventId: string; passages: StoryPassage[]; summary?: string }
+  | { type: 'chooseStoryPassage'; eventId: string; choiceId: string }
+  | { type: 'chooseStoryPort'; storylineId: string; port: string }
+  | { type: 'resolveEvent'; eventId: string; choiceId: string }
+  | { type: 'reset'; mode?: 'standard' | 'blank' };
 export interface ActionResult { state: GameState; ok: boolean; message: string; battle?: BattleState }

@@ -23,8 +23,9 @@ export function GirlPortrait({ girl, variant = 'card', className = '' }: { girl:
   const corruption = girl.corruption ?? 0;
   const gemCore = girl.witch ? '#d85a7f' : corruption >= 40 ? '#c478b8' : '#fff2f8';
 
-  if (girl.portrait?.startsWith('data:')) {
-    return <span className={`girl-portrait ${variant} imported ${className}`}><img src={girl.portrait} alt={`${girl.name}的立绘`} /></span>;
+  const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : girl.portrait;
+  if (portrait?.startsWith('data:')) {
+    return <span className={`girl-portrait ${variant} imported ${className}`}><img src={portrait} alt={`${girl.name}的立绘`} /></span>;
   }
   return (
     <span className={`girl-portrait ${variant} ${girl.witch ? 'witch' : ''} ${className}`} style={{ '--portrait-color': outfitColor, '--portrait-accent': girl.color } as React.CSSProperties} aria-hidden="true">

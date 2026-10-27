@@ -1,11 +1,11 @@
-import { Map, House, Gem, ScrollText, Settings2, CircleHelp, Moon, CloudFog, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass } from 'lucide-react';
+import { Map, House, Gem, ScrollText, Landmark, Settings2, CircleHelp, Moon, CloudFog, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass, Terminal, Library } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
 import { clock } from '../game';
 import { cityStage, factionAttitude } from '../economy';
 import { factionInfo } from '../content/items';
 
-export type Page = 'dispatch' | 'base' | 'market' | 'records';
-const pages = [{ id: 'dispatch', label: '派遣', Icon: Map }, { id: 'base', label: '基地', Icon: House }, { id: 'market', label: '市场', Icon: Gem }, { id: 'records', label: '记录', Icon: ScrollText }] as const;
+export type Page = 'dispatch' | 'base' | 'market' | 'records' | 'council' | 'worldbook';
+const pages = [{ id: 'dispatch', label: '派遣', Icon: Map }, { id: 'base', label: '基地', Icon: House }, { id: 'council', label: '议会', Icon: Landmark }, { id: 'market', label: '市场', Icon: Gem }, { id: 'records', label: '记录', Icon: ScrollText }] as const;
 const factionOrder: FactionId[] = ['witch', 'association', 'government'];
 
 export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemorial, memorialCount }: { page: Page; onPage: (p: Page) => void; onHelp: () => void; onSettings: () => void; onCodex: () => void; onMemorial: () => void; memorialCount: number }) {
@@ -27,6 +27,7 @@ export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemori
     <div className="rail-bottom">
       <button id="open-codex" className="rail-utility" onClick={onCodex} aria-label="打开魔物图鉴" title="魔物图鉴"><BookOpen size={19} /></button>
       <button id="open-memorial" className="rail-utility memorial-utility" onClick={onMemorial} aria-label="打开星光纪念墙" title="星光纪念墙"><Flower2 size={19} />{memorialCount > 0 && <em className="rail-count">{memorialCount}</em>}</button>
+      <button id="open-worldbook" className="rail-utility" onClick={() => onPage('worldbook')} aria-label="世界书与数值规则" title="世界书与数值规则"><Library size={19} /></button>
       <button id="open-help" className="rail-utility" onClick={onHelp} aria-label="操作指南"><CircleHelp size={20} /></button>
       <button id="open-settings" className="rail-utility" onClick={onSettings} aria-label="游戏设置"><Settings2 size={20} /></button>
       <span className="rail-edition">夜班契约</span>
@@ -34,7 +35,7 @@ export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemori
   </aside>;
 }
 
-export function Topbar({ state, onNotifications, saved }: { state: GameState; onNotifications: () => void; saved: boolean }) {
+export function Topbar({ state, onNotifications, onCommand, saved }: { state: GameState; onNotifications: () => void; onCommand: () => void; saved: boolean }) {
   const stage = cityStage(state.reputation);
   return <header className="topbar">
     <div className="wordmark">
@@ -84,6 +85,7 @@ export function Topbar({ state, onNotifications, saved }: { state: GameState; on
       <span className={`save-indicator ${!saved ? 'error' : ''}`} title={saved ? '进度保存在当前浏览器' : '浏览器未能保存，请导出存档'}>
         <i />{saved ? '已存档' : '未保存'}
       </span>
+      <button id="open-command" className="icon-btn command-btn" onClick={onCommand} aria-label="打开事务所终端" title="事务所终端 · Ctrl+K"><Terminal size={17} /></button>
       <button id="open-notifications" className="icon-btn notification-btn" onClick={onNotifications} aria-label="打开事务所通知">
         <Bell size={18} /><i />
       </button>
@@ -95,7 +97,9 @@ const pageTitles: Record<Page, { kicker: string; title: string; subtitle: string
   dispatch: { kicker: '城市派遣 · 灵魂天平', title: '星光，不会准时下班。', subtitle: '甜美的祈愿在午夜结成晶石；在灵魂混浊之前，替这座城市守住最后的灯火。', code: 'CONTRACT // DISPATCH TERMINAL' },
   base: { kicker: '事务所基地 · 平面图总控', title: '这里，总有一盏灯为她们亮着。', subtitle: '会客厅的茶会、月光诊所的手术台、晚安宿舍的梦境与星象台的远响，全部收纳于二层平面图中。', code: 'SANCTUARY // FLOORPLAN MODULES' },
   market: { kicker: '契约招募 · 势力配给', title: '寻找下一束微光。', subtitle: '每一纸契约都标着甜美的价格；在纯白与深渊之间，挑选今晚还能握紧武器的人。', code: 'REGISTRY // CANDIDATES & SUPPLIES' },
+  council: { kicker: '会客厅 · 三方议事', title: '灯亮着，就该把话说清楚。', subtitle: '月蚀、星灯、市役所的代表轮流坐进这把椅子；你的决定会写进辖区与她们的记忆。', code: 'COUNCIL // NIGHTFALL ASSEMBLY' },
   records: { kicker: '夜班档案 · 因果台账', title: '把每一个夜晚，认真记下来。', subtitle: '收支、安定度、三方势力态度、灵魂侵蚀与魔女抑制剂——所有代价都不会被抹去。', code: 'ARCHIVE // SOUL & FACTION LEDGER' },
+  worldbook: { kicker: '叙事规则 · 世界书', title: '先定下这世界的说法。', subtitle: '词条决定叙事者知道什么，数值决定夜里会发生什么；保存于本地，改动即时生效。', code: 'WORLDBOOK // CANON & RULES' },
 };
 
 export function PageHeading({ page, children }: { page: Page; children?: React.ReactNode }) {

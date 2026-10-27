@@ -678,3 +678,17 @@
     flex-wrap: wrap;
   }
 }
+
+/* 一人一格的契约者卡片（诊所 / 宿舍） */
+.girl-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 10px; }
+.girl-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ffffff12; border-radius: 6px; background: #14101c; }
+.girl-card-face { position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: linear-gradient(180deg, #241a2c, #120e18); }
+.girl-card-face .girl-portrait, .girl-card-face svg, .girl-card-face img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.girl-card-face img { object-fit: cover; object-position: 50% 10%; }
+.girl-card-body { display: flex; flex-direction: column; gap: 4px; padding: 8px 9px 9px; }
+.girl-card-body strong { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-family: var(--font-display); font-size: 13px; font-weight: 400; color: #f2e4ed; }
+.girl-card-body strong small { font-family: var(--font-data); font-size: 9px; font-weight: 400; color: #9b879f; }
+.girl-card-body > span { font-size: 9px; line-height: 1.7; color: #9b879f; }
+.girl-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.girl-card-actions .av-btn { flex: 1; justify-content: center; white-space: nowrap; }
+.room-card-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }

@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText } from 'lucide-react';
+import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
-import { chance, clock, inWithdrawal, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
+import { chance, clock, inWithdrawal, missionDeadlineLabel, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
+import { districtOfMission, effectLines } from '../districts';
+import { windowLabel } from '../shift';
 import { getMonster } from '../content/monsters';
+import { getItem } from '../content/items';
 import { MonsterGlyph } from './MonsterGlyph';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
@@ -28,6 +31,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
   const chanceValue = squadChance(squad, mission);
   const assigned = mission.squad.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const lastBattle = state.battles.find(item => item.missionId === mission.id);
+  const region = districtOfMission(mission);
   const toggle = (girl: Girl) => {
     if (!canGo(girl).ok) return;
     setSelected(current => current.includes(girl.id) ? current.filter(id => id !== girl.id) : current.length >= limit ? current : [...current, girl.id]);
@@ -47,6 +51,30 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <div><Shield size={18} /><small>{mission.work === 'combat' ? '战斗轮次' : '推荐能力'}</small><b>{mission.work === 'combat' ? mission.rounds : statLabels[mission.requirement]}<em>{mission.work === 'combat' ? ` × ${mission.rounds} 轮` : ` ${mission.target}+`}</em></b></div>
         <div><Users size={18} /><small>编队上限</small><b>{limit}<em> 人</em></b></div>
       </div>
+
+      <section className="mission-district" style={{ '--district-tint': region.tint } as React.CSSProperties} aria-label="辖区环境">
+        <div className="modal-section-heading"><h3><MapPin size={14} />{region.name}</h3><small>{region.subtitle} · {region.terrain}</small></div>
+        <p>{region.description}</p>
+        <div className="district-effects">{effectLines(region.effect).map(line => <span key={line.label} className={`district-effect tone-${line.tone}`}>{line.label}<b>{line.value}</b></span>)}</div>
+        <div className="mission-window">
+          <span className={`window-badge ${mission.window ?? 'long'}`}><Hourglass size={12} />{windowLabel[mission.window ?? 'long']}委托</span>
+          {mission.deadlineAt !== undefined && <span className="window-deadline">截止 {clock(((mission.deadlineAt % 1440) + 1440) % 1440)} · {missionDeadlineLabel(mission, state)}</span>}
+          {mission.wave !== undefined && <span className="window-wave">第 {mission.wave + 1} 批信号</span>}
+        </div>
+      </section>
+
+      {mission.storyGoal && (
+        <section className="mission-story" aria-label="故事委托的目标">
+          <div className="modal-section-heading"><h3><Sparkles size={14} />故事委托</h3><small>这一幕的明确目标</small></div>
+          <p>{mission.storyGoal}</p>
+          {(mission.requiredGirlId || mission.rewardEquipmentId) && (
+            <div className="story-grants">
+              {mission.requiredGirlId && <span>同行：{state.girls.find(girl => girl.id === mission.requiredGirlId)?.name ?? state.candidates.find(girl => girl.id === mission.requiredGirlId)?.name ?? '指定契约者'}</span>}
+              {mission.rewardEquipmentId && <span>专属装备：{getItem(mission.rewardEquipmentId)?.name ?? '未命名遗物'}</span>}
+            </div>
+          )}
+        </section>
+      )}
 
       {mission.work === 'combat' && (
         <section className="enemy-lineup" aria-label="本次委托的魔物">
@@ -106,7 +134,10 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         </>
       ) : (
         <div className="mission-result">
-          {mission.status === 'active' ? <>
+          {mission.status === 'expired' ? <>
+            <Hourglass size={30} /><h3>这条信号已经消散。</h3>
+            <p>截止时间已过，委托从今晚的名单里撤下。明晚会再有新的信号。</p>
+          </> : mission.status === 'active' ? <>
             <Radio size={30} /><h3>{assigned.map(g => g.name).join('、')}正在执行委托</h3>
             <p>距离返回还有 {Math.min(...assigned.map(g => g.remaining), 999)} 分钟。推进游戏时间即可结算{mission.work === 'combat' ? '并生成战斗报告' : ''}。</p>
             <div className="result-squad">{assigned.map(g => <button key={g.id} id={`mission-assigned-${g.id}`} className="btn" onClick={() => onGirl(g.id)}><img src={g.portrait} alt="" />{g.name}<Heart size={13} /></button>)}</div>

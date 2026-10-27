@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { ArrowUpRight, Brain, Building2, Check, Compass, Copy, Cross, MessageCircle, Moon, Plus, ShieldCheck, Sparkles, Telescope, Users } from 'lucide-react';
+import { ArrowUpRight, Brain, Building2, Check, Compass, Copy, MessageCircle, Moon, Plus, ShieldCheck, Sparkles, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
 import { buildCost, capacity, inWithdrawal, statusLabels } from '../game';
 import { factionInfo } from '../content/items';
 import { factionAttitude } from '../economy';
 import { GirlPortrait } from './GirlPortrait';
+import { ClinicPanel } from './ClinicPanel';
 
 type Props = {
   state: GameState; id: string; onGirl: (id: string) => void; onTalk: (id: string) => void; onBuild: () => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onStartExpedition: (ids: string[]) => void; onRecall: (id: string) => void;
-  onClinic: (girlId: string, mode: 'heal' | 'rest' | 'wipe' | 'clone') => void;
+  onClinic: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  onRest: (girlId: string) => void;
   onAcceptTask?: (faction: FactionId) => void;
 };
 
-export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onStartExpedition, onRecall, onClinic, onAcceptTask }: Props) {
+export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onStartExpedition, onRecall, onClinic, onRest, onAcceptTask }: Props) {
   const room = state.rooms.find(r => r.id === id)!;
   const people = state.girls.filter(g => g.roomId === id && g.status !== 'mission' && !g.retired);
   const activeGirls = state.girls.filter(g => !g.dead && !g.retired);
@@ -30,7 +32,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
   const decision = state.opinions.find(o => o.status === 'pending');
   const expedition = state.expeditions[0];
   const eligible = state.girls.filter(g => g.status === 'idle' && !g.retired && !inWithdrawal(g) && g.hp >= 30 && g.fatigue < 80);
-  const labels: Record<string, string> = { members: '驻留成员', council: '今日议事', envoys: '三方来使', expedition: '远行观测', clinic: '快速诊疗', surgery: '重塑与复制', dorm: '降侵蚀休息' };
+  const labels: Record<string, string> = { members: '驻留成员', council: '今日议事', envoys: '三方来使', expedition: '远行观测', clinic: '治疗', surgery: '重塑与复制', dorm: '降侵蚀休息' };
 
   return <div className="standard-modal room-dialog">
     <div className="modal-eyebrow"><Building2 size={14} />基地设施模块 / 等级 {room.level}</div>
@@ -138,16 +140,8 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
     {tab === 'clinic' && (
       <div className="room-function">
         <h3>今夜，先把伤口放下</h3>
-        <p>快速治疗 240 星砂（回满血量与共情）；深度疗养 360 星砂（三天清空疲劳）。</p>
-        <div className="room-clinic-list">
-          {activeGirls.map(g => (
-            <div key={g.id}>
-              <span><b>{g.name}</b><small>血量 {g.hp}/{g.maxHp} · 疲劳 {g.fatigue} · 侵蚀 {g.corruption ?? 0}%</small></span>
-              <button id={`room-heal-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 240 || g.status !== 'idle'} onClick={() => onClinic(g.id, 'heal')}><Cross size={12} />治疗</button>
-              <button id={`room-rest-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 360 || g.status !== 'idle'} onClick={() => onClinic(g.id, 'rest')}><Moon size={12} />疗养</button>
-            </div>
-          ))}
-        </div>
+        <p>按缺失的血量收费，按小时慢慢恢复。治疗期间她不能出勤，也不会恢复疲劳——疲劳归宿舍。</p>
+        <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} />
       </div>
     )}
 
@@ -155,13 +149,19 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
       <div className="room-function">
         <h3>记忆重塑与复制契约</h3>
         <p>记忆重塑 4,000 星砂（抹除精神疤痕、等级与关系重置）；复制契约 18,000 星砂（Lv.3+ 可生成 1 级镜像体）。</p>
-        <div className="room-clinic-list">
+        <div className="girl-card-grid room-card-grid">
           {activeGirls.map(g => (
-            <div key={g.id}>
-              <span><b>{g.name} · Lv.{g.level}</b><small>疤痕 {g.scars.length}/5 · {g.cloneOf ? '复制体' : '原体'}</small></span>
-              <button id={`room-wipe-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 4000 || g.status !== 'idle'} onClick={() => onClinic(g.id, 'wipe')}><Brain size={12} />重塑</button>
-              <button id={`room-clone-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf)} onClick={() => onClinic(g.id, 'clone')}><Copy size={12} />复制</button>
-            </div>
+            <article key={g.id} className="girl-card">
+              <div className="girl-card-face"><GirlPortrait girl={g} variant="avatar" /></div>
+              <div className="girl-card-body">
+                <strong>{g.name} <small>Lv.{g.level}</small></strong>
+                <span>疤痕 {g.scars.length}/5 · {g.cloneOf ? '复制体' : '原体'} · 羁绊 {g.bond}</span>
+                <div className="girl-card-actions">
+                  <button id={`room-wipe-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 4000 || g.status !== 'idle'} onClick={() => onClinic(g.id, 'wipe')}><Brain size={12} />重塑</button>
+                  <button id={`room-clone-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf)} onClick={() => onClinic(g.id, 'clone')}><Copy size={12} />复制</button>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
       </div>
@@ -170,13 +170,19 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
     {tab === 'dorm' && (
       <div className="room-function">
         <h3>晚安，明天见</h3>
-        <p>宿舍休息 90 分钟会恢复疲劳并降低 5 点侵蚀度。满员 {capacity(state)} 人，扩建可增加 2 个席位。</p>
-        <div className="room-clinic-list">
+        <p>宿舍只做一件事：让她睡够。90 分钟恢复疲劳并降低 5 点侵蚀，不处理伤口。满员 {capacity(state)} 人，扩建可增加 2 个席位。</p>
+        <div className="girl-card-grid room-card-grid">
           {activeGirls.map(g => (
-            <div key={g.id}>
-              <span><b>{g.name}</b><small>侵蚀 {g.corruption ?? 0}% · 疲劳 {g.fatigue} · {statusLabels[g.status]}</small></span>
-              <button id={`room-dorm-rest-${g.id}`} type="button" className="av-btn av-btn-small" disabled={g.status !== 'idle'} onClick={() => onClinic(g.id, 'rest')}><Moon size={12} />休息</button>
-            </div>
+            <article key={g.id} className="girl-card">
+              <div className="girl-card-face"><GirlPortrait girl={g} variant="avatar" /></div>
+              <div className="girl-card-body">
+                <strong>{g.name} <small>{statusLabels[g.status]}</small></strong>
+                <span>侵蚀 {g.corruption ?? 0}% · 疲劳 {g.fatigue}</span>
+                <div className="girl-card-actions">
+                  <button id={`room-dorm-rest-${g.id}`} type="button" className="av-btn av-btn-small" disabled={g.status !== 'idle'} onClick={() => onRest(g.id)}><Moon size={12} />休息</button>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
       </div>

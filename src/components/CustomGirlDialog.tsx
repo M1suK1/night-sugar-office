@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Sparkles, Trash2, Wand2 } from 'lucide-react';
-import type { Archetype, Element, GirlDraft, StatKey } from '../types';
+import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Scissors, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import type { Archetype, DraftTrait, Element, GirlDraft, StatKey, TraitPolarity } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
 import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
 import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
+import { loadImage, removeImageBackground } from '../image';
+import { CutoutPreview } from './CutoutPreview';
 
 type FieldKey = 'name' | 'codename' | 'title' | 'element' | 'archetype' | 'goal' | 'quote' | 'appearance' | 'personality' | 'outfitDescription';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,16 +30,24 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
   return canvas.toDataURL('image/webp', 0.78);
 }
 
-export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
+const EMPTY_TRAIT = (): DraftTrait => ({ name: '', description: '', polarity: 'neutral' });
+const emptyDraftTraits = () => [EMPTY_TRAIT(), EMPTY_TRAIT(), EMPTY_TRAIT()];
+
+export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string, hint?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(''); const [codename, setCodename] = useState('未命名契约'); const [title, setTitle] = useState('新登记的魔法少女');
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
   const [quote, setQuote] = useState('请多指教。我会努力记住这座城市的路。'); const [goal, setGoal] = useState('完成第一次独立委托，并得到同伴的认可。');
   const [stats, setStats] = useState<Record<StatKey, number>>({ magic: 65, insight: 65, agility: 65, empathy: 65 });
-  const [skillIds, setSkillIds] = useState<string[]>([]); const [traitIds, setTraitIds] = useState<string[]>([]);
+  const [skillIds, setSkillIds] = useState<string[]>([]); const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());
   const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
   const [message, setMessage] = useState('');
+  const [hint, setHint] = useState('');
+  const [cutting, setCutting] = useState(false);
+  const [tolerance, setTolerance] = useState(36);
+  const [cutNote, setCutNote] = useState('');
+  const [cut, setCut] = useState<{ before: string; after: string; removed: number } | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [entry, setEntry] = useState<'gate' | 'wizard'>('gate');
   const [filled, setFilled] = useState<Set<FieldKey>>(new Set());
@@ -68,26 +78,34 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(STAT_MIN, Math.min(STAT_MAX, prev[key] + delta)) }));
   const chooseArchetype = (next: PlayableArchetype) => { setArchetype(next); setStats(statsForArchetype(next)); };
   const toggleSkill = (id: string) => setSkillIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : prev.length >= 3 ? prev : [...prev, id]);
-  const toggleTrait = (id: string) => setTraitIds(prev => prev.includes(id) ? prev.filter(t => t !== id) : prev.length >= 3 ? prev : [...prev, id]);
+  const fillTrait = (trait: { name: string; description: string; polarity: TraitPolarity }) => setDraftTraits(prev => {
+    const copy = [...prev];
+    const blank = copy.findIndex(item => !item.name.trim());
+    if (blank < 0) return copy;
+    copy[blank] = { name: trait.name, description: trait.description, polarity: trait.polarity };
+    return copy;
+  });
+  const updateTrait = (index: number, patch: Partial<DraftTrait>) => setDraftTraits(prev => prev.map((item, at) => at === index ? { ...item, ...patch } : item));
   const statInvalid = Object.values(stats).some(value => value < STAT_MIN || value > STAT_MAX);
-  const canCreate = name.trim().length > 0 && skillIds.length === 3 && traitIds.length === 3 && remaining === 0 && !statInvalid;
+  const filledTraits = draftTraits.filter(item => item.name.trim());
+  const canCreate = name.trim().length > 0 && skillIds.length === 3 && filledTraits.length === 3 && remaining === 0 && !statInvalid;
   const createHint = [
     !name.trim() && '缺少名字',
     remaining > 0 && `还剩 ${remaining} 点`,
     remaining < 0 && `超出 ${-remaining} 点`,
     statInvalid && `单项需在 ${STAT_MIN}–${STAT_MAX}`,
     skillIds.length !== 3 && `技能 ${skillIds.length}/3`,
-    traitIds.length !== 3 && `特性 ${traitIds.length}/3`,
+    filledTraits.length !== 3 && `特性 ${filledTraits.length}/3`,
   ].filter(Boolean).join(' · ');
   const submit = () => {
     if (!name.trim()) { setStep(0); setMessage('先给她一个名字，再登记。'); return; }
     if (statInvalid) { setStep(1); setMessage(`四维每项需在 ${STAT_MIN}–${STAT_MAX}。`); return; }
     if (remaining !== 0) { setStep(1); setMessage(remaining > 0 ? `还有 ${remaining} 点没有分配。` : `属性点超出 ${-remaining} 点，请调低。`); return; }
     if (skillIds.length !== 3) { setStep(2); setMessage(`请选择 3 个技能，现在还差 ${3 - skillIds.length} 个。`); return; }
-    if (traitIds.length !== 3) { setStep(3); setMessage(`请选择 3 个特性，现在还差 ${3 - traitIds.length} 个。`); return; }
+    if (filledTraits.length !== 3) { setStep(3); setMessage(`请写满 3 条特性，现在还差 ${3 - filledTraits.length} 条。`); return; }
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
-      appearance, personality, outfitDescription, stats, skillIds, traits: traitIds,
+      appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
       portrait: preview || undefined,
     });
   };
@@ -112,7 +130,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     setDrafting(true); setMessage('');
     setPending(new Set(keys));
     if (targets === 'all') setFilled(new Set());
-    const result = await onGenerate(preview || undefined);
+    const result = await onGenerate(preview || undefined, hint.trim() || undefined);
     if (!result.ok || !result.profile) {
       setDrafting(false); setPending(new Set()); setMessage(result.message); return;
     }
@@ -124,7 +142,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         setPending(prev => { const next = new Set(prev); next.delete(key); return next; });
         await sleep(130);
       }
-      setSkillIds(profile.skillIds); setTraitIds(profile.traitIds);
+      setSkillIds(profile.skillIds); setDraftTraits(profile.traits);
       setStats(statsForArchetype(profile.archetype === '魔物' ? '输出' : profile.archetype));
       setStep(0); setHasDraft(true); setDrafting(false);
       setMessage('使魔读取了立绘，补全了身份、描述，并按职阶分配了 260 点能力值。请逐项检查，仍可手动微调。');
@@ -139,6 +157,26 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     }
   };
 
+  const cutBackground = async () => {
+    if (!preview || cutting) return;
+    setCutting(true); setCutNote('');
+    try {
+      const result = await removeImageBackground(await loadImage(preview), { tolerance });
+      setCut({ before: preview, after: result.dataUrl, removed: result.removedRatio });
+    } catch {
+      setCutNote('去背景失败，已保留原图。');
+    } finally { setCutting(false); }
+  };
+  const applyCut = () => {
+    if (!cut) return;
+    setPreview(cut.after); setSource(null); setCut(null);
+    setCutNote('已应用去背景版本。');
+  };
+  const discardCut = () => { setCut(null); setCutNote('已保留原图。'); };
+  const changeTolerance = (value: number) => {
+    setTolerance(value);
+    if (cut) { setCut(null); setCutNote('容差已改变，点「去背景」重新计算。'); }
+  };
   const editText = (key: FieldKey, setter: (value: string) => void, value: string) => {
     setter(value);
     setFilled(prev => { const next = new Set(prev); next.delete(key); return next; });
@@ -163,7 +201,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         <button id="custom-entry-import" type="button" className="custom-gate-card" onClick={() => fileRef.current?.click()}><ImagePlus size={22} /><b>只导入立绘</b><small>PNG / JPEG / WebP，4:5 实时裁剪；不生成任何文字。</small></button>
         <button id="custom-entry-blank" type="button" className="custom-gate-card" onClick={() => setEntry('wizard')}><Wand2 size={22} /><b>从空白开始</b><small>直接进入五步向导，260 点由你分配。</small></button>
       </div>
-      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><div className="custom-gate-actions"><button id="custom-draft" type="button" className="btn primary" disabled={drafting} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
+      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><label className="custom-gate-hint">给叙事者的一句话要求（可选）<input id="custom-portrait-hint" className="av-input" maxLength={80} placeholder="例：银白发，披风边缘像融化的糖，笑得很轻" value={hint} onChange={e => setHint(e.target.value)} /></label><div className="custom-gate-actions"><button id="custom-gate-cutout" type="button" className="btn" disabled={cutting} onClick={() => void cutBackground()}><Scissors size={14} />{cutting ? '正在去背景' : '去背景'}</button><button id="custom-draft" type="button" className="btn primary" disabled={drafting || Boolean(cut)} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
+      {cut && <CutoutPreview before={cut.before} after={cut.after} removed={cut.removed} tolerance={tolerance} busy={cutting} onApply={applyCut} onDiscard={discardCut} onRetry={() => void cutBackground()} />}
+      {cutNote && <p className="custom-cut-note">{cutNote}</p>}
       {message && <p className="inline-warning" role="alert">{message}</p>}
     </div> : <>
     <div className="custom-steps" role="tablist" aria-label="创建步骤">{steps.map((label, index) => <button key={label} id={`custom-step-${index}`} type="button" role="tab" aria-selected={step === index} className={step === index ? 'active' : ''} onClick={() => setStep(index)}><i>{index + 1}</i>{label}</button>)}</div>
@@ -191,8 +231,23 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     </div>}
 
     {step === 3 && <div className="custom-step-body">
-      <h2>脾气，也是战斗力。</h2><p className="muted">选择 3 个特性。它们只影响叙事倾向与少量判定，不会直接改数值。已选 {traitIds.length}/3。</p>
-      <div className="custom-pick-list">{traits.map(trait => <button key={trait.id} id={`custom-trait-${trait.id}`} type="button" className={`custom-pick ${traitIds.includes(trait.id) ? 'picked' : ''}`} aria-pressed={traitIds.includes(trait.id)} onClick={() => toggleTrait(trait.id)}><span className={`polarity ${trait.polarity}`}>{traitPolarityLabel(trait.polarity)}</span><b>{trait.name}</b><small>{trait.tags.join(' · ')} — {trait.description}</small>{traitIds.includes(trait.id) && <Check size={14} />}</button>)}</div>
+      <h2>脾气，也是战斗力。</h2><p className="muted">手写 3 条特性：名称 + 一句解释。下面的事件库只用来填字，不会替你决定。已写 {filledTraits.length}/3。</p>
+      <div className="custom-trait-rows">
+        {draftTraits.map((trait, index) => (
+          <div className="custom-trait-row" key={index}>
+            <span className="custom-trait-index">{index + 1}</span>
+            <input className="av-input" id={`custom-trait-name-${index}`} value={trait.name} maxLength={12} placeholder="特性名，例如「夜里不睡」" onChange={event => updateTrait(index, { name: event.target.value })} />
+            <input className="av-input" id={`custom-trait-desc-${index}`} value={trait.description} maxLength={60} placeholder="一句话解释它在故事里的表现" onChange={event => updateTrait(index, { description: event.target.value })} />
+            <select className="av-select" id={`custom-trait-polarity-${index}`} value={trait.polarity} onChange={event => updateTrait(index, { polarity: event.target.value as TraitPolarity })}>
+              <option value="positive">正面</option>
+              <option value="negative">负面</option>
+              <option value="neutral">中性</option>
+            </select>
+          </div>
+        ))}
+      </div>
+      <p className="muted custom-trait-hint">从事件库取一条填入空位：</p>
+      <div className="custom-pick-list">{traits.slice(0, 9).map(trait => <button key={trait.id} id={`custom-trait-${trait.id}`} type="button" className="custom-pick" onClick={() => fillTrait(trait)}><span className={`polarity ${trait.polarity}`}>{traitPolarityLabel(trait.polarity)}</span><b>{trait.name}</b><small>{trait.description}</small></button>)}</div>
     </div>}
 
     {step === 4 && <div className="custom-step-body">
@@ -202,14 +257,21 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         <div className="custom-portrait-fields">
           <button type="button" className="av-btn" onClick={() => fileRef.current?.click()}><ImagePlus size={14} />导入 PNG / JPEG</button>
           {source && <><label>缩放<input aria-label="立绘缩放" type="range" min={1} max={3} step={0.05} value={zoom} onChange={e => setZoom(Number(e.target.value))} /></label><label>水平<input aria-label="立绘水平位置" type="range" min={-50} max={50} value={x} onChange={e => setX(Number(e.target.value))} /></label><label>垂直<input aria-label="立绘垂直位置" type="range" min={-50} max={50} value={y} onChange={e => setY(Number(e.target.value))} /></label></>}
+          
+          {preview && <div className="custom-cutout">
+            <button id="custom-cutout" type="button" className="av-btn" disabled={cutting} onClick={() => void cutBackground()}>{cutting ? '正在去背景' : '简单去背景'}</button>
+            <label>容差<input aria-label="去背景容差" type="range" min={12} max={90} value={tolerance} onChange={e => changeTolerance(Number(e.target.value))} /></label>
+            {cutNote && <small className="muted">{cutNote}</small>}
+          </div>}
           <label>{fieldHead('外貌描述', 'appearance')}<textarea className={`av-input${shimmer('appearance')}`} rows={2} value={appearance} onChange={e => editText('appearance', setAppearance, e.target.value)} maxLength={80} /></label>
           <label>{fieldHead('性格描述', 'personality')}<textarea className={`av-input${shimmer('personality')}`} rows={2} value={personality} onChange={e => editText('personality', setPersonality, e.target.value)} maxLength={80} /></label>
           <label>{fieldHead('服装描述', 'outfitDescription')}<textarea className={`av-input${shimmer('outfitDescription')}`} rows={2} value={outfitDescription} onChange={e => editText('outfitDescription', setOutfitDescription, e.target.value)} maxLength={80} /></label>
         </div>
       </div>
+      {cut && <CutoutPreview before={cut.before} after={cut.after} removed={cut.removed} tolerance={tolerance} busy={cutting} onApply={applyCut} onDiscard={discardCut} onRetry={() => void cutBackground()} />}
     </div>}
 
-    {message && <p className="inline-warning" role="alert">{message}</p>}
+      {message && <p className="inline-warning" role="alert">{message}</p>}
     {hasDraft && <div className="custom-regenerate"><span>不满意这一版？只会重写文案与技能选项，保留立绘与你已经分配的属性点。</span><button id="custom-regenerate-all" type="button" className="av-btn av-btn-small" disabled={drafting} onClick={() => runGenerate('all')}><RefreshCw size={12} />重新生成全部</button></div>}
     <div className="custom-footer">
       <button type="button" className="btn" disabled={step === 0} onClick={() => setStep(s => Math.max(0, s - 1))}><ArrowLeft size={14} />上一步</button>
