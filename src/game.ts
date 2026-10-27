@@ -1,4 +1,4 @@
-import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, Log, MarketStockEntry, Mission, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, Log, MarketStockEntry, Mission, MonsterTemplate, Opinion, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
@@ -480,6 +480,30 @@ function archive(state: GameState, kind: ChronicleEntry['kind'], title: string, 
 
 const commissionPool = createSeedPack().missions.filter(m => !m.boss);
 
+/** 蓝图「阶段委托」可以一键套用的现有委托模板。 */
+export interface MissionTemplateOption {
+  id: string; title: string; category: string; description: string;
+  difficulty: string; duration: number; requirement: StatKey; target: number;
+  work: 'combat' | 'investigation'; monsters: MonsterTemplate[];
+}
+
+export function missionTemplates(): MissionTemplateOption[] {
+  return commissionPool.map(template => ({
+    id: template.id,
+    title: template.title,
+    category: template.category,
+    description: template.description,
+    difficulty: template.difficulty,
+    duration: template.duration,
+    requirement: template.requirement,
+    target: template.target,
+    work: template.work,
+    monsters: (template.enemyIds ?? [])
+      .map(id => monsters.find(monster => monster.id === id))
+      .filter((monster): monster is MonsterTemplate => Boolean(monster)),
+  }));
+}
+
 /** 把辖区标签换算成委托坐标，并对落在河里的抖动做回退。 */
 export function districtPin(districtId: DistrictId, salt: string): { x: number; y: number } {
   const region = districts[districtId];
@@ -731,7 +755,9 @@ function storyGraphNode(story: Storyline, id: string) {
 }
 
 function storyGraphEdge(story: Storyline, nodeId: string, port = 'out') {
-  return story.graph?.edges.find(edge => edge.from === nodeId && (port === 'out' || edge.fromPort === port));
+  return story.graph?.edges.find(edge => edge.from === nodeId && (
+    port === 'out' || edge.fromPort === port || (port === 'success' && edge.fromPort === 'out')
+  ));
 }
 
 export function startStoryGraph(state: GameState, story: Storyline): void {
@@ -847,16 +873,30 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
   }
 }
 
-export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string): void {
+export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string, result: 'success' | 'failure' = 'success'): void {
   const story = state.storylines.find(item => item.id === storylineId && item.status === 'active');
   if (!story?.run || !story.graph) return;
   if (story.run.waiting?.kind !== kind || story.run.waiting.ref !== ref) return;
   let fromNode = ref;
   if (kind === 'mission') fromNode = story.beats.find(beat => beat.missionId === ref)?.id ?? ref;
   if (kind === 'event') fromNode = state.events.find(event => event.id === ref)?.storyNodeId ?? ref;
-  const edge = storyGraphEdge(story, fromNode);
+  const port = kind === 'mission' ? (result === 'failure' ? 'failure' : 'success') : 'out';
+  const edge = storyGraphEdge(story, fromNode, port);
   story.run.waiting = undefined;
-  if (!edge) { story.status = 'done'; return; }
+  if (!edge) {
+    story.status = 'done';
+    story.run = undefined;
+    const girl = state.girls.find(item => item.id === story.girlId);
+    state.logs.unshift({
+      id: `log-graph-stop-${story.id}-${Date.now()}`,
+      time: dateLabel(state.day, state.minutes),
+      kind: 'story',
+      text: result === 'failure'
+        ? `「${story.title}」没能继续下去，${girl?.name ?? '她'}的故事在这里收束。`
+        : `「${story.title}」没有接续的节点，故事在这里收束。`,
+    });
+    return;
+  }
   story.run.cursor = edge.to;
   advanceStoryGraph(state, story);
 }
@@ -988,7 +1028,7 @@ export function completeStoryMission(state: GameState, mission: Mission): Charac
   const girl = findGirl(state, story.girlId);
   if (!beat || !girl) return undefined;
   beat.status = 'done';
-  if (story.run) { resolveStoryWait(state, story.id, 'mission', mission.id); return undefined; }
+  if (story.run) { resolveStoryWait(state, story.id, 'mission', mission.id, 'success'); return undefined; }
   if (beat.eventId && state.events.some(event => event.id === beat.eventId)) return undefined;
   const spec = beat.mission;
   if (spec?.rewardEquipment) {
@@ -1020,6 +1060,23 @@ export function completeStoryMission(state: GameState, mission: Mission): Charac
   event.pending = true;
   state.logs.unshift({ id: `log-story-done-${beat.id}`, time: dateLabel(state.day, state.minutes), kind: 'story', text: `「${story.title}」${beat.title}的委托完成，她的事件已经就绪。` });
   return event;
+}
+
+/** 故事委托失败：走「失败」出口；没有失败出口时故事在这里收束。 */
+function failStoryMission(state: GameState, mission: Mission, reason: string): void {
+  if (!mission.storylineId || !mission.storyBeatId) return;
+  const story = state.storylines.find(item => item.id === mission.storylineId && item.status === 'active');
+  if (!story) return;
+  const beat = story.beats.find(item => item.id === mission.storyBeatId);
+  if (beat) beat.status = 'done';
+  state.logs.unshift({
+    id: `log-story-fail-${mission.id}-${Date.now()}`,
+    time: dateLabel(state.day, state.minutes),
+    kind: 'story',
+    text: `「${mission.title}」${reason}，故事走向了另一条路。`,
+  });
+  if (!story.run) { story.status = 'done'; return; }
+  resolveStoryWait(state, story.id, 'mission', mission.id, 'failure');
 }
 
 /** 剧情事件结束：推进到下一幕，并发出下一份委托。 */
@@ -1095,6 +1152,34 @@ export function applyStoryEffect(state: GameState, girl: Girl, effect: StoryEffe
   }
   if (effect.trait) {
     girl.traits.push({ id: `story-trait-${hashText(effect.trait.name).toString(16)}`, name: effect.trait.name.slice(0, 16), polarity: 'positive', tags: ['故事线'], description: effect.trait.description.slice(0, 120), gainedAt: dateLabel(state.day, state.minutes) });
+  }
+  if (effect.skill) {
+    const skill = getSkill(effect.skill.id);
+    if (!girl.skills.includes(skill.id)) {
+      girl.skills.push(skill.id);
+      state.logs.unshift({ id: `log-story-skill-${girl.id}-${skill.id}-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'story', text: `${girl.name}在故事里学会了「${skill.name}」。` });
+    }
+  }
+  if (effect.growth) {
+    for (const key of Object.keys(effect.growth) as StatKey[]) {
+      const amount = effect.growth[key] ?? 0;
+      if (!amount) continue;
+      girl.stats[key] = Math.max(20, Math.min(99, girl.stats[key] + amount));
+    }
+  }
+  if (effect.buff?.name) {
+    const buff = effect.buff;
+    girl.conditions.push({
+      id: `cond-story-${girl.id}-${hashText(buff.name).toString(16)}-${state.day}-${state.minutes}`,
+      name: buff.name.slice(0, 16),
+      kind: 'buff',
+      source,
+      description: (buff.description ?? '故事带来的临时状态。').slice(0, 120),
+      remaining: Math.max(1, buff.days ?? 3),
+      removable: true,
+      stat: buff.stat,
+      amount: buff.amount,
+    });
   }
   if (effect.trigger) fireStoryTrigger(state, girl, effect.trigger, source);
 }
@@ -1369,10 +1454,15 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     state.reputation = Math.max(0, state.reputation - 3);
     if (mission.faction) state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
     book(state, at.day, 0);
-    mission.status = 'open';
     mission.squad = [];
     mission.girlId = undefined;
-    state.logs.unshift({ id: `log-lose-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗失败：${mission.title}。全员失去行动能力，委托仍留在事件池中。` });
+    if (mission.storylineId) {
+      mission.status = 'expired';
+      failStoryMission(state, mission, '战斗失败');
+    } else {
+      mission.status = 'open';
+    }
+    state.logs.unshift({ id: `log-lose-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗失败：${mission.title}。${mission.storylineId ? '故事线因此转向失败分支。' : '全员失去行动能力，委托仍留在事件池中。'}` });
   } else {
     state.gold += rewards.gold;
     book(state, at.day, rewards.gold);
@@ -1715,6 +1805,7 @@ function dispatch(state: GameState, girlIds: string[], missionId: string): Actio
   }
   if (mission.deadlineAt !== undefined && absoluteMinutes(next.day, next.minutes) >= mission.deadlineAt) {
     mission.status = 'expired';
+    if (mission.storylineId) failStoryMission(next, mission, '超过期限');
     return { state: next, ok: false, message: `「${mission.title}」已过接取时限，委托自动撤销。` };
   }
   const squad = girlIds.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g));

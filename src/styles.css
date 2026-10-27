@@ -1064,12 +1064,17 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .graph-node b { display: block; margin-top: 3px; font-size: 12px; font-weight: 500; color: #f0e8f4; }
 .graph-node em { display: block; margin-top: 2px; font-size: 9px; font-style: normal; color: #8d7f96; }
 .graph-port { position: absolute; right: -6px; width: 11px; height: 11px; padding: 0; border: 1px solid #f3aec9aa; border-radius: 50%; background: #1a1420; cursor: crosshair; }
+.graph-port-tag { position: absolute; right: 12px; padding: 0 3px; border-radius: 3px; background: #0e0b13cc; color: #cbb9d2; font-size: 8px; line-height: 11px; letter-spacing: .08em; pointer-events: none; }
+.graph-node.mission .graph-port-tag { color: #f3aec9; }
 .graph-port:hover, .graph-port.active { background: #f3aec9; box-shadow: 0 0 0 3px #f3aec933; }
 .story-graph-inspector { padding: 12px; border-left: 1px solid #ffffff0d; overflow-y: auto; }
 .story-graph-inspector > small { display: block; margin: 10px 0 4px; font-size: 9px; letter-spacing: .14em; color: #8b7b92; }
 .graph-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 9px; color: #9d8ba5; }
 .graph-field .av-input { font-size: 11px; }
 .graph-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.graph-reward { display: flex; flex-direction: column; }
+.graph-reward > small { display: block; margin: 10px 0 4px; font-size: 9px; letter-spacing: .14em; color: #8b7b92; }
+.graph-reward .graph-row { grid-template-columns: repeat(2, 1fr); }
 .graph-choices { display: flex; flex-direction: column; gap: 4px; }
 .graph-choice-row { display: grid; grid-template-columns: 1fr 26px; gap: 4px; }
 .graph-node-actions { display: flex; gap: 6px; margin: 8px 0; }

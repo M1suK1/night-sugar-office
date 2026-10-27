@@ -876,6 +876,15 @@ try {
     await page.locator('#story-graph-add-choice').click();
     await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 1);
 
+    // 默认图只保留第一幕到「继续」，不发散成四幕
+    expect(before).toBeGreaterThanOrEqual(5);
+    expect(before).toBeLessThanOrEqual(8);
+    // 新节点落在当前视口中央，而不是最左端
+    const addedBox = await page.locator('.graph-node.choice').last().boundingBox();
+    const viewBox = await page.locator('.story-graph-canvas').boundingBox();
+    expect(addedBox.x).toBeGreaterThan(viewBox.x + 40);
+    expect(addedBox.x + addedBox.width).toBeLessThan(viewBox.x + viewBox.width - 40);
+
     // 复制 / 粘贴
     await page.locator('#story-graph-copy').click();
     await page.locator('#story-graph-paste').click();
@@ -887,7 +896,8 @@ try {
     await page.keyboard.press('Control+v');
     await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 3);
 
-    // 拖端口连线
+    // 拖端口连线（先缩放到全图，保证出口与目标都在视口内）
+    await page.locator('#story-graph-fit').click();
     const choiceNode = page.locator('.graph-node.choice').last();
     const choiceId = await choiceNode.getAttribute('data-node-id');
     const targetNode = page.locator('.graph-node.end').first();
@@ -915,6 +925,39 @@ try {
     await replacement.click();
     await expect.poll(async () => page.locator('.story-graph-edges path.graph-edge:not(.linking)').count()).toBe(edgesBeforeReplace);
 
+    // 阶段委托：套用现有模板，并带成功 / 失败两个出口
+    await page.locator('#story-graph-add-mission').click();
+    const missionNode = page.locator('.graph-node.mission').last();
+    await missionNode.click();
+    await expect(missionNode.locator('.graph-port:not(.in)')).toHaveCount(2);
+    await expect(missionNode.locator('.graph-port-tag')).toHaveText(['成功', '失败']);
+    const templateValue = await page.locator('#story-graph-mission-template option').nth(1).getAttribute('value');
+    await page.locator('#story-graph-mission-template').selectOption(templateValue);
+    await expect(page.locator('#story-graph-mission-title')).not.toHaveValue('');
+
+    // 奖励节点：星砂 / 技能 / 数值成长 / 临时增益
+    await page.locator('#story-graph-add-reward').click();
+    const rewardNode = page.locator('.graph-node.reward').last();
+    const rewardId = await rewardNode.getAttribute('data-node-id');
+    await rewardNode.click();
+    await page.locator('#story-graph-reward-gold').fill('777');
+    await page.locator('#story-graph-reward-skill').selectOption({ index: 1 });
+    await page.locator('#story-graph-reward-growth-magic').fill('3');
+    await page.locator('#story-graph-reward-buff').fill('夜色回响');
+
+    // 复制 / 粘贴
+    const afterAdds = await page.locator('.graph-node').count();
+    await page.locator('#story-graph-copy').click();
+    await page.locator('#story-graph-paste').click();
+    await expect.poll(async () => page.locator('.graph-node').count()).toBe(afterAdds + 1);
+
+    // 键盘复制粘贴
+    await page.locator('.graph-node').last().click();
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await expect.poll(async () => page.locator('.graph-node').count()).toBe(afterAdds + 2);
+
+    await page.locator('#story-graph-zoom-reset').click();
     await page.locator('#story-graph-zoom-in').click();
     await page.locator('#story-graph-zoom-in').click();
     await expect(page.locator('#story-graph-zoom-reset')).toContainText('120%');
@@ -972,6 +1015,14 @@ try {
     expect(graph?.nodes?.length).toBeGreaterThan(before);
     expect(graph?.edges?.some(edge => edge.from === choiceId && edge.to === replacementId)).toBe(true);
     expect(graph?.edges?.some(edge => edge.from === choiceId && edge.to === targetId)).toBe(false);
+    const savedReward = graph?.nodes?.find(node => node.id === rewardId);
+    expect(savedReward?.data.kind).toBe('reward');
+    if (savedReward?.data.kind === 'reward') {
+      expect(savedReward.data.effect.gold).toBe(777);
+      expect(savedReward.data.effect.skill?.id).toBeTruthy();
+      expect(savedReward.data.effect.growth?.magic).toBe(3);
+      expect(savedReward.data.effect.buff?.name).toBe('夜色回响');
+    }
   });
 
   await check('故事线手稿：人工设计后保存到卡片，并按手稿开场', async () => {

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertTriangle, AlignLeft, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
-import type { Girl, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
+import type { Girl, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
 import { NODE_LABELS, compileBeatsToGraph, makeNode, validateGraph } from '../storygraph.ts';
 import { storyPlanTemplate } from '../storyplan.ts';
+import { missionTemplates, statLabels, type MissionTemplateOption } from '../game.ts';
+import { skills } from '../content/skills.ts';
+import { items } from '../content/items.ts';
 
 const NODE_W = 190;
 const NODE_H = 74;
@@ -32,8 +35,11 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
 
 function portsOf(node: StoryNode): string[] {
   if (node.kind === 'choice' && node.data.kind === 'choice') return node.data.options.map(option => option.id);
+  if (node.kind === 'mission') return ['success', 'failure'];
   return node.kind === 'end' ? [] : ['out'];
 }
+
+const PORT_LABELS: Record<string, string> = { success: '成功', failure: '失败', out: '默认' };
 
 function portY(node: StoryNode, port: string): number {
   const ports = portsOf(node);
@@ -45,8 +51,10 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
   const initial = useMemo(() => {
     if (girl.storyPlan?.graph) return structuredClone(girl.storyPlan.graph);
     if (girl.storyPlan?.beats?.length) return compileBeatsToGraph(girl.storyPlan);
-    return compileBeatsToGraph(storyPlanTemplate('新的故事', '一句话写下这个故事的开头。'));
+    const template = storyPlanTemplate('新的故事', '一句话写下这个故事的开头。');
+    return compileBeatsToGraph({ ...template, beats: template.beats.slice(0, 1) });
   }, [girl]);
+  const templates = useMemo(() => missionTemplates(), []);
   const [graph, setGraph] = useState<StoryGraph>(initial);
   const initialId = initial.nodes.find(node => node.kind === 'start')?.id ?? null;
   const [selected, setSelected] = useState<string | null>(initialId);
@@ -77,6 +85,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
   }, []);
 
   const node = graph.nodes.find(item => item.id === selected) ?? null;
+  const reward = node?.kind === 'reward' && node.data.kind === 'reward' ? node.data : null;
   const issues = validateGraph(graph);
   const errors = issues.filter(issue => issue.level === 'error');
   const warnings = issues.filter(issue => issue.level === 'warning');
@@ -91,20 +100,43 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
       patchNode(current.id, { data: { ...current.data, spec: { ...current.data.spec, ...patch } } as unknown as StoryNode['data'] });
     }
   };
-  const patchScene = (narration: string) => { const c = node; if (c?.data.kind === 'scene') patchNode(c.id, { data: { ...c.data, narration } }); };
-  const patchEvent = (patch: { title?: string; hook?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
-  const patchReward = (effect: { gold?: number; bond?: number; corruption?: number }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, effect: { ...c.data.effect, ...effect } } }); };
+  const applyMissionTemplate = (template: MissionTemplateOption) => {
+    const current = node;
+    if (!current || current.data.kind !== 'mission') return;
+    patchNode(current.id, {
+      title: template.title.slice(0, 40),
+      data: {
+        ...current.data,
+        spec: {
+          ...current.data.spec,
+          title: template.title.slice(0, 30),
+          goal: template.description || template.title,
+          category: template.category,
+          difficulty: template.difficulty,
+          duration: template.duration,
+          requirement: template.requirement,
+          target: template.target,
+          monsters: template.monsters.length ? structuredClone(template.monsters) : undefined,
+        },
+      },
+    });
+  };
+  const patchScene = (narration: string) => { const c = node; if (c?.data.kind === 'scene') patchNode(c.id, { data: { ...c.data, narration } }); };  const patchEvent = (patch: { title?: string; hook?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
+  const patchReward = (effect: Partial<StoryEffect>) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, effect: { ...c.data.effect, ...effect } } }); };
+  const patchRewardData = (patch: { equipmentId?: string }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchWait = (patch: { days?: number; minutes?: number }) => { const c = node; if (c?.data.kind === 'wait') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchEnd = (summary: string) => { const c = node; if (c?.data.kind === 'end') patchNode(c.id, { data: { ...c.data, summary } }); };
   const patchOptions = (options: { id: string; label: string; intent?: string; effect?: StoryEffect }[]) => { const c = node; if (c?.data.kind === 'choice') patchNode(c.id, { data: { ...c.data, options } }); };
   const addNode = (kind: StoryNodeKind) => {
+    const host = canvas.current;
+    const cx = host ? (host.scrollLeft + host.clientWidth / 2) / zoom : 520;
+    const cy = host ? (host.scrollTop + host.clientHeight / 2) / zoom : 300;
     const created: StoryNode = {
-      ...makeNode(kind, Math.max(...graph.nodes.map(node => node.x), 0) + 260, 220, `n${Date.now().toString(36)}${graph.nodes.length}`),
+      ...makeNode(kind, Math.round(Math.max(0, Math.min(1400, cx - NODE_W / 2))), Math.round(Math.max(0, Math.min(860, cy - NODE_H / 2))), `n${Date.now().toString(36)}${graph.nodes.length}`),
       title: NODE_LABELS[kind],
     };
     setGraph(current => ({ ...current, nodes: [...current.nodes, created] }));
     setSelected(created.id);
-    window.setTimeout(() => document.getElementById(`story-graph-node-${created.id}`)?.scrollIntoView({ block: 'nearest', inline: 'center' }), 60);
   };
   const removeSelected = () => {
     const doomed = new Set(selection.filter(id => graph.nodes.find(item => item.id === id)?.kind !== 'start'));
@@ -287,7 +319,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
             ))}
             <small>入口与出口</small>
             <button type="button" id="story-graph-add-start" className="graph-palette-btn" style={{ '--node-accent': NODE_COLOR.start } as React.CSSProperties} onClick={() => addNode('start')}><i style={{ background: NODE_COLOR.start }} /> 开始 <Plus size={11} /></button>
-            <p className="story-graph-tip">按住节点右侧圆点拖到目标节点连线；在空白处拖出框选，Shift+点击加选；拖动任一选中节点可整组移动。Ctrl+C / Ctrl+V 复制粘贴，Delete 删除，Ctrl+滚轮缩放。</p>
+            <p className="story-graph-tip">按住节点右侧圆点拖到目标节点连线；在空白处拖出框选，Shift+点击加选；拖动任一选中节点可整组移动。滚轮缩放，右键拖动平移，Ctrl+C / Ctrl+V 复制粘贴，Delete 删除。阶段委托有「成功 / 失败」两个出口。</p>
           </aside>
 
           <div className="story-graph-canvas" ref={canvas} onClick={() => { if (linkFrom) setLinkFrom(null); }}
@@ -431,6 +463,9 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                 {item.kind !== 'start' && (
                   <span className="graph-port in" aria-hidden="true" title="入口：多条连线可以汇入这里" />
                 )}
+                {item.kind === 'mission' && portsOf(item).map(port => (
+                  <span key={`tag-${port}`} className="graph-port-tag" aria-hidden="true" style={{ top: portY(item, port) - item.y - 6 }}>{PORT_LABELS[port]}</span>
+                ))}
                 {portsOf(item).map(port => (
                   <button
                     key={port}
@@ -441,7 +476,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                     onPointerDown={event => beginLink(event, item, port)}
                     onPointerMove={moveLink}
                     onPointerUp={endLink}
-                    title={port === 'out' ? '按住拖到目标节点连线' : `选项 ${port}：拖到目标节点`}
+                    title={port === 'success' ? '成功出口：拖到目标节点' : port === 'failure' ? '失败出口：拖到目标节点' : port === 'out' ? '按住拖到目标节点连线' : `选项 ${port}：拖到目标节点`}
                   />
                 ))}
               </div>
@@ -509,8 +544,17 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                 )}
                 {node.kind === 'mission' && node.data.kind === 'mission' && (
                   <>
+                    <label className="graph-field"><span>从现有委托导入</span>
+                      <select id="story-graph-mission-template" className="av-input" value="" onChange={event => {
+                        const template = templates.find(item => item.id === event.target.value);
+                        if (template) applyMissionTemplate(template);
+                      }}>
+                        <option value="">选择一份委托模板…</option>
+                        {templates.map(template => <option key={template.id} value={template.id}>{template.title} · {template.category}</option>)}
+                      </select>
+                    </label>
                     <label className="graph-field"><span>委托标题</span>
-                      <input className="av-input" value={node.data.spec.title} onChange={event => patchSpec({ title: event.target.value.slice(0, 30) })} />
+                      <input id="story-graph-mission-title" className="av-input" value={node.data.spec.title} onChange={event => patchSpec({ title: event.target.value.slice(0, 30) })} />
                     </label>
                     <label className="graph-field"><span>明确目标</span>
                       <textarea className="av-input" rows={3} value={node.data.spec.goal} onChange={event => patchSpec({ goal: event.target.value })} />
@@ -525,6 +569,17 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                         <input type="number" className="av-input" value={node.data.spec.duration} onChange={event => patchSpec({ duration: Number(event.target.value) || 90 })} />
                       </label>
                     </div>
+                    <div className="graph-row">
+                      <label className="graph-field"><span>判定属性</span>
+                        <select className="av-input" value={node.data.spec.requirement ?? 'insight'} onChange={event => patchSpec({ requirement: event.target.value })}>
+                          {(Object.keys(statLabels) as StatKey[]).map(key => <option key={key} value={key}>{statLabels[key]}</option>)}
+                        </select>
+                      </label>
+                      <label className="graph-field"><span>目标值</span>
+                        <input type="number" className="av-input" value={node.data.spec.target ?? 45} onChange={event => patchSpec({ target: Number(event.target.value) || 45 })} />
+                      </label>
+                    </div>
+                    <p className="story-graph-tip">右侧两个出口：成功走「成功」，战斗失败或超期走「失败」。</p>
                   </>
                 )}
                 {node.kind === 'incident' && node.data.kind === 'incident' && (
@@ -547,17 +602,73 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                     </label>
                   </>
                 )}
-                {node.kind === 'reward' && node.data.kind === 'reward' && (
-                  <div className="graph-row">
-                    <label className="graph-field"><span>星砂</span>
-                      <input type="number" className="av-input" value={node.data.effect.gold ?? 0} onChange={event => patchReward({ gold: Number(event.target.value) || 0 })} />
+                {reward && (
+                  <div className="graph-reward">
+                    <small>奖励内容</small>
+                    <div className="graph-row">
+                      <label className="graph-field"><span>星砂</span>
+                        <input id="story-graph-reward-gold" type="number" className="av-input" value={reward.effect.gold ?? 0} onChange={event => patchReward({ gold: Number(event.target.value) || 0 })} />
+                      </label>
+                      <label className="graph-field"><span>声望</span>
+                        <input type="number" className="av-input" value={reward.effect.reputation ?? 0} onChange={event => patchReward({ reputation: Number(event.target.value) || 0 })} />
+                      </label>
+                      <label className="graph-field"><span>好感度</span>
+                        <input type="number" className="av-input" value={reward.effect.bond ?? 0} onChange={event => patchReward({ bond: Number(event.target.value) || 0 })} />
+                      </label>
+                    </div>
+                    <div className="graph-row">
+                      <label className="graph-field"><span>侵蚀</span>
+                        <input type="number" className="av-input" value={reward.effect.corruption ?? 0} onChange={event => patchReward({ corruption: Number(event.target.value) || 0 })} />
+                      </label>
+                      <label className="graph-field"><span>装备</span>
+                        <select id="story-graph-reward-equipment" className="av-input" value={reward.equipmentId ?? ''} onChange={event => patchRewardData({ equipmentId: event.target.value || undefined })}>
+                          <option value="">无</option>
+                          {items.filter(item => item.slot !== 'consumable').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="graph-field"><span>技能</span>
+                      <select id="story-graph-reward-skill" className="av-input" value={reward.effect.skill?.id ?? ''} onChange={event => {
+                        const skill = skills.find(item => item.id === event.target.value);
+                        patchReward({ skill: skill ? { id: skill.id, name: skill.name } : undefined });
+                      }}>
+                        <option value="">无</option>
+                        {skills.map(skill => <option key={skill.id} value={skill.id}>{skill.name} · {skill.school}</option>)}
+                      </select>
                     </label>
-                    <label className="graph-field"><span>羁绊</span>
-                      <input type="number" className="av-input" value={node.data.effect.bond ?? 0} onChange={event => patchReward({ bond: Number(event.target.value) || 0 })} />
+                    <div className="graph-row">
+                      <label className="graph-field"><span>特性名称</span>
+                        <input className="av-input" value={reward.effect.trait?.name ?? ''} onChange={event => patchReward({ trait: { name: event.target.value.slice(0, 16), description: reward.effect.trait?.description ?? '' } })} />
+                      </label>
+                      <label className="graph-field"><span>特性说明</span>
+                        <input className="av-input" value={reward.effect.trait?.description ?? ''} onChange={event => patchReward({ trait: { name: reward.effect.trait?.name ?? '故事特性', description: event.target.value.slice(0, 120) } })} />
+                      </label>
+                    </div>
+                    <small>数值增长</small>
+                    <div className="graph-row">
+                      {(Object.keys(statLabels) as StatKey[]).map(key => (
+                        <label className="graph-field" key={key}><span>{statLabels[key]}</span>
+                          <input id={`story-graph-reward-growth-${key}`} type="number" className="av-input" value={reward.effect.growth?.[key] ?? 0} onChange={event => patchReward({ growth: { ...(reward.effect.growth ?? {}), [key]: Number(event.target.value) || 0 } })} />
+                        </label>
+                      ))}
+                    </div>
+                    <small>临时增益</small>
+                    <label className="graph-field"><span>名称</span>
+                      <input id="story-graph-reward-buff" className="av-input" value={reward.effect.buff?.name ?? ''} onChange={event => patchReward({ buff: { ...(reward.effect.buff ?? { stat: 'magic', amount: 2, days: 3 }), name: event.target.value.slice(0, 20) } })} />
                     </label>
-                    <label className="graph-field"><span>侵蚀</span>
-                      <input type="number" className="av-input" value={node.data.effect.corruption ?? 0} onChange={event => patchReward({ corruption: Number(event.target.value) || 0 })} />
-                    </label>
+                    <div className="graph-row">
+                      <label className="graph-field"><span>属性</span>
+                        <select className="av-input" value={reward.effect.buff?.stat ?? 'magic'} onChange={event => patchReward({ buff: { ...(reward.effect.buff ?? { name: '故事增益' }), stat: event.target.value as StatKey } })}>
+                          {(Object.keys(statLabels) as StatKey[]).map(key => <option key={key} value={key}>{statLabels[key]}</option>)}
+                        </select>
+                      </label>
+                      <label className="graph-field"><span>数值</span>
+                        <input type="number" className="av-input" value={reward.effect.buff?.amount ?? 0} onChange={event => patchReward({ buff: { ...(reward.effect.buff ?? { name: '故事增益', stat: 'magic', days: 3 }), amount: Number(event.target.value) || 0 } })} />
+                      </label>
+                      <label className="graph-field"><span>天数</span>
+                        <input type="number" className="av-input" value={reward.effect.buff?.days ?? 3} onChange={event => patchReward({ buff: { ...(reward.effect.buff ?? { name: '故事增益', stat: 'magic', amount: 2 }), days: Number(event.target.value) || 1 } })} />
+                      </label>
+                    </div>
                   </div>
                 )}
                 {node.kind === 'choice' && node.data.kind === 'choice' && (
@@ -606,7 +717,7 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                 <div className="graph-edges-list">
                   {graph.edges.filter(edge => edge.from === node.id).map(edge => (
                     <div key={edge.id} className="graph-edge-row">
-                      <span>{edge.fromPort === 'out' ? '默认' : edge.fromPort}
+                      <span>{PORT_LABELS[edge.fromPort] ?? edge.fromPort}
                         <ArrowRight size={11} />
                         {graph.nodes.find(item => item.id === edge.to)?.title ?? edge.to}
                       </span>

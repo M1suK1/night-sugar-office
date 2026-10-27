@@ -95,6 +95,12 @@ export interface Expedition {
 export interface StoryEffect {
   gold?: number; reputation?: number; bond?: number; corruption?: number;
   trait?: { name: string; description: string };
+  /** 奖励技能：id 来自 content/skills。 */
+  skill?: { id: string; name: string };
+  /** 数值增长：直接加到少女的能力值上。 */
+  growth?: Partial<Record<StatKey, number>>;
+  /** 临时增益，落地为一条带剩余天数的 Condition。 */
+  buff?: { name: string; description?: string; stat?: StatKey; amount?: number; days?: number };
   trigger?: StoryTrigger;
 }
 export interface StoryChoice {

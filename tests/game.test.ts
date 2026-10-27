@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -13,9 +13,11 @@ import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
+import { skills } from '../src/content/skills.ts';
+import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
-import type { Incident, Mission, Opinion, Outfit, Scar, Storyline } from '../src/types.ts';
+import type { Incident, Mission, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
 
 const oldScar = (id: string): Scar => ({
   id: `scar-${id}-old`, name: '陈旧伤', kind: 'physical', condition: '旧伤在阴雨天发作',
@@ -1522,4 +1524,97 @@ test('蓝图故事线按图推进：逐幕分岔、奖励结算后收束', () =>
   const finished = state.storylines.find(item => item.id === storyId);
   assert.equal(finished?.status, 'done');
   assert.ok(state.girls[0].bond > bondBefore);
+});
+
+test('阶段委托节点要求成功 / 失败出口，并可套用现有委托模板', () => {
+  const plan = storyPlanTemplate('校验故事', '只做结构校验。');
+  const graph = compileBeatsToGraph({ ...plan, beats: plan.beats.slice(0, 1) });
+  const start = graph.nodes.find(node => node.kind === 'start')!;
+  graph.nodes.push(makeNode('mission', 900, 320, 'm-check'));
+  const missionNode = graph.nodes.find(node => node.id === 'm-check')!;
+  if (missionNode.data.kind === 'mission') missionNode.data.spec = { ...missionNode.data.spec, title: '夜巡', goal: '完成夜巡。' };
+  graph.edges.push({ id: 'edge-check', from: start.id, fromPort: 'out', to: 'm-check' });
+  const issues = validateGraph(graph);
+  assert.ok(issues.some(issue => issue.level === 'error' && issue.nodeId === 'm-check' && issue.message.includes('成功')));
+  assert.ok(issues.some(issue => issue.level === 'warning' && issue.nodeId === 'm-check' && issue.message.includes('失败')));
+  const end = graph.nodes.find(node => node.kind === 'end')!;
+  graph.edges.push({ id: 'edge-check-ok', from: 'm-check', fromPort: 'success', to: end.id });
+  const fixed = validateGraph(graph);
+  assert.ok(!fixed.some(issue => issue.level === 'error' && issue.nodeId === 'm-check'));
+  const templates = missionTemplates();
+  assert.ok(templates.length > 0);
+  assert.ok(templates.every(template => template.title && template.requirement && Array.isArray(template.monsters)));
+});
+
+test('阶段委托失败会走失败出口，并继续结算后续节点', () => {
+  const state = createInitialState();
+  const start = makeNode('start', 0, 0, 's-fail');
+  const mission = makeNode('mission', 240, 0, 'm-fail');
+  const reward = makeNode('reward', 520, 0, 'r-fail');
+  if (reward.data.kind === 'reward') reward.data.effect = { gold: 500 };
+  const end = makeNode('end', 800, 0, 'e-fail');
+  const graph: StoryGraph = {
+    version: 1,
+    entry: 's-fail',
+    nodes: [start, mission, reward, end],
+    edges: [
+      { id: 'e1', from: 's-fail', fromPort: 'out', to: 'm-fail' },
+      { id: 'e2', from: 'm-fail', fromPort: 'failure', to: 'r-fail' },
+      { id: 'e3', from: 'r-fail', fromPort: 'out', to: 'e-fail' },
+    ],
+  };
+  const story: Storyline = {
+    id: 'story-fail-test', girlId: 'yue', title: '失败分支', premise: '', tone: '',
+    beats: [{ id: 'm-fail', index: 0, title: '委托', summary: '', scene: '', hook: '', choices: [], status: 'open', missionId: 'mission-fail' }],
+    stage: 0, status: 'active', createdAt: '', day: 1, source: 'manual', graph,
+    run: { cursor: 'm-fail', waiting: { kind: 'mission', ref: 'mission-fail' }, visited: ['m-fail'], steps: 1 },
+  };
+  state.storylines = [story];
+  const before = state.gold;
+  resolveStoryWait(state, story.id, 'mission', 'mission-fail', 'failure');
+  assert.equal(state.gold, before + 500);
+  assert.equal(story.status, 'done');
+});
+
+test('奖励节点的技能、数值增长与临时增益会结算到角色身上', () => {
+  const state = createInitialState();
+  const girl = state.girls[0];
+  girl.bond = 60;
+  const start = makeNode('start', 0, 0, 's-reward');
+  const reward = makeNode('reward', 240, 0, 'r-reward');
+  if (reward.data.kind === 'reward') {
+    reward.data.effect = {
+      gold: 120,
+      skill: { id: skills[1].id, name: skills[1].name },
+      growth: { magic: 2 },
+      buff: { name: '夜色回响', stat: 'magic', amount: 3, days: 2 },
+    };
+  }
+  const end = makeNode('end', 520, 0, 'e-reward');
+  const graph: StoryGraph = {
+    version: 1,
+    entry: 's-reward',
+    nodes: [start, reward, end],
+    edges: [
+      { id: 'r1', from: 's-reward', fromPort: 'out', to: 'r-reward' },
+      { id: 'r2', from: 'r-reward', fromPort: 'out', to: 'e-reward' },
+    ],
+  };
+  const plan = { ...storyPlanTemplate('奖励测试', '奖励要真的落到身上。'), graph };
+  const saved = act(state, { type: 'setStoryPlan', girlId: girl.id, plan });
+  assert.equal(saved.ok, true);
+  const ready = structuredClone(saved.state);
+  ready.girls[0].bond = 60;
+  const magicBefore = ready.girls[0].stats.magic;
+  const goldBefore = ready.gold;
+  const started = act(ready, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(started.ok, true);
+  const after = started.state.girls[0];
+  assert.equal(started.state.gold, goldBefore + 120);
+  assert.ok(after.skills.includes(skills[1].id));
+  assert.equal(after.stats.magic, magicBefore + 2);
+  const buff = after.conditions.find(condition => condition.name === '夜色回响');
+  assert.ok(buff);
+  assert.equal(buff?.kind, 'buff');
+  assert.equal(buff?.remaining, 2);
 });
