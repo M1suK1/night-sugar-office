@@ -703,7 +703,7 @@ node node_modules/vite/bin/vite.js build --logLevel error
 
 落地：
 
-- **立绘**：`GirlPortrait` 新增 `bare`，议会主发言者使用 `variant="full" bare`，不画内置背景矩形、光晕与底部渐变；`.council-figure` 去掉圆角、边框、裁切与 `max-height`，改为 380×440 上限，导入立绘 `object-fit: contain`，助手席保留带框。窄屏主立绘约 40vh，选项仍在立绘下方。
+- **立绘**：`GirlPortrait` 新增 `bare`，议会主发言者使用 `variant="full" bare`，不画内置背景矩形、光晕与底部渐变；`.council-figure` 去掉圆角、边框、裁切与 `max-height`，桌面端 480 宽、最高 630 高，绝对定位到议会面板底边，导入立绘 `object-fit: contain`，助手席保留带框。议会面板最小高度提高到 880；窄屏回到文档流，主立绘缩到 300 高，避免盖住选项。
 - **结构化选项**：`OpinionOption` 增加 `changes` / `outcomes`，`Opinion` 增加 `faction` / `revisitDay`。`src/opinions.ts` 负责默认选项、旧选项补齐、资源标签与严格预览；资源覆盖星砂、安定度、势力态度、仓库装备、契约者羁绊/疲劳/侵蚀/生命、时间，结果覆盖装备、契约者、辖区易主、特殊委托与免费契约者。
 - **结算**：批准与驳回先走 `previewOpinionOption`，任一资源不足整条锁定；暂缓是唯一无资源门槛的保底选项，只扣提出者羁绊 −1 与所属势力态度 −2，设 `revisitDay` 并在下个议事日恢复 pending。驳回默认羁绊 −2、势力 −4，再叠加主题资源惩罚（经费 −300 星砂；设施 −200 星砂与 −1 安定度；排班 +30 分钟与 +5 疲劳；同伴 −150 星砂与 −1 安定度；城市 +30 分钟与额外 −2 势力态度；私人心愿 +60 分钟与 +5 疲劳）。时间惩罚要求今晚剩余足够且无待处理弹窗，契约者离队要求目标不在委托/远行中。
 - **兼容**：旧存档的议会选项在 `hydrate` 时按 id 补齐默认结构化数据；故事蓝图手写选项保持 `changes: []` / `outcomes: []`，不暗中套用默认费用；`decideOpinion` 的时间推进复用 `advance`，失败不落状态。

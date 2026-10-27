@@ -665,9 +665,9 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   .cmd-head small { display: none; }
 }
 /* ── v6: 议会 / 事件 / 开局 / 故事线 ───────────────────────────── */
-.council-stage { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); min-height: 620px; margin-bottom: 24px; }
+.council-stage { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); min-height: 880px; margin-bottom: 24px; }
 .council-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.council-stage-inner { position: relative; display: grid; grid-template-columns: 260px minmax(0, 1fr) 240px; gap: 18px; padding: 22px; min-height: 620px; }
+.council-stage-inner { position: relative; display: grid; grid-template-columns: 260px minmax(0, 1fr) 240px; gap: 18px; padding: 22px; min-height: 880px; }
 .council-side, .council-assistant { background: rgba(14, 12, 18, .82); border: 1px solid var(--border); border-radius: 14px; padding: 16px; backdrop-filter: blur(6px); align-self: start; }
 .council-kicker { margin: 0 0 12px; font-size: 10px; letter-spacing: .18em; color: var(--pink); text-transform: uppercase; }
 .council-facts { display: grid; gap: 8px; margin-bottom: 14px; }
@@ -782,8 +782,17 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 @media (max-width: 1080px) { .council-stage-inner { grid-template-columns: 1fr; } .council-side, .council-assistant { display: none; } .council-stage { min-height: 560px; } }
 @media (max-width: 720px) { .start-options { grid-template-columns: 1fr; } .event-body { grid-template-columns: 1fr; } .event-figure { max-height: 200px; } .council-topic h2 { font-size: 20px; } }
 /* v6 议会布局微调：立绘不压住选项，议题与选项保持呼吸 */
-.council-speaker { justify-content: flex-start; gap: 14px; }
+.council-speaker { justify-content: flex-start; gap: 14px; position: relative; }
+.council-figure { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%); width: min(480px, 100%); height: min(630px, calc(100% - 150px), 62vh); z-index: 0; }
+.council-topic, .council-options { position: relative; z-index: 2; }
 .council-options { margin-top: auto; }
+@media (max-width: 1080px) {
+  .council-stage-inner { min-height: 560px; }
+  .council-figure { position: relative; left: auto; bottom: auto; transform: none; width: min(380px, 100%); height: min(420px, 44vh); margin-top: 4px; }
+}
+@media (max-width: 720px) {
+  .council-figure { width: min(300px, 100%); height: min(300px, 34vh); }
+}
 .llm-console.open { overflow: hidden; }
 .llm-console-resize { position:absolute; left:0; top:0; width:16px; height:16px; z-index:3; cursor:nwse-resize; border-top-left-radius:7px;
   background:linear-gradient(135deg,#f3aec946 0 1.5px,transparent 1.5px 3px,#f3aec946 3px 4.5px,transparent 4.5px 6px,#f3aec946 6px 7.5px,transparent 7.5px); }
