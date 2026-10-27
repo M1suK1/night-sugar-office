@@ -43,8 +43,12 @@ const seed: Seed[] = [
 
 export const skills: Skill[] = seed.map(([id, name, school, resource, power, targets, side, cooldown, tier, effects, description]) => ({ id, name, school, resource, power, targets, side, cooldown, tier, effects, description }));
 export const skillById = new Map(skills.map(s => [s.id, s]));
+/** 严格查询：找不到就返回 undefined，调用方决定如何提示，不再假装它是第一个技能。 */
+export function findSkill(id: string | undefined): Skill | undefined {
+  return id ? skillById.get(id) : undefined;
+}
 export function getSkill(id: string): Skill {
-  return skillById.get(id) ?? skills[0];
+  return findSkill(id) ?? skills[0];
 }
 export const tierLabels: Record<SkillTier, string> = { basic: '基础', signature: '本职', ultimate: '奥义' };
 export const resourceLabels: Record<SkillResource, string> = { hp: '血量', spirit: '共情值' };

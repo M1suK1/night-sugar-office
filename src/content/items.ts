@@ -65,8 +65,11 @@ export const items: Equipment[] = [
 ];
 
 export const itemById = new Map(items.map(i => [i.id, i]));
-export function getItem(id: string | undefined): Equipment | undefined {
+export function findItem(id: string | undefined): Equipment | undefined {
   return id ? itemById.get(id) : undefined;
+}
+export function getItem(id: string | undefined): Equipment | undefined {
+  return findItem(id);
 }
 /** 故事线奖励的专属装备：登记后 getItem / 装备栏 / 背包都能直接识别。 */
 export function registerItem(item: Equipment): Equipment {

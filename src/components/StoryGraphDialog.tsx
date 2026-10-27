@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertTriangle, AlignLeft, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
-import type { Girl, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
+import type { Girl, IncidentCard, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
 import { NODE_LABELS, compileBeatsToGraph, makeNode, validateGraph } from '../storygraph.ts';
 import { storyPlanTemplate } from '../storyplan.ts';
 import { missionTemplates, statLabels, type MissionTemplateOption } from '../game.ts';
@@ -47,7 +47,7 @@ function portY(node: StoryNode, port: string): number {
   return node.y + 26 + index * 18;
 }
 
-export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave: (graph: StoryGraph) => void; onClose: () => void }) {
+export function StoryGraphDialog({ girl, incidents, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; onSave: (graph: StoryGraph) => void; onClose: () => void }) {
   const initial = useMemo(() => {
     if (girl.storyPlan?.graph) return structuredClone(girl.storyPlan.graph);
     if (girl.storyPlan?.beats?.length) return compileBeatsToGraph(girl.storyPlan);
@@ -584,6 +584,24 @@ export function StoryGraphDialog({ girl, onSave, onClose }: { girl: Girl; onSave
                 )}
                 {node.kind === 'incident' && node.data.kind === 'incident' && (
                   <>
+                    <label className="graph-field"><span>从事件库导入</span>
+                      <select
+                        className="av-input"
+                        id="story-graph-incident-card"
+                        value={node.data.spec.cardId ?? ''}
+                        onChange={event => {
+                          const card = incidents.find(entry => entry.id === event.target.value);
+                          if (!card) { patchSpec({ cardId: undefined }); return; }
+                          patchSpec({
+                            cardId: card.id, title: card.title.slice(0, 30), body: card.body,
+                            kind: card.kind, faction: card.faction, district: card.district,
+                          });
+                        }}
+                      >
+                        <option value="">手填内容</option>
+                        {incidents.map(card => <option key={card.id} value={card.id}>{card.title}</option>)}
+                      </select>
+                    </label>
                     <label className="graph-field"><span>事件标题</span>
                       <input className="av-input" value={node.data.spec.title} onChange={event => patchSpec({ title: event.target.value.slice(0, 30) })} />
                     </label>

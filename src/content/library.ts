@@ -172,6 +172,8 @@ export function sanitizeItem(raw: unknown, skillPool: Set<string> = new Set(skil
   if (value.corruptionPerBattle !== undefined) item.corruptionPerBattle = Math.round(number(value.corruptionPerBattle, 0, -20, 20));
   if (value.maxHpBonus !== undefined) item.maxHpBonus = Math.round(number(value.maxHpBonus, 0, 0, 300));
   if (value.spiritBonus !== undefined) item.spiritBonus = Math.round(number(value.spiritBonus, 0, 0, 200));
+  if (value.damageBonus !== undefined) item.damageBonus = Math.round(number(value.damageBonus, 0, 0, 100));
+  if (value.initiativeBonus !== undefined) item.initiativeBonus = Math.round(number(value.initiativeBonus, 0, 0, 100));
   if (value.effect !== undefined) item.effect = oneOf(value.effect, ITEM_EFFECTS, 'heal');
   if (value.amount !== undefined) item.amount = Math.round(number(value.amount, 0, 0, 5000));
   return item;
@@ -604,6 +606,7 @@ export function contentUsage(state: GameState, kind: WorkshopKind, id: string): 
   }
   if (kind === 'incident') {
     if (state.incidents.some(incident => incident.cardId === id)) used.push('当前弹窗记录');
+    if (state.girls.some(girl => girl.storyPlan?.graph?.nodes.some(node => node.data.kind === 'incident' && node.data.spec.cardId === id))) used.push('契约者故事蓝图');
   }
   return used;
 }

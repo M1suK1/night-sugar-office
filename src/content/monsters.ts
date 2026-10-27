@@ -69,7 +69,11 @@ export const monsters: MonsterTemplate[] = [
   },
 ];
 export const monsterById = new Map(monsters.map(m => [m.id, m]));
+/** 严格查询：找不到就返回 undefined，调用方可以把这条引用当作失效内容处理。 */
+export function findMonster(id: string | undefined): MonsterTemplate | undefined {
+  return id ? monsterById.get(id) : undefined;
+}
 export function getMonster(id: string): MonsterTemplate {
-  return monsterById.get(id) ?? monsters[0];
+  return findMonster(id) ?? monsters[0];
 }
 export const rankOrder = ['碎屑', '游荡', '灾厄', '王座'] as const;

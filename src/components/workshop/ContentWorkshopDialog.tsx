@@ -583,6 +583,8 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>额外生命</span><input id="workshop-maxhp" type="number" value={item.maxHpBonus ?? 0} disabled={!editable} onChange={event => patchItem({ maxHpBonus: num(event.target.value) })} /></label>
                   <label className="field"><span>额外共情</span><input id="workshop-spirit" type="number" value={item.spiritBonus ?? 0} disabled={!editable} onChange={event => patchItem({ spiritBonus: num(event.target.value) })} /></label>
                   <label className="field"><span>每战侵蚀</span><input id="workshop-corruption" type="number" value={item.corruptionPerBattle ?? 0} disabled={!editable} onChange={event => patchItem({ corruptionPerBattle: num(event.target.value) })} /></label>
+                  <label className="field"><span>伤害加成 %</span><input id="workshop-damage-bonus" type="number" value={item.damageBonus ?? 0} disabled={!editable} onChange={event => patchItem({ damageBonus: num(event.target.value) })} /></label>
+                  <label className="field"><span>先手加成</span><input id="workshop-initiative-bonus" type="number" value={item.initiativeBonus ?? 0} disabled={!editable} onChange={event => patchItem({ initiativeBonus: num(event.target.value) })} /></label>
                 </div>
                 <div className="workshop-stats">
                   {STAT_KEYS.map(key => (

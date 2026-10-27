@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Radar, Candy, TrainFront, Eclipse, Cat, Mail, Plus, Minus, LocateFixed, ArrowUpRight, List, Map as MapIcon, Sparkles, Clock3, MoveUpRight, Crosshair, Radio, Check, Swords, ScanEye, Users, Skull, Hourglass, MapPin, Wind } from 'lucide-react';
 import type { GameState, Mission } from '../types';
-import { getMonster } from '../content/monsters';
+import { findMonster } from '../content/monsters';
 import { districts, districtOrder, effectLines, districtOfMission, type DistrictId } from '../districts';
 import { missionDeadlineLabel } from '../game';
 import { factionColor, factionName } from '../territories';
@@ -14,7 +14,7 @@ export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState
   const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null), [focus, setFocus] = useState<DistrictId | null>(null);
   const open = state.missions.filter(m => m.status === 'open').length;
   const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
-  const threat = (m: Mission) => (m.enemyIds ?? []).reduce((sum, id) => sum + getMonster(id).maxHp, 0);
+  const threat = (m: Mission) => (m.enemyIds ?? []).reduce((sum, id) => sum + (findMonster(id)?.maxHp ?? 0), 0);
   const pins = useMemo(() => state.missions.map(m => ({ mission: m, district: districtOfMission(m).id })), [state.missions]);
   const focused = focus ? districts[focus] : null;
   const focusedMissions = focus ? pins.filter(p => p.district === focus && p.mission.status !== 'done' && p.mission.status !== 'expired') : [];

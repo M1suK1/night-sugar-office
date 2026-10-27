@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, missionTemplates, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -13,9 +13,9 @@ import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
-import { skills, getSkill } from '../src/content/skills.ts';
-import { getItem } from '../src/content/items.ts';
-import { getMonster } from '../src/content/monsters.ts';
+import { skills, getSkill, findSkill } from '../src/content/skills.ts';
+import { getItem, findItem } from '../src/content/items.ts';
+import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { simulateBattle } from '../src/combat.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
@@ -1788,4 +1788,99 @@ test('导入冲突支持跳过、覆盖与另存新 id，并重映射技能引�
   assert.ok(renamedSkill);
   assert.notEqual(renamedSkill.id, 'custom-skill-conf01');
   assert.equal(rename.library.items[0].skillId, renamedSkill.id);
+});
+
+test('缺失内容返回 undefined，旧读取函数只作为兜底', () => {
+  assert.equal(findSkill('missing-skill'), undefined);
+  assert.equal(findMonster('missing-monster'), undefined);
+  assert.equal(findItem('missing-item'), undefined);
+  assert.equal(getSkill('missing-skill').id, skills[0].id);
+  assert.equal(findSkill(skills[0].id)?.name, skills[0].name);
+});
+
+test('装备的伤害与先手加成会进入战斗单位并提高输出', () => {
+  const item = sanitizeItem({
+    id: 'custom-item-gear01', name: '测试齿轮', faction: 'witch', slot: 'weapon', price: 500,
+    damageBonus: 50, initiativeBonus: 10, description: '工坊打样。',
+  });
+  assert.ok(item);
+  applyLibrary(sanitizeLibrary({ items: [item] }));
+  assert.equal(findItem(item.id)?.damageBonus, 50);
+
+  const state = createInitialState();
+  const girl = state.girls.find(entry => !entry.retired)!;
+  const mission: Mission = { ...state.missions[0], id: 'gear-bonus-mission', title: '加成测试', enemyIds: ['custom-monster-gear01'], rounds: 2, duration: 120, work: 'combat' } as Mission;
+  const base = getMonster('mirror-nun');
+  const monsters = [{ ...base, id: 'custom-monster-gear01', name: '测试木桩', maxHp: 5000, stats: { magic: 8, insight: 8, agility: 8, empathy: 8 }, rules: [] }];
+  const plain = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters, seed: 7 });
+  girl.equipment.weapon = item.id;
+  const geared = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters, seed: 7 });
+  const plainUnit = plain.units.find(unit => unit.uid === `ally-${girl.id}`);
+  const gearedUnit = geared.units.find(unit => unit.uid === `ally-${girl.id}`);
+  assert.ok(plainUnit && gearedUnit);
+  assert.equal(plainUnit.damageBonus ?? 0, 0);
+  assert.equal(gearedUnit.damageBonus, 50);
+  assert.equal(gearedUnit.initiativeBonus, 10);
+  assert.ok(gearedUnit.dealt > plainUnit.dealt, '50% 伤害加成应体现在总输出上');
+});
+
+test('随机池只抽 pool 卡，尊重权重并跳过当天已出现的 oncePerDay', () => {
+  const library = sanitizeLibrary({
+    incidents: [
+      { id: 'custom-incident-pool01', title: '权重一', body: '池卡一。', trigger: 'pool', weight: 1, options: [{ label: 'A', effect: {} }, { label: 'B', effect: {} }] },
+      { id: 'custom-incident-pool02', title: '权重九', body: '池卡二。', trigger: 'pool', weight: 9, oncePerDay: true, options: [{ label: 'A', effect: {} }, { label: 'B', effect: {} }] },
+      { id: 'custom-incident-manual01', title: '手动卡', body: '不该被抽到。', trigger: 'manual', weight: 20, options: [{ label: 'A', effect: {} }, { label: 'B', effect: {} }] },
+    ],
+  });
+  const [light, heavy, manual] = library.incidents;
+  assert.equal(pickPoolIncidentCard(library.incidents, [], 3, 0)?.id, light.id);
+  assert.equal(pickPoolIncidentCard(library.incidents, [], 3, 0.99)?.id, heavy.id);
+  assert.equal(pickPoolIncidentCard([manual], [], 3, 0.5), undefined);
+  const seen = [{ id: 'inc-1', cardId: heavy.id, day: 3 } as Incident];
+  assert.equal(pickPoolIncidentCard(library.incidents, seen, 3, 0.99)?.id, light.id);
+  assert.equal(pickPoolIncidentCard(library.incidents, seen, 4, 0.99)?.id, heavy.id, '换一天可以再次出现');
+});
+
+test('蓝图事件节点能从内容工坊弹窗卡导入并按卡结算', () => {
+  const card = sanitizeIncidentCard({
+    id: 'custom-incident-blueprint01', title: '工坊来的雨', body: '雨从工坊的窗缝里灌进来。',
+    kind: 'environment', trigger: 'manual',
+    options: [
+      { label: '关窗', hint: '假装没看见', effect: { reputation: 1 } },
+      { label: '开门', hint: '让雨进来', effect: { reputation: -1 } },
+    ],
+  });
+  assert.ok(card);
+  applyLibrary(sanitizeLibrary({ incidents: [card] }));
+
+  const state = createInitialState();
+  const girl = state.girls.find(entry => !entry.retired)!;
+  girl.bond = 60;
+  const start = makeNode('start', 0, 0, 's-card');
+  const incidentNode = makeNode('incident', 260, 0, 'i-card');
+  assert.equal(incidentNode.data.kind, 'incident');
+  if (incidentNode.data.kind === 'incident') {
+    incidentNode.data.spec.cardId = card.id;
+    incidentNode.data.spec.title = '手填旧标题';
+    incidentNode.data.spec.body = '手填旧正文。';
+  }
+  const end = makeNode('end', 520, 0, 'e-card');
+  const graph: StoryGraph = {
+    version: 1, entry: 's-card', nodes: [start, incidentNode, end],
+    edges: [
+      { id: 'c1', from: 's-card', fromPort: 'out', to: 'i-card' },
+      { id: 'c2', from: 'i-card', fromPort: 'out', to: 'e-card' },
+    ],
+  };
+  const saved = act(state, { type: 'setStoryPlan', girlId: girl.id, plan: { ...storyPlanTemplate('雨中工坊', '雨一直下。'), graph } });
+  assert.equal(saved.ok, true);
+  const started = act(saved.state, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(started.ok, true);
+  const incident = started.state.incidents.find(entry => entry.storylineId);
+  assert.ok(incident, '蓝图应弹出事件');
+  assert.equal(incident.cardId, card.id);
+  assert.equal(incident.title, card.title);
+  assert.equal(incident.body, card.body);
+  assert.deepEqual(incident.options.map(option => option.label), card.options.map(option => option.label));
+  assert.ok(contentUsage(started.state, 'incident', card.id).includes('契约者故事蓝图'));
 });

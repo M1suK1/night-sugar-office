@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Play, Pause, SkipForward, FastForward, Swords, Heart, Sparkles, Trophy, Skull, Bandage, X, ScanEye, ArrowRight, Shield, Flame, Snowflake, TrendingDown, TrendingUp, Timer } from 'lucide-react';
 import type { BattleState, BattleUnit, BattleEvent } from '../types';
 import { outcomeLabel } from '../combat';
-import { getMonster } from '../content/monsters';
+import { findMonster } from '../content/monsters';
 import { MonsterGlyph } from './MonsterGlyph';
 
 const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复' };
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
 
 function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean; compact?: boolean }) {
-  const monster = unit.side === 'enemy' ? (unit.monster ?? getMonster(unit.portrait)) : null;
+  const monster = unit.side === 'enemy' ? (unit.monster ?? findMonster(unit.portrait)) : undefined;
   return (
     <article className={`battle-unit ${unit.side} ${unit.down ? 'down' : ''} ${active ? 'active' : ''}`} style={{ '--unit-color': unit.color } as React.CSSProperties}>
       <div className="battle-unit-art">

@@ -805,9 +805,13 @@ try {
     await page.locator('#workshop-name').fill('测试·夜行护符');
     await page.locator('#workshop-price').fill('880');
     await page.locator('#workshop-stat-magic').fill('2');
+    await page.locator('#workshop-damage-bonus').fill('40');
+    await page.locator('#workshop-initiative-bonus').fill('8');
     await page.locator('#workshop-save').click();
     const afterItem = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
     expect(afterItem.items.length).toBe(1);
+    expect(afterItem.items[0].damageBonus).toBe(40);
+    expect(afterItem.items[0].initiativeBonus).toBe(8);
     const itemId = afterItem.items[0].id;
     await page.locator('#workshop-tab-monster').click();
     await page.locator('#workshop-new').click();
@@ -1160,6 +1164,38 @@ try {
       expect(savedReward.data.effect.growth?.magic).toBe(3);
       expect(savedReward.data.effect.buff?.name).toBe('夜色回响');
     }
+  });
+
+  await check('故事蓝图：事件节点可从内容工坊弹窗卡导入', async () => {
+    const incidentId = await page.evaluate(() => {
+      const library = JSON.parse(localStorage.getItem('night-sugar:content:v1') ?? '{}');
+      return library.incidents?.[0]?.id ?? '';
+    });
+    expect(incidentId).toBeTruthy();
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('night-sugar-office:v1');
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      state.storylines = []; state.events = []; state.incidents = [];
+      const girl = state.girls.find(entry => entry.id === 'yue') ?? state.girls[0];
+      girl.bond = 60; girl.storyPlan = undefined;
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(state));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-story-graph').click();
+    await expect(page.locator('.story-graph-modal')).toBeVisible();
+    await page.locator('#story-graph-add-incident').click();
+    const incidentNode = page.locator('.graph-node.incident').last();
+    await incidentNode.click();
+    await page.locator('#story-graph-incident-card').selectOption(incidentId);
+    await expect(page.locator('label:has-text("事件标题") input')).toHaveValue('测试·夜巡弹窗');
+    await expect(page.locator('label:has-text("正文") textarea')).toHaveValue(/雨停之后/);
+    await page.locator('#story-graph-save').click();
+    const saved = await stored();
+    const nodes = saved.girls.find(entry => entry.id === 'yue')?.storyPlan?.graph?.nodes ?? [];
+    const imported = nodes.find(node => node.data.kind === 'incident' && node.data.spec.cardId === incidentId);
+    expect(imported).toBeTruthy();
   });
 
   await check('故事线手稿：人工设计后保存到卡片，并按手稿开场', async () => {

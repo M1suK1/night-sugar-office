@@ -626,3 +626,25 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 95/95、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`。
 
 下一步：`trigger:'pool'` 的弹窗随机调度，以及 `src/game.ts` 的门面化拆分。
+
+---
+
+## 16. 实施记录（收尾四项，已完成）
+
+按 m02211「那就做到拆分之前，开始吧」补齐内容工具在拆分前的四项缺口；本批不含 `src/game.ts` 拆分、M6 议会提案编辑器与多场景角色事件编辑器。
+
+落地：
+
+- **严格内容引用**：`src/content/skills.ts`、`monsters.ts`、`items.ts` 分别新增 `findSkill` / `findMonster` / `findItem`，找不到时返回 `undefined`；旧 `getSkill` / `getMonster` / `getItem` 只作为旧调用方的兜底。人物档案技能池、市场候选技能、委托敌人列表与地图威胁值都改为过滤未知 id；战斗遇到未知魔物生成 1 HP 的 `未知魔物（<id>）` 占位，而不是静默替换成第一只内置魔物。
+- **装备加成接线**：`BattleUnit` 新增 `damageBonus?` / `initiativeBonus?`；`src/combat.ts` 的 `unitFromGirl` 汇总法器与护符的加成，`initiativeOf` 加上先手，最终伤害乘 `1 + clamp(damageBonus, -50, 200) / 100`。工坊装备表单新增 `#workshop-damage-bonus`（伤害加成 %）与 `#workshop-initiative-bonus`（先手加成），`sanitizeItem` 将两者限制在 0–100。
+- **随机池调度**：`src/game.ts` 新增纯函数 `pickPoolIncidentCard(cards, incidents, day, roll)`，只考虑 `trigger === 'pool'` 的卡，按 `weight` 加权，`oncePerDay` 的卡在当天已有同 `cardId` 事件时跳过；`rollPoolIncident(state)` 在每日开门时运行，待处理事件已达 3 张则不抽，概率为 `min(80, 25 + pool.length * 15)`，用 `hashText('pool-chance:<day>')` 与 `hashText('pool-roll:<day>')` 保证同一天可复现。抽中后走 `deployIncidentCard`，写入 `log-incident-pool-<day>` 日志。
+- **蓝图导入弹窗卡**：`StoryIncidentSpec` 新增 `cardId?`，`src/storygraph.ts` 只保留以 `custom-incident-` 开头的 id。`StoryGraphDialog` 的强制弹窗检查器新增 `#story-graph-incident-card`（默认「手填内容」），选卡后同步标题、正文、类型、势力与辖区；运行时优先用内容库中的实时卡快照，卡被删除则退回手填 spec。`contentUsage` 会扫描所有契约者蓝图，被引用的卡在删除时提示 `契约者故事蓝图`。
+
+测试：
+
+- `tests/game.test.ts` 新增 4 项：缺失内容严格返回 `undefined`、装备伤害/先手加成进入战斗并提高输出、随机池只抽 pool 卡且尊重权重与每日一次、蓝图事件节点按工坊弹窗卡结算并产生删除引用提示。
+- `tests/browser.mjs` 新增装备加成字段持久化检查与「故事蓝图：事件节点可从内容工坊弹窗卡导入」流程；装备表单检查并入既有内容工坊流程。
+
+验证：tsc 0、单测 99/99、浏览器 49/49、构建通过。
+
+下一步：`src/game.ts` 的门面化拆分（先做门面与叶子模块，`act` 最后搬）；M6 议会提案编辑器与多场景角色事件编辑器仍不在本期。

@@ -4,7 +4,7 @@ import type { GameState, Girl, Mission } from '../types';
 import { chance, clock, inWithdrawal, missionDeadlineLabel, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { districtOfMission, effectLines } from '../districts';
 import { windowLabel } from '../shift';
-import { getMonster } from '../content/monsters';
+import { findMonster } from '../content/monsters';
 import { getItem } from '../content/items';
 import { MonsterGlyph } from './MonsterGlyph';
 
@@ -81,7 +81,8 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           <div className="modal-section-heading"><h3>魔物反应</h3><small>点击查看图鉴</small></div>
           <div className="enemy-row">
             {(mission.enemyIds ?? []).map(id => {
-              const monster = state.customMonsters.find(m => m.id === id) ?? getMonster(id);
+              const monster = state.customMonsters.find(m => m.id === id) ?? findMonster(id);
+              if (!monster) return null;
               return (
                 <button id={`enemy-${id}`} key={id} className="enemy-card" onClick={() => onEnemy(id)} style={{ '--enemy-color': monster.color } as React.CSSProperties}>
                   <MonsterGlyph monster={monster} size={62} />

@@ -1,6 +1,6 @@
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
-import { getSkill } from './content/skills.ts';
-import { getMonster } from './content/monsters.ts';
+import { findSkill, getSkill } from './content/skills.ts';
+import { findMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
 import { districtAt, districts } from './districts.ts';
 import { SHIFT_START } from './shift.ts';
@@ -55,22 +55,35 @@ function hitBonus(unit: BattleUnit): number {
 }
 function initiativeOf(unit: BattleUnit, roll: number): number {
   const bonus = unit.effects.reduce((sum, e) => sum + (e.stat === 'initiative' && e.kind === 'buff' ? e.amount : 0), 0);
-  return statOf(unit, 'insight') + roll + bonus;
+  return statOf(unit, 'insight') + roll + bonus + (unit.initiativeBonus ?? 0);
 }
 function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   const maxSpirit = effectiveMaxSpirit(girl);
-  const extraSkills = equipmentOf(girl).map(item => item.skillId).filter((id): id is string => Boolean(id));
+  const gear = equipmentOf(girl);
+  const extraSkills = gear.map(item => item.skillId).filter((id): id is string => Boolean(id));
   return {
     uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, color: girl.color,
     hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
     stats: effectiveStats(girl), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,
     insightRoll: 0, scarHit: girl.scars.reduce((s, scar) => s + (scar.effect.kind === 'hit' ? scar.effect.amount : 0), 0),
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
+    damageBonus: gear.reduce((sum, item) => sum + (item.damageBonus ?? 0), 0),
+    initiativeBonus: gear.reduce((sum, item) => sum + (item.initiativeBonus ?? 0), 0),
   };
 }
 function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0): BattleUnit {
-  const monster = pool.find(m => m.id === id) ?? getMonster(id);
+  const monster = pool.find(m => m.id === id) ?? findMonster(id);
   const scale = (wounded ? 0.8 : 1) * Math.max(0.4, 1 + hpPct / 100);
+  if (!monster) {
+    // 内容被删掉或存档引用了不存在的魔物：显示为残影，而不是冒充第一只魔物。
+    return {
+      uid: `enemy-${index}-missing`, side: 'enemy', name: `未知魔物（${id}）`, portrait: id, color: '#6f6678',
+      hp: 1, maxHp: 1, spirit: 1, maxSpirit: 1,
+      stats: { magic: 10, insight: 10, agility: 10, empathy: 10 }, skills: ['monster-claw'],
+      cooldown: {}, effects: [], down: false, insightRoll: 0, scarHit: 0,
+      dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
+    };
+  }
   const maxHp = Math.round(monster.maxHp * scale);
   return {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
@@ -83,9 +96,10 @@ function alive(units: BattleUnit[], side: 'ally' | 'enemy'): BattleUnit[] {
   return units.filter(u => u.side === side && !u.down && u.hp > 0 && u.spirit > 0);
 }
 function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
-  const usable = unit.skills.map(getSkill).filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || round >= 2));
-  const pool = usable.length ? usable : unit.skills.map(getSkill).filter(s => s.tier !== 'ultimate');
-  const finalPool = pool.length ? pool : [getSkill(unit.skills[0])];
+  const known = unit.skills.map(findSkill).filter((skill): skill is Skill => Boolean(skill));
+  const usable = known.filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || round >= 2));
+  const pool = usable.length ? usable : known.filter(s => s.tier !== 'ultimate');
+  const finalPool = pool.length ? pool : [known[0] ?? getSkill(unit.skills[0] ?? 'monster-claw')];
   const weights = finalPool.map(s => s.tier === 'basic' ? 55 : s.tier === 'signature' ? 30 : 15);
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = rng() * total;
@@ -280,7 +294,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           const mitigation = 1 - damageReduction(target);
           // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
-          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain));
+          const gear = 1 + Math.max(-50, Math.min(200, unit.damageBonus ?? 0)) / 100;
+          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain * gear));
           const shield = skill.resource === 'spirit' ? 0 : Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), raw);
           const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, raw) : Math.min(target.hp, absorb(target, raw));
           if (skill.resource === 'spirit') {

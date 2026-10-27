@@ -4,7 +4,7 @@ import type { FactionId, GameState, Girl } from '../types';
 import { factionInfo, getItem } from '../content/items';
 import { itemPrice, marketPool, marketUpgrade } from '../game';
 import { pensionArrears, pensionFor } from '../contracts';
-import { getSkill } from '../content/skills';
+import { findSkill } from '../content/skills';
 import { GirlPortrait } from '../components/GirlPortrait';
 import './market-view.css';
 
@@ -90,7 +90,7 @@ function CandidateCard({ girl, state, onHire, onGirl }: { girl: Girl; state: Gam
   return <article className="av-candidate" aria-labelledby={`av-candidate-name-${girl.id}`}>
     <button id={`av-market-preview-${girl.id}`} type="button" className="av-candidate-preview" onClick={() => onGirl(girl.id)} aria-label={`查看${girl.name}的完整档案`}><GirlPortrait girl={girl} /><span className="av-candidate-rank">{girl.element}</span><span className="av-candidate-inspect">查看档案<ArrowUpRight size={12} /></span></button>
     <div className="av-candidate-body"><div className="av-candidate-title"><h2 id={`av-candidate-name-${girl.id}`}>{girl.name}</h2><span className="av-tag">等级 {girl.level}</span></div><p className="av-candidate-role">{girl.codename} · {girl.title}</p><p className="av-candidate-quote">{girl.description}</p>
-      <div className="av-candidate-skills">{girl.skills.slice(0, 3).map(id => <span className="av-tag" key={id}><Sparkles size={10} />{getSkill(id).name}</span>)}</div>
+      <div className="av-candidate-skills">{girl.skills.map(findSkill).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).slice(0, 3).map(skill => <span className="av-tag" key={skill.id}><Sparkles size={10} />{skill.name}</span>)}</div>
       <div className="av-candidate-contract"><span>契约期 <b>20 日</b></span><span>退休金 <b>{pensionFor(girl)} / 10 日</b></span></div>
       <div className="av-candidate-stats">{stats.map(([label, value]) => <div className="av-candidate-stat" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="av-candidate-hire"><span className="av-candidate-price">{girl.cost.toLocaleString('zh-CN')}<small>星砂</small></span><button id={`av-market-hire-${girl.id}`} type="button" className="av-btn av-btn-primary av-btn-small" onClick={() => onHire(girl.id)} disabled={hired}>{hired ? <><Check size={13} />已签订契约</> : <><Plus size={13} />邀请加入</>}</button></div></div>
   </article>;

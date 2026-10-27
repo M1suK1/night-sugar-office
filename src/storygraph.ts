@@ -214,6 +214,7 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
         spec: {
           kind: incidentKind, title: str(spec.title, 30), body: str(spec.body, 400),
           faction: spec.faction as FactionId | undefined, district: spec.district as DistrictId | undefined,
+          cardId: typeof spec.cardId === 'string' && spec.cardId.startsWith('custom-incident-') ? spec.cardId.slice(0, 80) : undefined,
           options,
         },
       };

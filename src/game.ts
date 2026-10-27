@@ -5,7 +5,7 @@ import { sanitizeStoryPlan } from './storyplan.ts';
 import { ensureGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
-import { customMissionTemplates } from './content/library.ts';
+import { customIncidentCards, customMissionTemplates } from './content/library.ts';
 import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
@@ -789,6 +789,33 @@ export function makeRuleIncident(state: GameState): Incident | null {
   return null;
 }
 
+/**
+ * 从内容工坊的「随机池」弹窗里抽一张。
+ * roll 取 0–1，保留纯函数以便测试；oncePerDay 会排除当天已经出现过的卡。
+ */
+export function pickPoolIncidentCard(cards: IncidentCard[], incidents: Incident[], day: number, roll: number): IncidentCard | undefined {
+  const pool = cards.filter(card => card.trigger === 'pool' && (!card.oncePerDay || !incidents.some(incident => incident.day === day && incident.cardId === card.id)));
+  if (!pool.length) return undefined;
+  const total = pool.reduce((sum, card) => sum + Math.max(1, card.weight), 0);
+  let point = Math.max(0, Math.min(0.999999, roll)) * total;
+  for (const card of pool) {
+    point -= Math.max(1, card.weight);
+    if (point < 0) return card;
+  }
+  return pool[pool.length - 1];
+}
+
+/** 打烊开门时给随机池一次抽选机会；没配置池卡时什么都不做。 */
+function rollPoolIncident(state: GameState): Incident | undefined {
+  const cards = customIncidentCards();
+  const pool = cards.filter(card => card.trigger === 'pool');
+  if (!pool.length || state.incidents.filter(incident => incident.status === 'pending').length >= 3) return undefined;
+  const chance = Math.min(80, 25 + pool.length * 15);
+  if (hashText(`pool-chance:${state.day}`) % 100 >= chance) return undefined;
+  const card = pickPoolIncidentCard(cards, state.incidents, state.day, (hashText(`pool-roll:${state.day}`) % 10000) / 10000);
+  return card ? deployIncidentCard(state, card) : undefined;
+}
+
 /** 应用事件选项的效果。 */
 export function applyIncidentEffect(state: GameState, incident: Incident, effect: Incident['options'][number]['effect']): void {
   if (effect.gold) {
@@ -918,13 +945,16 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     if (node.kind === 'incident') {
       if (node.data.kind !== 'incident') return;
       const spec = node.data.spec;
-      const incident: Incident = {
-        id: 'inc-' + story.id + '-' + node.id, day: state.day, kind: spec.kind, source: 'rule',
-        title: spec.title || node.title, body: spec.body,
-        faction: spec.faction, district: spec.district,
-        options: spec.options.map((option, index) => ({ id: 'o' + (index + 1), label: option.label, hint: option.hint, effect: option.effect })),
-        status: 'pending', storylineId: story.id,
-      };
+      const card = spec.cardId ? customIncidentCards().find(entry => entry.id === spec.cardId) : undefined;
+      const incident: Incident = card
+        ? { ...deployIncidentCard(state, card), id: 'inc-' + story.id + '-' + node.id, storylineId: story.id }
+        : {
+          id: 'inc-' + story.id + '-' + node.id, day: state.day, kind: spec.kind, source: 'rule',
+          title: spec.title || node.title, body: spec.body,
+          faction: spec.faction, district: spec.district,
+          options: spec.options.map((option, index) => ({ id: 'o' + (index + 1), label: option.label, hint: option.hint, effect: option.effect })),
+          status: 'pending', storylineId: story.id,
+        };
       state.incidents.unshift(incident);
       run.waiting = { kind: 'incident', ref: incident.id };
       return;
@@ -1885,6 +1915,11 @@ function endNight(state: GameState): ActionResult {
   if (incident) {
     next.incidents.unshift(incident);
     next.logs.unshift({ id: `log-incident-night-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `第 ${next.day} 日开门前，有人把一件事放在了桌上：${incident.title}。` });
+  }
+  const poolIncident = rollPoolIncident(next);
+  if (poolIncident) {
+    next.incidents.unshift(poolIncident);
+    next.logs.unshift({ id: `log-incident-pool-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `随机事件池抽中了「${poolIncident.title}」。${poolIncident.body.slice(0, 40)}` });
   }
   next.logs.unshift({ id: `log-night-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `打烊。${dismissed ? `${dismissed} 份没被接下的委托被撤回。` : '没有未接的委托。'}夜色退去，第 ${next.day} 日 20:00，事务所重新开门。` });
   return { state: next, ok: true, message: `第 ${next.day} 日开门，新的委托已经贴上告示板。`, battle };

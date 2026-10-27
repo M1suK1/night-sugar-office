@@ -515,6 +515,7 @@ export default function App() {
       {modal?.type === 'story-graph' && selectedGirl && (
         <StoryGraphDialog
           girl={selectedGirl}
+          incidents={library.incidents}
           onClose={() => setModal({ type: 'girl', id: selectedGirl.id })}
           onSave={graph => {
             const base = selectedGirl.storyPlan ?? storyPlanTemplate(`${selectedGirl.name}的故事`, '');

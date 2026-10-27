@@ -4,7 +4,7 @@ import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cros
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
-import { effectText, getSkill, resourceLabels, tierLabels } from '../content/skills';
+import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
 import { expNeeded, progressLabel } from '../progression';
 import { GirlPortrait } from './GirlPortrait';
@@ -202,10 +202,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           </>}
           {tab === 'ability' && <>
             <div className="skill-list">
-              {girl.skills.map(id => {
-                const skill = getSkill(id);
-                return (
-                  <article key={id} className={`skill-card tier-${skill.tier}`}>
+              {girl.skills.map(id => findSkill(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).map(skill => (
+                  <article key={skill.id} className={`skill-card tier-${skill.tier}`}>
                     <div className="skill-card-head"><span className="skill-tier">{tierLabels[skill.tier]}</span><h3>{skill.name}</h3><em>{resourceLabels[skill.resource]} · 倍率 {skill.power.toFixed(2)}</em></div>
                     <p>{skill.description}</p>
                     <div className="skill-meta">
@@ -216,8 +214,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                     </div>
                     {skill.effects.length > 0 && <div className="skill-effects">{skill.effects.map((e, i) => <span key={i}>{effectText(e)}</span>)}</div>}
                   </article>
-                );
-              })}
+                ))}
             </div>
             <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${girl.stats[k]}%` }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
             <p className="small-note">能力用于战斗结算与委托判定。疤痕会永久改变这些数值。</p>

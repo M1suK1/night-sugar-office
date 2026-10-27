@@ -154,6 +154,8 @@ export type StoryNodeKind =
 export interface StoryIncidentSpec {
   kind: Incident['kind'];
   title: string; body: string;
+  /** 从内容工坊的弹窗卡导入时记录来源；运行时优先按卡结算，找不到再回退手填内容。 */
+  cardId?: string;
   faction?: FactionId; district?: DistrictId;
   options: { label: string; hint: string; effect: IncidentEffect }[];
 }
@@ -436,6 +438,7 @@ export interface BattleUnit {
   stats: Record<StatKey, number>; skills: string[]; cooldown: Record<string, number>;
   effects: ActiveEffect[]; down: boolean; insightRoll: number; scarHit: number;
   dealt: number; taken: number; healed: number; controlled: number; kills: number;
+  damageBonus?: number; initiativeBonus?: number;
   monster?: MonsterTemplate;
 }
 export interface BattleCalc {
