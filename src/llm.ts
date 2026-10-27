@@ -122,14 +122,14 @@ export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolea
   return result;
 }
 
-export async function generateDaily(config: LlmConfig, prompts: LlmPrompts, context?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+export async function generateDaily(config: LlmConfig, prompts: LlmPrompts, state: GameState, context?: string, preset?: PresetRuntime): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateDailyCore(config, prompts, context, preset, meta);
+  const result = await generateDailyCore(config, prompts, state, context, preset, meta);
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: config.endpoint,
-    message: result.ok ? `生成成功：${result.data.monsterName} / ${result.data.girlName} / ${result.data.missionTitle}` : result.message,
+    message: result.ok ? `生成成功：${result.data.monster.name} / ${result.data.candidate.name} / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
   });
@@ -453,21 +453,8 @@ export function saveLlmPrompts(prompts: LlmPrompts) {
   try { localStorage.setItem('night-sugar:llm-prompts', JSON.stringify(prompts)); } catch { /* session only */ }
 }
 
-export interface GeneratedDaily {
-  monsterName: string; monsterEpithet: string; monsterRank: '碎屑' | '游荡' | '灾厄' | '王座';
-  monsterElement: string; monsterTrait: string; monsterDescription: string; monsterHabit: string; monsterWeakness: string;
-  girlName: string; girlCodename: string; girlTitle: string; girlElement: string; girlArchetype: string;
-  girlQuote: string; girlGoal: string; girlSkill: string; girlAppearance: string; girlPersonality: string; girlOutfit: string;
-  missionTitle: string; missionCategory: string; missionDescription: string;
-  agendaTitle?: string; agendaText?: string; agendaRequest?: string; agendaTopic?: Opinion['topic'];
-  envoyFaction?: 'witch' | 'association' | 'government'; envoyTitle?: string; envoyDescription?: string;
-}
-
 const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'] as const;
 const archetypes = ['输出', '守护', '治愈', '控制', '侦查'] as const;
-const ranks = ['碎屑', '游荡', '灾厄', '王座'] as const;
-const agendaTopics = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'] as const;
-const factions = ['witch', 'association', 'government'] as const;
 
 interface LlmCallMeta {
   request?: LlmRequestSnapshot;
@@ -512,12 +499,13 @@ interface JsonCallOutcome {
  * 预设里 1400 的上限很容易把正文 JSON 截断，所以识别到 length 时自动放大额度重试一次。
  */
 async function chatJson(
-  config: LlmConfig, prompts: LlmPrompts, preset: PresetRuntime | undefined, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>,
+  config: LlmConfig, prompts: LlmPrompts, preset: PresetRuntime | undefined, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
 ): Promise<JsonCallOutcome> {
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = resolvePresetConfig(runtime, config);
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
+  if (tokenFloor > (params.maxTokens ?? 900)) params = { ...params, maxTokens: tokenFloor };
   const vars = { ...promptVars({ world: prompts.world, context: typeof user === 'string' ? user.slice(0, 240) : '图像输入', ...(extra ?? {}) }) };
   if (extra?.scenario) vars.scenario = applyFormat(runtime.scenarioFormat, vars.scenario ?? '');
   if (extra?.personality) vars.personality = applyFormat(runtime.personalityFormat, vars.personality ?? '');
@@ -556,43 +544,28 @@ function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
   return `${prefix}模型没有返回可解析的 JSON。可以在叙事引擎面板里查看这次请求，再重试一次。`;
 }
 
-async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedDaily } | { ok: false; message: string }> {
+async function generateDailyCore(config: LlmConfig, prompts: LlmPrompts, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
-{"monsterName":"","monsterEpithet":"","monsterRank":"碎屑|游荡|灾厄|王座","monsterElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","monsterTrait":"","monsterDescription":"","monsterHabit":"","monsterWeakness":"",
-"girlName":"","girlCodename":"","girlTitle":"","girlElement":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","girlArchetype":"输出|守护|治愈|控制|侦查","girlQuote":"","girlGoal":"","girlSkill":"","girlAppearance":"","girlPersonality":"","girlOutfit":"",
-"missionTitle":"","missionCategory":"","missionDescription":"",
-"agendaTitle":"","agendaText":"","agendaRequest":"","agendaTopic":"经费|排班|设施|同伴|城市|私人心愿",
-"envoyFaction":"witch|association|government","envoyTitle":"","envoyDescription":""}`;
-  const outcome = await chatJson(config, prompts, preset, `${prompts.daily}\n\n${context ? `当前局势：${context}\n\n` : ''}${schema}`, '请提交今晚的提案。', ['世界观 + 预设 + 输出格式', '用户请求：今晚的提案'], meta);
-  const result = outcome.result;
-  if (!result.ok) return { ok: false, message: `生成失败：${result.message}` };
+  const system = `${prompts.daily}\n\n${buildNightPrompt(state)}`;
+  const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
+  const outcome = await chatJson(config, prompts, preset, system, user, ['世界观 + 预设 + 今晚机制目录', '用户请求：今晚的提案'], meta, undefined, 2600);
+  if (!outcome.result.ok) return { ok: false, message: `生成失败：${outcome.result.message}` };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('生成失败：', outcome) };
-  try {
-    const raw = outcome.raw;
-    const str = (key: string, fallback: string) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, 160) : fallback;
-    const rank = ranks.includes(raw.monsterRank as typeof ranks[number]) ? raw.monsterRank as typeof ranks[number] : '游荡';
-    const element = elements.includes(raw.monsterElement as typeof elements[number]) ? raw.monsterElement as typeof elements[number] : '月影系';
-    const girlElement = elements.includes(raw.girlElement as typeof elements[number]) ? raw.girlElement as typeof elements[number] : '星光系';
-    const archetype = archetypes.includes(raw.girlArchetype as typeof archetypes[number]) ? raw.girlArchetype as typeof archetypes[number] : '治愈';
-    const data: GeneratedDaily = {
-      monsterName: str('monsterName', '无名之影'), monsterEpithet: str('monsterEpithet', '从夜里长出来的东西'), monsterRank: rank,
-      monsterElement: element, monsterTrait: str('monsterTrait', '它似乎害怕被叫出名字。'), monsterDescription: str('monsterDescription', '一团没有影子的轮廓。'),
-      monsterHabit: str('monsterHabit', '总在路灯熄灭后出现。'), monsterWeakness: str('monsterWeakness', '被认真注视时会退后。'),
-      girlName: str('girlName', '未命名'), girlCodename: str('girlCodename', '新来的契约者'), girlTitle: str('girlTitle', '还没有被城市记住'),
-      girlElement, girlArchetype: archetype, girlQuote: str('girlQuote', '我会努力不添麻烦的。'), girlGoal: str('girlGoal', '想找到一个可以回去的地方。'),
-      girlSkill: str('girlSkill', '未命名魔法'), girlAppearance: str('girlAppearance', '短发，发梢有一缕不合规矩的挑染。'),
-      girlPersonality: str('girlPersonality', '安静，习惯先观察再开口。'), girlOutfit: str('girlOutfit', '事务所配发的值夜制服，袖口略长。'),
-      missionTitle: str('missionTitle', '没有名字的委托'), missionCategory: str('missionCategory', '异象调查'), missionDescription: str('missionDescription', '地图边缘出现了一处无法解释的空缺。'),
-      agendaTitle: str('agendaTitle', '今晚的排班需要再确认'), agendaText: str('agendaText', '她在便签上写下了几个名字，又划掉了其中一个。'), agendaRequest: str('agendaRequest', '申请调整一次夜班顺序。'),
-      agendaTopic: agendaTopics.includes(raw.agendaTopic as typeof agendaTopics[number]) ? raw.agendaTopic as Opinion['topic'] : '排班',
-      envoyFaction: factions.includes(raw.envoyFaction as typeof factions[number]) ? raw.envoyFaction as 'witch' | 'association' | 'government' : 'association',
-      envoyTitle: str('envoyTitle', '代表的口头委托'), envoyDescription: str('envoyDescription', '她没有留下书面任务书，只说今晚需要有人去一趟。'),
-    };
-    return { ok: true, data };
-  } catch {
-    return { ok: false, message: '生成失败：浏览器无法访问接口，或返回内容不是合法 JSON。' };
+  let validation = validateNightProposal(outcome.raw, state);
+  let source = outcome;
+  if (!validation.ok) {
+    const repairBody = `${system}\n\n【上一次提案（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略任何字段；所有 id 必须来自上面的目录。`;
+    const repaired = await chatJson(config, prompts, preset, repairBody, '请只提交修正后的完整 JSON。', ['世界观 + 预设 + 今晚机制目录', '修复上一次提案'], meta, undefined, 2600);
+    if (!repaired.result.ok) return { ok: false, message: `提案未通过校验，修复请求失败：${repaired.result.message}` };
+    if (!repaired.raw) return { ok: false, message: `提案未通过校验，且修复输出无法解析。${jsonFailureMessage('', repaired)}` };
+    source = repaired;
+    validation = validateNightProposal(repaired.raw, state);
   }
+  if (!validation.ok || !validation.proposal) {
+    return { ok: false, message: `提案未通过本地校验：${validation.errors.slice(0, 6).join('；')}` };
+  }
+  if (source.truncated) return { ok: false, message: jsonFailureMessage('生成失败：', source) };
+  return { ok: true, data: validation.proposal, warnings: validation.warnings };
 }
 
 const storyStatKeys: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
@@ -1082,107 +1055,10 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
-import { defaultOpinionDialogue, defaultOpinionOptions } from './opinions.ts';
-import { createSeedPack } from './content/seed-pack.ts';
-import { monsters as baseMonsters } from './content/monsters.ts';
 import { skills } from './content/skills.ts';
 import { traits } from './content/traits.ts';
-import type { Archetype, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, Mission, MonsterTemplate, Opinion, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
-
-export function materializeDaily(data: GeneratedDaily, state: GameState): { monster: MonsterTemplate; girl: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission } {
-  const pack = createSeedPack();
-  const stamp = `${Date.now().toString(36)}${Math.floor(Math.random() * 999).toString(36)}`;
-  const baseMonster = baseMonsters.find(m => m.rank === data.monsterRank) ?? baseMonsters[1];
-  const monster: MonsterTemplate = {
-    ...baseMonster,
-    id: `lm_${stamp}`,
-    name: data.monsterName,
-    epithet: data.monsterEpithet,
-    element: data.monsterElement as MonsterTemplate['element'],
-    trait: data.monsterTrait,
-    description: data.monsterDescription,
-    codex: { habit: data.monsterHabit, weakness: data.monsterWeakness },
-    spec: { ...baseMonster.spec },
-  };
-  const baseGirl = pack.girls[1];
-  const girl: Girl = {
-    ...baseGirl,
-    id: `g_${stamp}`,
-    name: data.girlName,
-    codename: data.girlCodename,
-    title: data.girlTitle,
-    element: data.girlElement as Girl['element'],
-    archetype: data.girlArchetype as Girl['archetype'],
-    color: '#f3aec9',
-    portrait: '',
-    level: 1,
-    stats: { magic: 62, insight: 62, agility: 62, empathy: 62 },
-    baseStats: { magic: 62, insight: 62, agility: 62, empathy: 62 },
-    hp: 100, maxHp: 100, baseMaxHp: 100, spirit: 80, maxSpirit: 80,
-    status: 'idle', roomId: 'lounge', remaining: 0, missionId: undefined,
-    skill: data.girlSkill,
-    goal: data.girlGoal,
-    goalKind: '生活',
-    appearance: data.girlAppearance,
-    personality: data.girlPersonality,
-    outfitDescription: data.girlOutfit,
-    quote: data.girlQuote,
-    corruption: 0, witch: false, drugUntilDay: undefined, withdrawalDays: 0,
-    contractEndDay: state.day + 20, contractDays: 20, contractRenewals: 0, pensionMissed: 0,
-    relationships: { player: 20 },
-    scars: [], conditions: [], retired: false, dead: false,
-  };
-  const baseMission = pack.missions.find(m => m.work === 'combat') ?? pack.missions[0];
-  const mission: Mission = {
-    ...baseMission,
-    id: `m_${stamp}`,
-    title: data.missionTitle,
-    category: data.missionCategory,
-    description: data.missionDescription,
-    x: 18 + Math.floor(Math.random() * 62),
-    y: 24 + Math.floor(Math.random() * 52),
-    difficulty: '中危',
-    duration: 60,
-    reward: 900,
-    requirement: 'insight',
-    target: 58,
-    color: '#f3aec9',
-    status: 'open',
-    squad: [],
-    enemyIds: [monster.id],
-    rounds: 4,
-    attempts: 0,
-    worsened: false,
-    lastOutcome: undefined,
-    recommendedLevel: 2,
-    faction: undefined,
-    envoy: false,
-    boss: false,
-    generated: true,
-    sourcePack: 'llm',
-  };
-  const author = [...state.girls].filter(g => !g.retired && !g.dead).sort((a, b) => b.bond - a.bond)[0] ?? state.girls[0];
-  const agendaTopic = data.agendaTopic ?? '排班';
-  const agendaDistrict = agendaTopic === '城市' ? 'candy' : undefined;
-  const agendaFaction = agendaDistrict ? state.territories[agendaDistrict] : undefined;
-  const agendaRequest = data.agendaRequest ?? '申请调整一次夜班顺序。';
-  const opinion: Opinion = {
-    id: `op_${stamp}`, day: state.day, authorId: author?.id ?? state.girls[0].id, topic: agendaTopic,
-    title: data.agendaTitle ?? '今晚的排班需要再确认', text: data.agendaText ?? '她在便签上写下了几个名字，又划掉了其中一个。',
-    request: agendaRequest, status: 'pending', faction: agendaFaction,
-    options: defaultOpinionOptions(agendaTopic, { authorId: author?.id, authorName: author?.name, faction: agendaFaction, district: agendaDistrict }),
-    dialogue: defaultOpinionDialogue(agendaTopic, { authorId: author?.id, authorName: author?.name, faction: agendaFaction, district: agendaDistrict, request: agendaRequest }),
-    assistantNote: '这份议题由故事引擎起草，数值与后果仍由本地规则决定。',
-  };
-  const envoyMission: Mission = {
-    ...mission, id: `m_env_${stamp}`, title: data.envoyTitle ?? '代表的口头委托', category: '代表委托',
-    description: data.envoyDescription ?? '她没有留下书面任务书，只说今晚需要有人去一趟。',
-    faction: data.envoyFaction ?? 'association', envoy: true, duration: 45, reward: 720,
-    requirement: 'empathy', target: 52, rounds: 3, enemyIds: [monster.id],
-    x: (mission.x + 31) % 78 + 8, y: (mission.y + 19) % 58 + 12,
-  };
-  return { monster, girl, mission, opinion, envoyMission };
-}
+import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
+import type { Archetype, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

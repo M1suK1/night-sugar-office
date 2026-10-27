@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
-import { act, buildTemplateArc, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
+import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
@@ -22,7 +22,9 @@ import { BattleReport } from './components/BattleReport';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig, loadLlmPrompts, materializeDaily, type LlmPrompts } from './llm';
+import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig, loadLlmPrompts, type LlmPrompts } from './llm';
+import { materializeNightProposal } from './llm-night';
+import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
 import { boundPreset, loadBinding, loadPresets, presetRuntime, saveBinding, savePresets, type ChatPreset, type PresetBinding } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
@@ -94,6 +96,8 @@ export default function App() {
   const STARTED_KEY = 'night-sugar-office:started';
   const markStarted = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setStarted(true); };
   const [started, setStarted] = useState(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1' || Boolean(localStorage.getItem(SAVE_KEY)); } catch { return false; } });
+  const [generating, setGenerating] = useState(false);
+  const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const lastIncidentDay = useRef(state.day);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
@@ -118,8 +122,7 @@ export default function App() {
     if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
     lastGeneratedDay.current = state.day;
     if (generatingRef.current || !loadLlmConfig().apiKey) return;
-    generatingRef.current = true;
-    void generateContent(loadLlmPrompts()).then(result => { if (!result.ok) notify(`夜间自动补充停笔：${result.message}`, false); }).finally(() => { generatingRef.current = false; });
+    void generateContent(loadLlmPrompts(), 'auto');
   }, [state.day, autoGenerate]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
@@ -183,13 +186,51 @@ export default function App() {
     notify(result.data.name ? `叙事者写好了「${result.data.name}」。` : '叙事者写好了这套服装的描述。');
     return result.data;
   };
-  const generateContent = async (prompts: LlmPrompts) => {
-    const result = await generateDaily(loadLlmConfig(), prompts, worldBrief(state), presetRuntime(boundPreset('generate', presets, binding)));
-    if (!result.ok) return { ok: false, message: result.message };
-    const content = materializeDaily(result.data, state);
+  const generateContent = async (prompts: LlmPrompts, mode: 'manual' | 'auto' = 'manual'): Promise<{ ok: boolean; message: string }> => {
+    if (generatingRef.current) return { ok: false, message: '叙事者还在写上一份提案。' };
+    const gate = canAcceptGeneratedContent(state);
+    if (!gate.ok) {
+      if (mode === 'auto') notify(`夜间自动补充跳过：${gate.message}`, false);
+      return { ok: false, message: gate.message };
+    }
+    generatingRef.current = true;
+    setGenerating(true);
+    try {
+      const result = await generateDaily(loadLlmConfig(), prompts, state, worldBrief(state), presetRuntime(boundPreset('generate', presets, binding)));
+      if (!result.ok) {
+        if (mode === 'auto') notify(`夜间自动补充停笔：${result.message}`, false);
+        return { ok: false, message: result.message };
+      }
+      if (mode === 'manual') {
+        setModal(null);
+        setPendingProposal({ data: result.data, warnings: result.warnings });
+        return { ok: true, message: '提案已生成，确认后才会写入事务所。' };
+      }
+      const content = materializeNightProposal(result.data, state);
+      const applied = act(state, { type: 'addGeneratedContent', ...content });
+      if (!applied.ok) {
+        notify(`夜间自动补充没有写入：${applied.message}`, false);
+        return { ok: false, message: applied.message };
+      }
+      setState(applied.state);
+      notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的魔物、候选者、委托与议会提案已经入场。');
+      return { ok: true, message: applied.message };
+    } finally {
+      generatingRef.current = false;
+      setGenerating(false);
+    }
+  };
+  const acceptProposal = () => {
+    if (!pendingProposal) return;
+    const gate = canAcceptGeneratedContent(state);
+    if (!gate.ok) { notify(gate.message, false); return; }
+    const content = materializeNightProposal(pendingProposal.data, state);
     const applied = act(state, { type: 'addGeneratedContent', ...content });
-    if (applied.ok) setState(applied.state);
-    return { ok: applied.ok, message: applied.message };
+    if (!applied.ok) { notify(applied.message, false); return; }
+    setState(applied.state);
+    setPendingProposal(null);
+    setModal(null);
+    notify(pendingProposal.warnings.length ? `提案已采纳；其中 ${pendingProposal.warnings.length} 处数值由本地规则裁剪。` : '提案已采纳，今晚的新内容已经入场。');
   };
   const draftGirlProfile = async (portrait?: string, hint?: string) => {
     const result = await generateGirlProfile(loadLlmConfig(), loadLlmPrompts(), portrait, hint, presetRuntime(boundPreset('generate', presets, binding)));
@@ -576,6 +617,9 @@ export default function App() {
         </div>
       )}
 
+    {pendingProposal && <Dialog label="今晚的提案" onClose={() => { if (!generating) setPendingProposal(null); }} wide>
+      <ProposalDialog state={state} proposal={pendingProposal} busy={generating} onAccept={acceptProposal} onDiscard={() => setPendingProposal(null)} onRegenerate={() => { void generateContent(loadLlmPrompts(), 'manual').then(result => { if (!result.ok) notify(result.message, false); }); }} />
+    </Dialog>}
     <LlmConsole />
     {cmdOpen && <CommandConsole onRun={runCommand} onClose={() => setCmdOpen(false)} />}
     {pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => perform({ type: 'resolveIncident', incidentId: pendingIncident.id, optionId })} onGirl={girl} />}

@@ -527,7 +527,7 @@ export interface ChronicleEntry {
 export interface TerritoryShift { day: number; minutes: number; district: DistrictId; from: FactionId; to: FactionId }
 export interface ShiftState { day: number; wave: number }
 export interface GameState {
-  version: 10; day: number; minutes: number; gold: number; reputation: number;
+  version: 11; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; packHash: string;
@@ -540,6 +540,8 @@ export interface GameState {
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   customSkills: Skill[];
   customMonsters: MonsterTemplate[];
+  /** 故事引擎一次性生成并持久化的装备；读档时重新登记进物品表。 */
+  generatedItems: Equipment[];
   chronicle: ChronicleEntry[];
   /** 当晚委托时段已经放到第几个。 */
   shift: ShiftState;
@@ -577,7 +579,7 @@ export type GameAction =
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }
-  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission }
+  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission; items?: Equipment[] }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }

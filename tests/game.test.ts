@@ -10,7 +10,8 @@ import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
+import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
+import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
 import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
@@ -25,6 +26,51 @@ import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldboo
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
 import type { Incident, Mission, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
 
+const nightProposal = (): NightProposalV2 => ({
+  version: 2,
+  monster: {
+    name: '纸月', epithet: '被折起来的月亮', rank: '游荡', element: '月影系',
+    trait: '害怕被展开', description: '一张悬在空中的纸月亮。', habit: '深夜贴着窗户移动。', weakness: '遇水变软。',
+    maxHp: 132, maxSpirit: 84,
+    stats: { magic: 71, insight: 49, agility: 66, empathy: 35 },
+    skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }],
+  },
+  candidate: {
+    name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈',
+    level: 3, cost: 620,
+    stats: { magic: 64, insight: 58, agility: 52, empathy: 72 }, skillIds: ['glimmer-spear'],
+    traits: [{ name: '夜读', description: '熄灯后才开始写字。', polarity: '正面' }],
+    quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', goalKind: '生活',
+    appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfit: '宽大的值夜制服。',
+  },
+  mission: {
+    title: '窗上的纸月亮', category: '异象调查', description: '一扇窗里同时出现了两个月亮。',
+    work: 'investigation', difficulty: '中危', district: 'oldtown', window: 'urgent',
+    duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5,
+    recommendedLevel: 3, enemyRefs: ['generated'], rewardItemRef: 'loot-1', rewardGirlLevel: 0,
+  },
+  opinion: {
+    authorId: 'yue', topic: '经费', faction: 'witch', title: '窗边的空位',
+    text: '有人希望把靠窗的位置留给新来的孩子。', request: '把窗边的位置留给纸灯。',
+    dialogue: [
+      { speakerId: 'yue', speaker: '月见桃', text: '窗边那个位置，今晚开始空出来了。', expression: 'calm' },
+      { speakerId: 'yue', speaker: '月见桃', text: '我想把它留给纸灯。她需要一个能看见月亮的地方。', expression: 'sad' },
+      { speakerId: 'yue', speaker: '月见桃', text: '经费从我的那份里扣，可以吗？', expression: 'shy' },
+    ],
+    options: [
+      { id: 'accept', label: '批准', effect: '从本月经费中拨出一笔钱，把窗边重新布置。', changes: [{ kind: 'gold', amount: -600 }, { kind: 'girl', girlId: 'yue', field: 'bond', amount: 3 }], outcomes: [] },
+      { id: 'defer', label: '暂缓', effect: '今晚先不动窗边，等下次例会再说。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] },
+      { id: 'reject', label: '驳回', effect: '窗边保持原样，经费也不能动。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
+    ],
+  },
+  envoy: {
+    faction: 'association', title: '替协会送一盏灯', description: '把灯送到旧车站。', work: 'investigation', difficulty: '中危',
+    district: 'station', window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3,
+    recommendedLevel: 2, enemyRefs: ['generated'], rewardGirlLevel: 0,
+  },
+  loot: [{ ref: 'loot-1', name: '折月灯罩', faction: 'witch', slot: 'charm', description: '纸折的灯罩，能把月光收得很小。', stats: { insight: 4 }, passive: '' }],
+});
+
 const oldScar = (id: string): Scar => ({
   id: `scar-${id}-old`, name: '陈旧伤', kind: 'physical', condition: '旧伤在阴雨天发作',
   description: '她不太提起这件事。', effect: { kind: 'stat', stat: 'agility', amount: -1 },
@@ -33,7 +79,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 10);
+  assert.equal(s.version, 11);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -535,43 +581,64 @@ test('内容池上限可调整，事件、候选与魔物可手动移除', () =>
   assert.equal(act(purified.state, { type: 'deleteMonster', monsterId: monster }).ok, false);
 });
 
-test('生成提案会写入事件、候选与魔物池，池满时拒绝', () => {
+test('生成提案会写入事件、候选、魔物、装备池，池满时拒绝', () => {
   const base = createInitialState();
-  const proposal = {
-    monsterName: '纸月', monsterEpithet: '被折起来的月亮', monsterRank: '游荡' as const, monsterElement: '月影',
-    monsterTrait: '害怕被展开', monsterDescription: '一张悬在空中的纸月亮。', monsterHabit: '深夜贴着窗户移动。', monsterWeakness: '遇水变软。',
-    girlName: '纸灯', girlCodename: '折光', girlTitle: '把夜色折成小船的人', girlElement: '星光', girlArchetype: '支援',
-    girlQuote: '我会把灯留给你。', girlGoal: '找到愿意收留纸船的人。', girlSkill: '折光', girlAppearance: '短发，发梢有折痕。',
-    girlPersonality: '安静，喜欢折纸。', girlOutfit: '宽大的值夜制服。', missionTitle: '窗上的纸月亮', missionCategory: '异象调查',
-    missionDescription: '一扇窗里同时出现了两个月亮。',
-  };
-  const content = materializeDaily(proposal, base);
+  const checked = validateNightProposal(nightProposal(), base);
+  assert.equal(checked.ok, true, checked.errors.join('；'));
+  const content = materializeNightProposal(checked.proposal!, base);
+  assert.equal(content.monster.maxHp, 132);
+  assert.deepEqual(content.monster.stats, { magic: 71, insight: 49, agility: 66, empathy: 35 });
+  assert.equal(content.girl.level, 3);
+  assert.deepEqual(content.girl.stats, { magic: 64, insight: 58, agility: 52, empathy: 72 });
+  assert.equal(content.mission.duration, 75);
+  assert.equal(content.mission.reward, 1200);
+  assert.equal(content.mission.rounds, 5);
+  assert.equal(content.opinion.options.length, 3);
+  assert.equal(content.opinion.dialogue?.length, 3);
+  assert.equal(content.items.length, 1);
+  assert.equal(content.mission.rewardEquipmentId, content.items[0].id);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.ok, true);
   assert.equal(result.state.candidates.length, base.candidates.length + 1);
   assert.equal(result.state.customMonsters.length, 1);
   assert.equal(result.state.missions.length, base.missions.length + 2);
   assert.equal(result.state.opinions.length, base.opinions.length + 1);
+  assert.equal(result.state.generatedItems.length, 1);
   assert.equal(result.state.missions.at(-1)?.enemyIds?.[0], content.monster.id);
 
   const capped = { ...base, poolLimits: { ...base.poolLimits, candidates: 1 } };
   assert.equal(act(capped, { type: 'addGeneratedContent', ...content }).ok, false);
 });
 
-test('生成议题进入会客厅，代表委托带势力标记', () => {
+test('生成装备随存档往返并重新登记到物品表', () => {
   const base = createInitialState();
-  const content = materializeDaily({ monsterName: '纸月', monsterEpithet: '折月', monsterRank: '游荡', monsterElement: '月影', monsterTrait: '怕水', monsterDescription: '纸月。', monsterHabit: '贴窗。', monsterWeakness: '遇水。', girlName: '纸灯', girlCodename: '折光', girlTitle: '折纸的人', girlElement: '星光', girlArchetype: '支援', girlQuote: '留一盏灯。', girlGoal: '找到纸船。', girlSkill: '折光', girlAppearance: '短发。', girlPersonality: '安静。', girlOutfit: '宽大制服。', missionTitle: '纸月亮', missionCategory: '异象调查', missionDescription: '两个月亮。' }, base);
+  const content = materializeNightProposal(validateNightProposal(nightProposal(), base).proposal!, base);
+  const item = { ...content.items[0], id: 'lm_item_roundtrip_1', name: '存档灯罩' };
+  assert.equal(findItem(item.id), undefined);
+  const loaded = loadState(JSON.stringify({ ...base, version: 11, generatedItems: [item] }));
+  assert.equal(loaded.generatedItems.length, 1);
+  assert.equal(loaded.generatedItems[0].id, item.id);
+  assert.equal(findItem(item.id)?.name, '存档灯罩');
+});
+
+test('生成议题使用模型对白与选项，代表委托带势力标记', () => {
+  const base = createInitialState();
+  const checked = validateNightProposal(nightProposal(), base);
+  const content = materializeNightProposal(checked.proposal!, base);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.state.opinions[0].id, content.opinion.id);
   assert.equal(result.state.opinions[0].status, 'pending');
+  assert.equal(result.state.opinions[0].dialogue?.[1].text.includes('纸灯'), true);
+  assert.deepEqual(result.state.opinions[0].options.map(option => option.id), ['accept', 'defer', 'reject']);
   const envoy = result.state.missions.find(m => m.envoy);
   assert.equal(envoy?.faction, 'association');
+  assert.equal(envoy?.duration, 45);
   assert.ok(envoy && envoy.x !== content.mission.x);
 });
 
 test('生成的代表委托会被会客厅代表登记为今日任务', () => {
   const base = createInitialState();
-  const content = materializeDaily({ monsterName: '纸月', monsterEpithet: '折月', monsterRank: '游荡', monsterElement: '月影', monsterTrait: '怕水', monsterDescription: '纸月。', monsterHabit: '贴窗。', monsterWeakness: '遇水。', girlName: '纸灯', girlCodename: '折光', girlTitle: '折纸的人', girlElement: '星光', girlArchetype: '支援', girlQuote: '留一盏灯。', girlGoal: '找到纸船。', girlSkill: '折光', girlAppearance: '短发。', girlPersonality: '安静。', girlOutfit: '宽大制服。', missionTitle: '纸月亮', missionCategory: '异象调查', missionDescription: '两个月亮。' }, base);
+  const content = materializeNightProposal(validateNightProposal(nightProposal(), base).proposal!, base);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.state.factions.association.envoyTaskId, content.envoyMission.id);
 });
@@ -603,21 +670,70 @@ test('自定义登记自动填表会校验叙事者输出并补齐技能与特�
 });
 
 test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试', async () => {
-  const calls: Record<string, unknown>[] = [];
+  const calls: Record<string, any>[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     calls.push(JSON.parse(String(init?.body)));
     if (calls.length === 1) return new Response(JSON.stringify({ error: { message: 'Unsupported parameter: temperature' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    return new Response(JSON.stringify({ choices: [{ message: { content: '{"monsterName":"纸月"}' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(nightProposal()) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const result = await generateDaily({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'custom-model' }, { world: 'w', daily: 'd' });
+    const result = await generateDaily({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'custom-model' }, { world: 'w', daily: 'd' }, createInitialState());
     assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.candidate.name, '纸灯');
     assert.equal(calls.length, 2);
     assert.equal('temperature' in calls[1], false);
+    assert.ok(Number(calls[1].max_tokens) >= 2600);
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test('提案硬错误会带原始 JSON 修复一次，修好后采纳', async () => {
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  const base = createInitialState();
+  const broken = nightProposal();
+  broken.opinion.options[2].changes = [
+    { kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 },
+    { kind: 'faction', faction: 'witch', amount: -4 },
+  ];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    const content = calls.length === 1 ? broken : nightProposal();
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateDaily({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, { world: 'w', daily: 'd' }, base);
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 2);
+    const repairPrompt = calls[1].messages.map((message: { content: string }) => message.content).join('\n');
+    assert.ok(repairPrompt.includes('必须修正的问题'));
+    assert.ok(repairPrompt.includes('reject'));
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('提案校验会拒绝缺少实际惩罚的驳回与越界数值裁剪', () => {
+  const base = createInitialState();
+  const broken = nightProposal();
+  broken.opinion.options[2].changes = [
+    { kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 },
+    { kind: 'faction', faction: 'witch', amount: -4 },
+  ];
+  const rejected = validateNightProposal(broken, base);
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.some(error => error.includes('驳回')));
+
+  const soft = nightProposal();
+  soft.mission.duration = 9999;
+  soft.mission.reward = 99999;
+  const clamped = validateNightProposal(soft, base);
+  assert.equal(clamped.ok, true, clamped.errors.join('；'));
+  assert.equal(clamped.proposal?.mission.duration, 180);
+  assert.equal(clamped.proposal?.mission.reward, 1800);
+  assert.ok(clamped.warnings.some(warning => warning.includes('duration')));
 });
 
 test('叙事输出被 length 截断时会放大 token 额度重试一次', async () => {
@@ -701,19 +817,11 @@ test('服装词条：把立绘作为图像内容发送，读回名称与描述',
 });
 test('编年史缓存生成内容并在存档中保留', () => {
   const base = createInitialState();
-  const content = materializeDaily({
-    monsterName: '纸月', monsterEpithet: '被折起来的月亮', monsterRank: '游荡' as const, monsterElement: '月影',
-    monsterTrait: '害怕被展开', monsterDescription: '一张悬在空中的纸月亮。', monsterHabit: '深夜贴着窗户移动。', monsterWeakness: '遇水变软。',
-    girlName: '纸灯', girlCodename: '折光', girlTitle: '把夜色折成小船的人', girlElement: '星光', girlArchetype: '支援',
-    girlQuote: '我会把灯留给你。', girlGoal: '找到愿意收留纸船的人。', girlSkill: '折光', girlAppearance: '短发，发梢有折痕。',
-    girlPersonality: '安静，喜欢折纸。', girlOutfit: '宽大的值夜制服。', missionTitle: '窗上的纸月亮', missionCategory: '异象调查',
-    missionDescription: '一扇窗里同时出现了两个月亮。', agendaTitle: '窗边的空位', agendaText: '有人希望把靠窗的位置留给新来的孩子。', agendaRequest: '把窗边的位置留给纸灯。',
-    agendaTopic: '窗边的位置', envoyFaction: 'association' as const, envoyTitle: '替协会送一盏灯', envoyDescription: '把灯送到旧车站。',
-  }, base);
+  const content = materializeNightProposal(validateNightProposal(nightProposal(), base).proposal!, base);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.ok, true);
   const kinds = new Set(result.state.chronicle.map(entry => entry.kind));
-  for (const kind of ['魔物', '少女', '事件', '议程', '代表'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
+  for (const kind of ['魔物', '少女', '事件', '议程', '代表', '登记'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
   const loaded = loadState(JSON.stringify(result.state));
   assert.equal(loaded.chronicle.length, result.state.chronicle.length);
   assert.ok(loaded.chronicle.every(entry => entry.title && entry.summary));
@@ -980,11 +1088,11 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 10);
+  assert.equal(loaded.version, 11);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
-  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 11 })), null);
+  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 12 })), null);
 });
 
 // ── v6：势力辖区 ────────────────────────────────────────────────

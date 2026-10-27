@@ -170,3 +170,49 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .workshop-effect-card .workshop-row{margin:7px 0 0}
 .workshop-effect-summary{margin:5px 1px 0;color:#8f8299;font-size:9px;line-height:1.5}
 @media(max-width:620px){.workshop-picker-row{grid-template-columns:1fr 1fr 26px}.workshop-effect-preset{grid-template-columns:1fr 1fr}}
+
+/* 夜班提案 v2：完整机制预览 */
+.proposal-modal{max-height:none}
+.proposal-warnings{display:flex;gap:10px;border:1px solid #d3ac9b33;background:#d3ac9b0a;border-radius:7px;padding:12px 14px;margin:0 0 18px;color:#d9b8a8}
+.proposal-warnings>svg{flex-shrink:0;margin-top:2px}
+.proposal-warnings b{display:block;font-size:10px;font-weight:500;letter-spacing:.03em;margin-bottom:6px}
+.proposal-warnings span{display:block;font-size:9px;line-height:1.7;color:#ad8d82}
+.proposal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+.proposal-section{border:1px solid #ffffff0e;background:#ffffff02;border-radius:8px;padding:16px 17px}
+.proposal-section>header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.proposal-section>header>span{font-family:var(--font-data);font-size:10px;color:#8f728e;border:1px solid #f3aec926;border-radius:3px;padding:3px 5px}
+.proposal-section>header>div{display:flex;flex-direction:column;gap:3px}
+.proposal-section>header b{font-size:11px;font-weight:500;letter-spacing:.06em;color:#dcc6dc}
+.proposal-section>header small{font-size:8px;color:#806b8d;letter-spacing:.04em}
+.proposal-section h3{font-family:var(--font-display);font-size:18px;font-weight:500;letter-spacing:.04em;margin:0 0 8px;color:#f0d8e9}
+.proposal-section h3>em{font-family:inherit;font-style:normal;font-size:9px;color:#a082a4;margin-left:9px;letter-spacing:.05em}
+.proposal-section>p{font-size:9px;line-height:1.85;color:#a696ad;margin:0 0 10px}
+.proposal-facts{display:flex;flex-wrap:wrap;gap:6px;margin:11px 0}
+.proposal-facts>span{display:flex;align-items:center;gap:5px;font-size:8px;color:#7f6e8b;border:1px solid #ffffff0d;background:#ffffff03;border-radius:3px;padding:4px 6px}
+.proposal-facts b{font-family:var(--font-data);font-size:9px;font-weight:400;color:#d2bcd6}
+.proposal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.proposal-stats>span{display:flex;flex-direction:column;gap:2px;border-top:1px solid #ffffff0f;padding-top:5px;font-size:7px;color:#776582}
+.proposal-stats b{font-family:var(--font-data);font-size:13px;font-weight:400;color:#ddc5dd}
+.proposal-note{font-size:8px!important;line-height:1.8!important;color:#847291!important;margin-bottom:7px!important}
+.proposal-opinion{grid-column:1/-1}
+.proposal-dialogue{border-left:2px solid #f3aec92e;margin:10px 0 12px;padding-left:12px;display:flex;flex-direction:column;gap:8px}
+.proposal-dialogue p{display:flex;gap:9px;font-size:9px;line-height:1.75;margin:0}
+.proposal-dialogue b{flex-shrink:0;min-width:46px;font-size:8px;font-weight:500;color:#cba5be}
+.proposal-dialogue span{color:#9d8aa5}
+.proposal-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.proposal-options article{border:1px solid #ffffff10;border-radius:6px;padding:10px;background:#ffffff02}
+.proposal-options article.locked{border-color:#d3ac9b2b;background:#d3ac9b06}
+.proposal-options article>div:first-child{display:flex;flex-direction:column;gap:4px}
+.proposal-options b{font-size:10px;font-weight:500;color:#dcc4da}
+.proposal-options small{font-size:7.5px;line-height:1.6;color:#d0a294}
+.proposal-options article>p{font-size:8px;line-height:1.7;color:#8e7c99;margin:6px 0 8px}
+.proposal-tags{display:flex;flex-wrap:wrap;gap:4px}
+.proposal-tags span{font-size:7px;line-height:1.5;border-radius:3px;border:1px solid #f3aec920;background:#f3aec907;color:#c7a3b9;padding:3px 5px}
+.proposal-loot{border-top:1px solid #ffffff0b;padding:9px 0}
+.proposal-loot:first-of-type{border-top:0;padding-top:0}
+.proposal-loot>b{display:block;font-size:11px;font-weight:500;color:#ddc5dc}
+.proposal-loot>span{display:block;font-size:7.5px;color:#8c7697;margin:4px 0 6px}
+.proposal-loot p{font-size:8px;line-height:1.7;color:#9b879f;margin:4px 0}
+.proposal-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;border-top:1px solid #ffffff0c;margin-top:18px;padding-top:16px}
+.proposal-actions .btn{min-width:120px;justify-content:center}
+@media(max-width:700px){.proposal-grid{grid-template-columns:1fr}.proposal-opinion{grid-column:auto}.proposal-options{grid-template-columns:1fr}.proposal-actions{flex-wrap:wrap}.proposal-actions .btn{flex:1;min-width:0}}

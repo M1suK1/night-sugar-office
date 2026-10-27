@@ -12,6 +12,15 @@ page.on('console', m => { if (m.type() === 'error') errors.push(`${currentFlow} 
 page.on('requestfailed', r => failures.push(`${r.method()} ${r.url()}: ${r.failure()?.errorText}`));
 const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar-office:v1')));
 const stored = async () => { await page.waitForTimeout(120); return state(); };
+const nightProposal = {
+  version: 2,
+  monster: { name: '纸月', epithet: '被折起来的月亮', rank: '游荡', element: '月影系', trait: '害怕被展开', description: '一张悬在空中的纸月亮。', habit: '深夜贴着窗户移动。', weakness: '遇水变软。', maxHp: 132, maxSpirit: 84, stats: { magic: 71, insight: 49, agility: 66, empathy: 35 }, skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }] },
+  candidate: { name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈', level: 3, cost: 620, stats: { magic: 64, insight: 58, agility: 52, empathy: 72 }, skillIds: ['glimmer-spear'], traits: [{ name: '夜读', description: '熄灯后才开始写字。', polarity: '正面' }], quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', goalKind: '生活', appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfit: '宽大的值夜制服。' },
+  mission: { title: '窗上的纸月亮', category: '异象调查', description: '一扇窗里同时出现了两个月亮。', work: 'investigation', difficulty: '中危', district: 'oldtown', window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5, recommendedLevel: 3, enemyRefs: ['generated'], rewardItemRef: 'loot-1', rewardGirlLevel: 0 },
+  opinion: { authorId: 'yue', topic: '经费', faction: 'witch', title: '窗边的空位', text: '有人希望把靠窗的位置留给新来的孩子。', request: '把窗边的位置留给纸灯。', dialogue: [{ speakerId: 'yue', speaker: '月见桃', text: '窗边那个位置，今晚开始空出来了。', expression: 'calm' }, { speakerId: 'yue', speaker: '月见桃', text: '我想把它留给纸灯。她需要一个能看见月亮的地方。', expression: 'sad' }, { speakerId: 'yue', speaker: '月见桃', text: '经费从我的那份里扣，可以吗？', expression: 'shy' }], options: [{ id: 'accept', label: '批准', effect: '从本月经费中拨出一笔钱，把窗边重新布置。', changes: [{ kind: 'gold', amount: -600 }, { kind: 'girl', girlId: 'yue', field: 'bond', amount: 3 }], outcomes: [] }, { id: 'defer', label: '暂缓', effect: '今晚先不动窗边，等下次例会再说。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] }, { id: 'reject', label: '驳回', effect: '窗边保持原样，经费也不能动。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] }] },
+  envoy: { faction: 'association', title: '替协会送一盏灯', description: '把灯送到旧车站。', work: 'investigation', difficulty: '中危', district: 'station', window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3, recommendedLevel: 2, enemyRefs: ['generated'], rewardGirlLevel: 0 },
+  loot: [{ ref: 'loot-1', name: '折月灯罩', faction: 'witch', slot: 'charm', description: '纸折的灯罩，能把月光收得很小。', stats: { insight: 4 }, passive: '' }],
+};
 const close = async () => { if (await page.locator('dialog[open]').count()) await page.locator('#modal-close').click(); };
 async function settleIncidents() {
   for (let i = 0; i < 4; i++) {
@@ -483,6 +492,35 @@ try {
     await page.screenshot({ path: 'artifacts/chronicle-desktop.png', animations: 'disabled' });
     await close();
     await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); });
+  });
+  await check('完整提案先预览，采纳后才写入事务所与装备库', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(nightProposal) } }] }) }));
+    const before = await stored();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-llm-generate').click();
+    await expect(page.locator('.proposal-modal')).toBeVisible();
+    await expect(page.locator('.proposal-modal')).toContainText('纸月');
+    await expect(page.locator('.proposal-modal')).toContainText('折月灯罩');
+    await expect(page.locator('.proposal-options article')).toHaveCount(3);
+    await expect(page.locator('.proposal-options article').first()).toContainText('星砂');
+    await expect.poll(async () => (await stored()).candidates.length).toBe(before.candidates.length);
+    await layout('proposal');
+    await page.screenshot({ path: 'artifacts/night-proposal.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#proposal-accept').click();
+    await expect.poll(async () => (await stored()).generatedItems.length).toBe(1);
+    const after = await stored();
+    expect(after.candidates.some(girl => girl.name === '纸灯')).toBe(true);
+    expect(after.customMonsters.some(monster => monster.name === '纸月')).toBe(true);
+    expect(after.missions.some(mission => mission.title === '窗上的纸月亮' && mission.reward >= 1200 && mission.duration === 75)).toBe(true);
+    expect(after.missions.some(mission => mission.envoy && mission.title === '替协会送一盏灯')).toBe(true);
+    expect(after.opinions.some(opinion => opinion.title === '窗边的空位' && opinion.dialogue?.length === 3)).toBe(true);
+    await page.unroute('**/chat/completions');
+    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-auto'); });
+    await page.reload({ waitUntil: 'networkidle' });
   });
   await check('契约卡导出并在新游戏中导入', async () => {
     await page.evaluate(() => localStorage.clear());

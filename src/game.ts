@@ -1501,12 +1501,12 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     { id: 'l-3', time: '第 14 日 · 20:40', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   const state: GameState = {
-    version: 10, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    version: 11, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], storylines: [], events: [], treatments: [],
@@ -1523,7 +1523,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
 /** 全空档案：只有启动资金、一间会客厅和城里的九片辖区。 */
 export function createBlankState(pack: ContentPack = createSeedPack(), seed = `${pack.hash}:${Math.random()}`): GameState {
   const state: GameState = {
-    version: 10, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    version: 11, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     girls: [], candidates: [], missions: [], completed: [],
     rooms: [{ id: 'lounge', name: '会客厅', type: 'lounge', level: 1, capacity: 0, description: '刚租下的会客厅，只有一张桌子、一盏灯和一把多余的椅子。' }],
     logs: [
@@ -1533,7 +1533,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     samples: sampleDays(), messages: {}, memorial: [], battles: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], storylines: [], events: [], treatments: [],
@@ -2815,11 +2815,11 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${target.name} 已从魔物池移除。` };
     }
     case 'addGeneratedContent': {
-      const open = state.missions.filter(m => m.status !== 'done').length;
-      if (open + 2 > state.poolLimits.missions) return { state, ok: false, message: '事件池至少需要两个空位，先移除事件再生成。' };
-      if (state.candidates.length >= state.poolLimits.candidates) return { state, ok: false, message: '市场池已满，先移除一位候选者再生成。' };
-      if (state.customMonsters.length + monsters.length - state.removedMonsters.length >= state.poolLimits.monsters) return { state, ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
+      const gate = canAcceptGeneratedContent(state);
+      if (!gate.ok) return { state, ok: false, message: gate.message };
       if (state.missions.some(m => m.id === action.mission.id) || state.candidates.some(g => g.id === action.girl.id) || state.customMonsters.some(m => m.id === action.monster.id)) return { state, ok: false, message: '生成内容与现有条目重复。' };
+      if (action.envoyMission && state.missions.some(m => m.id === action.envoyMission!.id)) return { state, ok: false, message: '使者委托与现有事件重复。' };
+      if (action.items?.length && action.items.some(item => state.generatedItems.some(existing => existing.id === item.id))) return { state, ok: false, message: '生成装备与现有条目重复。' };
       const next = clone(state);
       const annotate = (m: Mission): Mission => annotateMission(next, m);
       next.customMonsters.push(action.monster);
@@ -2829,17 +2829,43 @@ export function act(state: GameState, action: GameAction): ActionResult {
         next.missions.push(annotate({ ...action.envoyMission, generated: true, sourcePack: 'llm' }));
         if (action.envoyMission.faction) next.factions[action.envoyMission.faction].envoyTaskId = action.envoyMission.id;
       }
+      if (action.items?.length) {
+        const fresh = action.items.filter(item => validGeneratedItem(item) && !next.generatedItems.some(existing => existing.id === item.id)).slice(0, 2);
+        for (const item of fresh) registerItem(item);
+        next.generatedItems.push(...fresh);
+      }
       if (action.opinion) next.opinions.unshift(action.opinion);
       archive(next, '魔物', action.monster.name, `${action.monster.epithet}。${action.monster.description}`);
       archive(next, '少女', action.girl.name, `${action.girl.title} · ${action.girl.element} · ${action.girl.archetype}`);
       archive(next, '事件', action.mission.title, action.mission.description);
       if (action.opinion) archive(next, '议程', action.opinion.title, action.opinion.text);
       if (action.envoyMission) archive(next, '代表', action.envoyMission.title, action.envoyMission.description);
-      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}。` });
+      for (const item of (action.items ?? []).slice(0, 2)) archive(next, '登记', item.name, item.description);
+      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}${action.items?.length ? `，仓库登记了 ${action.items.length} 件新装备` : ''}。` });
       return { state: next, ok: true, message: '新的委托已出现在地图上，候选者进入市场，会客厅也收到了议题。' };
     }
     default: return { state, ok: false, message: '未知操作。' };
   }
+}
+
+/** 生成前的池容量预检，避免自动补充先花掉 API 请求再被拒。 */
+export function canAcceptGeneratedContent(state: GameState): { ok: boolean; message: string } {
+  const open = state.missions.filter(m => m.status !== 'done').length;
+  if (open + 2 > state.poolLimits.missions) return { ok: false, message: '事件池至少需要两个空位，先移除事件再生成。' };
+  if (state.candidates.length >= state.poolLimits.candidates) return { ok: false, message: '市场池已满，先移除一位候选者再生成。' };
+  if (state.customMonsters.length + monsters.length - state.removedMonsters.length >= state.poolLimits.monsters) return { ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
+  return { ok: true, message: '' };
+}
+
+function validGeneratedItem(item: unknown): item is Equipment {
+  if (!item || typeof item !== 'object') return false;
+  const entry = item as Equipment;
+  if (typeof entry.id !== 'string' || !entry.id.startsWith('lm_item_')) return false;
+  if (typeof entry.name !== 'string' || !entry.name || typeof entry.description !== 'string') return false;
+  if (!['weapon', 'charm', 'consumable'].includes(entry.slot)) return false;
+  if (!['witch', 'association', 'government'].includes(entry.faction)) return false;
+  if (entry.stats && (typeof entry.stats !== 'object' || Array.isArray(entry.stats))) return false;
+  return true;
 }
 
 const characterIds = new Set(['yue', 'tang', 'ling', 'wu', 'zhi', 'lu']);
@@ -2881,7 +2907,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11].includes(value.version as number)) return createInitialState();
   try {
     const blankSave = value.blank === true;
     if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
@@ -2915,7 +2941,7 @@ export function loadState(raw: string | null): GameState {
     }
     const state = clone(value) as unknown as GameState;
     const previousVersion = Number(value.version);
-    state.version = 10;
+    state.version = 11;
     state.girls = state.girls.map(hydrate);
     state.candidates = Array.isArray(state.candidates) ? state.candidates.map(hydrate).slice(0, 6) : [];
     if (previousVersion < 8 && (state.minutes < SHIFT_START || state.minutes >= SHIFT_END)) {
@@ -2966,6 +2992,8 @@ export function loadState(raw: string | null): GameState {
       f.stockDay ??= state.day; f.envoyDay ??= state.day;
     }
     state.inventory = state.inventory && typeof state.inventory === 'object' ? state.inventory : {};
+    state.generatedItems = Array.isArray(state.generatedItems) ? state.generatedItems.filter(validGeneratedItem).slice(0, 40) : [];
+    for (const item of state.generatedItems) registerItem(item);
     const rawStock = Array.isArray(state.marketStock) ? state.marketStock : [];
     state.marketStock = rawStock.filter((entry): entry is MarketStockEntry => {
       if (!entry || typeof entry !== 'object') return false;
@@ -2997,7 +3025,7 @@ export function importState(raw: string): GameState | null {
   try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
-  if (![1, 3, 4, 5, 6, 7, 8, 9, 10].includes(Number(value.version))) return null;
+  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(Number(value.version))) return null;
   if (!Array.isArray(value.girls) || (!value.girls.length && value.blank !== true)) return null;
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;

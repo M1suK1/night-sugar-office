@@ -68,6 +68,10 @@ export const itemById = new Map(items.map(i => [i.id, i]));
 export function findItem(id: string | undefined): Equipment | undefined {
   return id ? itemById.get(id) : undefined;
 }
+/** 当前已注册的全部物品，包含内置、故事奖励与一次性生成装备。 */
+export function listItems(): Equipment[] {
+  return items;
+}
 export function getItem(id: string | undefined): Equipment | undefined {
   return findItem(id);
 }
