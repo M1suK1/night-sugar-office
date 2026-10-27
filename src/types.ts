@@ -288,12 +288,20 @@ export interface Treatment {
   paid: number; kink: boolean;
 }
 
+/** 技能效果的展示种类，只用于筛选与说明，不影响战斗结算。 */
+export type EffectCategory = 'offense' | 'defense' | 'speed' | 'mind' | 'control' | 'sustain';
 export interface SkillEffect {
   kind: EffectKind;
   stat?: StatKey | 'hit' | 'initiative';
   amount: number;
   duration: number;
   chance?: number;
+  /** 套用的状态模板 id；手调效果可以没有。 */
+  preset?: string;
+  /** 状态模板的显示名，例如「锋芒增幅」。 */
+  label?: string;
+  /** 状态模板的种类，用于技能编辑器的筛选。 */
+  category?: EffectCategory;
 }
 export interface Skill {
   id: string; name: string; school: string; resource: SkillResource; power: number;

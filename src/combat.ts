@@ -1,5 +1,5 @@
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
-import { findSkill, getSkill } from './content/skills.ts';
+import { effectKindLabels, findSkill, getSkill } from './content/skills.ts';
 import { findMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
 import { districtAt, districts } from './districts.ts';
@@ -53,8 +53,8 @@ function statOf(unit: BattleUnit, key: StatKey): number {
 function hitBonus(unit: BattleUnit): number {
   return unit.scarHit + unit.effects.reduce((sum, e) => sum + (e.stat === 'hit' && e.kind === 'buff' ? e.amount : 0) - (e.stat === 'hit' && e.kind === 'debuff' ? e.amount : 0), 0);
 }
-function initiativeOf(unit: BattleUnit, roll: number): number {
-  const bonus = unit.effects.reduce((sum, e) => sum + (e.stat === 'initiative' && e.kind === 'buff' ? e.amount : 0), 0);
+export function initiativeOf(unit: BattleUnit, roll: number): number {
+  const bonus = unit.effects.reduce((sum, e) => sum + (e.stat === 'initiative' ? (e.kind === 'buff' ? e.amount : e.kind === 'debuff' ? -e.amount : 0) : 0), 0);
   return statOf(unit, 'insight') + roll + bonus + (unit.initiativeBonus ?? 0);
 }
 function unitFromGirl(girl: Girl, _index: number): BattleUnit {
@@ -329,7 +329,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           if (effect.kind === 'stun' && rulesOf(target).some(rule => rule.effect === 'immuneStun')) continue;
           if (skill.side === 'enemy' && target.down && effect.kind !== 'dot') continue;
           addEffect(target, { ...effect, source: skill.name, remaining: effect.duration });
-          effectNotes.push(effect.kind);
+          effectNotes.push(effect.label ?? effectKindLabels[effect.kind]);
         }
       }
       if (effectNotes.length) {

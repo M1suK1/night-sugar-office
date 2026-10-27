@@ -52,11 +52,11 @@ export function getSkill(id: string): Skill {
 }
 export const tierLabels: Record<SkillTier, string> = { basic: '基础', signature: '本职', ultimate: '奥义' };
 export const resourceLabels: Record<SkillResource, string> = { hp: '血量', spirit: '共情值' };
+export const effectKindLabels: Record<SkillEffect['kind'], string> = {
+  dot: '持续伤害', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '持续恢复',
+};
 export function effectText(e: SkillEffect): string {
-  const map = {
-    dot: '持续伤害', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '持续恢复',
-  } as const;
-  const stat = e.stat ? ` ${e.stat === 'hit' ? '命中' : e.stat === 'initiative' ? '洞察' : e.stat === 'magic' ? '魔力' : e.stat === 'insight' ? '洞察' : e.stat === 'agility' ? '敏捷' : '共情'}` : '';
+  const stat = e.stat ? ` ${e.stat === 'hit' ? '命中' : e.stat === 'initiative' ? '先手' : e.stat === 'magic' ? '魔力' : e.stat === 'insight' ? '洞察' : e.stat === 'agility' ? '敏捷' : '共情'}` : '';
   const chance = e.chance ? ` · ${Math.round(e.chance * 100)}%` : '';
-  return `${map[e.kind]}${stat} ${e.amount} · ${e.duration} 轮${chance}`;
+  return `${e.label ?? effectKindLabels[e.kind]}${stat} ${e.amount} · ${e.duration} 轮${chance}`;
 }

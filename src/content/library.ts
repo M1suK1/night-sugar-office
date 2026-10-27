@@ -3,6 +3,7 @@ import { districts } from '../districts.ts';
 import { skillById, skills } from './skills.ts';
 import { itemById, items } from './items.ts';
 import { monsterById, monsters } from './monsters.ts';
+import { findEffectPreset } from './effectPresets.ts';
 
 export const LIBRARY_KEY = 'night-sugar:content:v1';
 export const CUSTOM_PREFIX = 'custom-';
@@ -125,14 +126,23 @@ export function emptyIncidentCard(): IncidentCard {
 export function sanitizeEffect(raw: unknown): SkillEffect | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const value = raw as Record<string, unknown>;
-  const kind = oneOf(value.kind, EFFECT_KINDS, 'dot');
+  const preset = findEffectPreset(typeof value.preset === 'string' ? value.preset : undefined);
+  const kind = preset?.effect.kind ?? oneOf(value.kind, EFFECT_KINDS, 'dot');
   const effect: SkillEffect = {
     kind,
-    amount: Math.round(number(value.amount, kind === 'shield' ? 10 : 6, 0, 200)),
-    duration: Math.round(number(value.duration, 1, 1, 9)),
+    amount: Math.round(number(value.amount, preset?.effect.amount ?? (kind === 'shield' ? 10 : 6), 0, 200)),
+    duration: Math.round(number(value.duration, preset?.effect.duration ?? 1, 1, 9)),
   };
-  if (EFFECT_STATS.includes(value.stat as NonNullable<SkillEffect['stat']>)) effect.stat = value.stat as NonNullable<SkillEffect['stat']>;
-  if (value.chance !== undefined) effect.chance = number(value.chance, 1, 0, 1);
+  if (preset) {
+    effect.preset = preset.id;
+    effect.label = preset.name;
+    effect.category = preset.category;
+    if (preset.effect.stat) effect.stat = preset.effect.stat;
+  } else if (EFFECT_STATS.includes(value.stat as NonNullable<SkillEffect['stat']>)) {
+    effect.stat = value.stat as NonNullable<SkillEffect['stat']>;
+  }
+  if (value.chance !== undefined) effect.chance = number(value.chance, preset?.effect.chance ?? 1, 0, 1);
+  else if (preset?.effect.chance !== undefined) effect.chance = preset.effect.chance;
   return effect;
 }
 

@@ -13,10 +13,11 @@ import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
-import { skills, getSkill, findSkill } from '../src/content/skills.ts';
+import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
+import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
-import { simulateBattle } from '../src/combat.ts';
+import { initiativeOf, simulateBattle } from '../src/combat.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
@@ -1944,4 +1945,39 @@ test('调查与战斗拆成独立模板，额外装备与免费契约者会随�
   assert.equal(recruit.cost, 0);
   assert.equal(recruit.level, 3);
   applyLibrary(emptyLibrary());
+});
+
+test('状态模板按种类分组、能读写进技能，并正确计算先手增减', () => {
+  assert.ok(skillEffectPresets.length >= 12);
+  assert.equal(new Set(skillEffectPresets.map(preset => preset.id)).size, skillEffectPresets.length, '模板 id 不应重复');
+  assert.deepEqual(
+    [...new Set(skillEffectPresets.map(preset => preset.category))].sort(),
+    [...EFFECT_CATEGORIES].sort(),
+    '每个效果种类都应有可选模板',
+  );
+
+  const skill = sanitizeSkill({
+    id: 'custom-skill-buff01', name: '测试·先读', resource: 'spirit', side: 'enemy',
+    effects: [{ preset: 'power-surge', kind: 'debuff', amount: 3, duration: 1 }],
+  });
+  assert.ok(skill);
+  const effect = skill.effects[0];
+  assert.equal(effect.preset, 'power-surge');
+  assert.equal(effect.label, '锋芒增幅');
+  assert.equal(effect.category, 'offense');
+  assert.equal(effect.kind, 'buff', '模板应覆盖手写的 kind');
+  assert.equal(effect.stat, 'magic', '模板应带上固定属性');
+  assert.equal(effect.amount, 3, '手调数值应保留');
+  assert.equal(effectText(effect), '锋芒增幅 魔力 3 · 1 轮');
+
+  const initiative = {
+    stats: { magic: 0, insight: 50, agility: 0, empathy: 0 },
+    effects: [
+      { kind: 'buff', stat: 'initiative', amount: 10, duration: 2, source: '先读', remaining: 2 },
+      { kind: 'debuff', stat: 'initiative', amount: 4, duration: 2, source: '乱拍', remaining: 2 },
+    ],
+    initiativeBonus: 5,
+    scarHit: 0,
+  } as unknown as Parameters<typeof initiativeOf>[0];
+  assert.equal(initiativeOf(initiative, 3), 64, '50 洞察 + 3 随机 + 10 增益 − 4 减益 + 5 装备');
 });

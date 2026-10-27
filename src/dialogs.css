@@ -164,4 +164,9 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .workshop-picker-filter::placeholder{color:#6d6577}
 .workshop-picker-row .icon-btn{justify-self:end}
 .workshop-picker-add{align-self:flex-start;margin-top:2px}
-@media(max-width:620px){.workshop-picker-row{grid-template-columns:1fr 1fr 26px}}
+.workshop-effect-card{margin-bottom:7px;padding:8px;border:1px solid #ffffff10;border-radius:7px;background:#ffffff04}
+.workshop-effect-preset{display:grid;grid-template-columns:minmax(108px,.7fr) minmax(0,1.7fr);gap:8px}
+.workshop-effect-preset select{height:32px;border:1px solid #ffffff16;border-radius:6px;background:#0e0c12;color:#d9d2de;font-size:11px;padding:0 9px;min-width:0}
+.workshop-effect-card .workshop-row{margin:7px 0 0}
+.workshop-effect-summary{margin:5px 1px 0;color:#8f8299;font-size:9px;line-height:1.5}
+@media(max-width:620px){.workshop-picker-row{grid-template-columns:1fr 1fr 26px}.workshop-effect-preset{grid-template-columns:1fr 1fr}}

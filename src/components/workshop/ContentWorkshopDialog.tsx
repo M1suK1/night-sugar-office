@@ -4,6 +4,7 @@ import type { Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTem
 import { items as itemRegistry, factionInfo } from '../../content/items';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
+import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
 import {
@@ -41,40 +42,86 @@ const INCIDENT_TRIGGER_LABELS: Record<IncidentCard['trigger'], string> = { manua
 const KIND_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备与消耗品', monster: '魔物', incident: '弹窗事件' };
 const KIND_NEW_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备', monster: '魔物', incident: '弹窗' };
 
-interface PickerOption { value: string; label: string; note?: string }
+interface PickerOption { value: string; label: string; note?: string; group?: string }
 
-function FilterPickerRow({ idPrefix, index, options, value, disabled, placeholder, taken, onChange, onRemove }: {
+function FilterPickerRow({ idPrefix, index, options, value, disabled, placeholder, filterLabel = '全部种类', groupOrder, taken, onChange, onRemove }: {
   idPrefix: string;
   index: number;
   options: PickerOption[];
   value: string;
   disabled: boolean;
   placeholder: string;
+  filterLabel?: string;
+  groupOrder?: readonly string[];
   taken: Set<string>;
   onChange: (value: string) => void;
   onRemove?: () => void;
 }) {
-  const [query, setQuery] = useState('');
-  const needle = query.trim().toLowerCase();
+  const [group, setGroup] = useState('');
+  const groups = [...new Set(options.map(option => option.group).filter((entry): entry is string => Boolean(entry)))];
+  const orderedGroups = groupOrder ? groupOrder.filter(entry => groups.includes(entry)) : groups;
   const pool = options.filter(option => (!taken.has(option.value) || option.value === value)
-    && (!needle || `${option.label} ${option.note ?? ''}`.toLowerCase().includes(needle)));
+    && (!group || option.group === group));
   const chosen = options.find(option => option.value === value);
   const visible = chosen && !pool.some(option => option.value === value) ? [chosen, ...pool] : pool;
   return (
     <div className="workshop-picker-row">
-      <input
+      <select
         id={`${idPrefix}-filter-${index}`}
         className="workshop-picker-filter"
-        value={query}
-        placeholder="输入关键词筛选"
+        value={group}
         disabled={disabled}
-        onChange={event => setQuery(event.target.value)}
-      />
+        aria-label="按种类筛选"
+        onChange={event => setGroup(event.target.value)}
+      >
+        <option value="">{filterLabel}</option>
+        {orderedGroups.map(entry => <option key={entry} value={entry}>{entry}</option>)}
+      </select>
       <select id={`${idPrefix}-${index}`} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
         <option value="">{placeholder}</option>
         {visible.map(option => <option key={option.value} value={option.value}>{option.label}{option.note ? ` · ${option.note}` : ''}</option>)}
       </select>
       {onRemove && <button id={`${idPrefix}-remove-${index}`} type="button" className="icon-btn" disabled={disabled} onClick={onRemove} aria-label="移除这一项"><Trash2 size={12} /></button>}
+    </div>
+  );
+}
+
+/** 技能效果模板：先按种类筛选，再从下拉里选具体状态。 */
+function EffectPresetPicker({ index, effect, disabled, onPick }: {
+  index: number;
+  effect: SkillEffect;
+  disabled: boolean;
+  onPick: (presetId: string) => void;
+}) {
+  const [category, setCategory] = useState('');
+  const current = findEffectPreset(effect.preset);
+  const pool = skillEffectPresets.filter(preset => !category || preset.category === category);
+  const visible = current && !pool.some(preset => preset.id === current.id) ? [current, ...pool] : pool;
+  return (
+    <div className="workshop-effect-preset">
+      <select
+        id={`workshop-effect-filter-${index}`}
+        className="workshop-picker-filter"
+        value={category}
+        disabled={disabled}
+        aria-label="按效果种类筛选"
+        onChange={event => setCategory(event.target.value)}
+      >
+        <option value="">全部种类</option>
+        {EFFECT_CATEGORIES.map(entry => <option key={entry} value={entry}>{EFFECT_CATEGORY_LABELS[entry]}</option>)}
+      </select>
+      <select
+        id={`workshop-effect-preset-${index}`}
+        value={effect.preset ?? ''}
+        disabled={disabled}
+        aria-label="选择状态模板"
+        onChange={event => onPick(event.target.value)}
+      >
+        <option value="">自定义效果</option>
+        {visible.map(preset => (
+          <option key={preset.id} value={preset.id}>{preset.name} · {EFFECT_CATEGORY_LABELS[preset.category]}</option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -325,7 +372,16 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
 
   const addEffect = () => {
     if (!skill) return;
-    patchSkill({ effects: [...skill.effects, { kind: 'buff', amount: 2, duration: 2 } as SkillEffect].slice(0, 6) });
+    const preset = skillEffectPresets[0];
+    patchSkill({ effects: [...skill.effects, { ...preset.effect, preset: preset.id, label: preset.name, category: preset.category }].slice(0, 6) });
+  };
+  const pickEffectPreset = (index: number, presetId: string) => {
+    const preset = findEffectPreset(presetId);
+    if (!preset) {
+      patchEffect(index, { preset: undefined, label: undefined, category: undefined });
+      return;
+    }
+    patchEffect(index, { ...preset.effect, preset: preset.id, label: preset.name, category: preset.category });
   };
   const removeEffect = (index: number) => {
     if (!skill) return;
@@ -566,21 +622,28 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                 <section className="workshop-section">
                   <header><h4>附加效果</h4><button id="workshop-add-effect" className="ghost-btn" disabled={!editable || skill.effects.length >= 6} onClick={addEffect}><Plus size={12} /> 添加</button></header>
                   {skill.effects.length === 0 && <p className="workshop-muted">没有附加效果，只造成基础伤害或治疗。</p>}
-                  {skill.effects.map((effect, index) => (
-                    <div className="workshop-row" key={index}>
-                      <select id={`workshop-effect-kind-${index}`} value={effect.kind} disabled={!editable} onChange={event => patchEffect(index, { kind: event.target.value as SkillEffect['kind'] })}>
-                        {EFFECT_KINDS.map(value => <option key={value} value={value}>{EFFECT_KIND_LABELS[value]}</option>)}
-                      </select>
-                      <select id={`workshop-effect-stat-${index}`} value={effect.stat ?? ''} disabled={!editable} onChange={event => patchEffect(index, { stat: (event.target.value || undefined) as SkillEffect['stat'] })}>
-                        <option value="">无属性</option>
-                        {EFFECT_STATS.map(value => <option key={value} value={value}>{EFFECT_STAT_LABELS[value]}</option>)}
-                      </select>
-                      <input id={`workshop-effect-amount-${index}`} type="number" value={effect.amount} disabled={!editable} onChange={event => patchEffect(index, { amount: num(event.target.value) })} aria-label="效果数值" />
-                      <input id={`workshop-effect-duration-${index}`} type="number" value={effect.duration} disabled={!editable} onChange={event => patchEffect(index, { duration: Math.max(1, num(event.target.value, 1)) })} aria-label="持续回合" />
-                      <input id={`workshop-effect-chance-${index}`} type="number" step="0.05" min="0" max="1" value={effect.chance ?? 1} disabled={!editable} onChange={event => patchEffect(index, { chance: Math.min(1, Math.max(0, num(event.target.value, 1))) })} aria-label="触发概率" />
-                      <button id={`workshop-effect-remove-${index}`} className="icon-btn" disabled={!editable} onClick={() => removeEffect(index)} aria-label="删除效果"><Trash2 size={12} /></button>
-                    </div>
-                  ))}
+                  {skill.effects.map((effect, index) => {
+                    const preset = findEffectPreset(effect.preset);
+                    return (
+                      <div className="workshop-effect-card" key={index}>
+                        <EffectPresetPicker index={index} effect={effect} disabled={!editable} onPick={presetId => pickEffectPreset(index, presetId)} />
+                        {preset && <p className="workshop-effect-summary">{preset.summary}</p>}
+                        <div className="workshop-row">
+                          <select id={`workshop-effect-kind-${index}`} value={effect.kind} disabled={!editable} onChange={event => patchEffect(index, { kind: event.target.value as SkillEffect['kind'], preset: undefined, label: undefined, category: undefined })}>
+                            {EFFECT_KINDS.map(value => <option key={value} value={value}>{EFFECT_KIND_LABELS[value]}</option>)}
+                          </select>
+                          <select id={`workshop-effect-stat-${index}`} value={effect.stat ?? ''} disabled={!editable} onChange={event => patchEffect(index, { stat: (event.target.value || undefined) as SkillEffect['stat'], preset: undefined, label: undefined, category: undefined })}>
+                            <option value="">无属性</option>
+                            {EFFECT_STATS.map(value => <option key={value} value={value}>{EFFECT_STAT_LABELS[value]}</option>)}
+                          </select>
+                          <input id={`workshop-effect-amount-${index}`} type="number" value={effect.amount} disabled={!editable} onChange={event => patchEffect(index, { amount: num(event.target.value) })} aria-label="效果数值" />
+                          <input id={`workshop-effect-duration-${index}`} type="number" value={effect.duration} disabled={!editable} onChange={event => patchEffect(index, { duration: Math.max(1, num(event.target.value, 1)) })} aria-label="持续回合" />
+                          <input id={`workshop-effect-chance-${index}`} type="number" step="0.05" min="0" max="1" value={effect.chance ?? 1} disabled={!editable} onChange={event => patchEffect(index, { chance: Math.min(1, Math.max(0, num(event.target.value, 1))) })} aria-label="触发概率" />
+                          <button id={`workshop-effect-remove-${index}`} className="icon-btn" disabled={!editable} onClick={() => removeEffect(index)} aria-label="删除效果"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </section>
               </div>
             )}
@@ -671,10 +734,12 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                         key={`${monster.id}-skill-${index}`}
                         idPrefix="workshop-monster-skill"
                         index={index}
-                        options={allSkills.map(entry => ({ value: entry.id, label: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}` }))}
+                        options={allSkills.map(entry => ({ value: entry.id, label: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}`, group: tierLabels[entry.tier] }))}
                         value={value}
                         disabled={!editable}
                         placeholder="选择技能"
+                        filterLabel="全部阶级"
+                        groupOrder={[tierLabels.basic, tierLabels.signature, tierLabels.ultimate]}
                         taken={new Set(skillSlots.filter((entry, at) => Boolean(entry) && at !== index))}
                         onChange={next => setSkillAt(index, next)}
                         onRemove={skillSlots.length > 1 ? () => removeSkillSlot(index) : undefined}
@@ -716,10 +781,12 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                         key={`${mission.id}-enemy-${index}`}
                         idPrefix="workshop-mission-enemy"
                         index={index}
-                        options={allMonsters.map(entry => ({ value: entry.id, label: entry.name, note: `${entry.rank} · ${entry.element}` }))}
+                        options={allMonsters.map(entry => ({ value: entry.id, label: entry.name, note: `${entry.rank} · ${entry.element}`, group: entry.rank }))}
                         value={value}
                         disabled={!editable}
                         placeholder="选择魔物"
+                        filterLabel="全部等级"
+                        groupOrder={rankOrder}
                         taken={new Set(enemySlots.filter((entry, at) => Boolean(entry) && at !== index))}
                         onChange={next => setEnemyAt(index, next)}
                         onRemove={enemySlots.length > 1 ? () => removeEnemySlot(index) : undefined}

@@ -7,6 +7,7 @@ import { MonsterGlyph } from './MonsterGlyph';
 
 const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复' };
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
+const effectStats: Record<string, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情', hit: '命中', initiative: '先手' };
 
 function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean; compact?: boolean }) {
   const monster = unit.side === 'enemy' ? (unit.monster ?? findMonster(unit.portrait)) : undefined;
@@ -22,7 +23,8 @@ function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean
         <div className="battle-bar spirit"><i><b style={{ width: `${Math.max(0, unit.spirit / unit.maxSpirit * 100)}%` }} /></i><span>{Math.max(0, unit.spirit)}<small>/{unit.maxSpirit}</small></span></div>
         {unit.effects.length > 0 && <div className="unit-effects">{unit.effects.filter(e => e.kind !== 'shield' || e.amount > 0).map((e, i) => {
           const Icon = effectIcons[e.kind] ?? Sparkles;
-          return <span key={i} className={`fx-${e.kind}`} title={`${effectLabels[e.kind]}${e.stat ? ` ${e.stat}` : ''}`}><Icon size={9} />{effectLabels[e.kind]}{e.kind === 'shield' ? ` ${e.amount}` : ''}</span>;
+          const label = e.label ?? effectLabels[e.kind];
+          return <span key={i} className={`fx-${e.kind}`} title={`${label}${e.stat ? ` · ${effectStats[e.stat] ?? e.stat}` : ''}`}><Icon size={9} />{label}{e.kind === 'shield' ? ` ${e.amount}` : ''}</span>;
         })}</div>}
       </div>
     </article>

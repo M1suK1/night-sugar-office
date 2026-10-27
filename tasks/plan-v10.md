@@ -671,3 +671,26 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 100/100、浏览器 49/49、构建通过。
 
 下一步：`src/game.ts` 的门面化拆分；M6 议会提案编辑器与多场景角色事件编辑器仍不在本期。
+
+---
+
+## 18. 实施记录（技能状态模板与种类筛选，已完成）
+
+按 m03145「设计一些buff和debuff给技能用，技能设计里能用筛选（不要用关键词，要用种类区分）+下拉菜单选择，之前的筛选+下拉菜单也同步修改」落地。
+
+落地：
+
+- **状态模板库**：新增 `src/content/effectPresets.ts`，提供 20 个命名 buff/debuff，按 `offense / defense / speed / mind / control / sustain` 六类分组；模板固定 `kind`、`stat`、`category` 与名称，数值、持续时间仍可在效果行手调，概率效果继承模板默认值。
+- **类型与清洗**：`SkillEffect` 增加可选 `preset` / `label` / `category`，旧技能不受影响；`sanitizeEffect` 遇到合法 `preset` 时用模板覆盖 kind/stat/category/label，并保留手调数值与 chance，模板字段可随内容包导出导入。
+- **战斗结算**：`initiativeOf` 改为导出函数，先手增益与减益都计入出手顺序；技能附加效果日志与效果 chip 优先显示模板名，属性 title 统一映射为中文。`effectText` 修正先手属性误显示为「洞察」的问题。
+- **工坊选择器**：`FilterPickerRow` 从关键词输入改为按 `group` 筛选的下拉；技能效果行新增 `EffectPresetPicker`（`#workshop-effect-filter-*` + `#workshop-effect-preset-*`），魔物技能按阶级、委托敌人按等级复用同一套筛选。手改 kind/stat 会退回自定义，改数值保留模板名。
+- **视觉**：效果行改为卡片式 `.workshop-effect-card`，模板筛选、下拉与说明在顶部，具体数值控件在底部；窄屏自动改为单列。
+
+测试：
+
+- `tests/game.test.ts` 新增「状态模板按种类分组、能读写进技能，并正确计算先手增减」：覆盖模板唯一性、六类齐全、preset 覆盖手写 kind、手调数值与名称保留，以及洞察 + 随机 + 先手增益/减益 + 装备先手的合计。
+- `tests/browser.mjs` 技能段改为按「进攻」筛选并选「锋芒增幅」，断言模板数值回填、保存后 `preset` / `label` / `category` 持久化；魔物技能按「奥义」筛选后选项变少；委托敌人按「游荡」筛选后只剩 2 个选项。
+
+验证：tsc 0、单测 101/101、浏览器 49/49、构建通过。
+
+下一步：`src/game.ts` 的门面化拆分；M6 议会提案编辑器与多场景角色事件编辑器仍不在本期。
