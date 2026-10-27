@@ -481,10 +481,16 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 @media(max-width:560px){.llm-console{bottom:74px}.llm-console-state{display:none}.llm-console-tip{display:none}}
 /* ── 对话补全预设 ─────────────────────────────────────── */
 .preset-modal{max-width:900px}
-.preset-bind-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 16px}
-.preset-bind-row label{display:flex;flex-direction:column;gap:5px;font-size:9px;color:#8d8595}
-.preset-bind-row select{background:#141319;border:1px solid #ffffff14;border-radius:5px;color:#e3dbe8;padding:9px 10px;font-size:10px}
+.preset-task-tabs{display:flex;gap:4px;overflow-x:auto;margin:14px 0 10px;padding:4px;border:1px solid #ffffff0d;border-radius:8px;background:#0f0e14}
+.preset-task-tabs button{flex:0 0 auto;padding:7px 10px;border-radius:5px;color:#8d8595;font-size:9.5px;white-space:nowrap}
+.preset-task-tabs button:hover{color:#d8c9dd;background:#ffffff04}
+.preset-task-tabs button.active{color:#f5dbe7;background:#f3aec914;box-shadow:inset 0 0 0 1px #f3aec92e}
+.preset-view-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;border:1px solid #ffffff0b;border-radius:7px;background:#121117}
+.preset-view-label{font-size:9px;color:#a89fac;letter-spacing:.04em}
+.preset-view-bar select{min-width:190px;max-width:100%;background:#17131d;border:1px solid #ffffff1c;border-radius:5px;color:#e3dbe8;padding:7px 9px;font-size:10px}
+.preset-view-hint{font-size:8.5px;color:#6f6878;line-height:1.6}
 .preset-layout{display:grid;grid-template-columns:190px minmax(0,1fr);gap:12px;border:1px solid #ffffff0b;border-radius:8px;background:#121117;padding:10px}
+.preset-layout-focus{grid-template-columns:minmax(0,1fr)}
 .preset-list{display:flex;flex-direction:column;gap:4px;max-height:390px;overflow:auto;padding-right:3px}
 .preset-list button{display:flex;flex-direction:column;gap:3px;text-align:left;padding:8px 9px;border:1px solid transparent;border-radius:5px;color:#b1a8b6}
 .preset-list button:hover{background:#ffffff04}
@@ -522,7 +528,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .preset-report{margin-top:8px;font-size:9px;line-height:1.7;padding:6px 8px;border-radius:4px}
 .preset-report.ok{color:#a8d3ba;background:#a8d3ba0d;border:1px solid #a8d3ba26}
 .preset-report.bad{color:#e6a9a2;background:#e6a9a20d;border:1px solid #e6a9a226}
-@media(max-width:800px){.preset-layout{grid-template-columns:1fr}.preset-list{flex-direction:row;max-height:none;overflow-x:auto}.preset-list button{min-width:130px}.preset-fields{grid-template-columns:1fr}.preset-bind-row{grid-template-columns:1fr}}
+@media(max-width:800px){.preset-layout{grid-template-columns:1fr}.preset-list{flex-direction:row;max-height:none;overflow-x:auto}.preset-list button{min-width:130px}.preset-fields{grid-template-columns:1fr}.preset-task-tabs{padding:3px}.preset-view-bar select{min-width:0;flex:1}}
 /* ---- v5: shift clock, end night, district brief, wardrobe ---- */
 .shift-clock{display:flex;align-items:center;gap:12px;color:#9a8b9d;min-width:0}
 .shift-clock>div{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -887,8 +893,6 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .player-wide { margin-top: 8px; }
 .player-wide textarea { resize: vertical; line-height: 1.7; }
 @media (max-width: 720px) { .player-grid { grid-template-columns: 1fr; } .player-card-head { flex-direction: column; } }
-.preset-bind-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 860px) { .preset-bind-row { grid-template-columns: 1fr; } }
 /* 月光诊所：治疗面板 */
 .clinic-panel { display: flex; flex-direction: column; gap: 12px; }
 .clinic-panel.empty { align-items: center; gap: 8px; padding: 22px 14px; border: 1px dashed #ffffff14; border-radius: 6px; text-align: center; color: var(--muted); }
@@ -1207,7 +1211,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-task b { font-size: 10px; font-weight: 500; }
 .llm-task span { grid-column: 1 / -1; color: #85758d; font-size: 8.5px; line-height: 1.5; }
 .llm-task em { font-style: normal; color: #b98ca5; font-size: 8.5px; white-space: nowrap; }
-.preset-scope-filter { width: auto; padding: 4px 7px; border: 1px solid #ffffff1c; border-radius: 4px; background: #17131d; color: #d8c9dd; font-size: 9.5px; }
+.preset-scope-current { padding: 3px 7px; border: 1px solid #f3aec933; border-radius: 4px; background: #f3aec90d; color: #e8c7d7; font-size: 9px; letter-spacing: .03em; }
 .preset-entry-scope { width: 78px; padding: 2px 4px; border: 1px solid #ffffff16; border-radius: 3px; background: #17131d; color: #cfc2d4; font-size: 9px; }
 .preset-entry-warning { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 6px 8px; border: 1px solid #d6a35c4a; border-radius: 4px; background: #d6a35c0d; color: #d9bd93; font-size: 9px; line-height: 1.5; }
 .preset-entry-warning button { flex: none; border: 1px solid #d6a35c66; border-radius: 3px; background: transparent; color: #f0d2a6; font-size: 8.5px; padding: 2px 6px; cursor: pointer; }

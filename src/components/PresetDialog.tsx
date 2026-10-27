@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
-  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
+  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
-  type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type RegexScript,
+  type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
 
 interface Props {
@@ -18,16 +18,28 @@ interface Props {
 
 const ROLE_LABEL: Record<PromptEntry['role'], string> = { system: '系统', user: '用户', assistant: '助手' };
 
+/** 标签页：每个任务一页，另加共用词条与全部词条。 */
+type PresetView = PromptScope | 'all';
+
 export function PresetDialog({ presets, binding, initialScope, initialPresetId, onPresets, onBinding, onNotify }: Props) {
-  const [selectedId, setSelectedId] = useState(() => (initialPresetId && presets.some(item => item.id === initialPresetId) ? initialPresetId : presets[0]?.id ?? ''));
+  const [selectedId, setSelectedId] = useState(() => {
+    if (initialPresetId && presets.some(item => item.id === initialPresetId)) return initialPresetId;
+    if (initialScope && initialScope !== 'shared') {
+      const bound = boundPreset(initialScope, presets, binding);
+      if (bound) return bound.id;
+    }
+    return presets[0]?.id ?? '';
+  });
   const [tab, setTab] = useState<'sampling' | 'prompts' | 'advanced'>(initialScope ? 'prompts' : 'sampling');
-  const [scopeFilter, setScopeFilter] = useState<PromptScope | 'all'>(initialScope ?? 'all');
+  const [view, setView] = useState<PresetView>(initialScope ?? 'all');
   const [draft, setDraft] = useState('');
   const [report, setReport] = useState<{ ok: boolean; text: string; notes?: string[]; unsupported?: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const preset = presets.find(item => item.id === selectedId) ?? presets[0];
   const entries = useMemo(() => (preset ? presetPrompts(preset) : []), [preset]);
-  const visibleEntries = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => scopeFilter === 'all' || promptScope(entry) === scopeFilter);
+  const activeTask: PromptTask | null = view !== 'shared' && view !== 'all' ? view : null;
+  const visibleEntries = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => view === 'all' || promptScope(entry) === view);
+  const viewLabel = view === 'all' ? '全部用途' : promptScopeLabel(view);
   const editable = Boolean(preset && !preset.builtin);
   const totalTokens = entries.reduce((sum, entry) => sum + (entry.enabled && !entry.marker ? promptTokens(entry.content) : 0), 0);
   const [regexSample, setRegexSample] = useState('（她把杯子放下）这一晚的剧情到这里就结束了。<think_nya>她的声音很轻</think_nya>');
@@ -51,11 +63,22 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const patchEntry = (id: string, patch: Partial<PromptEntry>) => patchEntries(entries.map(entry => entry.id === id ? { ...entry, ...patch } : entry));
   const resetScope = () => {
     if (!preset || !editable) return;
-    const scope = scopeFilter === 'all' ? undefined : scopeFilter;
+    const scope = view === 'all' ? undefined : view;
     const defaults = DEFAULT_PROMPTS.filter(entry => !scope || promptScope(entry) === scope);
     const kept = scope ? entries.filter(entry => promptScope(entry) !== scope) : [];
     patchEntries([...kept, ...defaults.map((entry, index) => ({ ...entry, id: newEntryId(kept.length + index) }))]);
     onNotify(scope ? `已恢复「${promptScopeLabel(scope)}」的默认词条。` : '已恢复全部默认词条。');
+  };
+  const chooseView = (next: PresetView) => {
+    setView(next);
+    if (next !== 'shared' && next !== 'all') {
+      const bound = boundPreset(next, presets, binding);
+      if (bound) setSelectedId(bound.id);
+    }
+  };
+  const bindTask = (task: PromptTask, id: string) => {
+    onBinding({ ...binding, [task]: id });
+    setSelectedId(id);
   };
   const patchApi = (patch: Partial<PresetApi>) => {
     if (!preset || !editable) return;
@@ -84,15 +107,13 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const remove = () => {
     if (!preset || preset.builtin) return;
     const next = presets.filter(item => item.id !== preset.id);
-    onPresets(next);
-    setSelectedId(next[0]?.id ?? '');
-    if (PROMPT_TASK_SCOPES.some(task => binding[task] === preset.id)) {
-      const nextBinding = { ...binding };
-      for (const task of PROMPT_TASK_SCOPES) {
-        if (nextBinding[task] === preset.id) nextBinding[task] = DEFAULT_PRESET_BINDING[task];
-      }
-      onBinding(nextBinding);
+    const nextBinding = { ...binding };
+    for (const task of PROMPT_TASK_SCOPES) {
+      if (nextBinding[task] === preset.id) nextBinding[task] = DEFAULT_PRESET_BINDING[task];
     }
+    onPresets(next);
+    if (PROMPT_TASK_SCOPES.some(task => binding[task] === preset.id)) onBinding(nextBinding);
+    setSelectedId(activeTask ? boundPreset(activeTask, next, nextBinding).id : next[0]?.id ?? '');
     onNotify(`已删除「${preset.name}」。`);
   };
 
@@ -128,16 +149,29 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
     <h2>让叙事者的笔，更接近你要的语气。</h2>
     <p className="muted">{"读取 SillyTavern 对话补全预设的采样参数与提示词词条；词条顺序即拼装顺序，可用 {{world}}、{{player}}、{{context}} 等变量。世界书与酒馆聊天界面不在本作范围内。"}</p>
 
-    <div className="preset-bind-row">
-      {PROMPT_TASK_SCOPES.map(task => <label key={task}><span>{promptScopeLabel(task)}使用</span>
-        <select id={`preset-bind-${task}`} value={binding[task]} onChange={event => onBinding({ ...binding, [task]: event.target.value })}>
-          {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
-        </select>
-      </label>)}
+    <div className="preset-task-tabs" role="tablist" aria-label="按任务编辑预设">
+      {PROMPT_SCOPES.map(scope => <button key={scope.id} type="button" id={`preset-task-tab-${scope.id}`} className={view === scope.id ? 'active' : ''} role="tab" aria-selected={view === scope.id} onClick={() => chooseView(scope.id)}>{scope.label}</button>)}
+      <button type="button" id="preset-task-tab-all" className={view === 'all' ? 'active' : ''} role="tab" aria-selected={view === 'all'} onClick={() => chooseView('all')}>全部词条</button>
     </div>
 
-    <div className="preset-layout">
-      <aside className="preset-list" aria-label="预设列表">
+    <div className="preset-view-bar">
+      {activeTask ? <>
+        <span className="preset-view-label">此任务使用</span>
+        <select id="preset-bind-current" aria-label="此任务绑定的预设" value={boundPreset(activeTask, presets, binding)?.id ?? ''} onChange={event => bindTask(activeTask, event.target.value)}>
+          {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
+        </select>
+        <span className="preset-view-hint">{PROMPT_SCOPES.find(scope => scope.id === activeTask)?.hint}；改绑只影响「{viewLabel}」。</span>
+      </> : <>
+        <span className="preset-view-label">编辑预设</span>
+        <select id="preset-edit-preset" aria-label="选择要编辑的预设" value={preset?.id ?? ''} onChange={event => setSelectedId(event.target.value)}>
+          {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
+        </select>
+        <span className="preset-view-hint">{view === 'shared' ? '共用词条会进入这份预设被用到的每一个任务；这里只改当前预设。' : '全部词条按各自用途注入；左侧可管理预设。'}</span>
+      </>}
+    </div>
+
+    <div className={`preset-layout ${activeTask ? 'preset-layout-focus' : ''}`}>
+      {!activeTask && <aside className="preset-list" aria-label="预设列表">
         {presets.map(item => <button key={item.id} id={`preset-item-${item.id}`} type="button" className={item.id === preset?.id ? 'active' : ''} onClick={() => setSelectedId(item.id)}>
           <b>{item.name}</b>
           <small>{item.builtin ? '内置' : '自定义'} · 温度 {samplingValue(item, 'temp_openai').toFixed(2)}</small>
@@ -152,7 +186,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
           setSelectedId(created.id);
           setTab('prompts');
         }}><Sparkles size={12}/>新建空白预设</button>
-      </aside>
+      </aside>}
 
       {preset && <div className="preset-editor">
         <div className="preset-editor-head">
@@ -249,17 +283,14 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
               </div>
             </section></div> : <div className="preset-entries">
           <div className="preset-entry-toolbar">
-            <button type="button" id="preset-entry-add" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '新词条', content: '', role: 'system', enabled: true, scope: scopeFilter === 'all' ? 'shared' : scopeFilter }])}><Plus size={12}/>添加词条</button>
-            <button type="button" id="preset-entry-add-marker" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '—— 分隔 ——', content: '', role: 'system', enabled: true, marker: true, scope: scopeFilter === 'all' ? 'shared' : scopeFilter }])}><Plus size={12}/>分隔标记</button>
-            <select id="preset-scope-filter" className="preset-scope-filter" value={scopeFilter} onChange={event => setScopeFilter(event.target.value as PromptScope | 'all')}>
-              <option value="all">全部用途</option>
-              {PROMPT_SCOPES.map(scope => <option key={scope.id} value={scope.id}>{scope.label}</option>)}
-            </select>
-            <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm(scopeFilter === 'all' ? '恢复成默认词条？当前编辑会被覆盖。' : `恢复「${promptScopeLabel(scopeFilter as PromptScope)}」的默认词条？该用途下的编辑会被覆盖。`)) resetScope(); }}><RotateCcw size={12}/>{scopeFilter === 'all' ? '恢复全部默认' : '恢复本用途'}</button>
-            <span className="preset-order-note">注入 {activePrompts(preset, scopeFilter === 'all' ? undefined : scopeFilter).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
+            <button type="button" id="preset-entry-add" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '新词条', content: '', role: 'system', enabled: true, scope: view === 'all' ? 'shared' : view }])}><Plus size={12}/>添加词条</button>
+            <button type="button" id="preset-entry-add-marker" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '—— 分隔 ——', content: '', role: 'system', enabled: true, marker: true, scope: view === 'all' ? 'shared' : view }])}><Plus size={12}/>分隔标记</button>
+            <span className="preset-scope-current">{viewLabel}</span>
+            <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm(view === 'all' ? '恢复成默认词条？当前编辑会被覆盖。' : `恢复「${viewLabel}」的默认词条？该页的编辑会被覆盖。`)) resetScope(); }}><RotateCcw size={12}/>{view === 'all' ? '恢复全部默认' : view === 'shared' ? '恢复共用默认' : '恢复本任务'}</button>
+            <span className="preset-order-note">注入 {activePrompts(preset, view === 'all' ? undefined : view).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
             <span className="preset-token-total">约 {totalTokens} tokens</span>
           </div>
-          {scopeFilter !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === scopeFilter)?.hint}。代码里的 JSON 输出契约会自动追加在本用途词条之后，不需要写进词条。</p>}
+          {view !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === view)?.hint}。代码里的 JSON 输出契约会自动追加在本页词条之后，不需要写进词条。</p>}
 
           <div className="preset-entry-vars">
             <span>可用变量</span>

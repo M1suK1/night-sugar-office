@@ -128,6 +128,8 @@ export interface PresetRuntime {
 
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
+/** 一次性把旧的三档/共用副本拆成每个任务一份的标记。 */
+export const TASK_PRESET_MARKER = 'night-sugar:task-presets-v1';
 
 export interface PromptVariable {
   key: string;
@@ -894,6 +896,54 @@ export function boundPreset(task: PromptTask, presets = loadPresets(), binding =
   return presets.find(preset => preset.id === wanted)
     ?? presets.find(preset => preset.id === fallbackId)
     ?? presets[0];
+}
+
+export interface TaskPresetWorkspace {
+  presets: ChatPreset[];
+  binding: PresetBinding;
+  created: number;
+}
+
+/**
+ * 把每个生成任务拆成一份以任务命名的可编辑预设。
+ * 之前版本用「均衡叙事 副本」这类共用副本时，第一个任务会直接接管并改名，其余任务各复制一份，避免留下旧默认副本。
+ */
+export function ensureTaskPresets(presets: ChatPreset[], binding: PresetBinding): TaskPresetWorkspace {
+  const next = [...presets];
+  const nextBinding = { ...binding };
+  const groups = new Map<string, PromptTask[]>();
+  for (const task of PROMPT_TASK_SCOPES) {
+    const list = groups.get(binding[task]);
+    if (list) list.push(task);
+    else groups.set(binding[task], [task]);
+  }
+
+  let created = 0;
+  for (const [sourceId, tasks] of groups) {
+    const source = next.find(preset => preset.id === sourceId) ?? boundPreset(tasks[0], next, nextBinding);
+    const fromBuiltinCopy = next.some(item => item.builtin && `${item.name} 副本` === source.name);
+    tasks.forEach((task, index) => {
+      const name = promptScopeLabel(task);
+      // 已经按任务命名并绑定好的预设直接保留，重复执行不会继续增生。
+      if (!source.builtin && source.name === name) {
+        nextBinding[task] = source.id;
+        return;
+      }
+      // 只接管旧版自动生成的内置副本；用户自己命名成「… 副本」的预设不动。
+      if (index === 0 && !source.builtin && fromBuiltinCopy) {
+        const at = next.findIndex(preset => preset.id === source.id);
+        const renamed = { ...source, name, updatedAt: now() };
+        next[at] = renamed;
+        nextBinding[task] = renamed.id;
+        return;
+      }
+      const copy = duplicatePreset(source, name);
+      next.push(copy);
+      nextBinding[task] = copy.id;
+      created += 1;
+    });
+  }
+  return { presets: next, binding: nextBinding, created };
 }
 
 export const DEFAULT_WORLD = '你是《夜糖事务所》的夜班叙事者。故事发生在永远停在深夜的樱雾市：魔法少女以契约换取力量，代价是灵魂慢慢被侵蚀。语气温柔、克制、带一点危险的甜味。不要写露骨内容，不要替玩家做决定。';

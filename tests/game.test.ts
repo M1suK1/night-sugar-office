@@ -4,7 +4,7 @@ import { createInitialState, act, loadState, importState, capacity, chance, squa
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
-import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
@@ -1321,6 +1321,59 @@ test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
   assert.equal(partial.chat, 'preset-d');
   assert.equal(partial.daily, 'preset-e');
   assert.equal(partial.profile, DEFAULT_PRESET_BINDING.profile);
+});
+test('默认预设按任务拆开并改名为对应任务', () => {
+  const builtins = builtinPresets();
+  const workspace = ensureTaskPresets(builtins, { ...DEFAULT_PRESET_BINDING });
+  assert.equal(workspace.created, PROMPT_TASK_SCOPES.length);
+  assert.equal(Object.values(workspace.binding).length, PROMPT_TASK_SCOPES.length);
+  assert.equal(new Set(Object.values(workspace.binding)).size, PROMPT_TASK_SCOPES.length);
+  for (const task of PROMPT_TASK_SCOPES) {
+    const preset = workspace.presets.find(item => item.id === workspace.binding[task]);
+    assert.ok(preset);
+    assert.equal(preset.name, promptScopeLabel(task));
+    assert.equal(preset.builtin, false);
+    assert.ok(presetPrompts(preset).length >= DEFAULT_PROMPTS.length);
+  }
+  assert.equal(builtins.length, 3, '不应修改内置预设');
+  const again = ensureTaskPresets(workspace.presets, workspace.binding);
+  assert.equal(again.created, 0);
+  assert.equal(again.presets.length, workspace.presets.length);
+  assert.deepEqual(again.binding, workspace.binding);
+});
+
+test('旧共用副本按任务拆开时保留配置并去掉旧名字', () => {
+  const builtins = builtinPresets();
+  const source = builtins[0];
+  const oldCopy: ChatPreset = {
+    ...source, id: 'copy-old', name: `${source.name} 副本`, builtin: false,
+    api: { model: 'legacy-model' }, prompts: presetPrompts(source).map(entry => ({ ...entry, builtin: false })),
+  };
+  const binding = { ...DEFAULT_PRESET_BINDING, storyline: oldCopy.id, event: oldCopy.id };
+  const workspace = ensureTaskPresets([...builtins, oldCopy], binding);
+  const story = workspace.presets.find(item => item.id === workspace.binding.storyline);
+  const event = workspace.presets.find(item => item.id === workspace.binding.event);
+  assert.ok(story && event);
+  assert.equal(story.id, oldCopy.id);
+  assert.equal(story.name, '故事线');
+  assert.equal(story.api?.model, 'legacy-model');
+  assert.equal(event.name, '私人事件');
+  assert.notEqual(event.id, story.id);
+  assert.equal(workspace.presets.filter(item => item.name.endsWith('副本')).length, 0);
+});
+test('自定义的「… 副本」不会被任务默认预设改名', () => {
+  const builtins = builtinPresets();
+  const source = builtins[0];
+  const custom: ChatPreset = { ...source, id: 'copy-mine', name: '我的 副本', builtin: false };
+  const binding = { ...DEFAULT_PRESET_BINDING, storyline: custom.id, event: custom.id };
+  const workspace = ensureTaskPresets([...builtins, custom], binding);
+  const story = workspace.presets.find(item => item.id === workspace.binding.storyline);
+  const event = workspace.presets.find(item => item.id === workspace.binding.event);
+  assert.ok(story && event);
+  assert.equal(workspace.presets.find(item => item.id === custom.id)?.name, '我的 副本');
+  assert.equal(story.name, '故事线');
+  assert.equal(event.name, '私人事件');
+  assert.notEqual(story.id, event.id);
 });
 test('世界书内置 14 条，默认只启用 6 条常驻词条', () => {
   assert.equal(builtinWorldbook().length, 14);

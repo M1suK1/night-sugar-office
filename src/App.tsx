@@ -25,7 +25,7 @@ import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
 import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
+import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -105,6 +105,17 @@ export default function App() {
 
   useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } }, [presets]);
   useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } }, [binding]);
+
+  const taskPresetsReady = useRef(false);
+  useEffect(() => {
+    if (taskPresetsReady.current) return;
+    taskPresetsReady.current = true;
+    try { if (localStorage.getItem(TASK_PRESET_MARKER)) return; } catch { /* 没有存储时仍按本次会话拆分。 */ }
+    const workspace = ensureTaskPresets(presets, binding);
+    setPresets(workspace.presets);
+    setBinding(workspace.binding);
+    try { localStorage.setItem(TASK_PRESET_MARKER, '1'); } catch { /* 下次启动再拆一次。 */ }
+  }, []);
 
   useEffect(() => {
     try {
@@ -186,7 +197,7 @@ export default function App() {
     const current = boundPreset(task, presets, binding);
     if (!current) { setModal({ type: 'presets', scope }); return; }
     if (!current.builtin) { setModal({ type: 'presets', scope, presetId: current.id }); return; }
-    const copy = duplicatePreset(current);
+    const copy = duplicatePreset(current, scope === 'shared' ? `${current.name} 副本` : promptScopeLabel(scope));
     const nextPresets = [...presets, copy];
     const nextBinding = { ...binding };
     const affected: PromptTask[] = scope === 'shared'
