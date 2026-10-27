@@ -293,12 +293,27 @@ export interface MonsterSpec {
   aura: '静电' | '余烬' | '花瓣' | '故障';
   motif: '猫' | '糖' | '星' | '月' | '蝶' | '钟';
 }
+export type MonsterRuleTrigger = 'roundStart' | 'hit' | 'always';
+export type MonsterRuleEffect = 'heal' | 'buff' | 'haste' | 'debuffAttacker' | 'dot' | 'immuneStun' | 'damageReduce';
+/** 魔物特性：把过去写死在战斗代码里的行为变成可编辑的数据。 */
+export interface MonsterRule {
+  trigger: MonsterRuleTrigger;
+  effect: MonsterRuleEffect;
+  amount?: number;
+  stat?: StatKey | 'hit';
+  duration?: number;
+  /** 触发条件：血量低于该比例（0–1）。 */
+  belowHpPct?: number;
+  /** 本回合受到共情伤害时不触发。 */
+  unlessEmpathyDamage?: boolean;
+}
 export interface MonsterTemplate {
   id: string; name: string; epithet: string; rank: '碎屑' | '游荡' | '灾厄' | '王座';
   element: Element; color: string; maxHp: number; maxSpirit: number;
   stats: Record<StatKey, number>; skillIds: string[];
   trait: string; description: string; spec: MonsterSpec;
   codex: { habit: string; weakness: string };
+  rules?: MonsterRule[];
 }
 export interface PortraitSpec {
   palette: { hair: string; hairShade: string; eye: string; cloth: string; clothShade: string; accent: string };

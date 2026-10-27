@@ -37,6 +37,8 @@ import { StorylineEditorDialog } from './components/StorylineEditorDialog';
 import { StoryGraphDialog } from './components/StoryGraphDialog';
 import { storyPlanTemplate } from './storyplan';
 import { StartDialog } from './components/StartDialog';
+import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
+import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
 import { districtOrder, districts, effectLines } from './districts';
 import './styles.css';
 import './combat.css';
@@ -51,7 +53,7 @@ type Modal =
   | { type: 'story-editor'; id: string }
   | { type: 'story-graph'; id: string }
   | { type: 'codex'; id?: string }
-  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'presets' | 'end-night' };
+  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'presets' | 'end-night' | 'workshop' };
 
 function readSave() { try { return loadState(localStorage.getItem(SAVE_KEY)); } catch { return loadState(null); } }
 function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
@@ -78,6 +80,7 @@ export default function App() {
   const [state, setState] = useState<GameState>(readSave);
   const [page, setPage] = useState<Page>('dispatch');
   const [modal, setModal] = useState<Modal | null>(null);
+  const [library, setLibrary] = useState<ContentLibrary>(loadLibrary);
   const [toast, setToast] = useState<{ message: string; ok: boolean; id: number } | null>(null);
   const [auto, setAuto] = useState(false);
   const [saved, setSaved] = useState(true);
@@ -380,7 +383,7 @@ export default function App() {
   return <div className="app-shell">
     {!started && <StartDialog onStandard={markStarted} onBlank={() => { setState(act(state, { type: 'reset', mode: 'blank' }).state); markStarted(); }} />}
     <a id="skip-main-content" className="skip-link" href="#main-content">跳转到主要内容</a>
-    <Navigation page={page} onPage={navigate} onHelp={() => setModal({ type: 'help' })} onSettings={() => setModal({ type: 'settings' })} onCodex={() => setModal({ type: 'codex' })} onMemorial={() => setModal({ type: 'memorial' })} memorialCount={state.memorial.length} />
+    <Navigation page={page} onPage={navigate} onHelp={() => setModal({ type: 'help' })} onSettings={() => setModal({ type: 'settings' })} onCodex={() => setModal({ type: 'codex' })} onMemorial={() => setModal({ type: 'memorial' })} onWorkshop={() => setModal({ type: 'workshop' })} memorialCount={state.memorial.length} />
     <Topbar state={state} saved={saved} onNotifications={() => setModal({ type: 'notifications' })} onCommand={() => setCmdOpen(true)} />
     <main id="main-content" className={`app-main page-${page}`}>
       {page === 'dispatch' ? <>
@@ -490,7 +493,7 @@ export default function App() {
       </div>
     </div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
-    {modal && modal.type !== 'event' && modal.type !== 'story-editor' && modal.type !== 'story-graph' && <Dialog label={modalTitle} onClose={() => setModal(null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe'}>
+    {modal && modal.type !== 'event' && modal.type !== 'story-editor' && modal.type !== 'story-graph' && modal.type !== 'workshop' && <Dialog label={modalTitle} onClose={() => setModal(null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => void startStory(selectedGirl.id)} onStoryEdit={() => setModal({ type: 'story-editor', id: selectedGirl.id })} onStoryGraph={() => setModal({ type: 'story-graph', id: selectedGirl.id })}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witch ? null : (selectedGirl.witchForm ?? { id: 'witchform', name: '魔女化 · 夜之形', description: '侵蚀越过阈值后显形的另一套礼装。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch' }) })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
@@ -518,6 +521,18 @@ export default function App() {
             perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan: { ...base, graph } });
             setModal({ type: 'girl', id: selectedGirl.id });
             notify('蓝图已保存到这张契约卡。');
+          }}
+        />
+      )}
+      {modal?.type === 'workshop' && (
+        <ContentWorkshopDialog
+          state={state}
+          library={library}
+          onClose={() => setModal(null)}
+          onNotify={notify}
+          onCommit={next => {
+            setLibrary(next);
+            setState(current => ({ ...current, marketStock: withCustomStock(current.marketStock) }));
           }}
         />
       )}

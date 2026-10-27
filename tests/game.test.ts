@@ -13,7 +13,11 @@ import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { defaultPrompts, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, materializeDaily, requestSnapshot } from '../src/llm.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
-import { skills } from '../src/content/skills.ts';
+import { skills, getSkill } from '../src/content/skills.ts';
+import { getItem } from '../src/content/items.ts';
+import { getMonster } from '../src/content/monsters.ts';
+import { simulateBattle } from '../src/combat.ts';
+import { applyLibrary, contentUsage, emptyLibrary, ruleText, sanitizeItem, sanitizeLibrary, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -1617,4 +1621,50 @@ test('奖励节点的技能、数值增长与临时增益会结算到角色身�
   assert.ok(buff);
   assert.equal(buff?.kind, 'buff');
   assert.equal(buff?.remaining, 2);
+});
+
+test('内容库只收自制条目，并能注入注册表与商店货架', () => {
+  const customSkill = sanitizeSkill({
+    id: 'custom-skill-test01', name: '测试星屑', school: '自制', resource: 'hp', power: 1.4,
+    targets: 1, side: 'enemy', cooldown: 1, tier: 'signature',
+    effects: [{ kind: 'buff', stat: 'magic', amount: 3, duration: 2, chance: 0.5 }], description: '测试用。',
+  });
+  const customItem = sanitizeItem({
+    id: 'custom-item-test01', name: '测试护符', faction: 'witch', slot: 'charm', price: 640,
+    standingReq: 2, description: '测试用。', passive: '夜班时魔力 +2', stats: { magic: 2 }, maxHpBonus: 12,
+  });
+  const customMonster = sanitizeMonster({ id: 'custom-monster-test01', name: '测试夜斑蝶', maxHp: 240, rules: [{ trigger: 'always', effect: 'damageReduce', amount: 20 }] });
+  assert.ok(customSkill && customItem && customMonster);
+  assert.equal(sanitizeSkill({ ...skills[0], id: skills[0].id }), undefined);
+  const library = sanitizeLibrary({ skills: [customSkill], items: [{ ...customItem, skillId: 'custom-skill-test01' }], monsters: [{ ...customMonster, skillIds: ['custom-skill-test01'] }] });
+  assert.equal(library.skills.length, 1);
+  assert.equal(library.monsters[0].rules?.[0].amount, 20);
+  assert.ok(library.monsters[0].skillIds.includes('custom-skill-test01'));
+  assert.equal(library.items[0].skillId, 'custom-skill-test01');
+  applyLibrary(library);
+  assert.equal(getSkill('custom-skill-test01').name, '测试星屑');
+  assert.equal(getItem('custom-item-test01').name, '测试护符');
+  assert.equal(getMonster('custom-monster-test01').name, '测试夜斑蝶');
+  assert.match(ruleText({ trigger: 'always', effect: 'damageReduce', amount: 20 }), /减免 20%/);
+  const sold = withCustomStock([{ id: 'stock-custom-custom-item-test01', itemId: 'custom-item-test01', faction: 'witch', sold: true }]);
+  assert.equal(sold.find(entry => entry.itemId === 'custom-item-test01')?.sold, true);
+  const state = createInitialState();
+  state.girls[0].skills.push('custom-skill-test01');
+  assert.ok(contentUsage(state, 'skill', 'custom-skill-test01').includes('契约者技能栏'));
+  applyLibrary(emptyLibrary());
+  assert.equal(getSkill('custom-skill-test01').name, skills[0].name);
+});
+
+test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {
+  const initial = createInitialState();
+  const girl = initial.girls.find(entry => !entry.retired) ?? initial.girls[0];
+  const base = getMonster('mirror-nun');
+  const mission: Mission = { ...initial.missions[0], id: 'rule-mission', title: '特性测试', enemyIds: ['custom-monster-rule01'], rounds: 4, duration: 120, work: 'combat' };
+  const plain = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters: [{ ...base, id: 'custom-monster-rule01', name: '测试靶', maxHp: 800, stats: { magic: 8, insight: 8, agility: 8, empathy: 8 }, rules: [] }] });
+  const tanky = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters: [{ ...base, id: 'custom-monster-rule01', name: '测试靶', maxHp: 800, stats: { magic: 8, insight: 8, agility: 8, empathy: 8 }, rules: [{ trigger: 'always', effect: 'damageReduce', amount: 90 }] }] });
+  const hurt = plain.units.find(unit => unit.monster?.id === 'custom-monster-rule01');
+  const guarded = tanky.units.find(unit => unit.monster?.id === 'custom-monster-rule01');
+  assert.ok(hurt && guarded);
+  assert.ok(hurt.taken > 0);
+  assert.ok(guarded.taken < hurt.taken);
 });

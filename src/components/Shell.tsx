@@ -1,4 +1,4 @@
-import { Map, House, Gem, ScrollText, Landmark, Settings2, CircleHelp, Moon, CloudFog, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass, Terminal, Library } from 'lucide-react';
+import { Map, House, Gem, ScrollText, Landmark, Settings2, CircleHelp, Moon, CloudFog, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass, Terminal, Library, Hammer } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
 import { clock } from '../game';
 import { cityStage, factionAttitude } from '../economy';
@@ -8,7 +8,7 @@ export type Page = 'dispatch' | 'base' | 'market' | 'records' | 'council' | 'wor
 const pages = [{ id: 'dispatch', label: '派遣', Icon: Map }, { id: 'base', label: '基地', Icon: House }, { id: 'council', label: '议会', Icon: Landmark }, { id: 'market', label: '市场', Icon: Gem }, { id: 'records', label: '记录', Icon: ScrollText }] as const;
 const factionOrder: FactionId[] = ['witch', 'association', 'government'];
 
-export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemorial, memorialCount }: { page: Page; onPage: (p: Page) => void; onHelp: () => void; onSettings: () => void; onCodex: () => void; onMemorial: () => void; memorialCount: number }) {
+export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemorial, onWorkshop, memorialCount }: { page: Page; onPage: (p: Page) => void; onHelp: () => void; onSettings: () => void; onCodex: () => void; onMemorial: () => void; onWorkshop: () => void; memorialCount: number }) {
   return <aside className="side-rail">
     <a id="brand-home" href="#dispatch" className="brand-mark" aria-label="夜糖事务所，返回派遣" onClick={e => { e.preventDefault(); onPage('dispatch'); }}>
       <Cat size={28} />
@@ -26,6 +26,7 @@ export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemori
     </nav>
     <div className="rail-bottom">
       <button id="open-codex" className="rail-utility" onClick={onCodex} aria-label="打开魔物图鉴" title="魔物图鉴"><BookOpen size={19} /></button>
+      <button id="open-workshop" className="rail-utility" onClick={onWorkshop} aria-label="打开内容工坊" title="内容工坊"><Hammer size={19} /></button>
       <button id="open-memorial" className="rail-utility memorial-utility" onClick={onMemorial} aria-label="打开星光纪念墙" title="星光纪念墙"><Flower2 size={19} />{memorialCount > 0 && <em className="rail-count">{memorialCount}</em>}</button>
       <button id="open-worldbook" className="rail-utility" onClick={() => onPage('worldbook')} aria-label="世界书与数值规则" title="世界书与数值规则"><Library size={19} /></button>
       <button id="open-help" className="rail-utility" onClick={onHelp} aria-label="操作指南"><CircleHelp size={20} /></button>

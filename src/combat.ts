@@ -1,4 +1,4 @@
-import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterTemplate, Scar, Skill, StatKey } from './types';
+import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
 import { getSkill } from './content/skills.ts';
 import { getMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
@@ -128,6 +128,15 @@ function addEffect(unit: BattleUnit, effect: Omit<ActiveEffect, 'remaining'> & {
   }
   unit.effects.push({ ...effect, remaining: effect.remaining ?? effect.duration });
 }
+function rulesOf(unit: BattleUnit): MonsterRule[] {
+  return unit.monster?.rules ?? [];
+}
+function damageReduction(unit: BattleUnit): number {
+  const pct = rulesOf(unit)
+    .filter(rule => rule.trigger === 'always' && rule.effect === 'damageReduce')
+    .reduce((sum, rule) => sum + (rule.amount ?? 0), 0);
+  return clamp(0, 0.9, pct / 100);
+}
 export const scarCatalog: Omit<Scar, 'id' | 'gainedAt' | 'missionId' | 'maxHpLoss' | 'fatal'>[] = [
   { name: '创伤后夜惊', kind: 'mental', condition: '每晚惊醒三次以上', description: '她不再关灯睡觉。城市的任何一声汽笛，都会让她先摸向枕边的武器。', effect: { kind: 'fatigueRecovery', amount: -8 } },
   { name: '幻听', kind: 'mental', condition: '持续听见不存在的委托提示音', description: '有时她会突然停下，侧耳听很久，然后说「没什么」。', effect: { kind: 'stat', stat: 'insight', amount: -7 } },
@@ -186,6 +195,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
     if (!alive(units, 'ally').length) return 'defeat';
     return undefined;
   };
+  let empathyPrev = new Set<string>();
+  let empathyThisRound = new Set<string>();
   for (let round = 1; round <= rounds; round++) {
     state.round = round;
     for (const unit of units) {
@@ -206,17 +217,24 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           }
         }
       }
-      // 魔物特性：糖王再生、空月越伤越强、末班车逐轮加速。
-      if (unit.portrait === 'candy-king' && unit.hp > 0 && unit.hp < unit.maxHp) {
-        const heal = Math.min(6, unit.maxHp - unit.hp);
-        unit.hp += heal;
-        log({ round, actor: unit.name, skillId: 'trait', skillName: '糖分再生', targets: [unit.name], hit: true, resource: 'hp', amount: heal, note: `王座补给了 ${heal} 点血量` });
-      }
-      if (unit.portrait === 'hollow-moon' && unit.hp < unit.maxHp / 2) {
-        addEffect(unit, { kind: 'buff', stat: 'magic', amount: 8, duration: 99, source: '空月' });
-      }
-      if (unit.portrait === 'night-tram' && round > 1 && !unit.effects.some(e => e.kind === 'stun') && unit.stats.agility < 140) {
-        unit.stats.agility += 4;
+      // 魔物特性：由 MonsterRule 驱动，内置魔物与自制魔物走同一条路径。
+      for (const rule of rulesOf(unit)) {
+        if (rule.trigger !== 'roundStart') continue;
+        if (rule.unlessEmpathyDamage && empathyPrev.has(unit.uid)) continue;
+        if (rule.effect === 'heal') {
+          const heal = Math.min(rule.amount ?? 0, unit.maxHp - unit.hp);
+          if (heal > 0) {
+            unit.hp += heal;
+            unit.healed += heal;
+            log({ round, actor: unit.name, skillId: 'trait', skillName: '特性 · 再生', targets: [unit.name], hit: true, resource: 'hp', amount: heal, note: `特性恢复了 ${heal} 点血量` });
+          }
+        }
+        if (rule.effect === 'buff' && unit.hp < unit.maxHp * (rule.belowHpPct ?? 1)) {
+          addEffect(unit, { kind: 'buff', stat: rule.stat ?? 'magic', amount: rule.amount ?? 0, duration: 99, source: unit.name });
+        }
+        if (rule.effect === 'haste' && round > 1 && !unit.effects.some(e => e.kind === 'stun') && unit.stats.agility < 140) {
+          unit.stats.agility += rule.amount ?? 0;
+        }
       }
       for (const effect of unit.effects) if (effect.kind !== 'stun') effect.remaining -= 1;
       unit.effects = unit.effects.filter(e => e.kind === 'stun' || e.remaining > 0);
@@ -259,21 +277,26 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         if (skill.side === 'enemy') {
           const magic = statOf(unit, 'magic');
           const variance = 0.9 + rng() * 0.2;
-          const mitigation = target.portrait === 'mirror-nun' ? 0.85 : 1;
+          const mitigation = 1 - damageReduction(target);
           // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
           const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain));
           const shield = skill.resource === 'spirit' ? 0 : Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), raw);
           const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, raw) : Math.min(target.hp, absorb(target, raw));
-          if (skill.resource === 'spirit') target.spirit -= dealt;
-          else {
+          if (skill.resource === 'spirit') {
+            target.spirit -= dealt;
+            empathyThisRound.add(target.uid);
+          } else {
             target.hp -= dealt;
             target.taken += dealt;
             unit.dealt += dealt;
           }
           log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: skill.resource, amount: dealt, note: `${target.name}的${skill.resource === 'hp' ? '血量' : '共情值'} ${dealt}`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt } } });
-          if (target.portrait === 'echo-cat') addEffect(unit, { kind: 'debuff', stat: 'hit', amount: 4, duration: 2, source: '回声' });
-          if (target.portrait === 'sugar-moth') addEffect(unit, { kind: 'dot', amount: 6, duration: 1, source: '鳞粉' });
+          for (const rule of rulesOf(target)) {
+            if (rule.trigger !== 'hit') continue;
+            if (rule.effect === 'debuffAttacker') addEffect(unit, { kind: 'debuff', stat: rule.stat ?? 'hit', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
+            if (rule.effect === 'dot') addEffect(unit, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
+          }
           if (target.hp <= 0 || target.spirit <= 0) {
             target.down = true;
             unit.kills += 1;
@@ -288,7 +311,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         }
         for (const effect of skill.effects) {
           if (effect.chance && rng() > effect.chance) continue;
-          if (effect.kind === 'stun' && target.portrait === 'hollow-moon') continue;
+          if (effect.kind === 'stun' && rulesOf(target).some(rule => rule.effect === 'immuneStun')) continue;
           if (skill.side === 'enemy' && target.down && effect.kind !== 'dot') continue;
           addEffect(target, { ...effect, source: skill.name, remaining: effect.duration });
           effectNotes.push(effect.kind);
@@ -304,6 +327,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         break;
       }
     }
+    empathyPrev = empathyThisRound;
+    empathyThisRound = new Set<string>();
     snapshot();
     if (state.outcome) break;
     for (const unit of units) for (const id of Object.keys(unit.cooldown)) unit.cooldown[id] = Math.max(0, unit.cooldown[id] - 1);
