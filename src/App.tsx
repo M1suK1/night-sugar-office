@@ -25,7 +25,7 @@ import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
 import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, loadBinding, loadPresets, presetRuntime, saveBinding, savePresets, type ChatPreset, type PresetBinding, type PromptScope } from './presets';
+import { boundPreset, duplicatePreset, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -130,7 +130,7 @@ export default function App() {
     if (state.day <= lastIncidentDay.current) { lastIncidentDay.current = state.day; return; }
     lastIncidentDay.current = state.day;
     if (state.incidents.some(item => item.status === 'pending') || !loadLlmConfig().apiKey) return;
-    void generateIncident(loadLlmConfig(), state, presetRuntime(boundPreset('story', presets, binding))).then(result => {
+    void generateIncident(loadLlmConfig(), state, presetRuntime(boundPreset('incident', presets, binding))).then(result => {
       if (!result.ok) return;
       const incident: Incident = { id: `inc-llm-${state.day}-${Date.now()}`, day: state.day, kind: 'faction', source: 'llm', title: result.data.title, body: result.data.body, options: result.data.options.map((option, index) => ({ id: `o${index + 1}`, label: option.label, hint: option.hint, effect: option.effect })), status: 'pending' };
       const applied = act(state, { type: 'addIncident', incident });
@@ -149,7 +149,7 @@ export default function App() {
     const beat = story?.beats.find(item => item.eventId === event.id);
     void (async () => {
       const config = loadLlmConfig();
-      const preset = presetRuntime(boundPreset('story', presets, binding));
+      const preset = presetRuntime(boundPreset('arc', presets, binding));
       const memory = story ? [story.title, story.premise, ...story.beats.filter(item => item.index < story.stage).map(item => `${item.title}：${item.hook}`)].join('\n') : '';
       const result = config.apiKey
         ? await generateStoryArc(config, target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset)
@@ -179,29 +179,34 @@ export default function App() {
 
   const notify = (message: string, ok = true) => setToast({ message, ok, id: Date.now() });
 
-  /** 从设置页的任务入口打开预设：内置预设只读，先复制成绑定到对应场景的可编辑副本。 */
+  /** 从设置页的任务入口打开预设：内置预设只读，先复制成只改绑当前任务的可编辑副本。 */
   const openPresetScope = (scope?: PromptScope) => {
     if (!scope) { setModal({ type: 'presets' }); return; }
-    const kind: 'chat' | 'generate' | 'story' = scope === 'chat' ? 'chat'
-      : scope === 'daily' || scope === 'profile' || scope === 'outfit' ? 'generate' : 'story';
-    const current = boundPreset(kind, presets, binding);
+    const task: PromptTask = scope === 'shared' ? 'chat' : scope;
+    const current = boundPreset(task, presets, binding);
     if (!current) { setModal({ type: 'presets', scope }); return; }
     if (!current.builtin) { setModal({ type: 'presets', scope, presetId: current.id }); return; }
     const copy = duplicatePreset(current);
     const nextPresets = [...presets, copy];
-    const nextBinding = { ...binding, [kind]: copy.id };
+    const nextBinding = { ...binding };
+    const affected: PromptTask[] = scope === 'shared'
+      ? PROMPT_TASK_SCOPES.filter(item => binding[item] === current.id)
+      : [task];
+    for (const item of affected.length ? affected : [task]) nextBinding[item] = copy.id;
     setPresets(nextPresets);
     setBinding(nextBinding);
     savePresets(nextPresets);
     saveBinding(nextBinding);
     setModal({ type: 'presets', scope, presetId: copy.id });
-    notify(`已将「${current.name}」复制为可编辑副本，并绑定到${kind === 'chat' ? '角色对话' : kind === 'generate' ? '提案生成' : '故事生成'}。`);
+    notify(scope === 'shared'
+      ? `已将「${current.name}」复制为可编辑副本，并让共用词条同时作用于 ${affected.length} 个任务。`
+      : `已将「${current.name}」复制为可编辑副本，并绑定到「${promptScopeLabel(scope)}」。`);
   };
 
   const describeOutfit = async (portrait: string) => {
     const config = loadLlmConfig();
     if (!config.apiKey.trim()) { notify('填写 API 密钥后，叙事者才能看图写服装描述。', false); return null; }
-    const result = await generateOutfitDescription(config, portrait, presetRuntime(boundPreset('generate', presets, binding)));
+    const result = await generateOutfitDescription(config, portrait, presetRuntime(boundPreset('outfit', presets, binding)));
     if (!result.ok) { notify(result.message, false); return null; }
     notify(result.data.name ? `叙事者写好了「${result.data.name}」。` : '叙事者写好了这套服装的描述。');
     return result.data;
@@ -216,7 +221,7 @@ export default function App() {
     generatingRef.current = true;
     setGenerating(true);
     try {
-      const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), presetRuntime(boundPreset('generate', presets, binding)));
+      const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), presetRuntime(boundPreset('daily', presets, binding)));
       if (!result.ok) {
         if (mode === 'auto') notify(`夜间自动补充停笔：${result.message}`, false);
         return { ok: false, message: result.message };
@@ -253,7 +258,7 @@ export default function App() {
     notify(pendingProposal.warnings.length ? `提案已采纳；其中 ${pendingProposal.warnings.length} 处数值由本地规则裁剪。` : '提案已采纳，今晚的新内容已经入场。');
   };
   const draftGirlProfile = async (portrait?: string, hint?: string) => {
-    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, presetRuntime(boundPreset('generate', presets, binding)));
+    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, presetRuntime(boundPreset('profile', presets, binding)));
     return result.ok ? { ok: true, message: '', profile: result.data } : { ok: false, message: result.message };
   };
   const perform = (action: GameAction, quiet = false) => {
@@ -363,15 +368,21 @@ export default function App() {
         const sub = (rest[0] ?? '').toLowerCase();
         const name = rest.slice(1).join(' ').trim();
         if (!sub || sub === 'list') {
-          const generateId = boundPreset('generate', presets, binding).id;
-          const chatId = boundPreset('chat', presets, binding).id;
-          return presets.map(preset => `${preset.id === generateId ? '[生成]' : ''}${preset.id === chatId ? '[对话]' : ''} ${preset.name}${preset.builtin ? '（内置）' : ''}`).join('\n');
+          return presets.map(preset => {
+            const tasks = PROMPT_TASK_SCOPES.filter(task => binding[task] === preset.id).map(task => promptScopeLabel(task));
+            return `${tasks.length ? `[${tasks.join('/')}] ` : ''}${preset.name}${preset.builtin ? '（内置）' : ''}`;
+          }).join('\n');
         }
         const found = presets.find(preset => preset.name === name || preset.id === name);
         if (!found) return `找不到预设「${name}」。先输入 preset 查看列表。`;
-        const kind = sub === 'chat' ? 'chat' : 'generate';
-        setBinding(current => ({ ...current, [kind]: found.id }));
-        return `已把${kind === 'chat' ? '对话' : '生成'}绑定到「${found.name}」。`;
+        const alias: Record<string, PromptTask> = {
+          chat: 'chat', daily: 'daily', profile: 'profile', storyline: 'storyline', story: 'storyline',
+          event: 'event', arc: 'arc', incident: 'incident', outfit: 'outfit', generate: 'daily',
+        };
+        const task = alias[sub];
+        if (!task) return `未知用途「${sub}」。可用：${PROMPT_TASK_SCOPES.join('、')}。`;
+        setBinding(current => ({ ...current, [task]: found.id }));
+        return `已把「${promptScopeLabel(task)}」绑定到「${found.name}」。`;
       }
       case 'district': case '辖区': {
         const found = districtOrder.map(id => districts[id]).find(region => region.id === arg.toLowerCase() || region.name.includes(arg) || region.subtitle.includes(arg));
@@ -403,7 +414,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     if (target.storyPlan?.beats?.length) { perform({ type: 'startStoryline', girlId }); return; }
-    const result = await generateStoryline(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('story', presets, binding)));
+    const result = await generateStoryline(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('storyline', presets, binding)));
     if (!result.ok) { perform({ type: 'startStoryline', girlId }); notify(`${result.message} 先用模板起了个头。`, false); return; }
     const data = result.data;
     const storyline: Storyline = {
@@ -419,7 +430,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     const storyline = state.storylines.find(item => item.girlId === girlId && item.status === 'active');
-    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, presetRuntime(boundPreset('story', presets, binding)));
+    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, presetRuntime(boundPreset('event', presets, binding)));
     const stamp = Date.now();
     const data = result.ok ? result.data : undefined;
     const fallbackTitle = storyline ? `${storyline.title} · 夜路` : '夜路';

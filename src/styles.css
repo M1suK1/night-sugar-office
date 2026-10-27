@@ -887,7 +887,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .player-wide { margin-top: 8px; }
 .player-wide textarea { resize: vertical; line-height: 1.7; }
 @media (max-width: 720px) { .player-grid { grid-template-columns: 1fr; } .player-card-head { flex-direction: column; } }
-.preset-bind-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.preset-bind-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 860px) { .preset-bind-row { grid-template-columns: 1fr; } }
 /* 月光诊所：治疗面板 */
 .clinic-panel { display: flex; flex-direction: column; gap: 12px; }

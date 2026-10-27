@@ -4,7 +4,7 @@ import { createInitialState, act, loadState, importState, capacity, chance, squa
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
-import { DEFAULT_PROMPTS, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
@@ -1303,6 +1303,24 @@ test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入�
   assert.ok(summary.includes('白鸟（所长）'));
   assert.ok(summary.includes('旧风衣'));
   assert.equal(playerSummary({ name: '', alias: '', pronoun: '', appearance: '', personality: '', background: '', relation: '' }), '');
+});
+test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
+  assert.equal(PROMPT_TASK_SCOPES.length, 8);
+  assert.ok(!PROMPT_TASK_SCOPES.map(String).includes('shared'));
+  assert.deepEqual(Object.keys(DEFAULT_PRESET_BINDING), PROMPT_TASK_SCOPES);
+  const legacy = normalizeBinding({ chat: 'preset-a', generate: 'preset-b', story: 'preset-c' });
+  assert.equal(legacy.chat, 'preset-a');
+  assert.equal(legacy.daily, 'preset-b');
+  assert.equal(legacy.profile, 'preset-b');
+  assert.equal(legacy.outfit, 'preset-b');
+  assert.equal(legacy.storyline, 'preset-c');
+  assert.equal(legacy.event, 'preset-c');
+  assert.equal(legacy.arc, 'preset-c');
+  assert.equal(legacy.incident, 'preset-c');
+  const partial = normalizeBinding({ chat: 'preset-d', daily: 'preset-e' });
+  assert.equal(partial.chat, 'preset-d');
+  assert.equal(partial.daily, 'preset-e');
+  assert.equal(partial.profile, DEFAULT_PRESET_BINDING.profile);
 });
 test('世界书内置 14 条，默认只启用 6 条常驻词条', () => {
   assert.equal(builtinWorldbook().length, 14);

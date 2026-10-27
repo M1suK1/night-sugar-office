@@ -94,3 +94,12 @@
 - [x] ST 导入缺少任务词条时补齐并标记；本作 schema 3 导出往返不增条目；导出保留 scope。
 - [x] 111 项状态测试、52 组浏览器流程、生产构建通过。
 - [x] README 与 `tasks/plan-v12.md` 实施记录。
+
+## v13 每个生成任务独立绑定预设
+
+- [x] `PresetBinding` 从 `chat / generate / story` 三档改为八个任务键；`daily / profile / outfit` 拆开，`storyline / event / arc / incident` 拆开。
+- [x] 旧版三档绑定自动迁移：`generate` 拆给每日提案、角色起草、服装词条，`story` 拆给故事线、私人事件、完整剧情、突发事件。
+- [x] 设置页任务入口只改绑当前任务；共用词条入口复制内置预设时，只改绑原本使用该内置预设的任务。
+- [x] 预设编辑器显示八个独立绑定下拉，旧绑定值回填为对应任务。
+- [x] 112 项状态测试、52 组浏览器流程、生产构建通过。
+- [x] README 与 `tasks/plan-v13.md` 实施记录。

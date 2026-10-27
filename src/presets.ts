@@ -29,6 +29,10 @@ export const PROMPT_SCOPES: PromptScopeInfo[] = [
 
 export const PROMPT_SCOPE_IDS = new Set<PromptScope>(PROMPT_SCOPES.map(scope => scope.id));
 
+/** 可独立绑定预设的生成任务；共用词条随每个任务一起注入，本身没有绑定。 */
+export type PromptTask = Exclude<PromptScope, 'shared'>;
+export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit'];
+
 export function isPromptScope(value: unknown): value is PromptScope {
   return typeof value === 'string' && PROMPT_SCOPE_IDS.has(value as PromptScope);
 }
@@ -459,7 +463,9 @@ function migrateLegacyPromptText(presets: ChatPreset[]): ChatPreset[] {
     };
     savePresets([...presets.filter(preset => !preset.builtin), migrated]);
     if (!localStorage.getItem(PRESET_BINDING)) {
-      saveBinding({ chat: migrated.id, generate: migrated.id, story: migrated.id });
+      const all: PresetBinding = { ...DEFAULT_PRESET_BINDING };
+      for (const task of PROMPT_TASK_SCOPES) all[task] = migrated.id;
+      saveBinding(all);
     }
     return [...presets, migrated];
   } catch {
@@ -835,26 +841,46 @@ export function renderPresetSystem(entries: PromptEntry[], vars: Record<string, 
   return { system, used: [...used], missing: [...missing], tokens: promptTokens(system) };
 }
 
-export interface PresetBinding {
-  chat: string;
-  generate: string;
-  story: string;
-}
+/** 每个生成任务各自一条绑定；旧版 chat/generate/story 会按任务映射迁移。 */
+export type PresetBinding = Record<PromptTask, string>;
 
-const DEFAULT_BINDING: PresetBinding = { chat: 'builtin-balanced', generate: 'builtin-strict', story: 'builtin-balanced' };
+export const DEFAULT_PRESET_BINDING: PresetBinding = {
+  chat: 'builtin-balanced',
+  daily: 'builtin-strict',
+  profile: 'builtin-strict',
+  storyline: 'builtin-balanced',
+  event: 'builtin-balanced',
+  arc: 'builtin-balanced',
+  incident: 'builtin-balanced',
+  outfit: 'builtin-strict',
+};
+
+const LEGACY_TASK: Record<PromptTask, 'chat' | 'generate' | 'story'> = {
+  chat: 'chat', daily: 'generate', profile: 'generate', outfit: 'generate',
+  storyline: 'story', event: 'story', arc: 'story', incident: 'story',
+};
+
+/** 兼容旧版 { chat, generate, story }：generate 拆给提案/起草/服装，story 拆给四类剧情。 */
+export function normalizeBinding(input: unknown): PresetBinding {
+  const parsed = (input && typeof input === 'object' ? input : {}) as Record<string, unknown> & { tasks?: Record<string, unknown> };
+  const source = parsed.tasks && typeof parsed.tasks === 'object' ? parsed.tasks : parsed;
+  const binding = { ...DEFAULT_PRESET_BINDING };
+  for (const task of PROMPT_TASK_SCOPES) {
+    const own = source[task];
+    const legacy = source[LEGACY_TASK[task]];
+    if (typeof own === 'string') binding[task] = own;
+    else if (typeof legacy === 'string') binding[task] = legacy;
+  }
+  return binding;
+}
 
 export function loadBinding(): PresetBinding {
   try {
     const raw = localStorage.getItem(PRESET_BINDING);
-    if (!raw) return { ...DEFAULT_BINDING };
-    const parsed = JSON.parse(raw) as Partial<PresetBinding>;
-    return {
-      chat: typeof parsed.chat === 'string' ? parsed.chat : DEFAULT_BINDING.chat,
-      generate: typeof parsed.generate === 'string' ? parsed.generate : DEFAULT_BINDING.generate,
-      story: typeof parsed.story === 'string' ? parsed.story : DEFAULT_BINDING.story,
-    };
+    if (!raw) return { ...DEFAULT_PRESET_BINDING };
+    return normalizeBinding(JSON.parse(raw));
   } catch {
-    return { ...DEFAULT_BINDING };
+    return { ...DEFAULT_PRESET_BINDING };
   }
 }
 
@@ -862,9 +888,9 @@ export function saveBinding(binding: PresetBinding) {
   try { localStorage.setItem(PRESET_BINDING, JSON.stringify(binding)); } catch { /* session only */ }
 }
 
-export function boundPreset(kind: 'chat' | 'generate' | 'story', presets = loadPresets(), binding = loadBinding()): ChatPreset {
-  const wanted = binding[kind];
-  const fallbackId = kind === 'generate' ? 'builtin-strict' : 'builtin-balanced';
+export function boundPreset(task: PromptTask, presets = loadPresets(), binding = loadBinding()): ChatPreset {
+  const wanted = binding[task];
+  const fallbackId = DEFAULT_PRESET_BINDING[task];
   return presets.find(preset => preset.id === wanted)
     ?? presets.find(preset => preset.id === fallbackId)
     ?? presets[0];

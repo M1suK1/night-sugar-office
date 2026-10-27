@@ -660,9 +660,11 @@ try {
     await page.locator('#preset-entry-up-12').click();
     await expect(page.locator('#preset-entry-content-11')).toHaveValue(/玩家档案/);
     await expect(page.locator('.preset-token-total')).toContainText('tokens');
-    await expect(page.locator('#preset-bind-story')).toHaveValue('builtin-balanced');
-    await page.locator('#preset-bind-story').selectOption({ label: '均衡叙事 副本' });
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').story)).toContain('preset-');
+    await expect(page.locator('.preset-bind-row select')).toHaveCount(8);
+    await expect(page.locator('#preset-bind-arc')).toHaveValue('builtin-balanced');
+    await page.locator('#preset-bind-arc').selectOption({ label: '均衡叙事 副本' });
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').arc)).toContain('preset-');
+    await expect(page.locator('#preset-bind-storyline')).toHaveValue('builtin-balanced');
     await page.screenshot({ path: 'artifacts/preset-entries.png', animations: 'disabled' });
     await page.locator('#preset-tab-advanced').click();
     await page.locator('#preset-api-endpoint').fill('https://api.example.invalid/v1');
@@ -716,7 +718,9 @@ try {
     await expect(page.locator('#preset-tab-prompts')).toHaveClass(/active/);
     await expect(page.locator('#preset-scope-filter')).toHaveValue('daily');
     await expect(page.locator('#preset-name')).toHaveValue(/副本/);
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').generate)).toContain('preset-');
+    await expect(page.locator('#preset-bind-daily')).toHaveValue(/preset-/);
+    await expect(page.locator('#preset-bind-profile')).toHaveValue('builtin-strict');
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').daily)).toContain('preset-');
     await expect(page.locator('.preset-entry')).toHaveCount(1);
     await expect(page.locator('.preset-entry textarea')).toHaveValue(/为今晚的夜班提案/);
     await page.locator('#modal-close').click();
@@ -1071,7 +1075,7 @@ try {
       const presets = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       for (const preset of presets) if (preset.api) preset.api.apiKey = '';
       localStorage.setItem('night-sugar:presets', JSON.stringify(presets));
-      localStorage.setItem('night-sugar:preset-binding', JSON.stringify({ chat: 'builtin-balanced', generate: 'builtin-strict', story: 'builtin-balanced' }));
+      localStorage.setItem('night-sugar:preset-binding', JSON.stringify({ chat: 'builtin-balanced', daily: 'builtin-strict', profile: 'builtin-strict', storyline: 'builtin-balanced', event: 'builtin-balanced', arc: 'builtin-balanced', incident: 'builtin-balanced', outfit: 'builtin-strict' }));
       localStorage.removeItem('night-sugar:llm-config');
     });
     await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);

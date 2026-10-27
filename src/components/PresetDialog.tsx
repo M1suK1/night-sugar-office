@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
-  DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_VARIABLES, applyRegexScripts, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
+  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type RegexScript,
 } from '../presets';
@@ -86,8 +86,12 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
     const next = presets.filter(item => item.id !== preset.id);
     onPresets(next);
     setSelectedId(next[0]?.id ?? '');
-    if (binding.chat === preset.id || binding.generate === preset.id || binding.story === preset.id) {
-      onBinding({ ...binding, chat: 'builtin-balanced', generate: 'builtin-strict', story: 'builtin-balanced' });
+    if (PROMPT_TASK_SCOPES.some(task => binding[task] === preset.id)) {
+      const nextBinding = { ...binding };
+      for (const task of PROMPT_TASK_SCOPES) {
+        if (nextBinding[task] === preset.id) nextBinding[task] = DEFAULT_PRESET_BINDING[task];
+      }
+      onBinding(nextBinding);
     }
     onNotify(`已删除「${preset.name}」。`);
   };
@@ -125,21 +129,11 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
     <p className="muted">{"读取 SillyTavern 对话补全预设的采样参数与提示词词条；词条顺序即拼装顺序，可用 {{world}}、{{player}}、{{context}} 等变量。世界书与酒馆聊天界面不在本作范围内。"}</p>
 
     <div className="preset-bind-row">
-      <label><span>角色对话使用</span>
-        <select id="preset-bind-chat" value={binding.chat} onChange={event => onBinding({ ...binding, chat: event.target.value })}>
+      {PROMPT_TASK_SCOPES.map(task => <label key={task}><span>{promptScopeLabel(task)}使用</span>
+        <select id={`preset-bind-${task}`} value={binding[task]} onChange={event => onBinding({ ...binding, [task]: event.target.value })}>
           {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
         </select>
-      </label>
-      <label><span>每日提案 / 角色起草使用</span>
-        <select id="preset-bind-generate" value={binding.generate} onChange={event => onBinding({ ...binding, generate: event.target.value })}>
-          {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
-        </select>
-      </label>
-      <label><span>故事线 / 剧情使用</span>
-        <select id="preset-bind-story" value={binding.story} onChange={event => onBinding({ ...binding, story: event.target.value })}>
-          {presets.map(item => <option key={item.id} value={item.id}>{item.name}{item.builtin ? '（内置）' : ''}</option>)}
-        </select>
-      </label>
+      </label>)}
     </div>
 
     <div className="preset-layout">
