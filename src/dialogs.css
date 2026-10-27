@@ -155,3 +155,5 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .workshop-monster-preview>div{min-width:0}
 @media(max-width:900px){.workshop-layer{padding:10px}.workshop-body{grid-template-columns:190px minmax(0,1fr)}.workshop-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.workshop-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.workshop-row{grid-template-columns:1fr 1fr}.workshop-head{flex-direction:column}.workshop-head-actions{justify-content:flex-start}}
 @media(max-width:620px){.workshop-layer{padding:0}.workshop-shell{height:100vh;border-radius:0}.workshop-body{grid-template-columns:1fr;grid-template-rows:150px minmax(0,1fr)}.workshop-list{border-right:0;border-bottom:1px solid #ffffff0d}.workshop-grid,.workshop-stats,.workshop-colors{grid-template-columns:1fr}.workshop-monster-preview{flex-direction:column;align-items:flex-start}}
+
+.workshop-import-select{height:31px;padding:0 8px;border-radius:6px;border:1px solid #ffffff16;background:#0e0c12;color:#cbb9d2;font-size:10px}

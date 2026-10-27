@@ -602,3 +602,27 @@ node node_modules/vite/bin/vite.js build --logLevel error
 验证：tsc 0、单测 93/93、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`、`artifacts/workshop-incident.png`。
 
 下一步：M5 内容包导出/导入；以及 `src/game.ts` 的门面化拆分。
+
+---
+
+## 15. 实施记录（M5，已完成）
+
+按 m01857「继续M5」补上内容包的导出与导入。
+
+落地：
+
+- `src/content/library.ts` 新增 `CONTENT_PACK_FORMAT = 'night-sugar/content-library'`、`ContentPackFile`、`exportContentPack`、`readContentPack`、`ImportStrategy`、`mergeContentPack`。
+- 导出格式固定为 `{format, version, exportedAt, skills, items, monsters, missions, incidents}`，导出前统一 `sanitizeLibrary`，只包含自制条目。
+- 读取时校验 JSON、对象、format 与版本（1..`LIBRARY_SCHEMA`）；五类条目逐条走 sanitize，被丢弃的数量记为 `invalid`，不会因坏条目中断整包。
+- 合并不修改原库：先清洗双方，再按 id 判断冲突；`skip` 保留旧条目、`overwrite` 用新条目替换、`rename` 生成新的 `custom-*` id。技能改名会重映射装备的 `skillId` 与魔物的 `skillIds`，魔物改名会重映射委托的 `enemyIds`。
+- 工坊头部新增 `#workshop-export`、`#workshop-import`、`#workshop-import-file`（隐藏 input）与 `#workshop-import-strategy`（冲突另存/覆盖/跳过）；导入后立即 `saveLibrary` + `applyLibrary` + `onCommit`，刷新列表并提示新增/覆盖/跳过/改名/非法数量；导出经 Blob 下载 `night-sugar-content-YYYY-MM-DD.json`。
+- 导入同样触发 `withCustomStock`，自制装备会重新进入商店货架；内容库为空时拒绝导出并提示。
+
+测试：
+
+- `tests/game.test.ts` 新增「内容包能完整导出读回，非法 JSON 与版本会被拒绝」「导入冲突支持跳过、覆盖与另存新 id，并重映射技能引用」。
+- `tests/browser.mjs` 的工坊流程新增：点击导出并读取下载文件、清除 `night-sugar:content:v1` 后刷新确认条目消失、通过文件 input 导入、确认条目恢复与「导入完成」提示。
+
+验证：tsc 0、单测 95/95、浏览器 48/48、构建通过。截图见 `artifacts/workshop.png`。
+
+下一步：`trigger:'pool'` 的弹窗随机调度，以及 `src/game.ts` 的门面化拆分。

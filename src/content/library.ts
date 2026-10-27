@@ -380,6 +380,141 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
   };
 }
 
+export const CONTENT_PACK_FORMAT = 'night-sugar/content-library';
+
+export interface ContentPackFile {
+  format: typeof CONTENT_PACK_FORMAT;
+  version: number;
+  exportedAt: string;
+  skills: Skill[];
+  items: Equipment[];
+  monsters: MonsterTemplate[];
+  missions: MissionTemplate[];
+  incidents: IncidentCard[];
+}
+
+/** 导出当前内容库；格式固定，便于人工检查和跨设备分享。 */
+export function exportContentPack(library: ContentLibrary): ContentPackFile {
+  const clean = sanitizeLibrary(library);
+  return {
+    format: CONTENT_PACK_FORMAT,
+    version: LIBRARY_SCHEMA,
+    exportedAt: new Date().toISOString(),
+    skills: clean.skills,
+    items: clean.items,
+    monsters: clean.monsters,
+    missions: clean.missions,
+    incidents: clean.incidents,
+  };
+}
+
+export interface ContentPackReadResult {
+  ok: boolean;
+  pack?: ContentLibrary;
+  errors: string[];
+  invalid: number;
+}
+
+/** 校验导入文本；只接受本格式，条目逐条走 sanitize，坏条目计入 invalid。 */
+export function readContentPack(raw: string): ContentPackReadResult {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return { ok: false, errors: ['文件不是合法的 JSON。'], invalid: 0 }; }
+  if (!parsed || typeof parsed !== 'object') return { ok: false, errors: ['内容包必须是一个 JSON 对象。'], invalid: 0 };
+  const value = parsed as Record<string, unknown>;
+  if (value.format !== CONTENT_PACK_FORMAT) return { ok: false, errors: ['不是夜糖事务所的内容包（format 不匹配）。'], invalid: 0 };
+  const version = typeof value.version === 'number' ? value.version : 0;
+  if (!Number.isInteger(version) || version < 1 || version > LIBRARY_SCHEMA) {
+    return { ok: false, errors: [`内容包版本 ${String(value.version ?? '未知')} 不受支持（当前支持 1）。`], invalid: 0 };
+  }
+  const pack = sanitizeLibrary(value);
+  const rawCount = ['skills', 'items', 'monsters', 'missions', 'incidents']
+    .reduce((sum, key) => sum + (Array.isArray(value[key]) ? (value[key] as unknown[]).length : 0), 0);
+  const cleanCount = pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length;
+  return { ok: true, pack, errors: [], invalid: Math.max(0, rawCount - cleanCount) };
+}
+
+export type ImportStrategy = 'skip' | 'overwrite' | 'rename';
+
+export interface ContentMergeResult {
+  library: ContentLibrary;
+  added: number;
+  replaced: number;
+  skipped: number;
+  renamed: number;
+  conflicts: number;
+}
+
+type ItemKind = 'skills' | 'items' | 'monsters' | 'missions' | 'incidents';
+type Planned<T> = { action: 'add' | 'replace'; originalId: string; entry: T };
+
+/** 把内容包合并进当前库；冲突可跳过、覆盖或另存为新 id（并重映射跨条目引用）。 */
+export function mergeContentPack(current: ContentLibrary, incoming: ContentLibrary, strategy: ImportStrategy): ContentMergeResult {
+  const base = sanitizeLibrary(current);
+  const pack = sanitizeLibrary(incoming);
+  const skillRename = new Map<string, string>();
+  const monsterRename = new Map<string, string>();
+  const nextId = (kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident') => newContentId(kind);
+
+  const plan = <T extends { id: string }>(kind: ItemKind, list: T[], singular: 'skill' | 'item' | 'monster' | 'mission' | 'incident', rename: Map<string, string> | undefined) => {
+    const existing = new Set(base[kind].map(entry => entry.id));
+    const entries: Planned<T>[] = [];
+    let conflicts = 0, skipped = 0, replaced = 0, renamed = 0;
+    for (const entry of list) {
+      if (!existing.has(entry.id)) {
+        entries.push({ action: 'add', originalId: entry.id, entry });
+        continue;
+      }
+      conflicts++;
+      if (strategy === 'skip') { skipped++; continue; }
+      if (strategy === 'overwrite') {
+        replaced++;
+        entries.push({ action: 'replace', originalId: entry.id, entry });
+        continue;
+      }
+      const id = nextId(singular);
+      rename?.set(entry.id, id);
+      renamed++;
+      entries.push({ action: 'add', originalId: entry.id, entry: { ...entry, id } });
+    }
+    return { entries, conflicts, skipped, replaced, renamed };
+  };
+
+  const skillPlan = plan('skills', pack.skills, 'skill', skillRename);
+  const itemPlan = plan('items', pack.items.map(entry => ({ ...entry, skillId: entry.skillId ? skillRename.get(entry.skillId) ?? entry.skillId : undefined })), 'item', undefined);
+  const monsterPlan = plan('monsters', pack.monsters.map(entry => ({ ...entry, skillIds: entry.skillIds.map(id => skillRename.get(id) ?? id) })), 'monster', monsterRename);
+  const missionPlan = plan('missions', pack.missions.map(entry => ({ ...entry, enemyIds: entry.enemyIds.map(id => monsterRename.get(id) ?? id) })), 'mission', undefined);
+  const incidentPlan = plan('incidents', pack.incidents, 'incident', undefined);
+
+  const apply = <T extends { id: string }>(kind: ItemKind, entries: Planned<T>[]): T[] => {
+    const replacements = new Map(entries.filter(entry => entry.action === 'replace').map(entry => [entry.originalId, entry.entry]));
+    const result = base[kind].map(entry => replacements.get(entry.id) ?? entry) as T[];
+    result.push(...entries.filter(entry => entry.action === 'add').map(entry => entry.entry));
+    return result;
+  };
+
+  return {
+    library: sanitizeLibrary({
+      schemaVersion: LIBRARY_SCHEMA,
+      updatedAt: new Date().toISOString(),
+      skills: apply('skills', skillPlan.entries),
+      items: apply('items', itemPlan.entries),
+      monsters: apply('monsters', monsterPlan.entries),
+      missions: apply('missions', missionPlan.entries),
+      incidents: apply('incidents', incidentPlan.entries),
+    }),
+    added: skillPlan.entries.filter(entry => entry.action === 'add').length
+      + itemPlan.entries.filter(entry => entry.action === 'add').length
+      + monsterPlan.entries.filter(entry => entry.action === 'add').length
+      + missionPlan.entries.filter(entry => entry.action === 'add').length
+      + incidentPlan.entries.filter(entry => entry.action === 'add').length,
+    replaced: skillPlan.replaced + itemPlan.replaced + monsterPlan.replaced + missionPlan.replaced + incidentPlan.replaced,
+    skipped: skillPlan.skipped + itemPlan.skipped + monsterPlan.skipped + missionPlan.skipped + incidentPlan.skipped,
+    renamed: skillPlan.renamed + monsterPlan.renamed,
+    conflicts: skillPlan.conflicts + itemPlan.conflicts + monsterPlan.conflicts + missionPlan.conflicts + incidentPlan.conflicts,
+  };
+}
+
+
 export function loadLibrary(raw?: string | null): ContentLibrary {
   let source = raw;
   if (source === undefined) {

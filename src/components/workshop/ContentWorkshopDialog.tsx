@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Copy, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Copy, Download, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
 import { items as itemRegistry, factionInfo } from '../../content/items';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
@@ -7,8 +7,8 @@ import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from 
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
 import {
-  applyLibrary, contentUsage, emptyIncidentCard, emptyItem, emptyMission, emptyMonster, emptySkill, libraryCounts, ruleText, saveLibrary,
-  type ContentLibrary, type WorkshopKind,
+  applyLibrary, contentUsage, emptyIncidentCard, emptyItem, emptyMission, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
+  type ContentLibrary, type ImportStrategy, type WorkshopKind,
 } from '../../content/library';
 import { MonsterGlyph } from '../MonsterGlyph';
 
@@ -72,6 +72,8 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     incident: library.incidents[0]?.id ?? '',
   });
   const [tab, setTab] = useState<'form' | 'preview'>('form');
+  const [strategy, setStrategy] = useState<ImportStrategy>('rename');
+  const importRef = useRef<HTMLInputElement>(null);
 
   const allSkills = useMemo(() => [...skillRegistry.filter(entry => !isCustom(entry.id)), ...draft.skills], [draft.skills]);
   const allItems = useMemo(() => [...itemRegistry.filter(entry => !isCustom(entry.id)), ...draft.items], [draft.items]);
@@ -219,12 +221,50 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     onNotify('已从草稿中移除，保存后生效。');
   };
 
-  const persist = () => {
-    const clean = saveLibrary(draft);
+  const commit = (next: ContentLibrary) => {
+    const clean = saveLibrary(next);
     applyLibrary(clean);
     setDraft(clean);
     onCommit(clean);
+    return clean;
+  };
+
+  const persist = () => {
+    commit(draft);
     onNotify('内容库已保存，自制内容已进入图鉴、商店、委托轮转与战斗池。');
+  };
+
+  const exportPack = () => {
+    const pack = exportContentPack(draft);
+    const text = JSON.stringify(pack, null, 2);
+    const count = pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length;
+    if (!count) {
+      onNotify('内容库还是空的，先做一点东西再导出。', false);
+      return;
+    }
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `night-sugar-content-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    onNotify(`已导出 ${count} 条自制内容（约 ${Math.max(1, Math.round(text.length / 1024))} KB）。`);
+  };
+
+  const importPack = async (file: File) => {
+    const raw = await file.text();
+    const read = readContentPack(raw);
+    if (!read.ok || !read.pack) {
+      onNotify(read.errors[0] ?? '内容包读取失败。', false);
+      return;
+    }
+    const merged = mergeContentPack(draft, read.pack, strategy);
+    commit(merged.library);
+    const extra = read.invalid ? `；忽略 ${read.invalid} 条非法条目` : '';
+    onNotify(`导入完成：新增 ${merged.added}、覆盖 ${merged.replaced}、跳过 ${merged.skipped}、改名 ${merged.renamed}${extra}。`);
   };
 
   const addEffect = () => {
@@ -298,6 +338,25 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
           </div>
           <div className="workshop-head-actions">
             <button id="workshop-new" className="ghost-btn" onClick={createNew}><Plus size={14} /> 新建{KIND_NEW_LABELS[kind]}</button>
+            <button id="workshop-export" className="ghost-btn" onClick={exportPack} title="导出全部自制内容为 JSON"><Download size={14} /> 导出</button>
+            <button id="workshop-import" className="ghost-btn" onClick={() => importRef.current?.click()} title="从 JSON 内容包导入"><Upload size={14} /> 导入</button>
+            <select id="workshop-import-strategy" className="workshop-import-select" value={strategy} onChange={event => setStrategy(event.target.value as ImportStrategy)} title="导入时的冲突处理方式">
+              <option value="rename">冲突另存</option>
+              <option value="overwrite">冲突覆盖</option>
+              <option value="skip">冲突跳过</option>
+            </select>
+            <input
+              ref={importRef}
+              id="workshop-import-file"
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) void importPack(file);
+              }}
+            />
             <button id="workshop-save" className="primary-btn" onClick={persist}><Save size={14} /> 保存内容库</button>
             <button id="workshop-close" className="icon-btn" onClick={onClose} aria-label="关闭内容工坊"><X size={18} /></button>
           </div>

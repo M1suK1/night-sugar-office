@@ -885,6 +885,27 @@ try {
     await expect(page.locator(`#workshop-entry-${missionId}`)).toBeVisible();
     await page.locator('#workshop-tab-incident').click();
     await expect(page.locator(`#workshop-entry-${incidentId}`)).toBeVisible();
+    fs.mkdirSync('.tmp', { recursive: true });
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('#workshop-export').click(),
+    ]);
+    await download.saveAs('.tmp/content-pack.json');
+    const pack = JSON.parse(fs.readFileSync('.tmp/content-pack.json', 'utf8'));
+    expect(pack.format).toBe('night-sugar/content-library');
+    expect(pack.skills.length).toBe(1);
+    expect(pack.incidents.length).toBe(1);
+    await page.evaluate(() => localStorage.removeItem('night-sugar:content:v1'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-workshop').click();
+    await page.locator('#workshop-tab-skill').click();
+    await expect(page.locator(`#workshop-entry-${skillId}`)).toHaveCount(0);
+    await page.locator('#workshop-import-file').setInputFiles('.tmp/content-pack.json');
+    await expect(page.locator('.game-toast')).toContainText('导入完成');
+    await page.locator('#workshop-tab-skill').click();
+    await expect(page.locator(`#workshop-entry-${skillId}`)).toBeVisible();
+    await page.locator('#workshop-tab-incident').click();
+    await expect(page.locator(`#workshop-entry-${incidentId}`)).toBeVisible();
     await page.locator('#workshop-close').click();
     await page.locator('#nav-dispatch').click();
   });

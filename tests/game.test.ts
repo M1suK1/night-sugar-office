@@ -17,7 +17,7 @@ import { skills, getSkill } from '../src/content/skills.ts';
 import { getItem } from '../src/content/items.ts';
 import { getMonster } from '../src/content/monsters.ts';
 import { simulateBattle } from '../src/combat.ts';
-import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock } from '../src/content/library.ts';
+import { applyLibrary, contentUsage, customMissionTemplates, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
@@ -1729,4 +1729,63 @@ test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {
   assert.ok(hurt && guarded);
   assert.ok(hurt.taken > 0);
   assert.ok(guarded.taken < hurt.taken);
+});
+
+test('内容包能完整导出读回，非法 JSON 与版本会被拒绝', () => {
+  const library = sanitizeLibrary({
+    skills: [{ id: 'custom-skill-pack01', name: '打包星屑', power: 9 }],
+    items: [{ id: 'custom-item-pack01', name: '打包护符', faction: 'witch', slot: 'charm', price: 300, skillId: 'custom-skill-pack01' }],
+    monsters: [{ id: 'custom-monster-pack01', name: '打包夜斑蝶', maxHp: 210, skillIds: ['custom-skill-pack01'] }],
+    missions: [{ id: 'custom-mission-pack01', title: '打包委托', enemyIds: ['custom-monster-pack01'] }],
+    incidents: [{ id: 'custom-incident-pack01', title: '打包弹窗', body: '一条完整的正文。', options: [{ label: '好的', hint: '', effect: { gold: 50 } }, { label: '算了', hint: '', effect: {} }] }],
+  });
+  assert.equal(library.skills.length, 1);
+  assert.equal(library.items[0].skillId, 'custom-skill-pack01');
+  assert.equal(library.monsters[0].skillIds[0], 'custom-skill-pack01');
+  assert.equal(library.missions[0].enemyIds[0], 'custom-monster-pack01');
+  const pack = exportContentPack(library);
+  assert.equal(pack.format, CONTENT_PACK_FORMAT);
+  assert.equal(pack.version, 1);
+  assert.equal(pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length, 5);
+  const read = readContentPack(JSON.stringify(pack));
+  assert.equal(read.ok, true);
+  assert.equal(read.invalid, 0);
+  assert.equal(read.pack?.skills[0].name, '打包星屑');
+  assert.equal(read.pack?.monsters[0].skillIds[0], 'custom-skill-pack01');
+  assert.equal(read.pack?.missions[0].enemyIds[0], 'custom-monster-pack01');
+  assert.equal(read.pack?.incidents[0].options.length, 2);
+  const broken = readContentPack('{oops');
+  assert.equal(broken.ok, false);
+  assert.match(broken.errors[0], /JSON/);
+  const wrongFormat = readContentPack(JSON.stringify({ format: 'other', version: 1 }));
+  assert.equal(wrongFormat.ok, false);
+  assert.match(wrongFormat.errors[0], /format/);
+  const future = readContentPack(JSON.stringify({ ...pack, version: 99 }));
+  assert.equal(future.ok, false);
+  assert.match(future.errors[0], /版本 99/);
+});
+
+test('导入冲突支持跳过、覆盖与另存新 id，并重映射技能引用', () => {
+  const current = sanitizeLibrary({ skills: [sanitizeSkill({ id: 'custom-skill-conf01', name: '旧星屑' })] });
+  const incoming = sanitizeLibrary({
+    skills: [{ id: 'custom-skill-conf01', name: '新星屑' }],
+    items: [{ id: 'custom-item-conf01', name: '冲突护符', faction: 'witch', slot: 'charm', price: 200, skillId: 'custom-skill-conf01' }],
+  });
+  assert.equal(incoming.items[0].skillId, 'custom-skill-conf01');
+  const skip = mergeContentPack(current, incoming, 'skip');
+  assert.equal(skip.conflicts, 1);
+  assert.equal(skip.skipped, 1);
+  assert.equal(skip.added, 1);
+  assert.equal(skip.library.skills[0].name, '旧星屑');
+  const overwrite = mergeContentPack(current, incoming, 'overwrite');
+  assert.equal(overwrite.replaced, 1);
+  assert.equal(overwrite.library.skills[0].name, '新星屑');
+  const rename = mergeContentPack(current, incoming, 'rename');
+  assert.equal(rename.renamed, 1);
+  assert.equal(rename.added, 2);
+  assert.equal(rename.library.skills.length, 2);
+  const renamedSkill = rename.library.skills.find(entry => entry.name === '新星屑');
+  assert.ok(renamedSkill);
+  assert.notEqual(renamedSkill.id, 'custom-skill-conf01');
+  assert.equal(rename.library.items[0].skillId, renamedSkill.id);
 });
