@@ -1316,6 +1316,62 @@ test('魔女化立绘在侵蚀 40 后解锁，可切换与还原', () => {
   assert.equal(act(on.state, { type: 'setWitchForm', girlId: 'yue', outfit: null }).state.girls.find(girl => girl.id === 'yue')!.witch, false);
 });
 
+test('魔女化立绘可提前预留，切换后锁定服装并改写可编辑的负面性格', () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  yue.corruption = 20;
+  const outfit = { id: 'witchform', name: '魔女化 · 夜之形', description: '被执念拖长影子。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'witch', form: 'witch' as const, portrait: 'data:image/svg+xml;base64,PHN2Zy8+' };
+  const reserved = act(base, { type: 'setWitchForm', girlId: 'yue', outfit, activate: false });
+  assert.equal(reserved.ok, true);
+  const reservedGirl = reserved.state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(Boolean(reservedGirl.witch), false);
+  assert.equal(reservedGirl.witchForm?.portrait, outfit.portrait);
+  assert.equal(reservedGirl.witchPersonality, undefined);
+
+  const stillLocked = act(reserved.state, { type: 'changeOutfit', girlId: 'yue', outfitId: 'casual' });
+  assert.equal(stillLocked.ok, true);
+
+  const ready = structuredClone(reserved.state);
+  ready.girls.find(girl => girl.id === 'yue')!.corruption = 45;
+  const activated = act(ready, { type: 'setWitchForm', girlId: 'yue', outfit });
+  assert.equal(activated.ok, true);
+  const witch = activated.state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(witch.witch, true);
+  assert.match(witch.witchPersonality ?? '', /偏执/);
+  assert.match(witch.witchPersonality ?? '', new RegExp(witch.personality.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const locked = act(activated.state, { type: 'changeOutfit', girlId: 'yue', outfitId: 'casual' });
+  assert.equal(locked.ok, false);
+  assert.equal(locked.state.girls.find(girl => girl.id === 'yue')!.witch, true);
+  assert.equal(locked.state.girls.find(girl => girl.id === 'yue')!.outfitId, witch.outfitId);
+
+  const edited = act(activated.state, { type: 'setPersonality', girlId: 'yue', text: '只想把所长留在身边，其他声音都该消失。' });
+  const editedWitch = edited.state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(editedWitch.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
+  assert.equal(editedWitch.personality, witch.personality);
+
+  const restored = act(edited.state, { type: 'setWitchForm', girlId: 'yue', outfit: null });
+  const normal = restored.state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(normal.witch, false);
+  assert.equal(normal.witchForm?.id, 'witchform');
+  assert.equal(normal.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
+  const normalEdit = act(restored.state, { type: 'setPersonality', girlId: 'yue', text: '还是会先把茶泡好。' });
+  assert.equal(normalEdit.state.girls.find(girl => girl.id === 'yue')!.personality, '还是会先把茶泡好。');
+  assert.equal(normalEdit.state.girls.find(girl => girl.id === 'yue')!.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
+
+  const card = buildGirlCard(normal, { day: 1 });
+  assert.equal(card.girl.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
+  const parsed = parseGirlCard(JSON.stringify(card));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok && parsed.card.girl.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
+  assert.notEqual(girlCardHash(card), girlCardHash({ ...card, girl: { ...card.girl, witchPersonality: '另一种魔女化记录。' } }));
+
+  const cleared = act(restored.state, { type: 'clearWitchForm', girlId: 'yue' });
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.state.girls.find(girl => girl.id === 'yue')!.witchForm, undefined);
+  assert.equal(Boolean(cleared.state.girls.find(girl => girl.id === 'yue')!.witch), false);
+});
+
 // ── v6：角色故事线 ──────────────────────────────────────────────
 test('故事线需要羁绊，逐幕选择会推进并在落幕时归档', () => {
   const s = createInitialState();

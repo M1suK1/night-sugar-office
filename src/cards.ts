@@ -18,7 +18,7 @@ export function girlCardHash(card: GirlCard): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${hash(value)}`)
     .join('|');
-  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, variants].join(':'));
+  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants].join(':'));
 }
 
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {
@@ -27,6 +27,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
     girl: {
       name: girl.name, codename: girl.codename, title: girl.title, element: girl.element, archetype: girl.archetype,
       color: girl.color, quote: girl.quote, goal: girl.goal, appearance: girl.appearance, personality: girl.personality,
+      witchPersonality: girl.witchPersonality?.trim() || undefined,
       outfitDescription: girl.outfitDescription, level: girl.level, storyPlan: girl.storyPlan ? { ...girl.storyPlan, beats: girl.storyPlan.beats.map(beat => ({ ...beat })) } : undefined,
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
       portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
@@ -90,6 +91,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       goal: typeof g.goal === 'string' ? g.goal.slice(0, 160) : '还没有写下来的愿望。',
       appearance: typeof g.appearance === 'string' ? g.appearance.slice(0, 240) : '没有留下外貌描述。',
       personality: typeof g.personality === 'string' ? g.personality.slice(0, 240) : '安静。',
+      witchPersonality: typeof g.witchPersonality === 'string' && g.witchPersonality.trim() ? g.witchPersonality.trim().slice(0, 600) : undefined,
       outfitDescription: typeof g.outfitDescription === 'string' ? g.outfitDescription.slice(0, 240) : '值夜制服。',
       level: g.level, stats: Object.fromEntries(STAT_KEYS.map(key => [key, Math.round((g.stats as Record<string, number>)[key])])) as Record<StatKey, number>,
       skillIds: [...g.skillIds], traitIds: [...g.traitIds], portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,

@@ -395,7 +395,7 @@ try {
     await expect(page.locator('.corruption-inline')).toBeVisible();
     await expect(page.locator('.corruption-inline')).toContainText('侵蚀度');
     await page.locator('#dossier-tab-appearance').click();
-    await expect(page.locator('.wardrobe-tile')).toHaveCount(4);
+    await expect(page.locator('.wardrobe-tile')).toHaveCount(5);
     await expect(page.locator('#dossier-wardrobe-import')).toBeVisible();
     await expect(page.locator('.expression-tile')).toHaveCount(6);
     await page.locator('#dossier-outfit-casual').click();
@@ -1608,6 +1608,75 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await expect(page.locator('#expression-variant-card-calm .expression-variant-state')).toHaveText('已导入');
     await page.screenshot({ path: 'artifacts/expression-variants-witch.png', animations: 'disabled' });
     await page.locator('#expression-variant-close').click();
+    await close();
+    await page.evaluate(snapshot => localStorage.setItem('night-sugar-office:v1', JSON.stringify(snapshot)), beforeWitch);
+    await page.reload({ waitUntil: 'networkidle' });
+  });
+  await check('魔女化：预留导入、服装锁定与档案性格编辑', async () => {
+    const beforeWitch = await stored();
+    const normalPersonality = beforeWitch.girls.find(girl => girl.id === 'yue').personality;
+    const art = await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
+      const ctx = canvas.getContext('2d'); if (!ctx) return '';
+      ctx.fillStyle = '#3b2254'; ctx.fillRect(0, 0, 400, 500);
+      ctx.fillStyle = '#e8b3d3'; ctx.beginPath(); ctx.arc(200, 210, 86, 0, Math.PI * 2); ctx.fill();
+      return canvas.toDataURL('image/png');
+    });
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      const yue = raw.girls.find(girl => girl.id === 'yue');
+      yue.corruption = 20; yue.witch = false;
+      delete yue.witchForm; delete yue.witchPersonality;
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-witch-import').click();
+    await page.locator('#witch-form-file').setInputFiles({ name: 'yue-witch.png', mimeType: 'image/png', buffer: Buffer.from(art.split(',')[1], 'base64') });
+    await page.locator('#witch-form-name').fill('魔女化 · 夜之形');
+    await page.locator('#witch-form-description').fill('影子比本人先一步抵达。');
+    await page.screenshot({ path: 'artifacts/witch-form-dialog.png', animations: 'disabled' });
+    await page.locator('#witch-form-save').click();
+    await expect.poll(async () => {
+      const yue = (await stored()).girls.find(girl => girl.id === 'yue');
+      return Boolean(yue.witchForm?.portrait?.startsWith('data:image/') && !yue.witch);
+    }).toBe(true);
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-witch-slot').click();
+    await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(false);
+
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      raw.girls.find(girl => girl.id === 'yue').corruption = 60;
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-witch-slot').click();
+    await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(true);
+    await page.screenshot({ path: 'artifacts/witch-lock.png', animations: 'disabled' });
+    await page.locator('#dossier-outfit-casual').click({ force: true });
+    await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(true);
+
+    await page.locator('#dossier-tab-overview').click();
+    await expect(page.locator('.personality-panel')).toContainText('偏执');
+    await page.locator('#dossier-personality-edit').click();
+    await page.locator('#dossier-personality-input').fill('只想把所长留在身边，其他声音都该消失。');
+    await page.locator('#dossier-personality-save').click();
+    await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witchPersonality).toBe('只想把所长留在身边，其他声音都该消失。');
+    const edited = (await stored()).girls.find(girl => girl.id === 'yue');
+    expect(edited.personality).toBe(normalPersonality);
+    await page.screenshot({ path: 'artifacts/witch-personality.png', animations: 'disabled' });
+
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-witch-slot').click();
+    const restored = (await stored()).girls.find(girl => girl.id === 'yue');
+    expect(restored.witch).toBe(false);
+    expect(restored.witchForm?.portrait?.startsWith('data:image/')).toBe(true);
     await close();
     await page.evaluate(snapshot => localStorage.setItem('night-sugar-office:v1', JSON.stringify(snapshot)), beforeWitch);
     await page.reload({ waitUntil: 'networkidle' });

@@ -491,6 +491,59 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){.expression-variant-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.expression-variant-actions{flex-direction:row}.expression-variant-upload{flex:1}.expression-variant-modal{padding:28px 20px}.expression-variant-foot{align-items:flex-start;flex-direction:column}.expression-variant-foot .btn{width:100%;justify-content:center}}
 @media(max-width:480px){.expression-variant-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.expression-variant-summary{align-items:flex-start;flex-direction:column}.expression-variant-bar{align-items:flex-start;flex-direction:column}.expression-variant-bar .llm-reset{margin-left:0;width:100%;justify-content:center}}
+.wardrobe-tile.locked{opacity:.5}
+.wardrobe-tile.locked:hover{transform:none;border-color:#ffffff12;box-shadow:none}
+.wardrobe-lock{position:absolute;top:5px;left:5px;display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid #ffffff22;border-radius:3px;background:#0a0810d9;color:#b9a3ad;font-family:var(--font-data);font-size:6px;letter-spacing:.04em}
+.wardrobe-tile.reserved .wardrobe-preview{background:radial-gradient(ellipse at 50% 35%,#2d1a2d,#0b0810 72%)}
+.wardrobe-reserve{position:absolute;top:5px;right:5px;display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid #c478b855;border-radius:3px;background:#1a0f1bdd;color:#d8b0d6;font-family:var(--font-data);font-size:6px;letter-spacing:.04em}
+.wardrobe-manage-row{display:flex;gap:8px;margin-top:9px}
+.wardrobe-manage-row .wardrobe-manage{flex:1;width:auto;margin-top:0;min-width:0}
+.wardrobe-manage.witch-import{border-color:#c478b84d;color:#d8b0d6}
+.wardrobe-manage.witch-import:hover{border-color:#c478b8aa;color:#f0d8ee}
+.personality-panel{margin-top:12px;padding:11px 12px;border:1px solid #ffffff12;border-radius:6px;background:linear-gradient(125deg,#140e17,#0b0810)}
+.personality-panel.witch{border-color:#c478b84d;background:linear-gradient(125deg,#211226,#100a13)}
+.personality-head{display:flex;align-items:center;gap:7px;min-width:0}
+.personality-head h3{margin:0;display:flex;align-items:center;gap:5px;font-family:var(--font-display);font-size:12px;font-weight:500;letter-spacing:.05em;color:#e8d2df}
+.personality-head h3 svg{color:#d996ad;stroke-width:1.5}
+.personality-head em{font-family:var(--font-data);font-size:7px;font-style:normal;letter-spacing:.03em;color:#866f7f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.personality-panel.witch .personality-head em{color:#c9a4c8}
+.personality-head .llm-reset{display:inline-flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+.personality-text{margin:8px 0 0;font-size:9.5px;line-height:1.9;color:#c4b4be;white-space:pre-wrap}
+.personality-panel.witch .personality-text{color:#d7c1d1}
+.personality-warning{margin:8px 0 0;padding-top:7px;border-top:1px solid #c478b833;font-size:7.5px;line-height:1.7;color:#b38cad}
+.personality-editor{margin-top:9px}
+.personality-editor textarea{width:100%;min-height:92px;resize:vertical;line-height:1.8}
+.personality-editor-actions{display:flex;align-items:center;gap:6px;margin-top:7px}
+.personality-editor-actions>span{margin-right:auto;font-family:var(--font-data);font-size:7px;color:#756574}
+.personality-editor-actions .btn{display:inline-flex;align-items:center;gap:4px;padding:6px 9px;font-size:8px}
+.witch-form-modal{max-width:880px}
+.witch-form-modal h2{margin:5px 0 8px;font-family:var(--font-display);font-size:29px;font-weight:500;letter-spacing:.05em;color:#f3e2ec}
+.witch-form-modal .muted{max-width:720px;margin:0 0 16px;font-size:9px;line-height:1.8}
+.witch-form-layout{display:grid;grid-template-columns:minmax(230px,310px) minmax(0,1fr);gap:22px;align-items:start}
+.witch-form-preview{position:relative;aspect-ratio:3/4;overflow:hidden;border:1px solid #c478b855;border-radius:6px;background:radial-gradient(ellipse at 50% 30%,#2a1a2b,#09070c 76%)}
+.witch-form-preview.ready{border-color:#c478b888}
+.witch-form-preview .girl-portrait{position:absolute;inset:0;width:100%;height:100%}
+.witch-form-preview .girl-portrait>img{object-fit:cover;object-position:center top}
+.witch-form-preview .girl-portrait>svg{width:100%;height:100%}
+.witch-form-preview>em{position:absolute;left:8px;bottom:8px;padding:3px 6px;border:1px solid #c478b855;border-radius:3px;background:#0b0810d9;color:#d8b0d6;font-family:var(--font-data);font-size:6.5px;font-style:normal;letter-spacing:.06em}
+.witch-form-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px;text-align:center;color:#8e7688;font-size:8px;line-height:1.6}
+.witch-form-empty svg{color:#c478b8}
+.witch-form-fields{display:flex;flex-direction:column;gap:10px;min-width:0}
+.witch-form-fields label{display:block;font-family:var(--font-data);font-size:7px;letter-spacing:.06em;color:#a58d9b}
+.witch-form-fields label input,.witch-form-fields label textarea{display:block;width:100%;min-height:38px;margin-top:6px;border:1px solid #f3aec924;background:#0d0b13;padding:9px 11px;color:#f4ecf3;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;font-size:11px;line-height:1.7;outline:0;transition:border-color .2s}
+.witch-form-fields label input:focus,.witch-form-fields label textarea:focus{border-color:#c478b8}
+.witch-form-fields label textarea{resize:vertical;min-height:86px}
+.witch-form-upload{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 12px;font-size:10px;border-color:#c478b855;background:#c478b80f;color:#eed7eb}
+.witch-form-upload:hover{border-color:#c478b8aa;background:#c478b81c}
+.witch-form-threshold{margin:0;font-family:var(--font-data);font-size:7.5px;line-height:1.7;color:#806c7c}
+.witch-form-threshold b{color:#d8b0d6;font-weight:500}
+.witch-form-note{margin:0;padding:7px 9px;border:1px solid #c478b838;border-radius:4px;background:#c478b80b;color:#d8b9d4;font-size:8px;line-height:1.6}
+.witch-form-actions{display:flex;align-items:center;gap:8px;margin-top:2px}
+.witch-form-actions .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:9px 13px;font-size:9px}
+.witch-form-remove{border-color:#d85a7f44;color:#dda0b2}
+.witch-form-remove:hover{border-color:#d85a7f99;color:#f0bccb}
+@media(max-width:760px){.witch-form-layout{grid-template-columns:1fr}.witch-form-preview{max-width:310px;width:100%;margin:0 auto}.witch-form-modal h2{font-size:24px}.wardrobe-manage-row{flex-direction:column}}
+@media(max-width:480px){.personality-head{flex-wrap:wrap}.personality-head .llm-reset{margin-left:0}.personality-editor-actions{flex-wrap:wrap}.personality-editor-actions>span{width:100%;margin-right:0}.witch-form-actions{flex-direction:column;align-items:stretch}.witch-form-actions .btn{width:100%}}
 .equipment-slots{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .equipment-slot{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:92px;padding:10px 11px;text-align:left;border:1px solid #ffffff12;border-radius:5px;background:linear-gradient(145deg,#120d16,#09070c);transition:border-color .2s,transform .2s,background .2s}
 .equipment-slot:hover,.equipment-slot.active{border-color:#f3aec977;background:linear-gradient(145deg,#1a1020,#0a070c);transform:translateY(-1px)}

@@ -64,7 +64,7 @@ export interface GirlCard {
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
-    portraitHint?: string; witchForm?: Outfit; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
+    portraitHint?: string; witchForm?: Outfit; witchPersonality?: string; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
   };
 }
 
@@ -403,6 +403,8 @@ export interface Girl {
   contractEndDay: number; contractDays: number; contractRenewals: number;
   retiredReason?: 'contract' | 'injury'; pensionMissed: number;
   appearance: string; personality: string; outfitDescription: string;
+  /** 魔女化后的性格记录；普通形态仍保留原性格。 */
+  witchPersonality?: string;
   wardrobe: Outfit[]; outfitId: string; expression: Expression;
   /** 魔女形态礼装；独立于四格衣柜。 */
   witchForm?: Outfit;
@@ -608,6 +610,7 @@ export type GameAction =
   | { type: 'clinic'; girlId: string; mode: 'treat' | 'wipe' | 'clone'; kink?: boolean }
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
+  | { type: 'setPersonality'; girlId: string; text: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
   | { type: 'setPoolLimit'; pool: 'missions' | 'monsters' | 'candidates'; value: number }
   | { type: 'deleteMission'; missionId: string }
@@ -629,7 +632,8 @@ export type GameAction =
   | { type: 'importWardrobe'; girlId: string; outfits: Outfit[]; outfitId?: string; mode?: 'merge' | 'replace'; source?: string }
   | { type: 'removeOutfit'; girlId: string; outfitId: string }
   | { type: 'renameOutfit'; girlId: string; outfitId: string; name: string; description?: string }
-  | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null }
+  | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null; activate?: boolean }
+  | { type: 'clearWitchForm'; girlId: string }
   | { type: 'addIncident'; incident: Incident }
   | { type: 'resolveIncident'; incidentId: string; optionId: string }
   | { type: 'startStoryline'; girlId: string; direction?: string }

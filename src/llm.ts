@@ -199,7 +199,7 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
   const skillNames = girl.skills.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、');
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.description}）`).join('；');
   const body = `身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}，等级 ${girl.level}。
-外貌：${girl.appearance ?? '不详'}。性格：${girl.personality ?? '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
+外貌：${girl.appearance ?? '不详'}。性格：${activePersonality(girl) || '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
 登场台词：${girl.quote ?? '没有留下出场白'}。当前目标：${girl.goal ?? '没有写下来的愿望'}。特性：${traitText || '无'}。技能：${skillNames || '未记录'}。
 对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
 与同伴的关系：${peers.join('；') || '还没有特别亲近的同伴'}。
@@ -660,7 +660,7 @@ export interface GeneratedEvent { title: string; hook: string; scenes: { title: 
 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
-  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；性格：${girl.personality}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
+  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；性格：${activePersonality(girl)}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
 }
 
 function parseEffect(raw: unknown): StoryEffect {
@@ -718,7 +718,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
 要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清"她要在这场委托里做到什么"，不能是空泛的情绪；duration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。`;
   const result = await callJson(config, preset, 'storyline', body, `请为${girl.name}写这条故事线。`, ['共用词条 + 故事线词条 + 结构契约', `档案：${girl.name}`], meta, {
     char: girlBrief(girl),
-    personality: girl.personality,
+    personality: activePersonality(girl),
     scenario: direction?.trim() ?? '',
   });
   if (!result.ok) {
@@ -808,7 +808,7 @@ ${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。
 要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行。`;
   const result = await callJson(config, preset, 'event', body, `请写下${girl.name}的这段事件。`, ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
-    personality: girl.personality,
+    personality: activePersonality(girl),
     scenario: storyline ? `${storyline.title}——${storyline.premise}` : '',
     story: storyline?.title ?? '',
   });
@@ -880,7 +880,7 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
 要求：${ARC_TARGETS}；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」这类表演提示；effect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6；summary 用 60–120 字概括这一段剧情。`;
   const result = await callJson(config, preset, 'arc', body, `请写下${girl.name}的这段剧情。`, ['共用词条 + 完整剧情词条 + 结构契约', `角色：${girl.name}`, '前情与这一幕'], meta, {
     char: girlBrief(girl),
-    personality: girl.personality,
+    personality: activePersonality(girl),
     scenario: [input.premise, input.beatTitle, input.beatHook].filter(Boolean).join('\n'),
     story: input.storylineTitle ?? '',
   });
@@ -1094,6 +1094,7 @@ import { skills } from './content/skills.ts';
 import { traits } from './content/traits.ts';
 import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { battleCast, battleDigest, normalizeBattleNoteDraft, totalBattleRounds, validateBattleNoteDraft } from './battleNote.ts';
+import { activePersonality } from './personality.ts';
 import type { Archetype, BattleNote, BattleState, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */

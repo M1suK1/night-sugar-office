@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { rules } from '../balance';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVariantKey } from '../expressions';
+import { activePersonality } from '../personality';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -29,7 +30,7 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onPersonality }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
@@ -45,12 +46,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onStoryMission: (missionId: string) => void;
   onEvent: () => void;
   onWitch: () => void;
+  onWitchForm: () => void;
+  onPersonality: (text: string) => void;
   onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onExportCard: () => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
   const [equipmentDrawer, setEquipmentDrawer] = useState<'weapon' | 'charm' | null>(null);
   const [dragOver, setDragOver] = useState<'weapon' | 'charm' | null>(null);
   const [drawerMessage, setDrawerMessage] = useState('');
+  const [editingPersonality, setEditingPersonality] = useState(false);
+  const [personalityDraft, setPersonalityDraft] = useState('');
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
@@ -73,6 +78,19 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
     ? storyline.graph.nodes.find(node => node.id === storyline.run?.waiting?.ref)
     : undefined;
   const witchOutfit = girl.witchForm;
+  const personality = activePersonality(girl);
+
+  function beginPersonalityEdit() {
+    setPersonalityDraft(personality);
+    setEditingPersonality(true);
+  }
+
+  function savePersonality() {
+    const text = personalityDraft.trim();
+    if (!text) return;
+    onPersonality(text);
+    setEditingPersonality(false);
+  }
 
   function equipFromInventory(itemId: string, slot: 'weapon' | 'charm') {
     const item = getItem(itemId);
@@ -147,6 +165,24 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <p>{girl.scars.length >= 4 ? '第 5 道疤痕会带来不可逆的死亡。她仍可以申请退役，转任事务所文职。' : `每道疤痕让血量上限降低约 8%。当前上限 ${girl.maxHp} / 基础 ${girl.baseMaxHp}。`}</p>
             </div>
             <p className="dossier-description">{girl.description}</p>
+            <section className={`personality-panel ${girl.witch ? 'witch' : ''}`} aria-labelledby="personality-title">
+              <div className="personality-head">
+                <h3 id="personality-title"><Brain size={14} />性格</h3>
+                <em>{girl.witch ? '魔女化记录 · 负面倾向增强' : '原本记录'}</em>
+                {!editingPersonality && <button id="dossier-personality-edit" type="button" className="llm-reset" onClick={beginPersonalityEdit}><Pencil size={12} />编辑</button>}
+              </div>
+              {editingPersonality ? (
+                <div className="personality-editor">
+                  <textarea id="dossier-personality-input" className="av-input" rows={5} maxLength={600} value={personalityDraft} onChange={event => setPersonalityDraft(event.target.value)} autoFocus />
+                  <div className="personality-editor-actions">
+                    <span>{personalityDraft.trim().length} / 600</span>
+                    <button id="dossier-personality-cancel" type="button" className="btn" onClick={() => setEditingPersonality(false)}><X size={13} />取消</button>
+                    <button id="dossier-personality-save" type="button" className="btn primary" disabled={!personalityDraft.trim()} onClick={savePersonality}><Check size={13} />保存</button>
+                  </div>
+                </div>
+              ) : <p className="personality-text">{personality}</p>}
+              {girl.witch && <p className="personality-warning">魔女化会把原本的执念放大成偏执、嫉妒与占有欲；恢复普通形态后仍会读取原本的性格记录。</p>}
+            </section>
             <section className="story-panel" aria-labelledby="story-title">
               <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{girl.storyPlan ? '手稿由你写下 · 开场后按幕推进' : '由叙事者按她的过去写四幕 · 每幕的选项会落到状态上'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${storyline.beats.length} 幕` : '未开启'}</em></div>
               {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
@@ -277,19 +313,24 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>四格礼装 · 换装同步立绘与头像</small></div><em>{Math.min(4, girl.wardrobe.length)} / 4</em></div>
                 <div className="wardrobe-grid">
                   {girl.wardrobe.slice(0, 4).map(outfit => (
-                    <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id ? 'picked' : ''}`} aria-pressed={girl.outfitId === outfit.id} onClick={() => onChangeOutfit(outfit.id)}>
+                    <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id && !girl.witch ? 'picked' : ''} ${girl.witch ? 'locked' : ''}`} aria-pressed={girl.outfitId === outfit.id && !girl.witch} aria-disabled={girl.witch} title={girl.witch ? '魔女化期间锁定在第五格' : undefined} onClick={() => onChangeOutfit(outfit.id)}>
                       <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id, witch: false }} variant="avatar" /></span>
                       <span className="wardrobe-copy"><b>{outfit.name}{outfit.custom && <em className="wardrobe-tag">契约礼装</em>}</b><small title={outfit.description}>{outfit.description}</small></span>
-                      {girl.outfitId === outfit.id && <span className="wardrobe-check"><BadgeCheck size={12} /></span>}
+                      {girl.outfitId === outfit.id && !girl.witch && <span className="wardrobe-check"><BadgeCheck size={12} /></span>}
+                      {girl.witch && <span className="wardrobe-lock"><LockKeyhole size={11} />锁定</span>}
                     </button>
                   ))}
                   {girl.wardrobe.length < 4 && <button id="dossier-wardrobe-import" type="button" className="wardrobe-tile wardrobe-add" onClick={onWardrobe}><span className="wardrobe-preview"><PackageOpen size={18} /></span><span className="wardrobe-copy"><b>导入衣柜</b><small>立绘、JSON 或从其他契约者复制</small></span></button>}
-                  {(witchOutfit || girl.corruption >= rules().corruptionThreshold) && <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch}>
-                    <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: Boolean(witchOutfit), witchForm: witchOutfit, outfitId: 'witchform', portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
-                    <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已解锁 · 点击切换') : '侵蚀 40 解锁'}</small></span>
-                  </button>}
+                  <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''} ${!witchOutfit ? 'reserved' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch}>
+                    <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: true, witchForm: witchOutfit, outfitId: 'witchform', portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
+                    <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已预留 · 点击切换') : (girl.corruption >= rules().corruptionThreshold ? '已解锁 · 点击导入' : '为魔女化预留 · 点击导入')}</small></span>
+                    {!witchOutfit && <span className="wardrobe-reserve"><ImagePlus size={11} />待导入</span>}
+                  </button>
                 </div>
-                <button id="dossier-wardrobe-manage" type="button" className="llm-reset wardrobe-manage" onClick={onWardrobe}>管理衣柜 · 导入 / 删除</button>
+                <div className="wardrobe-manage-row">
+                  <button id="dossier-wardrobe-manage" type="button" className="llm-reset wardrobe-manage" onClick={onWardrobe}>管理衣柜 · 导入 / 删除</button>
+                  <button id="dossier-witch-import" type="button" className="llm-reset wardrobe-manage witch-import" onClick={onWitchForm}><ImagePlus size={13} />{witchOutfit ? '替换魔女化立绘' : '导入魔女化立绘'}</button>
+                </div>
               </section>
 
               <section className="appearance-section" aria-labelledby="expression-title">

@@ -3,6 +3,7 @@ import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey, sanitizeExpressionVariants } from './expressions.ts';
+import { defaultWitchPersonality } from './personality.ts';
 import { ensureGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
@@ -179,6 +180,7 @@ function hydrate(girl: Girl): Girl {
     const witch = sanitizeOutfit({ ...g.witchForm, id: 'witchform', form: 'witch' }, g.color);
     g.witchForm = witch ? { ...witch, form: 'witch' } : undefined;
   }
+  if (g.witch && !g.witchPersonality?.trim()) g.witchPersonality = defaultWitchPersonality(g);
   g.portraitHint ??= '';
   g.storyPlan = g.storyPlan ? sanitizeStoryPlan(g.storyPlan) ?? undefined : undefined;
   g.eventBadge ??= undefined;
@@ -2335,9 +2337,9 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'changeOutfit': {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.witch) return { state, ok: false, message: '魔女化期间已锁定在魔女化立绘；先点击衣柜第五格恢复普通形态。' };
       if (!girl.wardrobe.some(o => o.id === action.outfitId)) return { state, ok: false, message: '衣柜里没有这套服装。' };
       girl.outfitId = action.outfitId;
-      girl.witch = false;
       return { state: next, ok: true, message: `${girl.name}换上了「${girl.wardrobe.find(o => o.id === action.outfitId)?.name}」。` };
     }
     case 'setExpression': {
@@ -2345,6 +2347,15 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       girl.expression = action.expression;
       return { state: next, ok: true, message: `${girl.name}的表情已切换。` };
+    }
+    case 'setPersonality': {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const text = action.text.trim().slice(0, 600);
+      if (!text) return { state, ok: false, message: '性格描述不能为空。' };
+      if (girl.witch) girl.witchPersonality = text;
+      else girl.personality = text;
+      return { state: next, ok: true, message: girl.witch ? `${girl.name}的魔女化性格记录已更新。` : `${girl.name}的性格记录已更新。` };
     }
     case 'endNight': return endNight(state);
     case 'importWardrobe': {
@@ -2526,7 +2537,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
         goal: g.goal, goalKind: '成长', traits: g.traitIds.map(id => traitById.get(id)).filter((trait): trait is NonNullable<typeof trait> => Boolean(trait)), conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
-        appearance: g.appearance, personality: g.personality, outfitDescription: g.outfitDescription,
+        appearance: g.appearance, personality: g.personality, witchPersonality: g.witchPersonality, outfitDescription: g.outfitDescription,
         wardrobe: g.wardrobe?.length
           ? g.wardrobe
           : [customOutfitFor({ color: g.color, outfitDescription: g.outfitDescription, portrait: g.portrait, portraitSpec: g.portraitSpec })],
@@ -2634,18 +2645,29 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!action.outfit) {
-        girl.witchForm = undefined;
+        if (!girl.witch) return { state, ok: false, message: `${girl.name}现在没有处于魔女化状态。` };
         girl.witch = false;
-        return { state: next, ok: true, message: `${girl.name}的魔女化立绘已撤下。` };
+        return { state: next, ok: true, message: `${girl.name}已恢复普通形态；魔女化立绘仍留在衣柜第五格。` };
       }
+      const activate = action.activate !== false;
       const witchAt = loadBalance().corruptionThreshold;
-      if (girl.corruption < witchAt && !girl.witch) return { state, ok: false, message: `${girl.name}的侵蚀还没有到能留下魔女姿态的程度（${witchAt}）。` };
+      if (activate && girl.corruption < witchAt && !girl.witch) return { state, ok: false, message: `${girl.name}的侵蚀还没有到能切换到魔女姿态的程度（${witchAt}）。立绘仍可以先导入。` };
       const outfit = sanitizeOutfit({ ...action.outfit, id: 'witchform', form: 'witch' }, girl.color);
       if (!outfit) return { state, ok: false, message: '这份魔女化立绘无法识别。' };
       girl.witchForm = { ...outfit, form: 'witch' };
+      if (!activate) return { state: next, ok: true, message: `${girl.name}的魔女化立绘已保存到衣柜第五格。` };
       girl.witch = true;
+      if (!girl.witchPersonality?.trim()) girl.witchPersonality = defaultWitchPersonality(girl);
       next.logs.unshift({ id: `log-witchform-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}允许你保存了她的魔女化立绘。` });
-      return { state: next, ok: true, message: '魔女化立绘已保存到衣柜的第五格。' };
+      return { state: next, ok: true, message: `${girl.name}已切换到魔女化立绘，普通服装暂时锁定。` };
+    }
+    case 'clearWitchForm': {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!girl.witchForm) return { state, ok: false, message: '还没有保存过魔女化立绘。' };
+      girl.witchForm = undefined;
+      girl.witch = false;
+      return { state: next, ok: true, message: `${girl.name}的魔女化立绘已撤下，第五格重新空出。` };
     }
     case 'addIncident': {
       const next = clone(state);
