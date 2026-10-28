@@ -33,6 +33,18 @@ export function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, 
   return canvas.toDataURL('image/webp', 0.78);
 }
 
+/** 把用户选中的图片按 4:5 居中裁好，供立绘、礼装和表情差分共用。 */
+export async function resizeImageFile(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('请选择图片文件。');
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    return cropToDataUrl(image, 1, 0, 0);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export interface CutoutOptions {
   /** 颜色容差，0–120；越大去掉得越多。 */
   tolerance?: number;

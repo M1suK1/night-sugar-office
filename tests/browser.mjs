@@ -413,6 +413,66 @@ try {
     await page.screenshot({ path: 'artifacts/appearance-desktop.png', fullPage: true, animations: 'disabled' });
     await close();
   });
+  await check('表情差分：按服装导入、批量识别、切换立绘与移除', async () => {
+    const face = (color, label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100"><rect width="80" height="100" fill="${color}"/><circle cx="40" cy="42" r="24" fill="#f7dce8"/><text x="40" y="90" text-anchor="middle" font-size="12" fill="#20101a">${label}</text></svg>`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-expression-manage').click();
+    await expect(page.locator('.expression-variant-modal')).toBeVisible();
+    await expect(page.locator('.expression-variant-card')).toHaveCount(6);
+    await page.locator('#expression-variant-file-calm').setInputFiles({ name: 'yue-calm.svg', mimeType: 'image/svg+xml', buffer: face('#7ec8ff', 'CALM') });
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(1);
+    await expect(page.locator('#expression-variant-file-shy')).toBeEnabled();
+    await page.locator('#expression-variant-file-shy').setInputFiles({ name: 'yue-shy.svg', mimeType: 'image/svg+xml', buffer: face('#f3aec9', 'SHY') });
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(2);
+    await expect(page.locator('#expression-variant-batch')).toBeEnabled();
+    await page.locator('#expression-variant-batch').setInputFiles([
+      { name: 'yue-smile.svg', mimeType: 'image/svg+xml', buffer: face('#ffd38a', 'SMILE') },
+      { name: 'yue-surprise.svg', mimeType: 'image/svg+xml', buffer: face('#b69cff', 'SURPRISE') },
+    ]);
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(4);
+    await expect(page.locator('.expression-variant-state.ready')).toHaveCount(4);
+    const outfitCount = (await stored()).girls.find(g => g.id === 'yue').wardrobe.length;
+    await expect(page.locator('.expression-variant-outfits button')).toHaveCount(outfitCount);
+    await page.locator('#expression-variant-outfit-casual').click();
+    await expect(page.locator('.expression-variant-state.ready')).toHaveCount(0);
+    await page.locator('#expression-variant-file-calm').setInputFiles({ name: 'yue-calm.svg', mimeType: 'image/svg+xml', buffer: face('#9edfc4', 'CALM') });
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(5);
+    await expect(page.locator('#expression-variant-outfit-casual')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.expression-variant-state.ready')).toHaveCount(1);
+    await page.locator('#expression-variant-remove-calm').click();
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(4);
+    await expect(page.locator('#expression-variant-outfit-casual')).toHaveAttribute('aria-selected', 'true');
+    await page.locator('#expression-variant-outfit-uniform').click();
+    await expect(page.locator('.expression-variant-state.ready')).toHaveCount(4);
+    await page.screenshot({ path: 'artifacts/expression-variants.png', animations: 'disabled' });
+
+    await page.locator('#expression-variant-close').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-expression-calm').click();
+    const calmSrc = await page.locator('.dossier-art .girl-portrait.imported img').getAttribute('src');
+    await page.locator('#dossier-expression-shy').click();
+    const shySrc = await page.locator('.dossier-art .girl-portrait.imported img').getAttribute('src');
+    expect(calmSrc).not.toBe(shySrc);
+    const outfitId = (await stored()).girls.find(g => g.id === 'yue').outfitId;
+    expect(calmSrc).toContain('data:image/webp');
+    expect(shySrc).toContain('data:image/webp');
+
+    await page.locator('#dossier-outfit-casual').click();
+    await expect(page.locator('.dossier-art .girl-portrait.imported')).toHaveCount(0);
+    await page.locator('#dossier-outfit-uniform').click();
+    await page.locator('#dossier-expression-manage').click();
+    await page.locator('#expression-variant-remove-shy').click();
+    await expect.poll(async () => Object.keys((await stored()).girls.find(g => g.id === 'yue').importedVariants ?? {}).length).toBe(3);
+    await page.locator('#expression-variant-close').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-expression-shy').click();
+    await expect(page.locator('.dossier-art .girl-portrait.imported')).toHaveCount(0);
+    expect(outfitId).toBe('uniform');
+    await close();
+  });
   await check('势力物资每日货位、单次限购与售罄状态', async () => {
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'networkidle' });

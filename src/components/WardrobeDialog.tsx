@@ -3,7 +3,7 @@ import { Upload, FileJson, ImagePlus, ClipboardPaste, Sparkles, Scissors, Trash2
 import type { Girl, GameState, Outfit } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { CutoutPreview } from './CutoutPreview';
-import { loadImage, removeImageBackground } from '../image';
+import { loadImage, removeImageBackground, resizeImageFile } from '../image';
 
 type Mode = 'merge' | 'replace';
 
@@ -62,30 +62,6 @@ function readOutfits(raw: unknown, fallbackColor: string): { outfits: Outfit[]; 
   return { outfits, note };
 }
 
-/** 缩放到 768×960 的 webp：足够作为立绘，又不至于撑爆存档。 */
-function resizeImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('图片读取失败'));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error('不是可识别的图片格式'));
-      image.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 768; canvas.height = 960;
-        const context = canvas.getContext('2d');
-        if (!context) { reject(new Error('浏览器不支持画布')); return; }
-        const scale = Math.max(768 / image.width, 960 / image.height);
-        const width = image.width * scale, height = image.height * scale;
-        context.drawImage(image, (768 - width) / 2, (960 - height) / 2, width, height);
-        resolve(canvas.toDataURL('image/webp', 0.84));
-      };
-      image.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, onClose }: {
   girl: Girl; state: GameState;
   onImport: (outfits: Outfit[], mode: Mode) => void;
@@ -120,7 +96,7 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     setBusy(true);
     try {
       if (file.type.startsWith('image/')) {
-        const portrait = await resizeImage(file);
+        const portrait = await resizeImageFile(file);
         const name = file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 16) || '导入立绘';
         addStaged([{ id: `import-${Date.now().toString(36)}`, name, description: '还没有描述。可以先去掉背景，再让叙事者看图补全。', palette: paletteFrom(girl.color), layerKey: layerFrom(file.name), portrait, imported: true }], `已读取立绘「${name}」`);
         return;

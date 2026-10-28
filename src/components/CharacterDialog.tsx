@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { rules } from '../balance';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
+import { EXPRESSIONS, EXPRESSION_META, expressionVariantKey } from '../expressions';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -19,10 +20,7 @@ const dossierTabs = [
   { id: 'appearance', label: '外观装备' },
   { id: 'memory', label: '心愿与羁绊' },
 ];
-const expressions: { id: Expression; label: string; note: string }[] = [
-  { id: 'calm', label: '平静', note: '呼吸放轻' }, { id: 'smile', label: '微笑', note: '眼角弯起' }, { id: 'surprise', label: '惊讶', note: '微微睁大' },
-  { id: 'sad', label: '低落', note: '视线垂下' }, { id: 'angry', label: '生气', note: '眉峰压低' }, { id: 'shy', label: '害羞', note: '别开脸' },
-];
+const expressions: { id: Expression; label: string; note: string }[] = EXPRESSIONS.map(id => ({ id, label: EXPRESSION_META[id].label, note: EXPRESSION_META[id].note }));
 const expressionIcons = { calm: Meh, smile: Smile, surprise: Sparkles, sad: Frown, angry: Angry, shy: Heart } as const;
 const slotLabels = { weapon: '法器', charm: '护符' } as const;
 
@@ -31,12 +29,13 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
+  onExpressionVariants: () => void;
   onWardrobe: () => void;
   onStory: () => void;
   onStoryEdit: () => void;
@@ -65,6 +64,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
   const gear = items.filter(item => (item.slot === 'weapon' || item.slot === 'charm') && (state.inventory[item.id] ?? 0) > 0);
   const corruptionLabel = girl.witch ? '魔女化' : corruptionTier === 2 ? '第三阶段' : corruptionTier === 1 ? '第二阶段' : '第一阶段';
+  const variantOutfitId = girl.outfitId ?? 'custom';
+  const importedVariantCount = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, id)])).length;
   const storyline = state.storylines.find(item => item.girlId === girl.id && item.status === 'active');
   const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
   const beat = current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
@@ -296,8 +297,13 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <div className="expression-grid" role="group" aria-label="选择表情">
                   {expressions.map(item => {
                     const Icon = expressionIcons[item.id];
-                    return <button key={item.id} id={`dossier-expression-${item.id}`} type="button" aria-pressed={girl.expression === item.id} className={`expression-tile ${girl.expression === item.id ? 'picked' : ''}`} onClick={() => onExpression(item.id)}><Icon size={15} /><b>{item.label}</b><small>{item.note}</small></button>;
+                    const hasVariant = Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, item.id)]);
+                    return <button key={item.id} id={`dossier-expression-${item.id}`} type="button" aria-pressed={girl.expression === item.id} className={`expression-tile ${girl.expression === item.id ? 'picked' : ''} ${hasVariant ? 'has-variant' : ''}`} onClick={() => onExpression(item.id)}><Icon size={15} /><b>{item.label}</b><small>{item.note}</small>{hasVariant && <em className="expression-variant-tag">差分</em>}</button>;
                   })}
+                </div>
+                <div className="expression-variant-bar">
+                  <span><ImagePlus size={13} />当前服装已导入 {importedVariantCount} / 6 张表情差分</span>
+                  <button id="dossier-expression-manage" type="button" className="llm-reset" onClick={onExpressionVariants}><ImagePlus size={13} />管理表情差分</button>
                 </div>
               </section>
 

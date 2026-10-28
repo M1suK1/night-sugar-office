@@ -1,10 +1,10 @@
 import type { Expression, Girl, GirlCard, Outfit, StatKey } from './types';
 import { sanitizeStoryPlan } from './storyplan.ts';
+import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
 import { skillById } from './content/skills.ts';
 import { traitById } from './content/traits.ts';
 
 const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
-const EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
 
 function hash(text: string): string {
   let h = 0x811c9dc5;
@@ -14,7 +14,11 @@ function hash(text: string): string {
 
 export function girlCardHash(card: GirlCard): string {
   const g = card.girl;
-  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0].join(':'));
+  const variants = Object.entries(g.importedVariants ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}:${hash(value)}`)
+    .join('|');
+  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, variants].join(':'));
 }
 
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {
@@ -27,6 +31,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
       portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
       wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
+      importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
     },
   };
 }
@@ -71,6 +76,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       skillIds: [...g.skillIds], traitIds: [...g.traitIds], portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',
       expression: EXPRESSIONS.includes(g.expression as Expression) ? g.expression : 'calm',
+      importedVariants: sanitizeExpressionVariants(g.importedVariants),
       storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
     },
   };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react';
-import type { BattleNote, BattleNoteLine, BattleState, Expression } from '../types';
+import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
 import { battleActors, battleCast, battleOutcomeLabel, totalBattleRounds } from '../battleNote';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -13,7 +13,7 @@ function lineKey(sceneId: string, index: number): string {
   return `${sceneId}:${index}`;
 }
 
-function portraitSubject(actor: ReturnType<typeof battleActors>[number], expression: Expression) {
+function portraitSubject(actor: ReturnType<typeof battleActors>[number], expression: Expression, girl?: Girl) {
   return {
     id: actor.girlId ?? actor.uid,
     name: actor.name,
@@ -22,12 +22,16 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
     codename: actor.codename,
     expression,
     portraitSpec: actor.portraitSpec,
+    outfitId: girl?.outfitId,
+    wardrobe: girl?.wardrobe,
+    importedVariants: girl?.importedVariants,
   };
 }
 
-export function BattleNoteDialog({ battle, note, busy, error, onGenerate, onRegenerate, onClose }: {
+export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate, onRegenerate, onClose }: {
   battle: BattleState;
   note: BattleNote | null;
+  girls: Girl[];
   busy: boolean;
   error?: string;
   onGenerate: () => void;
@@ -40,6 +44,7 @@ export function BattleNoteDialog({ battle, note, busy, error, onGenerate, onRege
   const [sceneIndex, setSceneIndex] = useState(0);
   const cast = useMemo(() => battleCast(battle), [battle]);
   const actors = useMemo(() => battleActors(battle), [battle]);
+  const girlsById = useMemo(() => new Map(girls.map(girl => [girl.id, girl])), [girls]);
   const enemies = cast.filter(actor => actor.side === 'enemy');
   const allies = cast.filter(actor => actor.side === 'ally');
   const splitAllies = enemies.length === 0 && allies.length > 1;
@@ -128,7 +133,7 @@ export function BattleNoteDialog({ battle, note, busy, error, onGenerate, onRege
         return (
           <figure key={actor.uid} className={`battle-note-portrait ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`} style={{ '--note-color': actor.color } as CSSProperties}>
             <div className="battle-note-portrait-art">
-              <GirlPortrait girl={portraitSubject(actor, expression)} variant="full" />
+              <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
               <span className="battle-note-expression">{expressionLabel[expression]}</span>
             </div>
             <figcaption>
@@ -167,7 +172,7 @@ export function BattleNoteDialog({ battle, note, busy, error, onGenerate, onRege
               const expression = activeExpression(actor);
               return (
                 <div key={actor.uid} className={`battle-note-mobile-face ${activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId ? 'active' : ''} ${actor.down ? 'down' : ''}`}>
-                  <GirlPortrait girl={portraitSubject(actor, expression)} variant="avatar" />
+                  <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="avatar" />
                   <span>{actor.name}</span>
                 </div>
               );

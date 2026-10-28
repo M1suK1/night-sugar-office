@@ -63,7 +63,7 @@ export interface GirlCard {
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
-    portraitHint?: string; witchForm?: Outfit; storyPlan?: StoryPlan;
+    portraitHint?: string; witchForm?: Outfit; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
   };
 }
 
@@ -622,6 +622,8 @@ export type GameAction =
   | { type: 'createGirl'; draft: GirlDraft }
   | { type: 'importCard'; card: GirlCard }
   | { type: 'setVariant'; girlId: string; key: string; dataUrl: string }
+  | { type: 'setVariants'; girlId: string; variants: Record<string, string> }
+  | { type: 'deleteVariant'; girlId: string; key: string }
   | { type: 'endNight' }
   | { type: 'importWardrobe'; girlId: string; outfits: Outfit[]; outfitId?: string; mode?: 'merge' | 'replace'; source?: string }
   | { type: 'removeOutfit'; girlId: string; outfitId: string }

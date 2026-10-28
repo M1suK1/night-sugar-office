@@ -2,6 +2,7 @@ import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassag
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
+import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey, sanitizeExpressionVariants } from './expressions.ts';
 import { ensureGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
@@ -185,7 +186,7 @@ function hydrate(girl: Girl): Girl {
   g.expression ??= 'calm';
   g.corruption ??= 0;
   g.equipment ??= {};
-  g.importedVariants ??= {};
+  g.importedVariants = sanitizeExpressionVariants(g.importedVariants);
   g.maxHp = Math.max(40, effectiveMaxHp(g));
   g.hp = Math.min(g.hp, g.maxHp);
   g.maxSpirit = Math.max(30, g.maxSpirit ?? spiritMax(g));
@@ -1548,6 +1549,19 @@ export function createInitialFromPack(pack: ContentPack): GameState {
 function findGirl(state: GameState, id: string): Girl | undefined {
   return state.girls.find(g => g.id === id);
 }
+/** 差分也允许先给候选者准备；入队后随角色卡一起带走。 */
+function findRosterGirl(state: GameState, id: string): Girl | undefined {
+  return state.girls.find(g => g.id === id) ?? state.candidates.find(g => g.id === id);
+}
+/** 服装被移除后，不再保留这套衣服的表情差分。 */
+function pruneOrphanVariants(girl: Girl): void {
+  if (!girl.importedVariants) return;
+  const outfitIds = new Set([...girl.wardrobe.map(outfit => outfit.id), 'witchform']);
+  for (const key of Object.keys(girl.importedVariants)) {
+    const parsed = parseExpressionVariantKey(key);
+    if (!parsed || !outfitIds.has(parsed.outfitId)) delete girl.importedVariants[key];
+  }
+}
 function applyScar(state: GameState, girl: Girl, scar: Scar): void {
   girl.scars.push(scar);
   girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
@@ -2322,8 +2336,6 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!girl.wardrobe.some(o => o.id === action.outfitId)) return { state, ok: false, message: '衣柜里没有这套服装。' };
-      const key = `${action.outfitId}:${girl.expression ?? 'calm'}`;
-      if (girl.importedVariants && Object.keys(girl.importedVariants).length && !girl.importedVariants[key] && girl.portrait?.startsWith('data:')) return { state, ok: false, message: '这套服装与当前表情的组合还没有导入立绘。' };
       girl.outfitId = action.outfitId;
       return { state: next, ok: true, message: `${girl.name}换上了「${girl.wardrobe.find(o => o.id === action.outfitId)?.name}」。` };
     }
@@ -2354,6 +2366,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       girl.wardrobe = kept;
       if (action.outfitId && kept.some(outfit => outfit.id === action.outfitId)) girl.outfitId = action.outfitId;
       else if (!kept.some(outfit => outfit.id === girl.outfitId)) girl.outfitId = kept[0].id;
+      pruneOrphanVariants(girl);
       next.logs.unshift({ id: `log-wardrobe-import-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}的衣柜${action.mode === 'replace' ? '被替换并' : ''}新增 ${added} 套服装${dropped ? `（${dropped} 套因衣柜已满未导入）` : ''}。` });
       return { state: next, ok: true, message: `已导入 ${added} 套服装${dropped ? `，${dropped} 套因衣柜已满未导入` : ''}。` };
     }
@@ -2365,6 +2378,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
       girl.wardrobe = girl.wardrobe.filter(item => item.id !== action.outfitId);
       if (girl.outfitId === action.outfitId) girl.outfitId = girl.wardrobe[0].id;
+      pruneOrphanVariants(girl);
       return { state: next, ok: true, message: `「${outfit.name}」已从衣柜移除。` };
     }
     case 'renameOutfit': {
@@ -2518,7 +2532,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         outfitId: g.wardrobe?.length ? (g.outfitId ?? g.wardrobe[0].id) : 'custom',
         expression: g.expression ?? 'calm',
         corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7, cardId: key,
-        portraitSpec: g.portraitSpec, portraitHint: g.portraitHint ?? '',
+        portraitSpec: g.portraitSpec, portraitHint: g.portraitHint ?? '', importedVariants: g.importedVariants,
         witchForm: g.witchForm ? { ...g.witchForm, id: 'witchform', form: 'witch' } : undefined,
       });
       next.candidates.push(girl);
@@ -2565,13 +2579,44 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}已进入候选名册。` };
     }
     case 'setVariant': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
-      if (!girl.portrait?.startsWith('data:')) return { state, ok: false, message: '只有导入立绘可以管理变体。' };
+      const parsed = parseExpressionVariantKey(action.key);
+      if (!parsed) return { state, ok: false, message: '表情差分的服装或表情无法识别。' };
+      if (!isExpressionVariantData(action.dataUrl)) return { state, ok: false, message: '差分需要是 1.6MB 以内的图片。' };
       if (!girl.importedVariants) girl.importedVariants = {};
-      if (!girl.importedVariants[action.key] && Object.keys(girl.importedVariants).length >= 6) return { state, ok: false, message: '每名导入角色最多保存 6 张变体，请先删除旧变体。' };
+      const usedForOutfit = Object.keys(girl.importedVariants).filter(key => parseExpressionVariantKey(key)?.outfitId === parsed.outfitId).length;
+      if (!girl.importedVariants[action.key] && usedForOutfit >= EXPRESSION_VARIANT_LIMIT) return { state, ok: false, message: `这套服装最多保存 ${EXPRESSION_VARIANT_LIMIT} 张表情差分，请先删除旧图。` };
       girl.importedVariants[action.key] = action.dataUrl;
-      return { state: next, ok: true, message: '变体立绘已保存。' };
+      return { state: next, ok: true, message: `「${expressionLabel(parsed.expression)}」表情差分已保存。` };
+    }
+    case 'setVariants': {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const entries = Object.entries(action.variants);
+      if (!entries.length) return { state, ok: false, message: '没有可保存的表情差分。' };
+      const staged = { ...(girl.importedVariants ?? {}) };
+      for (const [key, dataUrl] of entries) {
+        if (!parseExpressionVariantKey(key)) return { state, ok: false, message: `无法识别差分键「${key}」。` };
+        if (!isExpressionVariantData(dataUrl)) return { state, ok: false, message: '差分需要是 1.6MB 以内的图片。' };
+        staged[key] = dataUrl;
+      }
+      const perOutfit = new Map<string, number>();
+      for (const key of Object.keys(staged)) {
+        const parsed = parseExpressionVariantKey(key);
+        if (!parsed) return { state, ok: false, message: `无法识别差分键「${key}」。` };
+        perOutfit.set(parsed.outfitId, (perOutfit.get(parsed.outfitId) ?? 0) + 1);
+      }
+      if ([...perOutfit.values()].some(count => count > EXPRESSION_VARIANT_LIMIT)) return { state, ok: false, message: `每套服装最多保存 ${EXPRESSION_VARIANT_LIMIT} 张表情差分。` };
+      girl.importedVariants = staged;
+      return { state: next, ok: true, message: `已保存 ${entries.length} 张表情差分。` };
+    }
+    case 'deleteVariant': {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!girl.importedVariants?.[action.key]) return { state, ok: false, message: '这张表情差分已经不存在。' };
+      delete girl.importedVariants[action.key];
+      return { state: next, ok: true, message: '表情差分已移除。' };
     }
     case 'setWitchForm': {
       const next = clone(state); const girl = findGirl(next, action.girlId);

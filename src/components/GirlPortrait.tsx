@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import type { Expression, Outfit, PortraitSpec } from '../types';
+import { expressionLabel, expressionVariantKey } from '../expressions';
 
 /** 立绘只依赖这几项；我方 Girl 与敌方 BattleUnit 都能适配成这个形状。 */
 export interface PortraitSubject {
@@ -14,6 +15,7 @@ export interface PortraitSubject {
   corruption?: number;
   witch?: boolean;
   portraitSpec?: PortraitSpec;
+  importedVariants?: Record<string, string>;
 }
 
 const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: string }> = {
@@ -39,11 +41,23 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
   const gemCore = girl.witch ? '#d85a7f' : corruption >= 40 ? '#c478b8' : '#fff2f8';
 
   const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : girl.portrait;
-  if (portrait?.startsWith('data:')) {
-    return <span className={`girl-portrait ${variant} imported ${bare ? 'bare' : ''} ${className}`}><img src={portrait} alt={`${girl.name}的立绘`} /></span>;
+  const variantKey = expressionVariantKey(wardrobe?.id ?? girl.outfitId ?? 'custom', expression);
+  const expressionVariant = girl.importedVariants?.[variantKey];
+  const activeVariant = expressionVariant?.startsWith('data:image/') ? expressionVariant : undefined;
+  const shownPortrait = activeVariant ?? portrait;
+  if (shownPortrait?.startsWith('data:')) {
+    return (
+      <span
+        className={`girl-portrait ${variant} imported ${activeVariant ? 'expression-variant' : ''} ${bare ? 'bare' : ''} ${className}`}
+        data-expression={expression}
+        data-expression-variant={activeVariant ? expression : undefined}
+      >
+        <img src={shownPortrait} alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`} />
+      </span>
+    );
   }
   return (
-    <span className={`girl-portrait ${variant} ${girl.witch ? 'witch' : ''} ${bare ? 'bare' : ''} ${className}`} style={{ '--portrait-color': outfitColor, '--portrait-accent': girl.color } as React.CSSProperties} aria-hidden="true">
+    <span className={`girl-portrait ${variant} ${girl.witch ? 'witch' : ''} ${bare ? 'bare' : ''} ${className}`} data-expression={expression} style={{ '--portrait-color': outfitColor, '--portrait-accent': girl.color } as React.CSSProperties} aria-hidden="true">
       <svg viewBox="0 0 260 340" preserveAspectRatio="xMidYMax meet" role="presentation">
         <defs>
           <linearGradient id={`bg-${id}`} x1="0" y1="0" x2="1" y2="1">

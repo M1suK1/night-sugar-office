@@ -12,7 +12,8 @@ import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
 import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
-import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
+import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
+import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
 import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
@@ -848,6 +849,62 @@ test('契约卡可导出、校验并重新导入候选名册', () => {
   const broken = parseGirlCard(JSON.stringify({ ...card, girl: { ...card.girl, skillIds: ['nope', 'nope2', 'nope3'] } }));
   assert.equal(broken.ok, false);
   assert.equal(act({ ...base, poolLimits: { ...base.poolLimits, candidates: 1 } }, { type: 'importCard', card: parsed.card }).ok, false);
+});
+
+test('表情差分按服装保存，支持批量、删除、候补与契约卡往返', () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  const outfitId = yue.outfitId!;
+  const calmKey = expressionVariantKey(outfitId, 'calm');
+  const smileKey = expressionVariantKey(outfitId, 'smile');
+  const calm = 'data:image/webp;base64,AAAA';
+  const smile = 'data:image/webp;base64,BBBB';
+  const saved = act(base, { type: 'setVariants', girlId: 'yue', variants: { [calmKey]: calm, [smileKey]: smile } });
+  assert.equal(saved.ok, true);
+  assert.deepEqual(saved.state.girls.find(girl => girl.id === 'yue')!.importedVariants, { [calmKey]: calm, [smileKey]: smile });
+  assert.match(saved.message, /2 张/);
+
+  const replaced = act(saved.state, { type: 'setVariant', girlId: 'yue', key: calmKey, dataUrl: 'data:image/png;base64,CCCC' });
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.state.girls.find(girl => girl.id === 'yue')!.importedVariants![calmKey], 'data:image/png;base64,CCCC');
+
+  const candidate = base.candidates[0];
+  const candidateSaved = act(replaced.state, { type: 'setVariant', girlId: candidate.id, key: expressionVariantKey('uniform', 'shy'), dataUrl: smile });
+  assert.equal(candidateSaved.ok, true);
+  assert.ok(candidateSaved.state.candidates.find(girl => girl.id === candidate.id)!.importedVariants);
+  const candidateDeleted = act(candidateSaved.state, { type: 'deleteVariant', girlId: candidate.id, key: expressionVariantKey('uniform', 'shy') });
+  assert.equal(candidateDeleted.ok, true);
+  assert.equal(candidateDeleted.state.candidates.find(girl => girl.id === candidate.id)!.importedVariants![expressionVariantKey('uniform', 'shy')], undefined);
+
+  assert.equal(act(saved.state, { type: 'setVariant', girlId: 'yue', key: 'bad-key', dataUrl: calm }).ok, false);
+  assert.equal(act(saved.state, { type: 'setVariant', girlId: 'yue', key: calmKey, dataUrl: 'https://example.com/a.png' }).ok, false);
+
+  const fullOutfit = Object.fromEntries(EXPRESSIONS.map(expression => [expressionVariantKey(outfitId, expression), calm]));
+  const fullSaved = act(saved.state, { type: 'setVariants', girlId: 'yue', variants: fullOutfit });
+  assert.equal(fullSaved.ok, true);
+  const otherOutfit = yue.wardrobe?.find(outfit => outfit.id !== outfitId);
+  assert.ok(otherOutfit);
+  const otherKey = expressionVariantKey(otherOutfit!.id, 'calm');
+  const crossOutfit = act(fullSaved.state, { type: 'setVariants', girlId: 'yue', variants: { [otherKey]: smile } });
+  assert.equal(crossOutfit.ok, true);
+  assert.equal(Object.keys(crossOutfit.state.girls.find(girl => girl.id === 'yue')!.importedVariants!).length, EXPRESSIONS.length + 1);
+
+  assert.equal(act(saved.state, { type: 'deleteVariant', girlId: 'yue', key: smileKey }).state.girls.find(girl => girl.id === 'yue')!.importedVariants![smileKey], undefined);
+
+  const imported = act(saved.state, { type: 'importWardrobe', girlId: 'yue', outfits: [{ id: 'temp', name: '雨衣', description: '测试', palette: ['#333'], layerKey: 'casual' }] });
+  const withTemp = act(imported.state, { type: 'setVariant', girlId: 'yue', key: expressionVariantKey('temp', 'calm'), dataUrl: calm });
+  assert.equal(withTemp.ok, true);
+  const removed = act(withTemp.state, { type: 'removeOutfit', girlId: 'yue', outfitId: 'temp' });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.state.girls.find(girl => girl.id === 'yue')!.importedVariants![expressionVariantKey('temp', 'calm')], undefined);
+
+  const girl = saved.state.girls.find(girl => girl.id === 'yue')!;
+  const card = buildGirlCard(girl, saved.state);
+  const parsed = parseGirlCard(JSON.stringify(card));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.card.girl.importedVariants, girl.importedVariants);
+  assert.notEqual(girlCardHash(buildGirlCard({ ...girl, importedVariants: { [calmKey]: 'data:image/webp;base64,DDDD' } }, saved.state)), girlCardHash(card));
 });
 
 test('对话上下文包含角色特性、同伴关系、完整历史与战斗记录', async () => {
