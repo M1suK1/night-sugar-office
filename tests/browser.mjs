@@ -130,6 +130,17 @@ try {
     const saved = await stored();
     expect(saved.battles[0].outcome).toBe('repelled');
     expect(['open', 'expired']).toContain(saved.missions.find(m => m.id === 'station').status);
+    await page.locator('#battle-note-open').click();
+    await expect(page.locator('.battle-note-shell')).toBeVisible();
+    await expect(page.locator('#battle-note-generate')).toBeVisible();
+    await page.locator('#battle-note-generate').click();
+    await expect(page.locator('#battle-note-regenerate')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.battle-note-source')).toContainText('简报版');
+    await expect(page.locator('.battle-note-narration').first()).toContainText('回合');
+    await expect.poll(async () => (await stored()).battleNotes?.length).toBe(1);
+    await page.screenshot({ path: 'artifacts/battle-note.png', animations: 'disabled' });
+    await page.locator('#battle-note-close').click();
+    await expect(page.locator('#battle-close')).toBeVisible();
     await page.locator('#battle-close').click();
   });
   await check('图鉴与纪念墙始终可从侧栏进入', async () => {
@@ -173,12 +184,44 @@ try {
     await expect(page.locator('.av-chart-point')).toHaveCount(14);
     await expect(page.locator('.av-battle-row')).toHaveCount(1);
     await page.locator('#av-record-battle-title').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: 'artifacts/records-desktop.png', fullPage: true, animations: 'disabled' });
     const battleId = (await stored()).battles[0].id;
+    await expect(page.locator('.av-battle-note-mark')).toHaveCount(1);
+    await expect(page.locator(`#records-note-${battleId}`)).toBeVisible();
+    await page.screenshot({ path: 'artifacts/records-desktop.png', fullPage: true, animations: 'disabled' });
     await page.locator(`#av-record-battle-${battleId}`).click();
     await expect(page.locator('#battle-tab-replay')).toBeVisible();
     await page.locator('#battle-tab-report').click();
     await expect(page.locator('#battle-report-table')).toBeVisible(); await page.locator('#battle-close').click();
+    await page.locator(`#records-note-${battleId}`).click();
+    await expect(page.locator('.battle-note-shell')).toBeVisible();
+    await expect(page.locator('.battle-note-scene')).toHaveCount(3);
+    await page.locator('#battle-note-close').click();
+    await page.locator('#battle-close').click();
+    await page.evaluate(({ battleId }) => {
+      const key = 'night-sugar-office:v1';
+      const raw = JSON.parse(localStorage.getItem(key));
+      const battle = raw.battles.find(item => item.id === battleId);
+      const ally = battle.units.find(unit => unit.side === 'ally');
+      battle.units.push({
+        ...ally, uid: 'enemy-norma', side: 'enemy', girlId: 'enemy-norma',
+        name: '诺玛', codename: 'NORMA LOCKE', expression: 'smile', color: '#c98da8',
+      });
+      const note = raw.battleNotes.find(item => item.battleId === battleId);
+      note.scenes[0].lines = [{
+        round: 1, speakerSide: 'enemy', speakerId: 'enemy-norma', expression: 'smile',
+        text: '……人家说不用你啦，BOSS。', mode: 'speech',
+      }];
+      localStorage.setItem(key, JSON.stringify(raw));
+    }, { battleId });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-records').click(); await layout('records');
+    await page.locator(`#records-note-${battleId}`).click();
+    await expect(page.locator('.battle-note-side.right .battle-note-portrait')).toHaveCount(1);
+    await expect(page.locator('.battle-note-side.right')).toContainText('诺玛');
+    await expect(page.locator('.battle-note-line.right')).toHaveCount(1);
+    await page.screenshot({ path: 'artifacts/battle-note-enemy.png', animations: 'disabled' });
+    await page.locator('#battle-note-close').click();
+    await page.locator('#battle-close').click();
     await page.locator('#av-record-log-filter').selectOption('battle');
     await expect(page.locator('.av-log-item')).toHaveCount(1);
     await expect(page.locator('.av-log-item')).toContainText('战斗');
@@ -651,14 +694,14 @@ try {
     await page.locator('#preset-item-builtin-balanced').click();
     await page.locator('#preset-duplicate').click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(12);
-    await page.locator('#preset-entry-add').click();
     await expect(page.locator('.preset-entry')).toHaveCount(13);
-    await page.locator('#preset-entry-content-12').fill('{{player}} 这一句会引用玩家档案。');
+    await page.locator('#preset-entry-add').click();
+    await expect(page.locator('.preset-entry')).toHaveCount(14);
+    await page.locator('#preset-entry-content-13').fill('{{player}} 这一句会引用玩家档案。');
     await page.locator('#preset-entry-enabled-0').click();
     await expect(page.locator('#preset-entry-enabled-0')).toHaveAttribute('aria-pressed', 'false');
-    await page.locator('#preset-entry-up-12').click();
-    await expect(page.locator('#preset-entry-content-11')).toHaveValue(/玩家档案/);
+    await page.locator('#preset-entry-up-13').click();
+    await expect(page.locator('#preset-entry-content-12')).toHaveValue(/玩家档案/);
     await expect(page.locator('.preset-token-total')).toContainText('tokens');
     await page.locator('#preset-task-tab-arc').click();
     await expect(page.locator('#preset-bind-current')).toHaveValue(/preset-/);
@@ -710,7 +753,7 @@ try {
     await expect(page.locator('.preset-report.ok')).toContainText('已导入');
     await page.locator('.preset-list button', { hasText: '旧版预设' }).click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(13);
+    await expect(page.locator('.preset-entry')).toHaveCount(14);
     await expect(page.locator('#preset-entry-content-0')).toHaveValue(/旧版主体/);
     await page.locator('#modal-close').click();
   });
@@ -718,8 +761,16 @@ try {
   await check('任务提示词按用途编辑，并标出旧数值禁令', async () => {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
+    await expect(page.locator('#settings-prompt-battle')).toBeVisible();
+    await page.locator('#settings-prompt-battle').click();
+    await expect(page.locator('#preset-task-tab-battle')).toHaveClass(/active/);
+    await expect(page.locator('#preset-name')).toHaveValue('战斗札记');
+    await expect(page.locator('#preset-bind-current')).toHaveValue(/preset-/);
+    await page.locator('#modal-close').click();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-prompt-daily').click();
-    await expect(page.locator('.preset-task-tabs button')).toHaveCount(10);
+    await expect(page.locator('.preset-task-tabs button')).toHaveCount(11);
     await expect(page.locator('.preset-list')).toHaveCount(0);
     await expect(page.locator('#preset-task-tab-daily')).toHaveClass(/active/);
     await expect(page.locator('#preset-tab-prompts')).toHaveClass(/active/);
@@ -772,7 +823,7 @@ try {
     await page.locator('#modal-close').click();
   });
 
-  await check('导出预设带 schema 3 与用途且剥离密钥', async () => {
+  await check('导出预设带 schema 4 与用途且剥离密钥', async () => {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-open-presets').click();
@@ -786,9 +837,10 @@ try {
     const file = await download.path();
     const exported = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(exported);
-    expect(parsed.schema).toBe(3);
+    expect(parsed.schema).toBe(4);
     expect(exported.includes('sk-secret-test')).toBe(false);
     expect(parsed.prompts.some(entry => entry.scope === 'daily')).toBe(true);
+    expect(parsed.prompts.some(entry => entry.scope === 'battle')).toBe(true);
     expect(Array.isArray(parsed.extensions?.regex_scripts)).toBe(true);
     await page.locator('#modal-close').click();
   });

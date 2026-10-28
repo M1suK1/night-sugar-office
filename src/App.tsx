@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
+import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
@@ -19,10 +19,12 @@ import { MarketView } from './views/MarketView';
 import { WorldbookView } from './views/WorldbookView';
 import { CustomGirlDialog } from './components/CustomGirlDialog';
 import { BattleReport } from './components/BattleReport';
+import { BattleNoteDialog } from './components/BattleNoteDialog';
+import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
 import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
@@ -50,6 +52,7 @@ type Modal =
   | { type: 'talk'; id: string; remote?: boolean }
   | { type: 'mission'; id: string; girlId?: string }
   | { type: 'battle'; id: string }
+  | { type: 'battle-note'; id: string }
   | { type: 'event'; id: string }
   | { type: 'story'; id: string }
   | { type: 'story-editor'; id: string }
@@ -99,6 +102,8 @@ export default function App() {
   const [started, setStarted] = useState(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1' || Boolean(localStorage.getItem(SAVE_KEY)); } catch { return false; } });
   const [generating, setGenerating] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteError, setNoteError] = useState<string | undefined>(undefined);
   const lastIncidentDay = useRef(state.day);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
@@ -279,6 +284,27 @@ export default function App() {
     if (result.ok && result.battle) setModal({ type: 'battle', id: result.battle.id });
     return result.ok;
   };
+  const writeBattleNote = async (battle: BattleState) => {
+    if (noteBusy) return;
+    setNoteBusy(true);
+    setNoteError(undefined);
+    try {
+      const config = loadLlmConfig();
+      const result = await generateBattleNote(config, battle, presetRuntime(boundPreset('battle', presets, binding)));
+      if (result.ok) {
+        perform({ type: 'saveBattleNote', note: result.data }, true);
+        notify(`战斗札记写好了：${result.data.charCount} 字，已收进战斗记录。`);
+        return;
+      }
+      const brief = buildBattleBrief(battle);
+      perform({ type: 'saveBattleNote', note: brief }, true);
+      setNoteError(`完整札记没有写成：${result.message} 先保存了一份据实简报。`);
+      notify('叙事者没有写成完整札记，已先保存据实简报。', false);
+    } finally {
+      setNoteBusy(false);
+    }
+  };
+  const openBattleNote = (id: string) => { setNoteError(undefined); setModal({ type: 'battle-note', id }); };
   const navigate = (p: Page) => { setPage(p); setModal(null); window.scrollTo({ top: 0, behavior: 'instant' }); };
   const girl = (id: string) => setModal({ type: 'girl', id });
   const talk = (id: string, remote = false) => { const g = state.girls.find(g => g.id === id); if (remote) { if (!g?.retired) { notify(`${g?.name ?? '她'}还没有退役，直接去会客厅找她吧。`, false); return; } setModal({ type: 'talk', id, remote: true }); return; } if (g?.retired) { notify(`${g.name}已经退役，可以用远程联络。`, false); setModal({ type: 'talk', id, remote: true }); return; } if (g?.status === 'mission') { notify(`${g.name}正在出勤，等她回到基地再聊聊吧。`, false); return; } if (g?.status === 'healing' || g?.status === 'resting') { notify(`${g.name}正在${g.status === 'healing' ? '治疗' : '休息'}，稍后再聊吧。`, false); return; } if (g?.status === 'expedition') { notify(`${g.name}正在星象台远行，暂时联络不上。`, false); return; } setModal({ type: 'talk', id }); };
@@ -459,7 +485,8 @@ export default function App() {
     else notify(applied.message, false);
   };  const selectedGirl = modal && 'id' in modal ? [...state.girls, ...state.candidates].find(g => g.id === modal.id) : undefined;
   const selectedMission = modal?.type === 'mission' ? state.missions.find(m => m.id === modal.id) : undefined;
-  const selectedBattle = modal?.type === 'battle' ? state.battles.find(b => b.id === modal.id) : undefined;
+  const selectedBattle = modal?.type === 'battle' || modal?.type === 'battle-note' ? state.battles.find(b => b.id === modal.id) : undefined;
+  const selectedNote = modal?.type === 'battle-note' ? state.battleNotes?.find(note => note.battleId === modal.id) : undefined;
   const modalTitle = modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : '安排派遣';
   const stabilityStage = cityStage(state.reputation);
 
@@ -557,7 +584,7 @@ export default function App() {
       ) : page === 'market' ? (
         <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} />
       ) : (
-        <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onChronicle={() => setModal({ type: 'chronicle' })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
+        <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onBattleNote={openBattleNote} onChronicle={() => setModal({ type: 'chronicle' })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
       )}
       <footer className="game-footer"><span><Moon size={12} />愿每个心愿，都有回声。<i />夜糖事务所 · 灵魂契约台账</span><button id="footer-prototype-info" onClick={() => setModal({ type: 'help' })}>纯前端原型<span>本地剧情演示</span><ChevronRight size={11} /></button></footer>
     </main>
@@ -576,7 +603,7 @@ export default function App() {
       </div>
     </div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
-    {modal && modal.type !== 'event' && modal.type !== 'story-editor' && modal.type !== 'story-graph' && modal.type !== 'workshop' && <Dialog label={modalTitle} onClose={() => setModal(null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe'}>
+    {modal && modal.type !== 'event' && modal.type !== 'story-editor' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => void startStory(selectedGirl.id)} onStoryEdit={() => setModal({ type: 'story-editor', id: selectedGirl.id })} onStoryGraph={() => setModal({ type: 'story-graph', id: selectedGirl.id })}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witch ? null : (selectedGirl.witchForm ?? { id: 'witchform', name: '魔女化 · 夜之形', description: '侵蚀越过阈值后显形的另一套礼装。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch' }) })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
@@ -586,7 +613,7 @@ export default function App() {
       {modal.type === 'hire' && selectedGirl && <HireDialog girl={selectedGirl} state={state} onConfirm={() => { if (perform({ type: 'hire', girlId: selectedGirl.id })) setModal(null); }} />}
       {modal.type === 'build' && <BuildDialog state={state} initialRoom={modal.id} onConfirm={roomId => { if (perform({ type: 'build', roomId })) setModal(null); }} />}
       {modal.type === 'room' && <RoomDialog state={state} id={modal.id} onGirl={girl} onTalk={talk} onBuild={() => setModal({ type: 'build', id: modal.id })} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })} onRecall={id => perform({ type: 'recallExpedition', expeditionId: id })} onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })} onRest={girlId => perform({ type: 'care', girlId, mode: 'resting' })} onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })} />}
-      {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} onClose={() => setModal(null)} />}
+      {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
@@ -595,6 +622,7 @@ export default function App() {
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
+      {modal?.type === 'battle-note' && selectedBattle && <BattleNoteDialog battle={selectedBattle} note={selectedNote ?? null} busy={noteBusy} error={noteError} onGenerate={() => void writeBattleNote(selectedBattle)} onRegenerate={() => void writeBattleNote(selectedBattle)} onClose={() => { setModal({ type: 'battle', id: selectedBattle.id }); setNoteError(undefined); }} />}
       {modal?.type === 'story-graph' && selectedGirl && (
         <StoryGraphDialog
           girl={selectedGirl}

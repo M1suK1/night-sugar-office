@@ -1,4 +1,4 @@
-import type { ActionResult, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { sanitizeStoryPlan } from './storyplan.ts';
@@ -1503,7 +1503,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
   const state: GameState = {
     version: 11, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
-    messages: {}, memorial: [], battles: [], packHash: pack.hash,
+    messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
@@ -1530,7 +1530,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
       { id: 'l-1', time: '第 14 日 · 20:00', kind: 'story', text: '钥匙插进锁孔的时候，门牌还是空的。第十三夜，樱雾市多了一间没有名字的事务所。' },
       { id: 'l-2', time: '第 14 日 · 20:01', kind: 'base', text: '账上只有 6000 星砂，没有契约者，也没有委托。今晚先从认识这座城开始。' },
     ],
-    samples: sampleDays(), messages: {}, memorial: [], battles: [], packHash: pack.hash,
+    samples: sampleDays(), messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
@@ -1563,6 +1563,8 @@ function applyScar(state: GameState, girl: Girl, scar: Scar): void {
 function recordBattle(state: GameState, battle: BattleState): void {
   state.battles.unshift(battle);
   state.battles = state.battles.slice(0, 20);
+  const kept = new Set(state.battles.map(item => item.id));
+  state.battleNotes = (state.battleNotes ?? []).filter(note => kept.has(note.battleId)).slice(0, 20);
 }
 function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
   const battle = simulateBattle({ mission, girls: squad, day: at.day, minutes: at.minutes, woundedEnemies: mission.worsened, monsters: state.customMonsters });
@@ -2844,6 +2846,22 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}${action.items?.length ? `，仓库登记了 ${action.items.length} 件新装备` : ''}。` });
       return { state: next, ok: true, message: '新的委托已出现在地图上，候选者进入市场，会客厅也收到了议题。' };
     }
+    case 'saveBattleNote': {
+      const note = action.note;
+      if (!validBattleNote(note)) return { state, ok: false, message: '这份战斗札记不完整，无法保存。' };
+      if (!state.battles.some(battle => battle.id === note.battleId)) return { state, ok: false, message: '找不到对应的战斗记录。' };
+      const next = clone(state);
+      next.battleNotes = [note, ...(next.battleNotes ?? []).filter(item => item.battleId !== note.battleId)].slice(0, 20);
+      return { state: next, ok: true, message: `已保存「${note.title}」。` };
+    }
+    case 'deleteBattleNote': {
+      const next = clone(state);
+      const before = (next.battleNotes ?? []).length;
+      next.battleNotes = (next.battleNotes ?? []).filter(item => item.battleId !== action.battleId);
+      return before === next.battleNotes.length
+        ? { state, ok: false, message: '这场战斗还没有札记。' }
+        : { state: next, ok: true, message: '已删除这场战斗的札记。' };
+    }
     default: return { state, ok: false, message: '未知操作。' };
   }
 }
@@ -2900,6 +2918,33 @@ function migrate(raw: Record<string, unknown>): GameState | null {
     return { ...base, day: Number(raw.day) || 14, minutes: Number(raw.minutes) || 0, gold: Number(raw.gold) || 0, reputation: Number(raw.reputation) || 50, girls, missions, logs: Array.isArray(raw.logs) ? raw.logs.slice(0, 300) : base.logs, completed: Array.isArray(raw.completed) ? raw.completed.filter(x => typeof x === 'string') : [], samples: Array.isArray(raw.samples) ? raw.samples.slice(-60) : base.samples, messages: {}, memorial: [], battles: [] };
   } catch { return null; }
 }
+const BATTLE_NOTE_EXPRESSIONS = new Set(['calm', 'smile', 'surprise', 'sad', 'angry', 'shy']);
+export function validBattleNote(value: unknown): value is BattleNote {
+  if (!value || typeof value !== 'object') return false;
+  const note = value as Partial<BattleNote>;
+  if (typeof note.battleId !== 'string' || !note.battleId) return false;
+  if (typeof note.title !== 'string' || typeof note.hook !== 'string' || typeof note.summary !== 'string') return false;
+  if (note.source !== 'llm' && note.source !== 'template') return false;
+  if (!Number.isFinite(note.charCount) || typeof note.createdAt !== 'string') return false;
+  if (!Array.isArray(note.scenes) || note.scenes.length < 1 || note.scenes.length > 8) return false;
+  let lineTotal = 0;
+  for (const scene of note.scenes) {
+    if (!scene || typeof scene !== 'object') return false;
+    if (typeof scene.id !== 'string' || typeof scene.title !== 'string' || typeof scene.narration !== 'string') return false;
+    if (!Number.isFinite(scene.roundFrom) || !Number.isFinite(scene.roundTo) || scene.roundTo < scene.roundFrom) return false;
+    if (!Array.isArray(scene.lines) || scene.lines.length > 80) return false;
+    lineTotal += scene.lines.length;
+    for (const line of scene.lines) {
+      if (!line || typeof line !== 'object') return false;
+      if (!Number.isFinite(line.round) || !BATTLE_NOTE_EXPRESSIONS.has(line.expression)) return false;
+      if (line.speakerSide !== 'ally' && line.speakerSide !== 'enemy') return false;
+      if (typeof line.speakerId !== 'string' || !line.speakerId || typeof line.text !== 'string' || !line.text.trim()) return false;
+      if (line.mode !== undefined && line.mode !== 'speech' && line.mode !== 'thought') return false;
+    }
+  }
+  return lineTotal <= 240;
+}
+
 export function loadState(raw: string | null): GameState {
   if (!raw) return createInitialState();
   let parsed: unknown;
@@ -2977,6 +3022,15 @@ export function loadState(raw: string | null): GameState {
     }
     state.blank = value.blank === true;
     state.memorial ??= []; state.battles = Array.isArray(state.battles) ? state.battles.slice(0, 20) : [];
+    const battleIds = new Set(state.battles.map(battle => battle.id));
+    const seenNotes = new Set<string>();
+    const notes: BattleNote[] = [];
+    for (const note of Array.isArray(state.battleNotes) ? state.battleNotes : []) {
+      if (!validBattleNote(note) || !battleIds.has(note.battleId) || seenNotes.has(note.battleId)) continue;
+      seenNotes.add(note.battleId);
+      notes.push(note);
+    }
+    state.battleNotes = notes.slice(0, 20);
     state.packHash ??= createSeedPack().hash;
     state.opinions = Array.isArray(state.opinions) ? state.opinions.filter(opinion => opinion && typeof opinion.id === 'string' && Array.isArray(opinion.options)).slice(0, 30) : [];
     for (const opinion of state.opinions) {

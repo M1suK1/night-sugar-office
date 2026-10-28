@@ -10,7 +10,7 @@ import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
+import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
 import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, parseGirlCard } from '../src/cards.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
@@ -19,6 +19,7 @@ import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPres
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { initiativeOf, simulateBattle } from '../src/combat.ts';
+import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
 import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
@@ -1039,7 +1040,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.equal(runtime.topP, 0.98);
   assert.equal(runtime.maxTokens, 32768);
   assert.equal(runtime.maxContext, 400000);
-  assert.equal(activePrompts(flat.preset).length, 16);
+  assert.equal(activePrompts(flat.preset).length, 17);
   const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
   assert.ok(wrapped.system.includes('月见桃 的叙事者'));
   assert.ok(!wrapped.system.includes('注释'));
@@ -1052,7 +1053,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.ok(warned.warnings.some(text => text.includes('SPreset')));
   assert.equal(warned.unsupported.length, 1);
   const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
-  assert.equal(again.preset?.promptOrder?.length, 16);
+  assert.equal(again.preset?.promptOrder?.length, 17);
   assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
 });
 
@@ -1289,23 +1290,24 @@ test('预设词条替换变量，缺失变量与分隔标记不进入系统提�
 test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
   const entries = presetPrompts(legacy.preset);
-  assert.equal(entries.length, 14);
+  assert.equal(entries.length, 15);
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
   assert.ok(wrapped.system.includes('系统底稿'));
   assert.ok(wrapped.system.includes('旧主提示'));
-  assert.equal(DEFAULT_PROMPTS.length, 12);
+  assert.equal(DEFAULT_PROMPTS.length, 13);
   assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'tone', 'task']);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'chat').length, 1);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily').length, 1);
+  assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle').length, 1);
   const summary = playerSummary({ name: '白鸟', alias: '所长', pronoun: '他', appearance: '旧风衣', personality: '寡言', background: '接手事务所', relation: '同事' });
   assert.ok(summary.includes('白鸟（所长）'));
   assert.ok(summary.includes('旧风衣'));
   assert.equal(playerSummary({ name: '', alias: '', pronoun: '', appearance: '', personality: '', background: '', relation: '' }), '');
 });
 test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
-  assert.equal(PROMPT_TASK_SCOPES.length, 8);
+  assert.equal(PROMPT_TASK_SCOPES.length, 9);
   assert.ok(!PROMPT_TASK_SCOPES.map(String).includes('shared'));
   assert.deepEqual(Object.keys(DEFAULT_PRESET_BINDING), PROMPT_TASK_SCOPES);
   const legacy = normalizeBinding({ chat: 'preset-a', generate: 'preset-b', story: 'preset-c' });
@@ -1315,6 +1317,7 @@ test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
   assert.equal(legacy.outfit, 'preset-b');
   assert.equal(legacy.storyline, 'preset-c');
   assert.equal(legacy.event, 'preset-c');
+  assert.equal(legacy.battle, DEFAULT_PRESET_BINDING.battle);
   assert.equal(legacy.arc, 'preset-c');
   assert.equal(legacy.incident, 'preset-c');
   const partial = normalizeBinding({ chat: 'preset-d', daily: 'preset-e' });
@@ -1653,7 +1656,9 @@ test('预设接口选择：本地免密钥，远程缺密钥回退全局', () =>
   assert.equal(result.preset?.regex?.length, 1);
   assert.match(result.warnings.join('\n'), /1 条正则无法解析/);
   assert.match(result.warnings.join('\n'), /工具调用/);
-});test('预设导出带 schema 3 与用途，且剥离密钥', () => {
+});
+
+test('预设导出带 schema 4 与用途，且剥离密钥', () => {
   const preset = importPresetObject({
     name: '导出测试',
     temperature: 0.7,
@@ -1663,12 +1668,13 @@ test('预设接口选择：本地免密钥，远程缺密钥回退全局', () =>
   assert.equal(preset.ok, true);
   if (!preset.ok || !preset.preset) return;
   const exported = JSON.parse(exportPresetJson(preset.preset));
-  assert.equal(exported.schema, 3);
+  assert.equal(exported.schema, 4);
   assert.equal('apiKey' in (exported.api ?? {}), false);
   assert.equal(exported.api?.model, 'm1');
   assert.equal(exported.extensions.regex_scripts[0].findRegex, '/（[^）]*）/g');
   assert.ok(exported.prompts.some((entry: { scope?: string }) => entry.scope === 'daily'));
   assert.ok(exported.prompts.some((entry: { scope?: string }) => entry.scope === 'chat'));
+  assert.ok(exported.prompts.some((entry: { scope?: string }) => entry.scope === 'battle'));
   const round = importPresetObject(exported);
   assert.equal(round.ok, true);
   if (!round.ok || !round.preset) return;
@@ -1690,6 +1696,11 @@ test('任务词条按用途注入，代码契约始终放在最后', () => {
   const chatEntries = activePrompts(builtinPresets()[0], 'chat');
   assert.ok(chatEntries.every(entry => promptScope(entry) === 'shared' || promptScope(entry) === 'chat'));
   assert.equal(chatEntries.some(entry => promptScope(entry) === 'daily'), false);
+  const battle = composeTaskSystem('CONTRACT-BATTLE', runtime, 'battle', { player: '白鸟', context: '一场雨夜战斗' });
+  assert.ok(battle.system.includes('为一场已经打完的战斗写札记'));
+  assert.ok(battle.system.includes('CONTRACT-BATTLE'));
+  assert.ok(battle.system.trim().endsWith('CONTRACT-BATTLE'));
+  assert.equal(battle.system.includes('为今晚的夜班提案'), false);
 });
 
 test('旧每日提案的“不要数值”要求会被标记并可移除', () => {
@@ -1706,14 +1717,15 @@ test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
   const imported = importPresetObject({ name: '只有主提示', settings: { temp_openai: 0.6, prompts: [{ identifier: 'main', content: '只写夜晚。' }] } });
   assert.equal(imported.ok, true);
   if (!imported.ok || !imported.preset) return;
-  assert.equal(imported.preset.schema, 3);
+  assert.equal(imported.preset.schema, 4);
   assert.ok(imported.warnings.some(text => text.includes('默认词条')));
   const entries = presetPrompts(imported.preset);
-  assert.equal(entries.length, 13);
+  assert.equal(entries.length, 14);
   assert.equal(entries.filter(entry => entry.scope === 'daily').length, 1);
   assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
+  assert.equal(entries.filter(entry => entry.scope === 'battle').length, 1);
   const runtime = presetRuntime(imported.preset);
-  assert.equal(runtime.entries.length, 13);
+  assert.equal(runtime.entries.length, 14);
   assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
 });
 
@@ -2024,6 +2036,108 @@ test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {
   assert.ok(hurt && guarded);
   assert.ok(hurt.taken > 0);
   assert.ok(guarded.taken < hurt.taken);
+});
+
+test('战斗札记：按回合覆盖、说话阵营与倒下校验，简报可保存替换', () => {
+  const initial = createInitialState();
+  const girl = initial.girls.find(entry => !entry.retired) ?? initial.girls[0];
+  const base = getMonster('mirror-nun');
+  const mission: Mission = { ...initial.missions[0], id: 'note-mission', title: '雨夜札记', enemyIds: ['mirror-nun'], rounds: 4, duration: 120, work: 'combat' };
+  const battle = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters: [base], seed: 9 });
+  const ally = battleActors(battle).find(actor => actor.side === 'ally' && actor.girlId);
+  assert.ok(ally, '测试战斗应有可说话的我方角色');
+  const enemyGirl = { ...battle.units.find(unit => unit.side === 'ally')!, uid: 'enemy-girl-1', side: 'enemy' as const, girlId: 'enemy-girl-1', name: '逆光少女', codename: '逆光', portrait: 'data:image/png;base64,AA==', color: '#c478b8', down: false, monster: undefined, expression: 'angry' as const };
+  battle.units = [...battle.units, enemyGirl];
+  const total = totalBattleRounds(battle);
+  assert.ok(total >= 3);
+  const prose = '雨声压低了呼吸，谁都没有先退，只有鞋底在水里挪动。'.repeat(18);
+  const scene = (roundFrom: number, roundTo: number, lines: Array<Record<string, unknown>> = []) => ({ roundFrom, roundTo, title: `第 ${roundFrom} 幕`, narration: prose, lines });
+  const raw = {
+    title: '雨没有停',
+    hook: '这一战从积水里开始。',
+    summary: '最后留下的是磨损的鞋跟与一句没说完的话。',
+    scenes: [
+      scene(1, 1, [{ round: 1, speakerSide: 'ally', speakerId: ally!.girlId, expression: 'calm', text: '别让她靠近货架。' }]),
+      scene(2, 2, [{ round: 2, speakerSide: 'enemy', speakerId: 'enemy-girl-1', expression: 'angry', text: '你们根本不知道那里面是什么。' }]),
+      scene(3, total, [{ round: 3, speakerSide: 'ally', speakerId: ally!.girlId, expression: 'sad', text: '……结束了。' }]),
+    ],
+  };
+  const checked = validateBattleNoteDraft(raw, battle, { createdAt: '2026-10-28T00:00:00.000Z' });
+  assert.equal(checked.ok, true, checked.errors.join('\n'));
+  assert.ok(checked.note);
+  assert.equal(checked.note!.scenes.length, 3);
+  assert.equal(checked.note!.charCount, battleNoteChars(checked.note!));
+  assert.ok(checked.note!.charCount >= 900);
+  assert.ok(battleDigest(battle).includes('逆光少女'));
+
+  const wrongSide = structuredClone(raw);
+  wrongSide.scenes[0].lines[0].speakerSide = 'enemy';
+  assert.equal(validateBattleNoteDraft(wrongSide, battle, { createdAt: 'x' }).ok, false);
+  const badFace = structuredClone(raw);
+  badFace.scenes[0].lines[0].expression = 'blank';
+  assert.equal(validateBattleNoteDraft(badFace, battle, { createdAt: 'x' }).ok, false);
+  const gap = structuredClone(raw);
+  gap.scenes[1].roundFrom = 3;
+  assert.equal(validateBattleNoteDraft(gap, battle, { createdAt: 'x' }).ok, false);
+
+  const brief = buildBattleBrief(battle, '2026-10-28T00:00:00.000Z');
+  assert.equal(brief.source, 'template');
+  assert.equal(brief.scenes.length, 3);
+  assert.ok(brief.scenes.every(item => item.lines.length === 0));
+  assert.deepEqual(brief.scenes.map(item => [item.roundFrom, item.roundTo]), [[1, 1], [2, 2], [3, total]]);
+
+  const state = { ...createInitialState(), battles: [battle] };
+  const saved = act(state, { type: 'saveBattleNote', note: brief });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.state.battleNotes?.length, 1);
+  const replaced = act(saved.state, { type: 'saveBattleNote', note: { ...brief, title: '第二版简报' } });
+  assert.equal(replaced.state.battleNotes?.length, 1);
+  assert.equal(replaced.state.battleNotes?.[0].title, '第二版简报');
+  const removed = act(replaced.state, { type: 'deleteBattleNote', battleId: battle.id });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.state.battleNotes?.length, 0);
+});
+
+test('战斗札记生成请求使用 battle 用途并采纳合法 JSON', async () => {
+  const initial = createInitialState();
+  const girl = initial.girls.find(entry => !entry.retired) ?? initial.girls[0];
+  const mission: Mission = { ...initial.missions[0], id: 'note-llm', title: '雨夜札记', enemyIds: ['mirror-nun'], rounds: 4, duration: 120, work: 'combat' };
+  const battle = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters: [getMonster('mirror-nun')], seed: 9 });
+  const ally = battleActors(battle).find(actor => actor.side === 'ally' && actor.girlId);
+  assert.ok(ally);
+  const enemy = { ...battle.units.find(unit => unit.side === 'ally')!, uid: 'enemy-llm', side: 'enemy' as const, girlId: 'enemy-llm', name: '逆光少女', codename: '逆光', portrait: 'data:image/png;base64,AA==', color: '#c478b8', down: false, monster: undefined, expression: 'angry' as const };
+  battle.units = [...battle.units, enemy];
+  const total = totalBattleRounds(battle);
+  const prose = '雨声压低了呼吸，谁都没有先退，只有鞋底在水里挪动。'.repeat(18);
+  const raw = {
+    title: '雨没有停', hook: '这一战从积水里开始。', summary: '最后留下的是磨损的鞋跟与一句没说完的话。',
+    scenes: [
+      { roundFrom: 1, roundTo: 1, title: '接敌', narration: prose, lines: [{ round: 1, speakerSide: 'ally', speakerId: ally!.girlId, expression: 'calm', text: '别让她靠近货架。' }] },
+      { roundFrom: 2, roundTo: 2, title: '换位', narration: prose, lines: [{ round: 2, speakerSide: 'enemy', speakerId: 'enemy-llm', expression: 'angry', text: '你们根本不知道那里面是什么。' }] },
+      { roundFrom: 3, roundTo: total, title: '收束', narration: prose, lines: [] },
+    ],
+  };
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateBattleNote({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, battle);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.title, '雨没有停');
+      assert.equal(result.data.source, 'llm');
+      assert.ok(result.data.charCount >= 900);
+    }
+    assert.equal(calls.length, 1);
+    assert.ok(Number(calls[0].max_tokens) >= 3600);
+    assert.ok(JSON.stringify(calls[0].messages).includes('战斗札记'));
+    assert.ok(JSON.stringify(calls[0].messages).includes('speakerSide'));
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('内容包能完整导出读回，非法 JSON 与版本会被拒绝', () => {

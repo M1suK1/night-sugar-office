@@ -488,6 +488,11 @@ export interface BattleUnit {
   dealt: number; taken: number; healed: number; controlled: number; kills: number;
   damageBonus?: number; initiativeBonus?: number;
   monster?: MonsterTemplate;
+  /** 有名字、可成为叙事说话者的角色；敌方魔法少女也会带这个字段。 */
+  girlId?: string;
+  codename?: string;
+  expression?: Expression;
+  portraitSpec?: PortraitSpec;
 }
 export interface BattleCalc {
   hit?: { base: number; agility: number; targetAgility: number; bonus: number; chance: number; roll: number };
@@ -506,6 +511,34 @@ export interface BattleState {
   frames?: { round: number; units: BattleUnit[]; initiative: string[] }[];
   rewards?: { gold: number; exp: number; bond: number };
   scars?: Scar[]; fatal?: string[]; createdAt: string;
+}
+export interface BattleNoteLine {
+  round: number;
+  speakerSide: 'ally' | 'enemy';
+  speakerId: string;
+  expression: Expression;
+  text: string;
+  mode?: 'speech' | 'thought';
+}
+export interface BattleNoteScene {
+  id: string;
+  roundFrom: number;
+  roundTo: number;
+  title: string;
+  narration: string;
+  lines: BattleNoteLine[];
+}
+export interface BattleNote {
+  battleId: string;
+  title: string;
+  hook: string;
+  summary: string;
+  scenes: BattleNoteScene[];
+  source: 'llm' | 'template';
+  charCount: number;
+  createdAt: string;
+  model?: string;
+  presetId?: string;
 }
 export interface ContentPack {
   id: string; hash: string; schemaVersion: 3; promptVersion: string; source: 'seed' | 'generated';
@@ -530,7 +563,7 @@ export interface GameState {
   version: 11; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
-  memorial: Memorial[]; battles: BattleState[]; packHash: string;
+  memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
   assistantId?: string; opinions: Opinion[]; expeditions: Expedition[]; councilDay: number;
   pensionDebt: number;
   factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
@@ -608,5 +641,7 @@ export type GameAction =
   | { type: 'chooseStoryPassage'; eventId: string; choiceId: string }
   | { type: 'chooseStoryPort'; storylineId: string; port: string }
   | { type: 'resolveEvent'; eventId: string; choiceId: string }
+  | { type: 'saveBattleNote'; note: BattleNote }
+  | { type: 'deleteBattleNote'; battleId: string }
   | { type: 'reset'; mode?: 'standard' | 'blank' };
 export interface ActionResult { state: GameState; ok: boolean; message: string; battle?: BattleState }

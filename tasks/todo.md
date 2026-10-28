@@ -104,3 +104,15 @@
 - [x] 首次升级按任务拆出八份可编辑默认预设并改成任务名；旧「… 副本」默认副本原地接管，保留接口、正则与词条编辑。
 - [x] 115 项状态测试、52 组浏览器流程、生产构建通过。
 - [x] README 与 `tasks/plan-v13.md` 实施记录。
+
+## v14 战斗札记 / 敌方立绘通道
+
+- [x] `BattleNote` 数据结构、`battleNotes` 存档、`saveBattleNote` / `deleteBattleNote`、旧存档读取与 20 条淘汰。
+- [x] `battle` 预设用途：schema 4、13 条默认词条、9 个任务绑定、11 个预设标签页、10 个设置入口。
+- [x] `generateBattleNote`：battle scope、3600 token floor、一次语义修复；无 Key/失败写本地简报。
+- [x] 回合覆盖、说话阵营、倒下轮次、表情白名单与字数校验；本地简报覆盖全部回合且不编造台词。
+- [x] 全屏 `BattleNoteDialog`：中间正文、左右立绘、当前说话者高亮、表情切换、场景键盘切换、移动端头像条。
+- [x] 三处入口：战报顶部、战报底部、记录页书签；关闭回到战报，不嵌套弹窗。
+- [x] 敌方魔法少女通过 `girlId + portrait + expression` 进入右侧舞台；魔物只做旁白。
+- [x] 117 项状态测试、52 组浏览器流程、生产构建通过。
+- [x] README 与 `tasks/plan-v14.md` 实施记录。

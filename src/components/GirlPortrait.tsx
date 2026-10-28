@@ -1,5 +1,20 @@
 import { useId } from 'react';
-import type { Expression, Girl } from '../types';
+import type { Expression, Outfit, PortraitSpec } from '../types';
+
+/** 立绘只依赖这几项；我方 Girl 与敌方 BattleUnit 都能适配成这个形状。 */
+export interface PortraitSubject {
+  id: string;
+  name: string;
+  color: string;
+  portrait: string;
+  codename?: string;
+  expression?: Expression;
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  corruption?: number;
+  witch?: boolean;
+  portraitSpec?: PortraitSpec;
+}
 
 const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: string }> = {
   calm: { open: 1, tilt: 0, mouth: 'M-9 2 Q0 5 9 2' },
@@ -10,7 +25,7 @@ const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: st
   shy: { open: 0.55, tilt: -1, mouth: 'M-8 2 Q0 7 8 2' },
 };
 
-export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: Girl; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
+export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: PortraitSubject; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
   const id = useId().replace(/:/g, '');
   const wardrobe = girl.wardrobe?.find(o => o.id === girl.outfitId);
   const outfitColor = wardrobe?.palette?.[0] ?? girl.color;

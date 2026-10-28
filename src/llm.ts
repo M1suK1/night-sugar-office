@@ -964,6 +964,67 @@ export async function generateOutfitDescription(config: LlmConfig, portrait: str
   return { ok: true, data: { name, description } };
 }
 
+/** 把一场已结算的战斗写成多人分场札记；只读，不改变任何战斗结果。 */
+export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  const total = totalBattleRounds(battle);
+  const cast = battleCast(battle);
+  const castText = cast.length
+    ? cast.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'} ${actor.name}${actor.codename ? `（${actor.codename}）` : ''}｜speakerId=${actor.girlId}｜表情=${actor.expression}`).join('\n')
+    : '（没有带姓名与立绘的参战魔法少女；本场只能写旁白）';
+  const body = `战斗记录：\n${battleDigest(battle)}
+可说话角色（speakerId 必须原样使用，且只能从这张表里选）：
+${castText}
+只输出一个 JSON 对象，不要 Markdown 代码块：
+{"title":"","hook":"","summary":"","scenes":[{"roundFrom":1,"roundTo":2,"title":"","narration":"","lines":[{"round":1,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}]}
+要求：3–5 场；第一场 roundFrom=1，相邻场景回合连续，最后一场 roundTo=${total}；每场旁白 2–4 段，写清战况、谁救了谁、谁退缩了；台词只给上表里的角色，必须带 speakerSide、speakerId、六种表情之一；倒下的角色不能在倒下后的回合继续说话；魔物没有立绘和名字，只能出现在旁白里。全文 1200–1800 字，不改胜负、伤害、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
+  const outcome = await chatJson(config, preset, 'battle', body, '请把这场战斗写成札记。', ['共用词条 + 战斗札记词条 + 结构契约', `战斗：${battle.missionTitle}`], meta, {
+    story: battle.missionTitle,
+    context: `结果：${battle.outcome ?? '未结算'}；共 ${total} 回合；参战：${cast.map(actor => actor.name).join('、') || '无'}`,
+    char: castText,
+  }, 3600);
+  if (!outcome.result.ok) {
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: outcome.result.message, request: meta.request, response: meta.response });
+    return { ok: false, message: `写札记失败：${outcome.result.message}` };
+  }
+  if (!outcome.raw) {
+    const message = jsonFailureMessage('写札记失败：', outcome);
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const normalized = normalizeBattleNoteDraft(outcome.raw);
+  let validation = validateBattleNoteDraft(normalized, battle, { createdAt: new Date().toISOString(), model: config.model.trim(), presetId: preset?.id });
+  let source = outcome;
+  if (!validation.ok) {
+    const repairBody = `${body}\n\n【上一次输出（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略场景或台词；speakerId 必须来自上面的可说话角色表。`;
+    const repaired = await chatJson(config, preset, 'battle', repairBody, '请只输出修正后的完整 JSON。', ['共用词条 + 战斗札记词条 + 结构契约', '修复上一次札记'], meta, {
+      story: battle.missionTitle,
+      context: `修复札记；共 ${total} 回合`,
+    }, 3600);
+    source = repaired;
+    if (!repaired.result.ok) {
+      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: repaired.result.message, request: meta.request, response: meta.response });
+      return { ok: false, message: `札记未通过校验，修复请求失败：${repaired.result.message}` };
+    }
+    if (!repaired.raw) {
+      const message = jsonFailureMessage('札记未通过校验，且修复输出无法解析。', repaired);
+      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      return { ok: false, message };
+    }
+    validation = validateBattleNoteDraft(normalizeBattleNoteDraft(repaired.raw), battle, { createdAt: new Date().toISOString(), model: config.model.trim(), presetId: preset?.id });
+  }
+  if (!validation.ok || !validation.note) {
+    const message = `札记未通过校验：${validation.errors.join('；')}`;
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const note = validation.note;
+  recordLlmLog({ kind: '战斗札记', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `战斗札记：${battle.missionTitle}（${note.charCount} 字，${source.attempts} 次请求）`, request: meta.request, response: meta.response });
+  return { ok: true, data: note };
+}
+
 export interface GeneratedGirlProfile {
   name: string; codename: string; title: string; element: Element; archetype: Archetype;
   quote: string; goal: string; appearance: string; personality: string; outfitDescription: string;
@@ -1032,7 +1093,8 @@ import { worldbookContext } from './worldbook.ts';
 import { skills } from './content/skills.ts';
 import { traits } from './content/traits.ts';
 import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import type { Archetype, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
+import { battleCast, battleDigest, normalizeBattleNoteDraft, totalBattleRounds, validateBattleNoteDraft } from './battleNote.ts';
+import type { Archetype, BattleNote, BattleState, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

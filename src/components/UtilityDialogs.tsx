@@ -57,7 +57,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
     {tab === 'llm' && <div className="llm-settings">
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接任意 OpenAI 兼容接口。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
       <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
-      <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，可分别为「角色对话」和「提案生成」绑定不同预设。</p>
+      <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。</p>
       <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/><small className="llm-field-hint">填到 /v1 即可；也可直接粘贴完整的 /chat/completions 地址。</small></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
@@ -75,6 +75,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
             { scope: 'arc', label: '完整剧情', hint: '多段旁白与选项的剧情章节' },
             { scope: 'incident', label: '突发事件', hint: '事务所桌上的三选一麻烦' },
             { scope: 'outfit', label: '服装词条', hint: '看立绘写衣柜描述' },
+            { scope: 'battle', label: '战斗札记', hint: '把一场战斗扩写成多人分场叙事' },
           ] as const).map(item => <button key={item.scope} id={`settings-prompt-${item.scope}`} type="button" className="llm-task" onClick={() => onPresets(item.scope)}>
             <b>{item.label}</b><span>{item.hint}</span><em>编辑词条 →</em>
           </button>)}

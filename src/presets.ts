@@ -7,7 +7,7 @@
 export type PromptRole = 'system' | 'user' | 'assistant';
 
 /** 词条用途：共用词条会进入所有请求，任务词条只进入对应生成器。 */
-export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit';
+export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit' | 'battle';
 
 export interface PromptScopeInfo {
   id: PromptScope;
@@ -25,13 +25,14 @@ export const PROMPT_SCOPES: PromptScopeInfo[] = [
   { id: 'arc', label: '完整剧情', hint: '带选项与分支语气的完整角色剧情' },
   { id: 'incident', label: '突发事件', hint: '需要立刻处理的夜间突发状况' },
   { id: 'outfit', label: '服装词条', hint: '为立绘里的服装写衣柜描述' },
+  { id: 'battle', label: '战斗札记', hint: '把一场战斗扩写成多人分场叙事' },
 ];
 
 export const PROMPT_SCOPE_IDS = new Set<PromptScope>(PROMPT_SCOPES.map(scope => scope.id));
 
 /** 可独立绑定预设的生成任务；共用词条随每个任务一起注入，本身没有绑定。 */
 export type PromptTask = Exclude<PromptScope, 'shared'>;
-export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit'];
+export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit', 'battle'];
 
 export function isPromptScope(value: unknown): value is PromptScope {
   return typeof value === 'string' && PROMPT_SCOPE_IDS.has(value as PromptScope);
@@ -128,8 +129,8 @@ export interface PresetRuntime {
 
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
-/** 一次性把旧的三档/共用副本拆成每个任务一份的标记。 */
-export const TASK_PRESET_MARKER = 'night-sugar:task-presets-v1';
+/** 一次性把旧的三档/共用副本拆成每个任务一份的标记；v2 补上战斗札记。 */
+export const TASK_PRESET_MARKER = 'night-sugar:task-presets-v2';
 
 export interface PromptVariable {
   key: string;
@@ -325,19 +326,19 @@ export function builtinPresets(): ChatPreset[] {
   const stamp = '2026-01-01T00:00:00.000Z';
   return [
     {
-      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
+      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
       settings: { temp_openai: 0.85, top_p_openai: 0.95, openai_max_tokens: 640, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
       prompts: defaultPromptCopies(),
     },
     {
-      id: 'builtin-strict', name: '严格 JSON', description: '低温、短输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
+      id: 'builtin-strict', name: '严格 JSON', description: '低温、短输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
       settings: { temp_openai: 0.35, top_p_openai: 0.8, openai_max_tokens: 1400, openai_max_context: 12000, pres_pen_openai: 0, freq_pen_openai: 0, main: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。', jailbreak: '' },
       prompts: defaultPromptCopies([
         { id: 'json', name: 'JSON 约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。' },
       ]),
     },
     {
-      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 3,
+      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
       settings: { temp_openai: 0.65, top_p_openai: 0.9, openai_max_tokens: 420, openai_max_context: 9000, pres_pen_openai: 0.1, freq_pen_openai: 0.35, main: '', jailbreak: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
       prompts: defaultPromptCopies([
         { id: 'restraint', name: '克制约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
@@ -346,16 +347,21 @@ export function builtinPresets(): ChatPreset[] {
   ];
 }
 
-/** 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。 */
+/**
+ * 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。
+ * schema 2 补齐全部任务词条；schema 3 只补战斗札记；schema 4 不再改动。
+ */
 export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
-  if ((preset.schema ?? 2) >= 3) return preset;
+  const schema = preset.schema ?? 2;
+  if (schema >= 4) return preset;
   const prompts = presetPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
   const ids = new Set(prompts.map(entry => entry.id));
-  const added = DEFAULT_PROMPTS.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
+  const wanted = schema <= 2 ? DEFAULT_PROMPTS : DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle');
+  const added = wanted.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
   const all = [...prompts, ...added];
   const order = (preset.promptOrder ?? prompts.map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
     .concat(added.map(entry => ({ identifier: entry.id, enabled: entry.enabled })));
-  return { ...preset, schema: 3, prompts: all, promptOrder: order };
+  return { ...preset, schema: 4, prompts: all, promptOrder: order };
 }
 
 function sanitizePreset(raw: unknown): ChatPreset | null {
@@ -707,15 +713,18 @@ export function importPresetObject(data: unknown): PresetImportResult {
     return Array.isArray(list) ? list.length : 0;
   })();
   const importedPrompts = prompts.length ? prompts : undefined;
+  const sourceSchema = Number(raw.schema ?? 0);
   const imported: ChatPreset = {
     id: presetId(), name: String(name).slice(0, 40) || '导入的预设',
     description: typeof raw.description === 'string' ? raw.description.slice(0, 160) : `从 SillyTavern 预设导入（${Object.keys(settings).length} 个字段）`,
     settings, api: importedApi, prompts: importedPrompts, promptOrder,
-    regex: regex.length ? regex : undefined, schema: 3,
+    regex: regex.length ? regex : undefined, schema: sourceSchema >= 4 ? 4 : 3,
     createdAt: now(), updatedAt: now(),
   };
-  // ST 文件没有 schema 3，导入时补齐本作任务词条；本作导出的 schema 3 文件保持原样。
-  const preset = Number(raw.schema ?? 0) < 3 ? ensurePromptScopes({ ...imported, schema: 2 }) : imported;
+  // ST 文件没有 schema，导入时补齐全部任务词条；本作旧 schema 3 文件只补战斗札记；schema 4 原样保留。
+  const preset = sourceSchema < 4
+    ? ensurePromptScopes({ ...imported, schema: sourceSchema <= 2 ? 2 : 3 })
+    : imported;
 
   const warnings: string[] = [];
   const unsupported: PresetUnsupportedEntry[] = [];
@@ -795,7 +804,7 @@ export function exportPresetJson(preset: ChatPreset): string {
     settings.api = { endpoint: preset.api.endpoint ?? '', model: preset.api.model ?? '' };
   }
   return JSON.stringify({
-    schema: 3, ...settings, name: preset.name, description: preset.description ?? '',
+    schema: 4, ...settings, name: preset.name, description: preset.description ?? '',
     prompt_order: [{ character_id: 100001, order: promptOrder }],
   }, null, 2);
 }
@@ -855,9 +864,10 @@ export const DEFAULT_PRESET_BINDING: PresetBinding = {
   arc: 'builtin-balanced',
   incident: 'builtin-balanced',
   outfit: 'builtin-strict',
+  battle: 'builtin-balanced',
 };
 
-const LEGACY_TASK: Record<PromptTask, 'chat' | 'generate' | 'story'> = {
+const LEGACY_TASK: Partial<Record<PromptTask, 'chat' | 'generate' | 'story'>> = {
   chat: 'chat', daily: 'generate', profile: 'generate', outfit: 'generate',
   storyline: 'story', event: 'story', arc: 'story', incident: 'story',
 };
@@ -869,7 +879,8 @@ export function normalizeBinding(input: unknown): PresetBinding {
   const binding = { ...DEFAULT_PRESET_BINDING };
   for (const task of PROMPT_TASK_SCOPES) {
     const own = source[task];
-    const legacy = source[LEGACY_TASK[task]];
+    const legacyKey = LEGACY_TASK[task];
+    const legacy = legacyKey ? source[legacyKey] : undefined;
     if (typeof own === 'string') binding[task] = own;
     else if (typeof legacy === 'string') binding[task] = legacy;
   }
@@ -962,6 +973,7 @@ export const DEFAULT_PROMPTS: PromptEntry[] = [
   { id: 'arc', name: '完整剧情', role: 'system', enabled: true, scope: 'arc', builtin: true, content: '写一段完整的角色剧情，像二游里的羁绊事件：有场景、有对话、有她慢慢说出口的东西，最后收束。玩家会在每一段做一次选择，选择会影响下一段的语气，但故事必须是完整的。' },
   { id: 'incident', name: '突发事件', role: 'system', enabled: true, scope: 'incident', builtin: true, content: '生成一件必须立刻决定的事：三方势力之一提出要求，或环境突然变化，或某位少女的状态出了岔子。写具体的人、地点与时间压力，三个选项的代价与收益必须真的不同。' },
   { id: 'outfit', name: '服装词条', role: 'system', enabled: true, scope: 'outfit', builtin: true, content: '为附带的立绘里的这套服装写一条衣柜词条。只写衣服本身，不要写人物身份、剧情或数值。用夜糖事务所的口吻。' },
+  { id: 'battle', name: '战斗札记', role: 'system', enabled: true, scope: 'battle', builtin: true, content: '为一场已经打完的战斗写札记。只写发生过的回合、动作与对话，不改胜负、伤害、奖励或角色状态。让参战且有名有姓的魔法少女自己说话；没有名字与立绘的魔物只出现在旁白里。3–5 场，每场覆盖连续回合，最后收束到这场战斗留下的东西。' },
 ];
 
 function scopedEntries(runtime: PresetRuntime, scope: PromptScope): PromptEntry[] {

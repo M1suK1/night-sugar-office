@@ -25,7 +25,7 @@ type BaseViewProps = {
   onUseItem?: (girlId: string, itemId: string) => void;
   onCouncil?: () => void;
 };
-type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
+type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onBattleNote?: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
 type Metric = 'income' | 'expense' | 'reputation';
 type LogKind = GameState['logs'][number]['kind'];
 
@@ -699,7 +699,7 @@ function RecordsChart({ state, range, metric }: { state: GameState; range: numbe
   </>;
 }
 
-export function RecordsView({ state, onBattle, onCodex, onChronicle, onGirl }: RecordsViewProps) {
+export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicle, onGirl }: RecordsViewProps) {
   const [range, setRange] = useState(7);
   const [metric, setMetric] = useState<Metric>('income');
   const [kind, setKind] = useState<'all' | LogKind>('all');
@@ -876,17 +876,21 @@ export function RecordsView({ state, onBattle, onCodex, onChronicle, onGirl }: R
         </div>
         {state.battles.length ? (
           <ol className="av-battle-list">
-            {state.battles.slice(0, 6).map(battle => (
-              <li key={battle.id}>
-                <button id={`av-record-battle-${battle.id}`} type="button" className={`av-battle-row av-tone-${battle.outcome ?? 'draw'}`} onClick={() => onBattle(battle.id)}>
-                  <span className="av-battle-date">第 {battle.startedAt.day} 日 · {hm(battle.startedAt.minutes)}</span>
-                  <strong>{battle.missionTitle}</strong>
-                  <span className="av-battle-outcome-tag">{outcomeNames[battle.outcome ?? 'draw']}</span>
-                  <span className="av-battle-meta">{battle.rounds} 轮 · {number(battle.rewards?.gold ?? 0)} 星砂</span>
-                  <ArrowUpRight size={12} />
-                </button>
-              </li>
-            ))}
+            {state.battles.slice(0, 6).map(battle => {
+              const note = state.battleNotes?.find(item => item.battleId === battle.id);
+              return (
+                <li key={battle.id}>
+                  <button id={`av-record-battle-${battle.id}`} type="button" className={`av-battle-row av-tone-${battle.outcome ?? 'draw'}${note ? ' has-note' : ''}`} onClick={() => onBattle(battle.id)}>
+                    <span className="av-battle-date">第 {battle.startedAt.day} 日 · {hm(battle.startedAt.minutes)}</span>
+                    <strong>{battle.missionTitle}</strong>
+                    <span className="av-battle-outcome-tag">{outcomeNames[battle.outcome ?? 'draw']}</span>
+                    <span className="av-battle-meta">{battle.rounds} 轮 · {number(battle.rewards?.gold ?? 0)} 星砂</span>
+                    {note ? <span className="av-battle-note-mark"><BookOpen size={11} />札记</span> : <ArrowUpRight size={12} />}
+                  </button>
+                  {note && onBattleNote && <button id={`records-note-${battle.id}`} type="button" className="av-battle-note-link" onClick={() => onBattleNote(battle.id)}><BookOpen size={12} />读札记</button>}
+                </li>
+              );
+            })}
           </ol>
         ) : (
           <div className="av-empty av-empty-battle">

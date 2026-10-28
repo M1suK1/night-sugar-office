@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Play, Pause, SkipForward, FastForward, Swords, Heart, Sparkles, Trophy, Skull, Bandage, X, ScanEye, ArrowRight, Shield, Flame, Snowflake, TrendingDown, TrendingUp, Timer } from 'lucide-react';
+import { Play, Pause, SkipForward, FastForward, Swords, Heart, Sparkles, Trophy, Skull, Bandage, X, ScanEye, ArrowRight, Shield, Flame, Snowflake, TrendingDown, TrendingUp, Timer, BookOpen } from 'lucide-react';
 import type { BattleState, BattleUnit, BattleEvent } from '../types';
 import { outcomeLabel } from '../combat';
 import { findMonster } from '../content/monsters';
@@ -71,7 +71,7 @@ function EventRow({ event, units }: { event: BattleEvent; units: BattleUnit[] })
   );
 }
 
-export function BattleReport({ battle, onClose }: { battle: BattleState; onClose: () => void }) {
+export function BattleReport({ battle, hasNote, onNote, onClose }: { battle: BattleState; hasNote?: boolean; onNote?: () => void; onClose: () => void }) {
   const frames = battle.frames?.length ? battle.frames : [{ round: battle.round, units: battle.units, initiative: battle.initiative }];
   const [tab, setTab] = useState<'replay' | 'report'>('replay');
   const [index, setIndex] = useState(0);
@@ -106,6 +106,7 @@ export function BattleReport({ battle, onClose }: { battle: BattleState; onClose
         </div>
         <div className="battle-head-right">
           <span className="battle-seed">SEED {battle.seed.toString(16).toUpperCase()}</span>
+          {onNote && <button id="battle-note-open" type="button" className="btn icon-text battle-note-entry" onClick={onNote}><BookOpen size={14} />{hasNote ? '战斗札记' : '写札记'}</button>}
           <div className="battle-tabs" role="tablist" aria-label="战斗记录分页">
             <button id="battle-tab-replay" role="tab" aria-selected={tab === 'replay'} onClick={() => setTab('replay')}>回放</button>
             <button id="battle-tab-report" role="tab" aria-selected={tab === 'report'} onClick={() => setTab('report')}>战报</button>
@@ -169,7 +170,7 @@ export function BattleReport({ battle, onClose }: { battle: BattleState; onClose
             {battle.fatal?.length ? <div className="fatal-note"><Skull size={14} />{battle.fatal.map(id => battle.units.find(u => u.uid === `ally-${id}`)?.name).join('、')}的第五道疤痕已经出现。她回不来了。</div> : null}
           </section>
         </div>
-        <div className="modal-actions"><span>报告由规则引擎生成，叙事不会改写数值。</span><button id="battle-return" className="btn primary" onClick={onClose}>返回事务所<ArrowRight size={16} /></button></div>
+        <div className="modal-actions"><span>报告由规则引擎生成，叙事不会改写数值。</span>{onNote && <button id="battle-note-cta" type="button" className="btn icon-text" onClick={onNote}><BookOpen size={15} />{hasNote ? '回看战斗札记' : '把这一战写成札记'}</button>}<button id="battle-return" className="btn primary" onClick={onClose}>返回事务所<ArrowRight size={16} /></button></div>
       </>}
     </div>
   );
