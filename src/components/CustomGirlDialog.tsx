@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Scissors, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Scissors, Shirt, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react';
 import type { Archetype, DraftTrait, Element, GirlDraft, StatKey, TraitPolarity } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
 import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
@@ -7,6 +7,7 @@ import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
 import { loadImage, removeImageBackground } from '../image';
+import { readWardrobePackage, type WardrobePackage } from '../wardrobeImport';
 import { CutoutPreview } from './CutoutPreview';
 
 type FieldKey = 'name' | 'codename' | 'title' | 'element' | 'archetype' | 'goal' | 'quote' | 'appearance' | 'personality' | 'outfitDescription';
@@ -53,7 +54,10 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [filled, setFilled] = useState<Set<FieldKey>>(new Set());
   const [pending, setPending] = useState<Set<FieldKey>>(new Set());
   const [hasDraft, setHasDraft] = useState(false);
+  const [wardrobe, setWardrobe] = useState<WardrobePackage | null>(null);
+  const [wardrobeNote, setWardrobeNote] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const wardrobeRef = useRef<HTMLInputElement>(null);
   const total = Object.values(stats).reduce((sum, value) => sum + value, 0);
   const remaining = 260 - total;
 
@@ -73,6 +77,26 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       setSource(image); setZoom(1); setX(0); setY(0); setMessage('');
     };
     image.src = url;
+  };
+
+  const pickWardrobe = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+      setWardrobeNote('衣柜包需要是 JSON 文件，例如 wardrobe.json。');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) { setWardrobeNote('衣柜包超过 12MB，请先压缩图片。'); return; }
+    try {
+      const parsed = readWardrobePackage(JSON.parse(await file.text()), color);
+      if (!parsed.ok) { setWardrobeNote(parsed.message); return; }
+      setWardrobe(parsed);
+      if (parsed.portrait && !preview) setPreview(parsed.portrait);
+      const variantCount = Object.keys(parsed.importedVariants).length;
+      setWardrobeNote(`已读取 ${parsed.outfits.length} 套服装${parsed.witchForm ? '、魔女化立绘' : ''}和 ${variantCount} 张表情差分。`);
+      setMessage('');
+    } catch {
+      setWardrobeNote('衣柜包不是有效的 JSON，请检查文件。');
+    }
   };
 
   const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(STAT_MIN, Math.min(STAT_MAX, prev[key] + delta)) }));
@@ -106,7 +130,11 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
-      portrait: preview || undefined,
+      portrait: preview || wardrobe?.portrait || undefined,
+      wardrobe: wardrobe?.outfits,
+      outfitId: wardrobe?.outfitId,
+      importedVariants: wardrobe?.importedVariants,
+      witchForm: wardrobe?.witchForm,
     });
   };
 
@@ -267,6 +295,31 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
           <label>{fieldHead('性格描述', 'personality')}<textarea className={`av-input${shimmer('personality')}`} rows={2} value={personality} onChange={e => editText('personality', setPersonality, e.target.value)} maxLength={80} /></label>
           <label>{fieldHead('服装描述', 'outfitDescription')}<textarea className={`av-input${shimmer('outfitDescription')}`} rows={2} value={outfitDescription} onChange={e => editText('outfitDescription', setOutfitDescription, e.target.value)} maxLength={80} /></label>
         </div>
+      </div>
+      <div className="custom-wardrobe-package">
+        <div className="custom-wardrobe-head">
+          <span><Shirt size={14} /><b>衣柜与表情</b></span>
+          <small>可选：一次带入多套服装、各套表情差分和魔女化立绘</small>
+        </div>
+        <div className="custom-wardrobe-actions">
+          <button id="custom-wardrobe-import" type="button" className="av-btn av-btn-small" onClick={() => wardrobeRef.current?.click()}><Upload size={12} />导入衣柜包 JSON</button>
+          <input
+            id="custom-wardrobe-file"
+            ref={wardrobeRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void pickWardrobe(file); }}
+          />
+          {wardrobe && <button id="custom-wardrobe-clear" type="button" className="av-btn av-btn-small" onClick={() => { setWardrobe(null); setWardrobeNote(''); }}><X size={12} />移除衣柜包</button>}
+        </div>
+        {wardrobe && <div className="custom-wardrobe-summary">
+          <b>{wardrobe.outfits.length} 套服装{wardrobe.witchForm ? ' · 含魔女化' : ''}</b>
+          <span>{Object.keys(wardrobe.importedVariants).length} 张表情差分</span>
+          <small>{wardrobe.outfits.map(item => item.name).join(' / ')}</small>
+        </div>}
+        {wardrobeNote && <p className="custom-wardrobe-note" role="status">{wardrobeNote}</p>}
+        <p className="muted custom-wardrobe-hint">包内可含 <code>wardrobe</code>（或 <code>outfits</code>）、<code>outfitId</code>、<code>importedVariants</code>、<code>witchForm</code> 和 <code>portrait</code>；表情键写成 <code>服装ID:表情</code>。</p>
       </div>
       {cut && <CutoutPreview before={cut.before} after={cut.after} removed={cut.removed} tolerance={tolerance} busy={cutting} onApply={applyCut} onDiscard={discardCut} onRetry={() => void cutBackground()} />}
     </div>}

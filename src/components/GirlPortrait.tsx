@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import type { Expression, Outfit, PortraitSpec } from '../types';
-import { expressionLabel, expressionVariantKey } from '../expressions';
+import { currentExpressionOutfitId, expressionLabel, expressionVariantKey, expressionOutfits } from '../expressions';
 
 /** 立绘只依赖这几项；我方 Girl 与敌方 BattleUnit 都能适配成这个形状。 */
 export interface PortraitSubject {
@@ -14,6 +14,7 @@ export interface PortraitSubject {
   outfitId?: string;
   corruption?: number;
   witch?: boolean;
+  witchForm?: Outfit;
   portraitSpec?: PortraitSpec;
   importedVariants?: Record<string, string>;
 }
@@ -29,9 +30,10 @@ const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: st
 
 export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: PortraitSubject; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
   const id = useId().replace(/:/g, '');
-  const wardrobe = girl.wardrobe?.find(o => o.id === girl.outfitId);
+  const activeOutfitId = currentExpressionOutfitId(girl);
+  const wardrobe = expressionOutfits(girl).find(o => o.id === activeOutfitId);
   const outfitColor = wardrobe?.palette?.[0] ?? girl.color;
-  const outfitKey = wardrobe?.layerKey ?? girl.outfitId ?? 'uniform';
+  const outfitKey = wardrobe?.layerKey ?? activeOutfitId;
   const expression = (girl.expression ?? 'calm') as Expression;
   const face = expressionEyes[expression] ?? expressionEyes.calm;
   const seed = Array.from(girl.id + girl.name).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
@@ -41,7 +43,7 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
   const gemCore = girl.witch ? '#d85a7f' : corruption >= 40 ? '#c478b8' : '#fff2f8';
 
   const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : girl.portrait;
-  const variantKey = expressionVariantKey(wardrobe?.id ?? girl.outfitId ?? 'custom', expression);
+  const variantKey = expressionVariantKey(activeOutfitId, expression);
   const expressionVariant = girl.importedVariants?.[variantKey];
   const activeVariant = expressionVariant?.startsWith('data:image/') ? expressionVariant : undefined;
   const shownPortrait = activeVariant ?? portrait;

@@ -54,6 +54,7 @@ export interface GirlDraft {
   appearance: string; personality: string; outfitDescription: string;
   stats: Record<StatKey, number>; skillIds: string[]; traits: DraftTrait[];
   portrait?: string; appearanceSpec?: PortraitSpec; portraitHint?: string;
+  wardrobe?: Outfit[]; outfitId?: string; importedVariants?: Record<string, string>; witchForm?: Outfit;
 }
 
 export interface GirlCard {

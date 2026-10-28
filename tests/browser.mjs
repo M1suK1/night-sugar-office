@@ -1575,6 +1575,88 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.screenshot({ path: 'artifacts/llm-slots.png', animations: 'disabled' });
     await page.locator('#llm-console-toggle').click();
   });
+  await check('魔女化：独立表情页、真实立绘切换与恢复普通服装', async () => {
+    const witchArt = await page.evaluate(() => {
+      const make = (fill) => {
+        const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
+        const ctx = canvas.getContext('2d'); if (!ctx) return '';
+        ctx.fillStyle = fill; ctx.fillRect(0, 0, 400, 500);
+        ctx.fillStyle = '#f5d9e6'; ctx.beginPath(); ctx.arc(200, 210, 86, 0, Math.PI * 2); ctx.fill();
+        return canvas.toDataURL('image/png');
+      };
+      return { base: make('#315f9a'), variant: make('#b23a5e') };
+    });
+    const beforeWitch = await stored();
+    await page.evaluate(({ base, variant }) => {
+      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+      const yue = raw.girls.find(girl => girl.id === 'yue');
+      yue.corruption = 60; yue.witch = false;
+      yue.witchForm = { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch', portrait: base };
+      yue.importedVariants = { ...(yue.importedVariants ?? {}), 'witchform:calm': variant };
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+    }, witchArt);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-appearance').click();
+    await page.locator('#dossier-witch-slot').click();
+    await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(true);
+    await expect(page.locator('.dossier-art .girl-portrait img')).toHaveAttribute('src', witchArt.variant);
+    await page.locator('#dossier-expression-manage').click();
+    await expect(page.locator('#expression-variant-outfit-witchform')).toBeVisible();
+    await expect(page.locator('#expression-variant-outfit-witchform')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#expression-variant-card-calm .expression-variant-state')).toHaveText('已导入');
+    await page.screenshot({ path: 'artifacts/expression-variants-witch.png', animations: 'disabled' });
+    await page.locator('#expression-variant-close').click();
+    await close();
+    await page.evaluate(snapshot => localStorage.setItem('night-sugar-office:v1', JSON.stringify(snapshot)), beforeWitch);
+    await page.reload({ waitUntil: 'networkidle' });
+  });
+  await check('自定义登记：衣柜包带入多套服装、表情差分与魔女化立绘', async () => {
+    const swatches = await page.evaluate(() => {
+      const make = (fill) => {
+        const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
+        const ctx = canvas.getContext('2d'); if (!ctx) return '';
+        ctx.fillStyle = fill; ctx.fillRect(0, 0, 400, 500);
+        ctx.fillStyle = '#f5d9e6'; ctx.beginPath(); ctx.arc(200, 210, 86, 0, Math.PI * 2); ctx.fill();
+        return canvas.toDataURL('image/png');
+      };
+      return { uniform: make('#8fb8c9'), casual: make('#d8a5e6'), witch: make('#e58c8c') };
+    });
+    const pack = {
+      wardrobe: [
+        { id: 'uniform', name: '值夜制服', description: '带星形扣子的制服。', palette: ['#d98aa8'], layerKey: 'uniform', portrait: swatches.uniform },
+        { id: 'casual', name: '休闲装', description: '下班后穿的便服。', palette: ['#8fb8c9'], layerKey: 'casual', portrait: swatches.casual },
+      ],
+      outfitId: 'casual',
+      importedVariants: { 'uniform:calm': swatches.uniform, 'casual:smile': swatches.casual, 'witchform:angry': swatches.witch },
+      witchForm: { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8'], layerKey: 'formal', form: 'witch', portrait: swatches.witch },
+    };
+    fs.writeFileSync('artifacts/fixture-wardrobe.json', JSON.stringify(pack));
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await page.locator('#custom-entry-blank').click();
+    await page.locator('#custom-name').fill('衣柜登记');
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    await page.setInputFiles('#custom-wardrobe-file', 'artifacts/fixture-wardrobe.json');
+    await expect(page.locator('.custom-wardrobe-summary')).toContainText('2 套服装');
+    await expect(page.locator('.custom-wardrobe-summary')).toContainText('3 张表情差分');
+    await page.screenshot({ path: 'artifacts/custom-wardrobe-import.png', animations: 'disabled' });
+    await page.locator('#custom-create').click();
+    await expect.poll(async () => (await stored()).candidates.some(girl => girl.name === '衣柜登记')).toBe(true);
+    const created = (await stored()).candidates.find(girl => girl.name === '衣柜登记');
+    expect(created.wardrobe.length).toBe(2);
+    expect(created.outfitId).toBe('casual');
+    expect(created.importedVariants['uniform:calm']).toBeTruthy();
+    expect(created.importedVariants['witchform:angry']).toBeTruthy();
+    expect(created.witchForm.id).toBe('witchform');
+    await close();
+  });
   await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

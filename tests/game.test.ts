@@ -14,6 +14,7 @@ import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfil
 import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
+import { readWardrobePackage } from '../src/wardrobeImport.ts';
 import { storyPlanTemplate } from '../src/storyplan.ts';
 import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
@@ -905,6 +906,94 @@ test('表情差分按服装保存，支持批量、删除、候补与契约卡�
   if (!parsed.ok) return;
   assert.deepEqual(parsed.card.girl.importedVariants, girl.importedVariants);
   assert.notEqual(girlCardHash(buildGirlCard({ ...girl, importedVariants: { [calmKey]: 'data:image/webp;base64,DDDD' } }, saved.state)), girlCardHash(card));
+});
+
+test('自定义登记可携带多套衣柜、表情差分与魔女化立绘', () => {
+  const s = act(createInitialState(), { type: 'reset', mode: 'blank' }).state;
+  const calm = 'data:image/webp;base64,AAAA';
+  const smile = 'data:image/webp;base64,BBBB';
+  const angry = 'data:image/webp;base64,CCCC';
+  const draft = {
+    name: '灰灯', codename: '夜班', title: '带着整柜衣服登记的人', element: '月影系' as const, archetype: '输出' as const,
+    color: '#d98aa8', quote: '衣服也是契约的一部分。', goal: '把每一套衣服都穿去值夜', appearance: '短发', personality: '认真', outfitDescription: '自己缝的制服',
+    stats: { magic: 65, insight: 65, agility: 65, empathy: 65 },
+    skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'],
+    traits: [{ name: '整装待发', description: '出门前会检查三遍。', polarity: 'neutral' as const }],
+    portrait: calm,
+    wardrobe: [
+      { id: 'uniform', name: '值夜制服', description: '制服。', palette: ['#d98aa8'], layerKey: 'uniform', portrait: calm },
+      { id: 'casual', name: '休闲装', description: '便服。', palette: ['#8fb8c9'], layerKey: 'casual', portrait: smile },
+    ],
+    outfitId: 'casual',
+    importedVariants: {
+      'uniform:calm': calm,
+      'casual:smile': smile,
+      'witchform:angry': angry,
+      'gone:shy': smile,
+    },
+    witchForm: { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8'], layerKey: 'formal', form: 'witch' as const, portrait: angry },
+  };
+  const created = act(s, { type: 'createGirl', draft });
+  assert.equal(created.ok, true);
+  const girl = created.state.candidates[0];
+  assert.equal(girl.wardrobe.length, 2);
+  assert.equal(girl.outfitId, 'casual');
+  assert.equal(girl.wardrobe[1].name, '休闲装');
+  assert.equal(girl.importedVariants?.['uniform:calm'], calm);
+  assert.equal(girl.importedVariants?.['casual:smile'], smile);
+  assert.equal(girl.importedVariants?.['witchform:angry'], angry);
+  assert.equal(girl.importedVariants?.['gone:shy'], undefined);
+  assert.equal(girl.witchForm?.id, 'witchform');
+  assert.ok(girl.witchForm?.portrait);
+
+  const card = buildGirlCard(girl, created.state);
+  assert.equal(card.girl.witchForm?.id, 'witchform');
+  assert.equal(card.girl.wardrobe?.length, 2);
+  assert.equal(card.girl.importedVariants?.['witchform:angry'], angry);
+  assert.equal(card.girl.importedVariants?.['gone:shy'], undefined);
+
+  const base = createInitialState();
+  const yue = base.girls.find(item => item.id === 'yue')!;
+  yue.witchForm = { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8'], layerKey: 'formal', form: 'witch', portrait: angry };
+  yue.importedVariants = { 'witchform:angry': angry };
+  const roundTrip = parseGirlCard(JSON.stringify(buildGirlCard(yue, base)));
+  assert.equal(roundTrip.ok, true);
+  if (!roundTrip.ok) return;
+  assert.equal(roundTrip.card.girl.witchForm?.id, 'witchform');
+  assert.equal(roundTrip.card.girl.witchForm?.portrait, angry);
+  assert.equal(roundTrip.card.girl.importedVariants?.['witchform:angry'], angry);
+  assert.notEqual(girlCardHash(buildGirlCard(yue, base)), girlCardHash(buildGirlCard({ ...yue, witchForm: undefined }, base)));
+});
+
+test('衣柜包读取活动服装立绘、过滤孤立差分并保留魔女化', () => {
+  const uniform = 'data:image/png;base64,AAAA';
+  const casual = 'data:image/png;base64,BBBB';
+  const witch = 'data:image/png;base64,CCCC';
+  const parsed = readWardrobePackage({
+    girl: {
+      outfits: [
+        { id: 'uniform', name: '值夜制服', palette: ['#d98aa8'], layerKey: 'uniform', portrait: uniform },
+        { id: 'casual', name: '休闲装', palette: ['#8fb8c9'], layerKey: 'casual', portrait: casual },
+      ],
+      outfitId: 'casual',
+      importedVariants: {
+        'uniform:calm': uniform,
+        'casual:smile': casual,
+        'witchform:angry': witch,
+        'gone:shy': casual,
+      },
+      witchForm: { id: 'wrong', name: '魔女化', palette: ['#2a1524'], layerKey: 'formal', form: 'witch', portrait: witch },
+    },
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.outfits.length, 2);
+  assert.equal(parsed.outfitId, 'casual');
+  assert.equal(parsed.portrait, casual);
+  assert.deepEqual(Object.keys(parsed.importedVariants).sort(), ['casual:smile', 'uniform:calm', 'witchform:angry']);
+  assert.equal(parsed.witchForm?.id, 'witchform');
+  assert.equal(parsed.witchForm?.portrait, witch);
+  assert.equal(readWardrobePackage({ outfits: [] }).ok, false);
 });
 
 test('对话上下文包含角色特性、同伴关系、完整历史与战斗记录', async () => {

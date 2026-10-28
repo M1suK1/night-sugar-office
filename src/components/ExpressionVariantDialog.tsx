@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, ImagePlus, Info, Loader2, Shirt, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { Expression, Girl } from '../types';
-import { EXPRESSIONS, EXPRESSION_META, EXPRESSION_VARIANT_LIMIT, expressionFromFileName, expressionVariantKey } from '../expressions';
+import { EXPRESSIONS, EXPRESSION_META, EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionFromFileName, expressionOutfits, expressionVariantKey } from '../expressions';
 import { resizeImageFile } from '../image';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -16,8 +16,8 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<Note | null>(null);
-  const [outfitId, setOutfitId] = useState(girl.outfitId ?? girl.wardrobe?.[0]?.id ?? 'custom');
-  const wardrobe = girl.wardrobe ?? [];
+  const [outfitId, setOutfitId] = useState(currentExpressionOutfitId(girl));
+  const wardrobe = expressionOutfits(girl);
   const activeOutfitId = wardrobe.some(item => item.id === outfitId) ? outfitId : wardrobe[0]?.id ?? outfitId;
   const imported = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(activeOutfitId, id)])).length;
   const importedFor = (id: string) => EXPRESSIONS.filter(expression => Boolean(girl.importedVariants?.[expressionVariantKey(id, expression)])).length;
@@ -81,7 +81,7 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
   return <div className="standard-modal expression-variant-modal">
     <div className="modal-eyebrow"><Sparkles size={14} />表情差分 / 按服装管理</div>
     <h2>{girl.name}的表情。</h2>
-    <p className="muted">每套服装单独准备六种表情的立绘。导入后会真正替换图片，角色档案、对话、战斗札记与多人舞台都会同步；没有导入的表情继续使用基础立绘。差分只保存在本地存档里。</p>
+    <p className="muted">普通服装与魔女化各自准备六种表情的立绘。导入后会真正替换图片，角色档案、对话、战斗札记与多人舞台都会同步；没有导入的表情继续使用基础立绘。差分只保存在本地存档里。</p>
 
     {wardrobe.length > 0 && <div className="expression-variant-outfits" role="tablist" aria-label="选择要管理的服装">
       {wardrobe.map(item => <button
@@ -90,10 +90,10 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
         type="button"
         role="tab"
         aria-selected={item.id === activeOutfitId}
-        className={item.id === activeOutfitId ? 'active' : ''}
+        className={`${item.id === activeOutfitId ? 'active' : ''} ${item.id === 'witchform' ? 'witch' : ''}`}
         disabled={Boolean(busy)}
         onClick={() => chooseOutfit(item.id)}
-      ><Shirt size={12} /><span>{item.name}</span><b>{importedFor(item.id)} / {EXPRESSION_VARIANT_LIMIT}</b></button>)}
+      >{item.id === 'witchform' ? <Sparkles size={12} /> : <Shirt size={12} />}<span>{item.name}</span><b>{importedFor(item.id)} / {EXPRESSION_VARIANT_LIMIT}</b></button>)}
     </div>}
 
     <div className="expression-variant-summary">
@@ -123,9 +123,10 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
         const key = expressionVariantKey(activeOutfitId, expression);
         const has = Boolean(girl.importedVariants?.[key]);
         const meta = EXPRESSION_META[expression];
+        const previewWitch = activeOutfitId === 'witchform';
         return <article key={expression} id={`expression-variant-card-${expression}`} className={`expression-variant-card ${has ? 'has-image' : ''} ${girl.expression === expression ? 'picked' : ''}`}>
           <div className="expression-variant-preview">
-            <GirlPortrait girl={{ ...girl, outfitId: activeOutfitId, expression }} variant="full" className="expression-variant-portrait" />
+            <GirlPortrait girl={{ ...girl, outfitId: previewWitch ? 'witchform' : activeOutfitId, witch: previewWitch, expression }} variant="full" className="expression-variant-portrait" />
             <span className={`expression-variant-state ${has ? 'ready' : ''}`}>{has ? '已导入' : '基础立绘'}</span>
           </div>
           <div className="expression-variant-copy">

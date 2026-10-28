@@ -24,6 +24,8 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
     portraitSpec: actor.portraitSpec,
     outfitId: girl?.outfitId,
     wardrobe: girl?.wardrobe,
+    witch: girl?.witch,
+    witchForm: girl?.witchForm,
     importedVariants: girl?.importedVariants,
   };
 }

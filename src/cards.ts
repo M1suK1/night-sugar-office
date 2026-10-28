@@ -18,7 +18,7 @@ export function girlCardHash(card: GirlCard): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${hash(value)}`)
     .join('|');
-  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, variants].join(':'));
+  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, variants].join(':'));
 }
 
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {
@@ -32,6 +32,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
       wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
       importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
+      witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
     },
   };
 }
@@ -62,6 +63,24 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
   const portraitOk = !g.portrait || (typeof g.portrait === 'string' && ((g.portrait.startsWith('/art/') && g.portrait.length < 200) || (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(g.portrait) && g.portrait.length <= 2_800_000)));
   if (!portraitOk) return { ok: false, message: '立绘必须是小于约 2MB 的 PNG、JPEG、WebP 或内置 SVG。' };
   const wardrobe: Outfit[] | undefined = Array.isArray(g.wardrobe) ? g.wardrobe.filter(outfit => outfit && typeof outfit.id === 'string' && typeof outfit.name === 'string').slice(0, 4) : undefined;
+  const rawWitch = (g as Record<string, unknown>).witchForm;
+  const witchPortraitOk = (value: unknown): value is string => typeof value === 'string'
+    && ((value.startsWith('/art/') && value.length < 200) || (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(value) && value.length <= 2_800_000));
+  const witchForm: Outfit | undefined = rawWitch && typeof rawWitch === 'object' && !Array.isArray(rawWitch)
+    ? (() => {
+      const raw = rawWitch as Record<string, unknown>;
+      return {
+        id: 'witchform' as const,
+        form: 'witch' as const,
+        name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 24) : '魔女化 · 夜之形',
+        description: typeof raw.description === 'string' ? raw.description.slice(0, 100) : '从契约卡带入的魔女形态。',
+        palette: Array.isArray(raw.palette) ? raw.palette.filter((color): color is string => typeof color === 'string').slice(0, 5) : [],
+        layerKey: typeof raw.layerKey === 'string' ? raw.layerKey.slice(0, 24) : 'witch',
+        portrait: witchPortraitOk(raw.portrait) ? raw.portrait : undefined,
+        imported: true,
+      };
+    })()
+    : undefined;
   const normalized: GirlCard = {
     format: 'night-sugar/girl-card', version: 1, exportedAt: typeof card.exportedAt === 'string' ? card.exportedAt : new Date().toISOString(),
     sourceDay: typeof card.sourceDay === 'number' ? card.sourceDay : 1, packHash: typeof card.packHash === 'string' ? card.packHash : undefined,
@@ -77,6 +96,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',
       expression: EXPRESSIONS.includes(g.expression as Expression) ? g.expression : 'calm',
       importedVariants: sanitizeExpressionVariants(g.importedVariants),
+      witchForm,
       storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
     },
   };

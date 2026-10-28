@@ -1,4 +1,4 @@
-import type { Expression } from './types';
+import type { Expression, Outfit } from './types';
 
 /** 表情的固定顺序：档案、差分管理与导入文件名映射共用。 */
 export const EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
@@ -20,6 +20,18 @@ export const EXPRESSION_VARIANT_MAX_CHARS = 1_600_000;
 
 export function isExpression(value: unknown): value is Expression {
   return typeof value === 'string' && (EXPRESSIONS as string[]).includes(value);
+}
+
+/** 表情差分可以管理的服装：普通衣柜 + 已保存的魔女化立绘。 */
+export function expressionOutfits(girl: { wardrobe?: Outfit[]; witchForm?: Outfit }): Outfit[] {
+  const list = [...(girl.wardrobe ?? [])];
+  if (girl.witchForm) list.push({ ...girl.witchForm, id: 'witchform', form: 'witch' });
+  return list;
+}
+
+/** 当前实际显示的是哪一套；魔女化优先于普通衣柜。 */
+export function currentExpressionOutfitId(girl: { witch?: boolean; witchForm?: Outfit; outfitId?: string }): string {
+  return girl.witch && girl.witchForm ? 'witchform' : girl.outfitId ?? 'custom';
 }
 
 export function expressionLabel(expression: Expression): string {

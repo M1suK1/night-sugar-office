@@ -448,6 +448,9 @@
 .expression-variant-outfits button:hover:not(:disabled){border-color:#f3aec955;color:#ead3df}
 .expression-variant-outfits button.active{border-color:#f3aec988;background:#f3aec914;color:#ffeaf4}
 .expression-variant-outfits button.active b{color:#d9b68a}
+.expression-variant-outfits button.witch{border-color:#c478b833;color:#c9a4c8}
+.expression-variant-outfits button.witch.active{border-color:#d8a5e677;background:#c478b814;color:#f0d8ee}
+.expression-variant-outfits button.witch b{color:#a982a8}
 .expression-variant-outfits button:disabled{opacity:.55;cursor:progress}
 .expression-variant-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid #ffffff10;border-radius:6px;background:linear-gradient(120deg,#1a111d,#0c0910)}
 .expression-variant-summary>span{display:flex;align-items:center;gap:6px;font-family:var(--font-data);font-size:9px;color:#bda7b2;letter-spacing:.04em}

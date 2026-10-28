@@ -100,6 +100,21 @@
 .custom-crop-preview>span{position:absolute;bottom:8px;left:9px;font-size:8px;letter-spacing:.1em;color:#a58dab}
 .custom-portrait-fields>label{margin-top:9px}
 .custom-portrait-fields input[type=range]{accent-color:#f49abd;width:100%}
+.custom-wardrobe-package{margin-top:16px;padding:12px 14px;border:1px solid #f3aec92e;border-radius:6px;background:linear-gradient(120deg,#f3aec908,#0d0b12)}
+.custom-wardrobe-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.custom-wardrobe-head>span{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:12px;color:#f0dce8}
+.custom-wardrobe-head>span svg{color:#d9b68a}
+.custom-wardrobe-head>small{font-size:9px;color:#8d7a88}
+.custom-wardrobe-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.custom-girl .custom-wardrobe-actions .av-btn{display:inline-flex;align-items:center;gap:6px;width:auto;min-height:30px;padding:6px 10px;border:1px solid #f3aec933;border-radius:6px;background:#f3aec90a;color:var(--text);font-size:11px}
+.custom-girl .custom-wardrobe-actions .av-btn:hover{border-color:#f3aec966;background:#f3aec914}
+.custom-wardrobe-summary{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:9px;padding:7px 9px;border:1px solid #ffffff0d;border-radius:4px;background:#ffffff05}
+.custom-wardrobe-summary b{font-size:10px;font-weight:500;color:#e6cfe0}
+.custom-wardrobe-summary span{font-family:var(--font-data);font-size:8px;color:#d9b68a}
+.custom-wardrobe-summary small{font-size:8px;color:#8c7886;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.custom-wardrobe-note{margin:8px 0 0;font-size:9px;line-height:1.7;color:#cbb0bf}
+.custom-wardrobe-hint{margin:8px 0 0;font-size:8px;line-height:1.8}
+.custom-wardrobe-hint code{padding:1px 4px;border-radius:2px;background:#ffffff0a;color:#bca3b1;font-family:var(--font-data);font-size:7.5px}
 .custom-footer{display:flex;align-items:center;gap:12px;padding:14px 0 18px;border-top:1px solid #f3aec91a;background:#14121b;position:sticky;bottom:0}
 .custom-footer>span{font-size:9px;color:#87768f;margin:0 auto}
 .custom-footer .btn{min-height:38px;padding:9px 15px;display:inline-flex;align-items:center;gap:7px}

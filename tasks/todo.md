@@ -127,3 +127,15 @@
 - [x] 契约卡导出/导入保留差分，哈希纳入差分内容。
 - [x] 118 项状态测试、53 组浏览器流程、生产构建通过。
 - [x] README 与 `tasks/plan-v15.md` 实施记录。
+
+## v16 魔女化表情页与自定义衣柜包
+
+- [x] `expressionOutfits` / `currentExpressionOutfitId`：普通衣柜与 `witchform` 统一成表情页可遍历的服装列表。
+- [x] `GirlPortrait` 在魔女化时使用魔女形态立绘、配色与 `witchform:*` 差分；切回普通服装会退出魔女化。
+- [x] 表情差分弹窗增加魔女化标签页；普通服装预览强制 `witch:false`，不会串用魔女立绘。
+- [x] `GirlDraft` 与 `createGirl` 支持多套服装、活动服装、差分与魔女化立绘；删服装时清理孤立差分。
+- [x] `readWardrobePackage` 读取自定义登记衣柜包：最多四套、嵌套 `girl` 兼容、孤立差分过滤、魔女化规范化。
+- [x] 自定义登记第五步「衣柜与表情」导入/移除、摘要与错误提示。
+- [x] 契约卡保留 `witchForm`，哈希计入魔女化名称与立绘。
+- [x] 120 项状态测试、55 组浏览器流程、生产构建通过。
+- [x] README 与 `tasks/plan-v16.md` 实施记录。

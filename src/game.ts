@@ -2337,6 +2337,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!girl.wardrobe.some(o => o.id === action.outfitId)) return { state, ok: false, message: '衣柜里没有这套服装。' };
       girl.outfitId = action.outfitId;
+      girl.witch = false;
       return { state: next, ok: true, message: `${girl.name}换上了「${girl.wardrobe.find(o => o.id === action.outfitId)?.name}」。` };
     }
     case 'setExpression': {
@@ -2560,9 +2561,20 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
       const extra = draft.skillIds.reduce((acc, id) => acc + (getSkill(id).tier === 'ultimate' ? 700 : getSkill(id).tier === 'signature' ? 300 : 0), 0);
       const id = `g_${hashText(`${draft.name}:${next.day}:${next.minutes}:${next.candidates.length}`).toString(16).padStart(8, '0')}`;
+      const customOutfit = customOutfitFor({ color: draft.color, outfitDescription: draft.outfitDescription, portrait: draft.portrait, portraitSpec: draft.appearanceSpec });
+      const wardrobe = draft.wardrobe?.length ? draft.wardrobe.slice(0, 4) : [customOutfit];
+      const witchForm = draft.witchForm ? { ...draft.witchForm, id: 'witchform' as const, form: 'witch' as const } : undefined;
+      const outfitId = draft.outfitId && wardrobe.some(outfit => outfit.id === draft.outfitId) ? draft.outfitId : wardrobe[0].id;
+      const validOutfitIds = new Set(wardrobe.map(outfit => outfit.id));
+      if (witchForm) validOutfitIds.add('witchform');
+      const importedVariants = sanitizeExpressionVariants(draft.importedVariants);
+      for (const key of Object.keys(importedVariants)) {
+        const parsed = parseExpressionVariantKey(key);
+        if (!parsed || !validOutfitIds.has(parsed.outfitId)) delete importedVariants[key];
+      }
       const girl = hydrate({
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
-        portrait: draft.portrait ?? '', level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
+        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: 1800 + Math.max(0, sum - 260) * 40 + extra,
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
@@ -2570,7 +2582,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
         appearance: draft.appearance, personality: draft.personality, outfitDescription: draft.outfitDescription,
         portraitHint: draft.portraitHint?.trim().slice(0, 80) ?? '',
-        wardrobe: [customOutfitFor({ color: draft.color, outfitDescription: draft.outfitDescription, portrait: draft.portrait, portraitSpec: draft.appearanceSpec })], outfitId: 'custom', expression: 'calm', corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7,
+        wardrobe, outfitId, importedVariants, witchForm, expression: 'calm', corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7,
       });
       next.gold -= 300; book(next, next.day, -300);
       next.candidates.push(girl);

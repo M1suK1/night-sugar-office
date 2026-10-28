@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
-import { EXPRESSIONS, EXPRESSION_META, expressionVariantKey } from '../expressions';
+import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVariantKey } from '../expressions';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -64,7 +64,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
   const gear = items.filter(item => (item.slot === 'weapon' || item.slot === 'charm') && (state.inventory[item.id] ?? 0) > 0);
   const corruptionLabel = girl.witch ? '魔女化' : corruptionTier === 2 ? '第三阶段' : corruptionTier === 1 ? '第二阶段' : '第一阶段';
-  const variantOutfitId = girl.outfitId ?? 'custom';
+  const variantOutfitId = currentExpressionOutfitId(girl);
   const importedVariantCount = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, id)])).length;
   const storyline = state.storylines.find(item => item.girlId === girl.id && item.status === 'active');
   const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
@@ -278,14 +278,14 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <div className="wardrobe-grid">
                   {girl.wardrobe.slice(0, 4).map(outfit => (
                     <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id ? 'picked' : ''}`} aria-pressed={girl.outfitId === outfit.id} onClick={() => onChangeOutfit(outfit.id)}>
-                      <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id }} variant="avatar" /></span>
+                      <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id, witch: false }} variant="avatar" /></span>
                       <span className="wardrobe-copy"><b>{outfit.name}{outfit.custom && <em className="wardrobe-tag">契约礼装</em>}</b><small title={outfit.description}>{outfit.description}</small></span>
                       {girl.outfitId === outfit.id && <span className="wardrobe-check"><BadgeCheck size={12} /></span>}
                     </button>
                   ))}
                   {girl.wardrobe.length < 4 && <button id="dossier-wardrobe-import" type="button" className="wardrobe-tile wardrobe-add" onClick={onWardrobe}><span className="wardrobe-preview"><PackageOpen size={18} /></span><span className="wardrobe-copy"><b>导入衣柜</b><small>立绘、JSON 或从其他契约者复制</small></span></button>}
                   {(witchOutfit || girl.corruption >= rules().corruptionThreshold) && <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch}>
-                    <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: Boolean(witchOutfit), portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
+                    <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: Boolean(witchOutfit), witchForm: witchOutfit, outfitId: 'witchform', portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
                     <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已解锁 · 点击切换') : '侵蚀 40 解锁'}</small></span>
                   </button>}
                 </div>
