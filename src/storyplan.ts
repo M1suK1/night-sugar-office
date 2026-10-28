@@ -1,5 +1,5 @@
-import type { StoryBeat, StoryPlan } from './types.ts';
-import { sanitizeGraph } from './storygraph.ts';
+import type { Girl, StoryBeat, StoryGraph, StoryPlan } from './types.ts';
+import { compileBeatsToGraph, layoutStoryGraph, sanitizeGraph, validateGraph } from './storygraph.ts';
 
 const clampText = (value: unknown, limit: number, fallback = '') =>
   typeof value === 'string' ? value.trim().slice(0, limit) : fallback;
@@ -30,13 +30,33 @@ export function storyPlanTemplate(title = '', premise = ''): StoryPlan {
   };
 }
 
+export function hasStoryGraph(plan?: StoryPlan | null): plan is StoryPlan & { graph: StoryGraph } {
+  return Boolean(plan?.graph && Array.isArray(plan.graph.nodes) && plan.graph.nodes.length > 0);
+}
+
+export function playableStoryPlan(plan?: StoryPlan | null): boolean {
+  if (!plan) return false;
+  if (hasStoryGraph(plan)) {
+    return plan.graph.nodes.some(node => node.kind === 'start') && plan.graph.nodes.some(node => node.kind === 'end');
+  }
+  return Array.isArray(plan.beats) && plan.beats.length > 0;
+}
+
+/** 没有 API 密钥或两次生成都失败时的本地兜底：四幕模板编译成可编辑蓝图。 */
+export function fallbackStoryPlan(girl: Girl): StoryPlan {
+  const plan = storyPlanTemplate(`${girl.name}的故事`, `${girl.name}把还没说完的那段过去留在了今晚。`);
+  return { ...plan, graph: layoutStoryGraph(compileBeatsToGraph(plan)) };
+}
+
 export function sanitizeStoryPlan(raw: unknown): StoryPlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Partial<StoryPlan>;
-  if (!Array.isArray(value.beats) || value.beats.length === 0) return null;
+  const graph = value.graph ? sanitizeGraph(value.graph) ?? undefined : undefined;
+  const rawBeats = Array.isArray(value.beats) ? value.beats : [];
+  if (!rawBeats.length && !graph) return null;
   const title = clampText(value.title, 40);
   if (!title) return null;
-  const beats = value.beats.slice(0, 6).map((beat, index) => {
+  const beats = rawBeats.slice(0, 6).map((beat, index) => {
     const source = (beat ?? {}) as Partial<StoryBeat>;
     const choices = Array.isArray(source.choices) ? source.choices.slice(0, 3).map((choice, at) => {
       const item = (choice ?? {}) as unknown as Record<string, unknown>;
@@ -73,7 +93,7 @@ export function sanitizeStoryPlan(raw: unknown): StoryPlan | null {
     } as StoryBeat;
   });
   return {
-    graph: value.graph ? sanitizeGraph(value.graph) ?? undefined : undefined,
+    graph,
     title,
     premise: clampText(value.premise, 400),
     tone: clampText(value.tone, 40),
@@ -85,6 +105,9 @@ export function storyPlanIssues(plan: StoryPlan | null): string[] {
   if (!plan) return ['还没有剧本。'];
   const issues: string[] = [];
   if (!plan.title.trim()) issues.push('先给这条故事线起个标题。');
+  if (hasStoryGraph(plan)) {
+    return [...issues, ...validateGraph(plan.graph).filter(issue => issue.level === 'error').map(issue => issue.message)];
+  }
   plan.beats.forEach((beat, index) => {
     if (!beat.title?.trim()) issues.push(`第 ${index + 1} 幕缺少标题。`);
     if (!(beat.hook ?? '').trim()) issues.push(`第 ${index + 1} 幕缺少事件钩子。`);

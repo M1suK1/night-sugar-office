@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, Storyline } from './types';
+import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, StoryPlan } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
@@ -24,7 +24,7 @@ import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryline, loadLlmConfig } from './llm';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, loadLlmConfig } from './llm';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
 import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
@@ -39,9 +39,8 @@ import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
-import { StorylineEditorDialog } from './components/StorylineEditorDialog';
 import { StoryGraphDialog } from './components/StoryGraphDialog';
-import { storyPlanTemplate } from './storyplan';
+import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { StartDialog } from './components/StartDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
@@ -57,7 +56,6 @@ type Modal =
   | { type: 'battle-note'; id: string }
   | { type: 'event'; id: string }
   | { type: 'story'; id: string }
-  | { type: 'story-editor'; id: string }
   | { type: 'story-graph'; id: string }
   | { type: 'codex'; id?: string }
   | { type: 'presets'; scope?: PromptScope; presetId?: string }
@@ -106,6 +104,8 @@ export default function App() {
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState<string | undefined>(undefined);
+  const [storyBusy, setStoryBusy] = useState<string | null>(null);
+  const [storyNotice, setStoryNotice] = useState<string | null>(null);
   const lastIncidentDay = useRef(state.day);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
@@ -449,19 +449,40 @@ export default function App() {
   };
 
   const pendingIncident = state.incidents.find(incident => incident.status === 'pending');
-  const startStory = async (girlId: string) => {
+  const startStory = (girlId: string) => {
+    const target = state.girls.find(item => item.id === girlId);
+    if (!target?.storyPlan) { notify('先生成或画一张故事蓝图，再按蓝图开场。', false); return; }
+    perform({ type: 'startStoryline', girlId });
+  };
+  const generateBlueprint = async (girlId: string) => {
+    if (storyBusy) return;
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
-    if (target.storyPlan?.beats?.length) { perform({ type: 'startStoryline', girlId }); return; }
-    const result = await generateStoryline(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('storyline', presets, binding)));
-    if (!result.ok) { perform({ type: 'startStoryline', girlId }); notify(`${result.message} 先用模板起了个头。`, false); return; }
-    const data = result.data;
-    const storyline: Storyline = {
-      id: `story-${girlId}-${Date.now()}`, girlId, title: data.title, premise: data.premise, tone: data.tone,
-      beats: data.beats.map((beat, index) => ({ id: `b${index + 1}`, index, title: beat.title, summary: beat.summary, scene: beat.scene, hook: beat.hook, mission: beat.mission, choices: beat.choices.map((choice, at) => ({ id: `c${at + 1}`, label: choice.label, intent: choice.intent, effect: choice.effect })), status: index === 0 ? 'open' as const : 'locked' as const })),
-      stage: 0, status: 'active', createdAt: new Date().toISOString(), day: state.day, source: 'llm',
-    };
-    perform({ type: 'addStoryline', storyline });
+    setStoryBusy(girlId);
+    setStoryNotice(null);
+    try {
+      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('storyline', presets, binding)));
+      if (result.ok) {
+        const plan: StoryPlan = { title: result.data.title, premise: result.data.premise, tone: result.data.tone, beats: [], graph: result.data.graph };
+        if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
+        setModal({ type: 'story-graph', id: girlId });
+        notify(`蓝图写好了：${result.data.graph.nodes.length} 个节点、${result.data.graph.nodes.filter(node => node.kind === 'end').length} 个结局。先检查，再按蓝图开场。`);
+        return;
+      }
+      if (target.storyPlan) {
+        notify(`这次没有重写蓝图：${result.message} 原来的蓝图还在。`, false);
+        return;
+      }
+      const plan = fallbackStoryPlan(target);
+      if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
+      setStoryNotice(`这次生成没有通过：${result.message} 先用本地四幕模板起了一张蓝图，你可以直接改。`);
+      setModal({ type: 'story-graph', id: girlId });
+      notify('叙事者这次没写成，先用本地模板起了一张蓝图。', false);
+    } catch (error) {
+      notify(`生成蓝图时出错了：${error instanceof Error ? error.message : '未知错误'}`, false);
+    } finally {
+      setStoryBusy(null);
+    }
   };
   const startEvent = async (girlId: string) => {
     const active = state.events.find(event => event.girlId === girlId && event.status === 'active');
@@ -605,8 +626,8 @@ export default function App() {
       </div>
     </div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
-    {modal && modal.type !== 'event' && modal.type !== 'story-editor' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form'}>
-      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => void startStory(selectedGirl.id)} onStoryEdit={() => setModal({ type: 'story-editor', id: selectedGirl.id })} onStoryGraph={() => setModal({ type: 'story-graph', id: selectedGirl.id })}
+    {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form'}>
+      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
@@ -631,12 +652,15 @@ export default function App() {
         <StoryGraphDialog
           girl={selectedGirl}
           incidents={library.incidents}
-          onClose={() => setModal({ type: 'girl', id: selectedGirl.id })}
-          onSave={graph => {
+          notice={storyNotice ?? undefined}
+          onClose={() => { setStoryNotice(null); setModal({ type: 'girl', id: selectedGirl.id }); }}
+          onSave={(graph, meta) => {
             const base = selectedGirl.storyPlan ?? storyPlanTemplate(`${selectedGirl.name}的故事`, '');
-            perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan: { ...base, graph } });
+            const plan: StoryPlan = { ...base, graph, ...(meta ?? {}) };
+            if (!perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan }, true)) return;
+            setStoryNotice(null);
             setModal({ type: 'girl', id: selectedGirl.id });
-            notify('蓝图已保存到这张契约卡。');
+            notify(`蓝图已保存：${graph.nodes.length} 个节点、${graph.nodes.filter(node => node.kind === 'end').length} 个结局。`);
           }}
         />
       )}
@@ -681,16 +705,6 @@ export default function App() {
           }}
         />
       )}
-      {modal?.type === 'story-editor' && selectedGirl && (
-        <div className="story-plan-overlay">
-          <StorylineEditorDialog
-            girl={selectedGirl}
-            onSave={plan => { if (perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan })) setModal({ type: 'girl', id: selectedGirl.id }); }}
-            onClose={() => setModal({ type: 'girl', id: selectedGirl.id })}
-          />
-        </div>
-      )}
-
     {pendingProposal && <Dialog label="今晚的提案" onClose={() => { if (!generating) setPendingProposal(null); }} wide>
       <ProposalDialog state={state} proposal={pendingProposal} busy={generating} onAccept={acceptProposal} onDiscard={() => setPendingProposal(null)} onRegenerate={() => { void generateContent('manual').then(result => { if (!result.ok) notify(result.message, false); }); }} />
     </Dialog>}

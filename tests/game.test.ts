@@ -10,12 +10,12 @@ import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, requestSnapshot } from '../src/llm.ts';
+import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
 import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
 import { readWardrobePackage } from '../src/wardrobeImport.ts';
-import { storyPlanTemplate } from '../src/storyplan.ts';
+import { fallbackStoryPlan, playableStoryPlan, sanitizeStoryPlan, storyPlanTemplate } from '../src/storyplan.ts';
 import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
@@ -24,10 +24,45 @@ import { initiativeOf, simulateBattle } from '../src/combat.ts';
 import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
-import { compileBeatsToGraph, makeNode, validateGraph } from '../src/storygraph.ts';
+import { blueprintIssues, buildGraphFromDraft, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph, type StoryGraphDraft } from '../src/storygraph.ts';
 import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
 import type { Incident, Mission, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
+
+const blueprintDraft = (): StoryGraphDraft => ({
+  nodes: [
+    { id: 'n1', kind: 'start', title: '开始', data: { kind: 'start' } },
+    { id: 'n2', kind: 'scene', title: '夜班门口', data: { kind: 'scene', narration: '门铃响了两下，她站在雨里，没有先开口。' } },
+    {
+      id: 'n3', kind: 'choice', title: '她停在门口', data: {
+        kind: 'choice', prompt: '让她进来，还是先把门关上？',
+        options: [
+          { id: 'a', label: '让她进来', intent: '先接住她', effect: { bond: 2 } },
+          { id: 'b', label: '先关门', intent: '把话留到明天', effect: { corruption: 1 } },
+        ],
+      },
+    },
+    { id: 'n4', kind: 'scene', title: '热水', data: { kind: 'scene', narration: '热水冒着白气，她把杯子握得很紧。' } },
+    {
+      id: 'n5', kind: 'mission', title: '旧城区', data: {
+        kind: 'mission', spec: { title: '送信', goal: '陪她把信送到旧城区。', category: '故事委托', difficulty: '常规', duration: 90, requirement: 'empathy' },
+      },
+    },
+    { id: 'n6', kind: 'reward', title: '信的回声', data: { kind: 'reward', effect: { bond: 3 } } },
+    { id: 'n7', kind: 'end', title: '门开着', data: { kind: 'end', summary: '她留下了。' } },
+    { id: 'n8', kind: 'end', title: '门关着', data: { kind: 'end', summary: '雨声替她回答。' } },
+  ],
+  edges: [
+    { from: 'n1', to: 'n2' },
+    { from: 'n2', to: 'n3' },
+    { from: 'n3', fromPort: 'a', to: 'n4' },
+    { from: 'n3', fromPort: 'b', to: 'n5' },
+    { from: 'n4', to: 'n6' },
+    { from: 'n5', fromPort: 'success', to: 'n6' },
+    { from: 'n5', fromPort: 'failure', to: 'n7' },
+    { from: 'n6', to: 'n8' },
+  ],
+});
 
 const nightProposal = (): NightProposalV2 => ({
   version: 2,
@@ -1777,6 +1812,145 @@ test('手写剧本随契约卡导出导入，并可直接按手稿开场', () =>
 
   const cleared = act(started.state, { type: 'setStoryPlan', girlId: yue.id, plan: null });
   assert.equal(cleared.state.girls[0].storyPlan, undefined);
+});
+
+test('LLM 蓝图草稿会补齐 id、连线与布局，且严格校验只放行完整分支', () => {
+  const graph = buildGraphFromDraft(blueprintDraft());
+  assert.equal(graph.entry, 'n1');
+  assert.equal(graph.nodes.length, 8);
+  assert.equal(graph.edges.length, 8);
+  assert.equal(new Set(graph.nodes.map(node => node.id)).size, 8);
+  assert.equal(new Set(graph.edges.map(edge => edge.id)).size, 8);
+  assert.ok(graph.edges.every(edge => edge.id && edge.from && edge.to));
+  assert.ok(graph.nodes.every(node => node.x >= 0 && node.y >= 0));
+  const xOf = (id: string) => graph.nodes.find(node => node.id === id)?.x ?? 0;
+  assert.ok(xOf('n1') < xOf('n2') && xOf('n2') < xOf('n3'), '默认布局应沿入口向右展开');
+  assert.deepEqual(blueprintIssues(graph).filter(issue => issue.level === 'error'), []);
+
+  const messy = buildGraphFromDraft({
+    nodes: [
+      { id: 'start 1', kind: 'start', data: { kind: 'start' } },
+      { id: 'scene 1', kind: 'scene', data: { kind: 'scene' } },
+      { id: 'end 1', kind: 'end', data: { kind: 'end' } },
+    ],
+    edges: [
+      { from: 'start 1', to: 'scene 1' },
+      { from: 'scene 1', to: 'end 1' },
+      { from: 'start 1', to: 'scene 1' },
+    ],
+  });
+  assert.equal(messy.nodes[0].id, 'start1');
+  assert.equal(messy.edges.length, 2, '同一条连线只应保留一次');
+
+  const brokenDraft = blueprintDraft();
+  brokenDraft.edges = brokenDraft.edges.filter(edge => !(edge.from === 'n5' && edge.fromPort === 'failure'));
+  const broken = buildGraphFromDraft(brokenDraft);
+  const brokenErrors = blueprintIssues(broken).filter(issue => issue.level === 'error').map(issue => issue.message);
+  assert.ok(brokenErrors.some(message => message.includes('失败')), '阶段委托缺少失败出口必须报错');
+  assert.ok(brokenErrors.some(message => message.includes('结束')), '没有路径到结束必须报错');
+
+  const loopDraft = blueprintDraft();
+  loopDraft.edges = [...(loopDraft.edges ?? []), { from: 'n6', to: 'n3' }];
+  assert.ok(blueprintIssues(buildGraphFromDraft(loopDraft)).some(issue => issue.message.includes('环')));
+});
+
+test('无密钥的本地四幕模板可以直接兜底成一张可玩蓝图', () => {
+  const girl = createInitialState().girls[0];
+  const plan = fallbackStoryPlan(girl);
+  assert.equal(plan.title, `${girl.name}的故事`);
+  assert.equal(plan.beats.length, 4);
+  assert.ok(plan.graph && plan.graph.nodes.length >= 8);
+  assert.equal(playableStoryPlan(plan), true);
+  assert.deepEqual(validateGraph(plan.graph!).filter(issue => issue.level === 'error'), []);
+});
+
+test('只有图的蓝图可以保存、随卡导出并直接开场推进', () => {
+  const s = createInitialState();
+  const girl = s.girls[0];
+  girl.bond = 60;
+  const graph = buildGraphFromDraft(blueprintDraft());
+  const plan = { title: '雨里的蓝图', premise: '她带着一封没有地址的信。', tone: '克制', beats: [], graph };
+  const saved = act(s, { type: 'setStoryPlan', girlId: girl.id, plan });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.state.girls[0].storyPlan?.beats.length, 0);
+  assert.equal(saved.state.girls[0].storyPlan?.graph?.nodes.length, 8);
+
+  const card = parseGirlCard(JSON.stringify(buildGirlCard(saved.state.girls[0], { day: saved.state.day, packHash: saved.state.packHash })));
+  assert.equal(card.ok, true);
+  if (card.ok) {
+    assert.equal(card.card.girl.storyPlan?.beats.length, 0);
+    assert.equal(card.card.girl.storyPlan?.graph?.nodes.length, 8);
+  }
+
+  const ready = structuredClone(saved.state);
+  ready.girls[0].bond = 60;
+  const started = act(ready, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(started.ok, true);
+  const story = started.state.storylines[0];
+  assert.ok(story.graph);
+  assert.ok(story.beats.length > 0, '图里的场景应补成 UI 可读的幕');
+  assert.equal(story.run?.waiting?.kind, 'choice');
+  const moved = act(started.state, { type: 'chooseStoryPort', storylineId: story.id, port: 'a' });
+  assert.equal(moved.ok, true);
+  assert.equal(moved.state.storylines[0].status, 'done');
+  assert.ok(moved.state.girls[0].bond > ready.girls[0].bond);
+});
+
+test('有结构错误的蓝图可以存成草稿，但不能开场', () => {
+  const s = createInitialState();
+  const girl = s.girls[0];
+  const draft = blueprintDraft();
+  draft.edges = draft.edges?.filter(edge => !(edge.from === 'n3' && edge.fromPort === 'a'));
+  const graph = buildGraphFromDraft(draft);
+  const plan = { title: '还差一条线', premise: '', tone: '', beats: [], graph };
+  const saved = act(s, { type: 'setStoryPlan', girlId: girl.id, plan });
+  assert.equal(saved.ok, true, '未完成的蓝图允许保存成草稿');
+  const ready = structuredClone(saved.state);
+  ready.girls[0].bond = 60;
+  const started = act(ready, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(started.ok, false);
+  assert.ok(!started.ok && started.message.includes('蓝图还有'));
+  assert.equal(sanitizeStoryPlan({ ...plan, beats: [] })?.graph?.nodes.length, 8);
+});
+
+test('LLM 直接生成完整蓝图，结构不合格时只修复一次', async () => {
+  const girl = createInitialState().girls[0];
+  const calls: Record<string, any>[] = [];
+  const original = globalThis.fetch;
+  const okRaw = { title: '雨里的蓝图', premise: '她带着一封没有地址的信。', tone: '克制', ...blueprintDraft() };
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body ?? '{}')));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(okRaw) }, finish_reason: 'stop' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const result = await generateStoryBlueprint({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, girl);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.title, '雨里的蓝图');
+      assert.equal(result.data.graph.nodes.length, 8);
+      assert.equal(result.data.graph.edges.length, 8);
+    }
+    assert.equal(calls.length, 1);
+    assert.ok(Number(calls[0].max_tokens) >= 5200);
+    assert.ok(JSON.stringify(calls[0].messages).includes('故事蓝图'));
+    assert.ok(JSON.stringify(calls[0].messages).includes('nodes'));
+  } finally { globalThis.fetch = original; }
+
+  const repairCalls: Record<string, any>[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    repairCalls.push(JSON.parse(String(init?.body ?? '{}')));
+    const content = repairCalls.length === 1
+      ? JSON.stringify({ nodes: [{ id: 'n1', kind: 'start', data: { kind: 'start' } }], edges: [] })
+      : JSON.stringify(okRaw);
+    return new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const repaired = await generateStoryBlueprint({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, girl);
+    assert.equal(repaired.ok, true);
+    assert.equal(repairCalls.length, 2);
+    assert.ok(JSON.stringify(repairCalls[1].messages).includes('必须修正的问题'));
+    if (repaired.ok) assert.equal(repaired.data.graph.nodes.length, 8);
+  } finally { globalThis.fetch = original; }
 });
 
 test('无 Key 的模板剧情有四段上千字，逐段选择后收束并推进故事线', () => {

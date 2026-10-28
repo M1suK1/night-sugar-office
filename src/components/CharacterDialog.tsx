@@ -30,7 +30,7 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryEdit, onStoryGraph, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onPersonality }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onPersonality }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
@@ -39,8 +39,10 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onExpressionVariants: () => void;
   onWardrobe: () => void;
   onStory: () => void;
-  onStoryEdit: () => void;
+  onStoryBlueprint: () => void;
+  onStoryRegenerate: () => void;
   onStoryGraph: () => void;
+  storyBusy: boolean;
   onStoryChoice: (storylineId: string, beatId: string, choiceId: string) => void;
   onStoryPort: (storylineId: string, port: string) => void;
   onStoryMission: (missionId: string) => void;
@@ -72,8 +74,13 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const variantOutfitId = currentExpressionOutfitId(girl);
   const importedVariantCount = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, id)])).length;
   const storyline = state.storylines.find(item => item.girlId === girl.id && item.status === 'active');
+  const waitingMission = storyline?.run?.waiting?.kind === 'mission'
+    ? storyline.beats.find(item => item.missionId === storyline.run?.waiting?.ref)
+    : undefined;
   const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
-  const beat = current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
+  const beat = waitingMission ?? current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
+  const planGraph = girl.storyPlan?.graph;
+  const planEnds = planGraph?.nodes.filter(node => node.kind === 'end').length ?? 0;
   const graphChoice = storyline?.graph && storyline.run?.waiting?.kind === 'choice'
     ? storyline.graph.nodes.find(node => node.id === storyline.run?.waiting?.ref)
     : undefined;
@@ -184,14 +191,14 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               {girl.witch && <p className="personality-warning">魔女化会把原本的执念放大成偏执、嫉妒与占有欲；恢复普通形态后仍会读取原本的性格记录。</p>}
             </section>
             <section className="story-panel" aria-labelledby="story-title">
-              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{girl.storyPlan ? '手稿由你写下 · 开场后按幕推进' : '由叙事者按她的过去写四幕 · 每幕的选项会落到状态上'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${storyline.beats.length} 幕` : '未开启'}</em></div>
+              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : girl.storyPlan?.graph ? `${girl.storyPlan.graph.nodes.length} 节点` : '未开启'}</em></div>
               {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
-              {storyline && beat ? (
+              {storyline && (beat || graphChoice) ? (
                 <div className="story-beat">
-                  <b>{beat.title}</b>
-                  {beat.summary && <p>{beat.summary}</p>}
-                  <small>{beat.scene}</small>
-                  {beat.mission ? (
+                  <b>{beat?.title ?? graphChoice?.title ?? '她的回应'}</b>
+                  {beat?.summary && <p>{beat.summary}</p>}
+                  {beat?.scene && <small>{beat.scene}</small>}
+                  {beat && beat.mission ? (
                     <div className={`story-mission ${beat.status ?? 'open'}`}>
                       <small>{beat.status === 'done' ? '这一幕的委托已完成 · 事件在头像角标' : beat.missionId ? '委托已在地图上 · 完成后触发她的剧情事件' : '委托准备中'}</small>
                       <b>{beat.mission.title}</b>
@@ -211,7 +218,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                     </div>
                   ) : (
                     <div className="story-choices">
-                      {beat.choices.map(choice => <button key={choice.id} id={`dossier-story-choice-${choice.id}`} type="button" className="btn" onClick={() => onStoryChoice(storyline.id, beat.id, choice.id)}>{choice.label}</button>)}
+                      {!graphChoice && beat && beat.choices.map(choice => <button key={choice.id} id={`dossier-story-choice-${choice.id}`} type="button" className="btn" onClick={() => onStoryChoice(storyline.id, beat.id, choice.id)}>{choice.label}</button>)}
                       {graphChoice?.data.kind === 'choice' && graphChoice.data.options.map(option => (
                         <button key={option.id} id={`dossier-story-port-${option.id}`} type="button" className="btn" onClick={() => onStoryPort(storyline.id, option.id)}>{option.label || '继续'}</button>
                       ))}
@@ -223,15 +230,29 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 {girl.storyPlan && (
                   <div className="story-plan-card" id="dossier-story-plan">
                     <b>{girl.storyPlan.title}</b>
-                    <small>{girl.storyPlan.beats.length} 幕手稿 · 随契约卡一起导出</small>
-                    <span className="story-plan-tags">{girl.storyPlan.beats.map((planBeat, planIndex) => <em key={planBeat.id}>{planIndex + 1}. {planBeat.title || '未命名'}</em>)}</span>
+                    <small>{planGraph ? `${planGraph.nodes.length} 个节点 · ${planEnds} 个结局 · 随契约卡一起导出` : `${girl.storyPlan.beats.length} 幕手稿 · 开场时会编译成蓝图`}</small>
+                    {planGraph ? (
+                      <span className="story-plan-tags">{planGraph.nodes.slice(0, 8).map(node => <em key={node.id}>{node.title || '未命名'}</em>)}{planGraph.nodes.length > 8 && <em>+{planGraph.nodes.length - 8}</em>}</span>
+                    ) : (
+                      <span className="story-plan-tags">{girl.storyPlan.beats.map((planBeat, planIndex) => <em key={planBeat.id}>{planIndex + 1}. {planBeat.title || '未命名'}</em>)}</span>
+                    )}
                   </div>
                 )}
                 <div className="story-start-row">
-                  <button id="dossier-story-start" type="button" className="btn" disabled={girl.bond < 20} onClick={onStory}>{girl.storyPlan ? '按手稿开场' : '开启角色故事线'}{girl.bond < 20 ? '（羁绊需 20）' : ''}</button>
-                  <button id="dossier-story-edit" type="button" className="btn ghost" onClick={onStoryEdit}>{girl.storyPlan ? '编辑手稿' : '自己写一条'}</button>
-                  <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph}>蓝图编辑</button>
+                  {girl.storyPlan ? (
+                    <>
+                      <button id="dossier-story-start" type="button" className="btn" disabled={girl.bond < 20 || storyBusy} onClick={onStory}>{planGraph ? '按蓝图开场' : '按手稿开场'}{girl.bond < 20 ? '（羁绊需 20）' : ''}</button>
+                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph} disabled={storyBusy}>编辑蓝图</button>
+                      <button id="dossier-story-regenerate" type="button" className="btn ghost" onClick={onStoryRegenerate} disabled={storyBusy}>{storyBusy ? '重写中…' : '重新生成'}</button>
+                    </>
+                  ) : (
+                    <>
+                      <button id="dossier-story-blueprint" type="button" className="btn primary" onClick={onStoryBlueprint} disabled={storyBusy}>{storyBusy ? '叙事者正在画…' : '生成故事蓝图'}</button>
+                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph} disabled={storyBusy}>手动画蓝图</button>
+                    </>
+                  )}
                 </div>
+                {storyBusy && <p className="story-busy-note">叙事者正在读取她的档案，把开始、选择、委托与结局连成一张图。</p>}
                 </>
               )}
             </section>

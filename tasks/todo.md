@@ -151,3 +151,15 @@
 - [x] 契约卡保留 `witchPersonality`，哈希计入该字段。
 - [x] 121 项状态测试、56 组浏览器流程、生产构建通过。
 - [x] README 与 `tasks/plan-v17.md` 实施记录。
+
+## v18 叙事者直出故事蓝图 / 蓝图资料编辑
+
+- [x] `StoryPlan.graph` 成为可玩蓝图的唯一来源；图为空时才回退旧 `beats`，只有图的计划允许 `beats: []`。
+- [x] `generateStoryBlueprint`：故事线预设、5200 token 起步、8–16 节点 JSON 契约、一次结构修复、`角色蓝图` 日志。
+- [x] `buildGraphFromDraft` / `layoutStoryGraph` / `blueprintIssues`：本地补 id 与连线、BFS 布局、DAG / 可达性 / 端口完整性严格校验。
+- [x] 无 Key 或两次失败时 `fallbackStoryPlan` 用本地四幕模板编译成蓝图，不覆盖已有可用计划。
+- [x] 详情页改为「生成故事蓝图 / 手动画蓝图 / 按蓝图开场 / 重新生成」；移除「自己写一条」与 `StorylineEditorDialog` 入口。
+- [x] 蓝图弹窗新增「资料」面板，可编辑标题、前提、基调并随图保存；保存后随契约卡往返。
+- [x] 蓝图只定义下一次开场，不热替换正在进行的剧情；结构不完整的草稿可保存，但开场前会拦下。
+- [x] 126 项状态测试、56 组浏览器流程、生产构建通过。
+- [x] README 与 `tasks/plan-v18.md` 实施记录。

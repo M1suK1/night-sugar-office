@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, AlignLeft, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, AlignLeft, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Pencil, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Girl, IncidentCard, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
-import { NODE_LABELS, compileBeatsToGraph, makeNode, validateGraph } from '../storygraph.ts';
+import { NODE_LABELS, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph } from '../storygraph.ts';
 import { storyPlanTemplate } from '../storyplan.ts';
 import { missionTemplates, statLabels, type MissionTemplateOption } from '../game.ts';
 import { skills } from '../content/skills.ts';
@@ -47,7 +47,7 @@ function portY(node: StoryNode, port: string): number {
   return node.y + 26 + index * 18;
 }
 
-export function StoryGraphDialog({ girl, incidents, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; onSave: (graph: StoryGraph) => void; onClose: () => void }) {
+export function StoryGraphDialog({ girl, incidents, notice, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; notice?: string; onSave: (graph: StoryGraph, meta?: { title: string; premise: string; tone: string }) => void; onClose: () => void }) {
   const initial = useMemo(() => {
     if (girl.storyPlan?.graph) return structuredClone(girl.storyPlan.graph);
     if (girl.storyPlan?.beats?.length) return compileBeatsToGraph(girl.storyPlan);
@@ -56,6 +56,12 @@ export function StoryGraphDialog({ girl, incidents, onSave, onClose }: { girl: G
   }, [girl]);
   const templates = useMemo(() => missionTemplates(), []);
   const [graph, setGraph] = useState<StoryGraph>(initial);
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [meta, setMeta] = useState({
+    title: girl.storyPlan?.title ?? '新的故事',
+    premise: girl.storyPlan?.premise ?? '',
+    tone: girl.storyPlan?.tone ?? '克制',
+  });
   const initialId = initial.nodes.find(node => node.kind === 'start')?.id ?? null;
   const [selected, setSelected] = useState<string | null>(initialId);
   const [selection, setSelection] = useState<string[]>(initialId ? [initialId] : []);
@@ -217,37 +223,7 @@ export function StoryGraphDialog({ girl, incidents, onSave, onClose }: { girl: G
 
   const clampZoom = (value: number) => Math.min(1.6, Math.max(0.5, Math.round(value * 10) / 10));
   const autoLayout = () => {
-    const depth = new Map<string, number>();
-    const start = graph.entry;
-    if (!start) return;
-    depth.set(start, 0);
-    const queue = [start];
-    for (let i = 0; i < 80 && queue.length; i += 1) {
-      const id = queue.shift() as string;
-      const base = depth.get(id) ?? 0;
-      for (const edge of graph.edges.filter(item => item.from === id)) {
-        if (!graph.nodes.some(item => item.id === edge.to)) continue;
-        if (depth.has(edge.to)) continue;
-        depth.set(edge.to, base + 1);
-        queue.push(edge.to);
-      }
-    }
-    let fallback = Math.max(0, ...Array.from(depth.values())) + 1;
-    for (const item of graph.nodes) {
-      if (!depth.has(item.id)) { depth.set(item.id, fallback); fallback += 1; }
-    }
-    const buckets = new Map<number, typeof graph.nodes>();
-    for (const item of graph.nodes) {
-      const level = depth.get(item.id) ?? 0;
-      buckets.set(level, [...(buckets.get(level) ?? []), item]);
-    }
-    const placed = new Map<string, { x: number; y: number }>();
-    for (const [level, items] of Array.from(buckets.entries()).sort((a, b) => a[0] - b[0])) {
-      items.forEach((item, index) => {
-        placed.set(item.id, { x: 60 + level * 232 + Math.floor(index / 6) * 214, y: 76 + (index % 6) * 122 });
-      });
-    }
-    setGraph(current => ({ ...current, nodes: current.nodes.map(item => ({ ...item, ...(placed.get(item.id) ?? {}) })) }));
+    setGraph(current => layoutStoryGraph(current));
     window.setTimeout(() => document.getElementById('story-graph-node-' + graph.entry)?.scrollIntoView({ block: 'nearest', inline: 'start' }), 60);
   };
   const fitView = () => {
@@ -294,20 +270,29 @@ export function StoryGraphDialog({ girl, incidents, onSave, onClose }: { girl: G
         <header className="story-graph-head">
           <div>
             <small><GitBranch size={12} /> 故事蓝图 · {girl.name}</small>
-            <b>{girl.storyPlan?.title ?? '新的故事'}</b>
-            <span className="story-graph-hint">拖端口连线 · Ctrl+C/V 复制粘贴 · Delete 删除</span>
+            <b>{meta.title.trim() || '未命名蓝图'}</b>
+            <span className="story-graph-hint">{graph.nodes.length} 节点 · {graph.nodes.filter(item => item.kind === 'end').length} 结局 · 拖端口连线 · Delete 删除</span>
           </div>
           <div className="story-graph-actions">
+            <button type="button" className="btn ghost" id="story-graph-meta" onClick={() => setMetaOpen(value => !value)} title="编辑标题、前提与基调"><Pencil size={13} /> 资料</button>
             <button type="button" className="btn ghost" id="story-graph-validate" onClick={() => setIssuesOpen(value => !value)}>
               <Check size={13} /> 校验 {errors.length ? `${errors.length} 项问题` : warnings.length ? `${warnings.length} 条提醒` : '通过'}
             </button>
-            <button type="button" className="btn" id="story-graph-save" onClick={() => onSave(graph)}>保存蓝图</button>
+            <button type="button" className="btn" id="story-graph-save" disabled={!meta.title.trim()} onClick={() => onSave(graph, { title: meta.title.trim(), premise: meta.premise.trim(), tone: meta.tone.trim() })}>保存蓝图</button>
             <button type="button" className="btn ghost" id="story-graph-copy" onClick={copyNode} disabled={!node} title="复制节点（Ctrl+C）"><Copy size={13} /> 复制</button>
             <button type="button" className="btn ghost" id="story-graph-paste" onClick={() => pasteNode()} disabled={!clipboard} title="粘贴节点（Ctrl+V）"><ClipboardPaste size={13} /> 粘贴</button>
             <button type="button" className="btn ghost" id="story-graph-duplicate" onClick={duplicateNode} disabled={!node} title="原地复制一份"><CopyPlus size={13} /> 副本</button>
             <button type="button" className="btn ghost" id="story-graph-close" onClick={onClose}><X size={14} /></button>
           </div>
         </header>
+        {metaOpen && (
+          <div className="story-graph-meta" id="story-graph-meta-panel">
+            <label>标题<input id="story-graph-title" className="av-input" maxLength={24} value={meta.title} onChange={event => setMeta(current => ({ ...current, title: event.target.value }))} /></label>
+            <label>前提<textarea id="story-graph-premise" className="av-input" rows={2} maxLength={200} value={meta.premise} onChange={event => setMeta(current => ({ ...current, premise: event.target.value }))} /></label>
+            <label>基调<input id="story-graph-tone" className="av-input" maxLength={24} value={meta.tone} onChange={event => setMeta(current => ({ ...current, tone: event.target.value }))} /></label>
+          </div>
+        )}
+        {notice && <p className="story-graph-notice">{notice}</p>}
 
         <div className="story-graph-body">
           <aside className="story-graph-palette">

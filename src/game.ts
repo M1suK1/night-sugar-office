@@ -1,10 +1,10 @@
 import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
-import { sanitizeStoryPlan } from './storyplan.ts';
+import { playableStoryPlan, sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey, sanitizeExpressionVariants } from './expressions.ts';
 import { defaultWitchPersonality } from './personality.ts';
-import { ensureGraph } from './storygraph.ts';
+import { ensureGraph, graphBeats, validateGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
 import { customIncidentCards, customMissionTemplates } from './content/library.ts';
@@ -1031,7 +1031,8 @@ export function resolveStoryWait(state: GameState, storylineId: string, kind: 'm
 }
 
 export function planToStoryline(girl: Girl, plan: StoryPlan, day: number, minutes: number): Storyline {
-  const beats = plan.beats.map((beat, index) => ({
+  const graph = plan.graph ?? ensureGraph(plan);
+  const beats = plan.beats.length ? plan.beats.map((beat, index) => ({
     ...beat,
     id: `plan-${index + 1}`,
     index,
@@ -1041,12 +1042,12 @@ export function planToStoryline(girl: Girl, plan: StoryPlan, day: number, minute
     eventId: undefined,
     resolvedChoiceId: undefined,
     resolvedAt: undefined,
-  }));
+  })) : graphBeats(graph);
   return {
     id: `story-manual-${girl.id}-${day}-${minutes}`,
     girlId: girl.id, title: plan.title.slice(0, 40), premise: plan.premise.slice(0, 400), tone: plan.tone.slice(0, 40),
     beats, stage: 0, status: 'active', createdAt: new Date().toISOString(), day, source: 'manual',
-    graph: plan.graph ?? ensureGraph(plan),
+    graph,
   };
 }
 export function storyMissionForBeat(state: GameState, story: Storyline, beat: StoryBeat): Mission {
@@ -2697,8 +2698,14 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (girl.retired || girl.dead) return { state, ok: false, message: '她已经不在名册上了。' };
       if (next.storylines.some(story => story.girlId === girl.id && story.status === 'active')) return { state, ok: false, message: `${girl.name}还有一条没走完的故事线。` };
       if (girl.bond < 20) return { state, ok: false, message: `${girl.name}还没有到愿意讲过去的程度（羁绊 20）。` };
-      const storyline = girl.storyPlan?.beats?.length
-        ? planToStoryline(girl, girl.storyPlan, next.day, next.minutes)
+      const plan = girl.storyPlan;
+      if (plan && !playableStoryPlan(plan)) return { state, ok: false, message: '这张蓝图还没有开始或结束节点，先补完再开场。' };
+      if (plan) {
+        const blockers = validateGraph(ensureGraph(plan)).filter(issue => issue.level === 'error');
+        if (blockers.length) return { state, ok: false, message: `蓝图还有 ${blockers.length} 处要修：${blockers[0].message}` };
+      }
+      const storyline = plan
+        ? planToStoryline(girl, plan, next.day, next.minutes)
         : buildTemplateStoryline(next, girl, action.direction);
       next.storylines.unshift(storyline);
       if (storyline.graph) startStoryGraph(next, storyline);
@@ -2712,11 +2719,17 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!action.plan) {
         girl.storyPlan = undefined;
-        return { state: next, ok: true, message: '已移除手写剧本。' };
+        return { state: next, ok: true, message: '已移除故事蓝图。' };
       }
-      if (!action.plan.beats.length) return { state, ok: false, message: '剧本至少要有一幕。' };
-      girl.storyPlan = action.plan;
-      return { state: next, ok: true, message: `「${action.plan.title}」已保存到${girl.name}的卡片里。` };
+      const plan = sanitizeStoryPlan(action.plan);
+      if (!plan) return { state, ok: false, message: '剧本至少要有一幕，或者一张带开始与结束节点的蓝图。' };
+      girl.storyPlan = plan;
+      return {
+        state: next, ok: true,
+        message: plan.graph
+          ? `「${plan.title}」的蓝图已保存到${girl.name}的卡片里（${plan.graph.nodes.length} 个节点）。`
+          : `「${plan.title}」已保存到${girl.name}的卡片里。`,
+      };
     }
     case 'addStoryline': {
       const next = clone(state); const incoming = action.storyline;

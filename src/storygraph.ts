@@ -322,6 +322,241 @@ export function sanitizeGraph(raw: unknown): StoryGraph | null {
   return { version: 1, nodes, edges, entry };
 }
 
+export interface StoryGraphDraftNode {
+  id?: string;
+  kind: StoryNodeKind;
+  title?: string;
+  note?: string;
+  data?: unknown;
+}
+
+export interface StoryGraphDraftEdge {
+  from?: string;
+  fromPort?: string;
+  to?: string;
+}
+
+export interface StoryGraphDraft {
+  nodes: StoryGraphDraftNode[];
+  edges: StoryGraphDraftEdge[];
+  entry?: string;
+}
+
+/**
+ * 把模型给出的语义节点/连线落成可编辑的图。
+ * 模型不负责 id、坐标和边 id：这里统一补全，并让同一条连线只保留一次。
+ */
+export function buildGraphFromDraft(draft: StoryGraphDraft): StoryGraph {
+  if (!draft || !Array.isArray(draft.nodes) || draft.nodes.length === 0) throw new Error('蓝图没有节点。');
+  if (draft.nodes.length > GRAPH_MAX_NODES) throw new Error(`蓝图节点超过上限 ${GRAPH_MAX_NODES} 个。`);
+  const kinds = Object.keys(NODE_LABELS) as StoryNodeKind[];
+  const usedIds = new Set<string>();
+  const idMap = new Map<string, string>();
+  const nodes: StoryNode[] = [];
+  const startIds: string[] = [];
+
+  draft.nodes.forEach((raw, index) => {
+    if (!raw || !kinds.includes(raw.kind)) throw new Error(`第 ${index + 1} 个节点的种类无效。`);
+    const original = typeof raw.id === 'string' ? raw.id.trim() : '';
+    let base = original.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+    if (!base) base = `n${index + 1}`;
+    let id = base;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${base.slice(0, 10)}${suffix}`.slice(0, 12);
+      suffix += 1;
+    }
+    usedIds.add(id);
+    if (original && !idMap.has(original)) idMap.set(original, id);
+    if (raw.kind === 'start') startIds.push(id);
+    nodes.push({
+      id,
+      kind: raw.kind,
+      x: 0,
+      y: 0,
+      title: typeof raw.title === 'string' ? raw.title : '',
+      note: typeof raw.note === 'string' ? raw.note : undefined,
+      data: sanitizeData(raw.kind, raw.data),
+    });
+  });
+  if (startIds.length !== 1) throw new Error('蓝图需要且只能有一个「开始」节点。');
+
+  const resolve = (id: string | undefined): string | undefined => {
+    if (!id) return undefined;
+    return idMap.get(id) ?? (usedIds.has(id) ? id : undefined);
+  };
+  const seenEdges = new Set<string>();
+  const edges: StoryEdge[] = [];
+  for (const raw of Array.isArray(draft.edges) ? draft.edges : []) {
+    const from = resolve(raw?.from);
+    const to = resolve(raw?.to);
+    if (!from || !to) continue;
+    const fromPort = typeof raw.fromPort === 'string' && raw.fromPort.trim() ? raw.fromPort.trim().slice(0, 12) : 'out';
+    const key = `${from}|${fromPort}|${to}`;
+    if (seenEdges.has(key)) continue;
+    seenEdges.add(key);
+    edges.push({ id: `e${edges.length + 1}`, from, fromPort, to });
+  }
+
+  const graph = sanitizeGraph({ version: 1, nodes, edges, entry: startIds[0] });
+  if (!graph) throw new Error('蓝图结构无法清洗，请检查节点与连线。');
+  return layoutStoryGraph(graph);
+}
+
+/** 纯函数布局：按入口 BFS 分列，同列每 6 个节点折到下一排。 */
+export function layoutStoryGraph(graph: StoryGraph): StoryGraph {
+  if (!graph.nodes.length) return graph;
+  const entry = graph.nodes.some(node => node.id === graph.entry) ? graph.entry : graph.nodes[0].id;
+  const level = new Map<string, number>();
+  level.set(entry, 0);
+  const queue = [entry];
+  while (queue.length) {
+    const id = queue.shift() as string;
+    const nextLevel = (level.get(id) ?? 0) + 1;
+    for (const edge of graph.edges.filter(item => item.from === id)) {
+      if (level.has(edge.to)) continue;
+      level.set(edge.to, nextLevel);
+      queue.push(edge.to);
+    }
+  }
+  const maxLevel = Math.max(0, ...Array.from(level.values()));
+  const orphanLevel = maxLevel + 1;
+  const groups = new Map<number, string[]>();
+  for (const node of graph.nodes) {
+    const depth = level.get(node.id) ?? orphanLevel;
+    const group = groups.get(depth) ?? [];
+    group.push(node.id);
+    groups.set(depth, group);
+  }
+  return {
+    ...graph,
+    nodes: graph.nodes.map(node => {
+      const depth = level.get(node.id) ?? orphanLevel;
+      const index = groups.get(depth)?.indexOf(node.id) ?? 0;
+      return {
+        ...node,
+        x: 60 + depth * 232 + Math.floor(index / 6) * 214,
+        y: 76 + (index % 6) * 122,
+      };
+    }),
+  };
+}
+
+/** LLM 生成契约：比手动编辑更严格，结构不合格就不落盘。 */
+export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
+  const issues: GraphIssue[] = validateGraph(graph).map(issue => {
+    const promote = issue.level === 'warning' && (
+      (issue.message.startsWith('有 ') && issue.message.includes('无法到达'))
+      || issue.message.includes('没有「失败」出口')
+    );
+    return { ...issue, level: promote ? 'error' : issue.level };
+  });
+  const ids = new Set(graph.nodes.map(node => node.id));
+  const starts = graph.nodes.filter(node => node.kind === 'start');
+  const ends = graph.nodes.filter(node => node.kind === 'end');
+  const choices = graph.nodes.filter(node => node.kind === 'choice');
+  const missions = graph.nodes.filter(node => node.kind === 'mission');
+  const scenes = graph.nodes.filter(node => node.kind === 'scene');
+  if (graph.nodes.length < 8) issues.push({ level: 'error', message: '蓝图至少需要 8 个节点。' });
+  if (graph.nodes.length > 16) issues.push({ level: 'error', message: '蓝图最多 16 个节点，请把支线收束。' });
+  if (graph.edges.length > graph.nodes.length + 8) issues.push({ level: 'error', message: '蓝图连线过多，可能出现了重复分支。' });
+  if (starts.length !== 1) issues.push({ level: 'error', message: '蓝图需要且只能有一个开始节点。' });
+  if (ends.length < 1 || ends.length > 3) issues.push({ level: 'error', message: '蓝图需要 1–3 个结束节点。' });
+  if (choices.length < 1 || choices.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个选择节点。' });
+  if (missions.length < 1 || missions.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个阶段委托。' });
+  if (!scenes.length) issues.push({ level: 'error', message: '蓝图至少需要一个场景节点。' });
+  for (const node of graph.nodes) {
+    if (node.kind === 'incident' || node.kind === 'opinion') {
+      issues.push({ level: 'error', message: `生成蓝图不能包含「${NODE_LABELS[node.kind]}」节点，请改用手动编辑。`, nodeId: node.id });
+    }
+  }
+
+  const start = starts[0];
+  if (start) {
+    if (graph.edges.some(edge => edge.to === start.id)) issues.push({ level: 'error', message: '开始节点不能有入线。', nodeId: start.id });
+    const startOut = graph.edges.filter(edge => edge.from === start.id);
+    if (startOut.length !== 1 || startOut[0].fromPort !== 'out') {
+      issues.push({ level: 'error', message: '开始节点必须只有一条默认出口。', nodeId: start.id });
+    }
+  }
+  if (start) {
+    const reachable = new Set([start.id]);
+    const queue = [start.id];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (const edge of graph.edges.filter(item => item.from === current)) {
+        if (!ids.has(edge.to) || reachable.has(edge.to)) continue;
+        reachable.add(edge.to);
+        queue.push(edge.to);
+      }
+    }
+    for (const end of ends) {
+      if (!reachable.has(end.id)) issues.push({ level: 'error', message: `结束节点「${end.title}」从开始节点不可达。`, nodeId: end.id });
+    }
+  }
+  for (const end of ends) {
+    if (graph.edges.some(edge => edge.from === end.id)) issues.push({ level: 'error', message: `结束节点「${end.title}」不能再有出口。`, nodeId: end.id });
+  }
+
+  for (const node of choices) {
+    if (node.data.kind !== 'choice') continue;
+    const options = node.data.options;
+    if (options.length < 2 || options.length > 4) issues.push({ level: 'error', message: `选择节点「${node.title}」需要 2–4 个选项。`, nodeId: node.id });
+    const known = new Set(options.map(option => option.id));
+    for (const option of options) {
+      const hits = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === option.id);
+      if (hits.length !== 1) issues.push({ level: 'error', message: `选择节点「${node.title}」的选项「${option.label}」必须且只能连一条线。`, nodeId: node.id });
+    }
+    for (const edge of graph.edges.filter(item => item.from === node.id)) {
+      if (!known.has(edge.fromPort)) issues.push({ level: 'error', message: `选择节点「${node.title}」有无法识别的出口「${edge.fromPort}」。`, nodeId: node.id });
+    }
+  }
+  for (const node of missions) {
+    const success = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === 'success');
+    const failure = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === 'failure');
+    if (success.length !== 1) issues.push({ level: 'error', message: `阶段委托「${node.title}」必须有且只有一条成功线。`, nodeId: node.id });
+    if (failure.length !== 1) issues.push({ level: 'error', message: `阶段委托「${node.title}」必须有且只有一条失败线。`, nodeId: node.id });
+    for (const edge of graph.edges.filter(item => item.from === node.id)) {
+      if (edge.fromPort !== 'success' && edge.fromPort !== 'failure') issues.push({ level: 'error', message: `阶段委托「${node.title}」的出口只能是成功或失败。`, nodeId: node.id });
+    }
+  }
+
+  // 有向无环：生成蓝图不允许回环。
+  const colors = new Map<string, 1 | 2>();
+  const cycles = new Set<string>();
+  const visit = (id: string) => {
+    colors.set(id, 1);
+    for (const edge of graph.edges.filter(item => item.from === id)) {
+      if (!ids.has(edge.to)) continue;
+      const state = colors.get(edge.to);
+      if (state === 1) {
+        const from = nodeById(graph, id)?.title ?? id;
+        const to = nodeById(graph, edge.to)?.title ?? edge.to;
+        cycles.add(`「${from}」到「${to}」形成了环，蓝图必须是一条向前的故事。`);
+      } else if (!state) {
+        visit(edge.to);
+      }
+    }
+    colors.set(id, 2);
+  };
+  for (const node of graph.nodes) if (!colors.get(node.id)) visit(node.id);
+  cycles.forEach(message => issues.push({ level: 'error', message }));
+
+  // 每个节点都必须能走到某个结束节点。
+  const reachesEnd = new Set(ends.map(node => node.id));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of graph.edges) {
+      if (reachesEnd.has(edge.to) && !reachesEnd.has(edge.from)) { reachesEnd.add(edge.from); changed = true; }
+    }
+  }
+  for (const node of graph.nodes) {
+    if (!reachesEnd.has(node.id)) issues.push({ level: 'error', message: `节点「${node.title}」没有任何路径通往结束。`, nodeId: node.id });
+  }
+  return issues;
+}
+
 export function nodeById(graph: StoryGraph, id: string): StoryNode | undefined {
   return graph.nodes.find(node => node.id === id);
 }

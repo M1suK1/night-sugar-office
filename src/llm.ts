@@ -762,6 +762,150 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
   return { ok: true, data };
 }
 
+export interface GeneratedStoryBlueprint {
+  title: string;
+  premise: string;
+  tone: string;
+  graph: StoryGraph;
+}
+
+const blueprintKinds: StoryNodeKind[] = ['start', 'scene', 'choice', 'mission', 'event', 'reward', 'wait', 'end'];
+
+/** 把模型的语义 JSON 收成 draft；ID 合并、连线和布局都交给 storygraph。 */
+function parseStoryBlueprintDraft(raw: Record<string, unknown>): StoryGraphDraft {
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
+  if (!rawNodes.length) throw new Error('蓝图没有 nodes。');
+  const nodes: StoryGraphDraftNode[] = rawNodes.slice(0, 80).map((item, index) => {
+    const kind = typeof item.kind === 'string' && blueprintKinds.includes(item.kind as StoryNodeKind) ? item.kind as StoryNodeKind : null;
+    if (!kind) throw new Error(`第 ${index + 1} 个节点的 kind 不在允许范围内。`);
+    return {
+      id: typeof item.id === 'string' ? item.id : undefined,
+      kind,
+      title: typeof item.title === 'string' ? item.title : undefined,
+      note: typeof item.note === 'string' ? item.note : undefined,
+      data: item.data,
+    };
+  });
+  const rawEdges = Array.isArray(raw.edges) ? raw.edges.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
+  const edges: StoryGraphDraftEdge[] = rawEdges.slice(0, GRAPH_MAX_EDGES).map(item => ({
+    from: typeof item.from === 'string' ? item.from : undefined,
+    fromPort: typeof item.fromPort === 'string' ? item.fromPort : undefined,
+    to: typeof item.to === 'string' ? item.to : undefined,
+  }));
+  return { nodes, edges, entry: typeof raw.entry === 'string' ? raw.entry : undefined };
+}
+
+function parseStoryBlueprintGraph(raw: Record<string, unknown>): { graph: StoryGraph | null; errors: string[] } {
+  try {
+    const graph = buildGraphFromDraft(parseStoryBlueprintDraft(raw));
+    const errors = blueprintIssues(graph).filter(issue => issue.level === 'error').map(issue => issue.message);
+    return { graph, errors };
+  } catch (error) {
+    return { graph: null, errors: [error instanceof Error ? error.message : '蓝图结构无法解析。'] };
+  }
+}
+
+/**
+ * 让模型直接写一张完整故事蓝图。
+ * 只允许一次修复；两次都不合格就返回失败，绝不写半张图到存档里。
+ */
+export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) {
+    return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  }
+  const body = `先读她的档案：${girlBrief(girl)}
+${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
+请直接写一张「故事蓝图」（StoryGraph），不是四幕手稿。只输出一个 JSON 对象，不要 Markdown 代码块：
+{"title":"","premise":"","tone":"","nodes":[{"id":"n1","kind":"start","title":"开始","data":{"kind":"start"}}],"edges":[{"from":"n1","fromPort":"out","to":"n2"}]}
+节点 kind 只能用：start、scene、choice、mission、event、reward、wait、end。
+硬性结构：8–16 个节点；恰好 1 个 start；1–3 个 end；1–2 个 choice；1–2 个 mission；至少 1 个 scene。
+连线必须是有向无环图：从 start 能到达每个节点，每条路径最终都能到 end；不允许回环、自环或悬空连线。
+每个非 end 节点都要有出口。choice 的每个选项都要有一条 fromPort 等于该选项 id 的线；mission 必须恰有一条 fromPort="success" 和一条 fromPort="failure" 的线；start 只有一条 fromPort="out" 的线。
+节点的 data 按 kind 填写：
+- start: {"kind":"start"}
+- scene: {"kind":"scene","narration":"120–260字，写具体地点、动作和她没说出口的话","lines":[{"speaker":"旁白|角色名","text":"一句台词"}]}
+- choice: {"kind":"choice","prompt":"她在等你怎么回应","options":[{"id":"a","label":"选项","intent":"这个选择意味着什么","effect":{"bond":2}},{"id":"b","label":"另一个选项","intent":"","effect":{"corruption":1}}]}，2–4 个选项，id 短且唯一
+- mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","category":"故事委托","difficulty":"简单|常规|棘手|危险","duration":90,"requirement":"magic|insight|agility|empathy"}}
+- event: {"kind":"event","title":"","hook":"一句能触发角色事件的话"}
+- reward: {"kind":"reward","effect":{"bond":2,"gold":0}}
+- wait: {"kind":"wait","days":0,"minutes":60}
+- end: {"kind":"end","summary":"这条结局收在哪里"}
+不要生成 incident 或 opinion 节点；不要给 x、y、边 id、颜色或额外字段。`;
+  const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
+  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '' };
+  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 5200);
+  if (!first.result.ok) {
+    const message = `生成蓝图失败：${first.result.message}`;
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  if (!first.raw) {
+    const message = jsonFailureMessage('生成蓝图失败：', first);
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  if (first.truncated) {
+    const message = jsonFailureMessage('生成蓝图失败：', first);
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+
+  let source = first;
+  let parsed = parseStoryBlueprintGraph(first.raw);
+  let repaired = false;
+  if (parsed.errors.length) {
+    repaired = true;
+    const repairBody = `${body}
+
+【上一次蓝图（未通过本地校验）】
+${JSON.stringify(first.raw)}
+
+【必须修正的问题】
+${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).join('\n')}
+
+只输出修正后的完整 JSON。不要解释，不要省略节点；保持 8–16 个节点，并让每条路径都能走到 end。`;
+    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 5200);
+    if (!second.result.ok) {
+      const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      return { ok: false, message };
+    }
+    if (!second.raw) {
+      const message = jsonFailureMessage('蓝图未通过校验，且修复输出无法解析。', second);
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      return { ok: false, message };
+    }
+    if (second.truncated) {
+      const message = jsonFailureMessage('蓝图未通过校验，且修复输出被截断。', second);
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      return { ok: false, message };
+    }
+    source = second;
+    parsed = parseStoryBlueprintGraph(second.raw);
+  }
+  if (!parsed.graph || parsed.errors.length) {
+    const message = `蓝图未通过本地校验：${parsed.errors.slice(0, 6).join('；')}`;
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const graph = parsed.graph;
+  const data: GeneratedStoryBlueprint = {
+    title: typeof source.raw?.title === 'string' && source.raw.title.trim() ? source.raw.title.trim().slice(0, 24) : `${girl.name}的未命名蓝图`,
+    premise: typeof source.raw?.premise === 'string' ? source.raw.premise.trim().slice(0, 200) : '',
+    tone: typeof source.raw?.tone === 'string' ? source.raw.tone.trim().slice(0, 24) : '克制',
+    graph,
+  };
+  recordLlmLog({
+    kind: '角色蓝图', ok: true, model: config.model.trim(), status: 200,
+    durationMs: Date.now() - started, endpoint: config.endpoint,
+    message: `蓝图生成成功：${data.title}（${graph.nodes.length} 节点 / ${graph.edges.length} 连线${repaired ? '，修复 1 次' : ''}）`,
+    request: meta.request, response: meta.response,
+  });
+  return { ok: true, data };
+}
+
 export async function generateIncident(config: LlmConfig, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedIncident } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
@@ -1095,7 +1239,8 @@ import { traits } from './content/traits.ts';
 import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { battleCast, battleDigest, normalizeBattleNoteDraft, totalBattleRounds, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
-import type { Archetype, BattleNote, BattleState, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryMissionSpec } from './types';
+import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
+import type { Archetype, BattleNote, BattleState, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryMissionSpec, StoryNodeKind } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

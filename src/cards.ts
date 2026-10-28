@@ -18,7 +18,8 @@ export function girlCardHash(card: GirlCard): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${hash(value)}`)
     .join('|');
-  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants].join(':'));
+  const plan = g.storyPlan ? hash(JSON.stringify(g.storyPlan)) : '';
+  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan].join(':'));
 }
 
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {

@@ -1069,6 +1069,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .story-plan-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .story-plan-tags em { padding: 2px 7px; border: 1px solid #ffffff14; border-radius: 999px; font-size: 9px; font-style: normal; color: #cbb9d2; }
 .story-start-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.story-busy-note { margin: 6px 0 0; font-size: 9px; line-height: 1.7; color: #d8b6c7; }
 @media (max-width: 720px) { .story-plan-fields, .story-plan-mission, .story-plan-choice { grid-template-columns: 1fr; } }
 .story-plan-modal .av-input { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid #f3aec92a; border-radius: 4px; background: #0c0a10; color: var(--text); font-size: 11px; line-height: 1.6; }
 .story-plan-modal textarea.av-input { min-height: 64px; resize: vertical; }
@@ -1084,7 +1085,13 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .story-graph-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #ffffff0d; }
 .story-graph-head small { display: flex; align-items: center; gap: 6px; color: #9d8ba5; font-size: 9px; letter-spacing: .18em; }
 .story-graph-head b { display: block; margin-top: 3px; font-family: var(--font-display); font-size: 20px; font-weight: 400; color: #f5e7ee; }
-.story-graph-actions { display: flex; gap: 8px; }
+.story-graph-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.story-graph-meta { display: grid; grid-template-columns: 190px 1fr 150px; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #ffffff0d; background: #120f18; }
+.story-graph-meta label { display: flex; flex-direction: column; gap: 4px; font-size: 9px; color: #9d8ba5; }
+.story-graph-meta .av-input { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid #f3aec92a; border-radius: 4px; background: #0c0a10; color: var(--text); font-size: 11px; line-height: 1.6; }
+.story-graph-meta textarea.av-input { resize: vertical; }
+@media (max-width: 720px) { .story-graph-meta { grid-template-columns: 1fr; } }
+.story-graph-notice { margin: 0; padding: 8px 16px; border-bottom: 1px solid #f0a4b433; background: #f0a4b40d; color: #f0c4ce; font-size: 10px; line-height: 1.7; }
 .story-graph-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 176px 1fr 264px; }
 .story-graph-palette { padding: 12px 10px; border-right: 1px solid #ffffff0d; overflow-y: auto; }
 .story-graph-palette small { display: block; margin: 8px 0 6px; font-size: 9px; letter-spacing: .16em; color: #8b7b92; }

@@ -1193,7 +1193,26 @@ try {
   });
   await check('故事线会发布带目标的故事委托，完成后触发剧情事件', async () => {
     const before = await stored();
-    before.girls.find(g => g.id === 'yue').bond = 60;
+    const missionGirl = before.girls.find(g => g.id === 'yue');
+    missionGirl.bond = 60;
+    missionGirl.storyPlan = {
+      title: '夜巡的蓝图', premise: '河岸上有一盏没有登记的灯。', tone: '克制', beats: [],
+      graph: {
+        version: 1, entry: 'start',
+        nodes: [
+          { id: 'start', kind: 'start', x: 60, y: 160, title: '开始', data: { kind: 'start' } },
+          { id: 'scene-1', kind: 'scene', x: 292, y: 160, title: '河岸', data: { kind: 'scene', narration: '她沿着河岸走，灯影在水面上碎成几片。', lines: [], effects: [], choices: [] } },
+          { id: 'beat-1', kind: 'mission', x: 524, y: 160, title: '这一夜的委托', data: { kind: 'mission', spec: { title: '夜巡河岸', goal: '沿着河岸找到那盏没有登记的灯。', category: '调查', difficulty: '常规', duration: 90 } } },
+          { id: 'end', kind: 'end', x: 756, y: 160, title: '收束', data: { kind: 'end' } },
+        ],
+        edges: [
+          { id: 'e1', from: 'start', fromPort: 'out', to: 'scene-1' },
+          { id: 'e2', from: 'scene-1', fromPort: 'out', to: 'beat-1' },
+          { id: 'e3', from: 'beat-1', fromPort: 'success', to: 'end' },
+          { id: 'e4', from: 'beat-1', fromPort: 'failure', to: 'end' },
+        ],
+      },
+    };
     before.storylines = []; before.events = []; before.incidents = [];
     before.missions = before.missions.filter(m => !m.storylineId);
     await page.evaluate(() => {
@@ -1208,7 +1227,7 @@ try {
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-story-start').click();
     await expect(page.locator('.story-mission')).toBeVisible();
-    await expect(page.locator('.story-mission')).toContainText('故事委托');
+    await expect(page.locator('.story-mission')).toContainText('夜巡河岸');
     await page.locator('.story-mission').scrollIntoViewIfNeeded();
     await page.screenshot({ path: 'artifacts/story-panel.png', fullPage: false, animations: 'disabled' });
     const started = await stored();
@@ -1271,7 +1290,7 @@ try {
       const s = JSON.parse(localStorage.getItem(key));
       s.storylines = []; s.events = []; s.incidents = [];
       const yue = s.girls.find(g => g.id === 'yue');
-      yue.bond = 60;
+      yue.bond = 60; yue.storyPlan = undefined;
       localStorage.setItem(key, JSON.stringify(s));
     });
     await page.reload({ waitUntil: 'networkidle' });
@@ -1463,42 +1482,48 @@ try {
     expect(imported).toBeTruthy();
   });
 
-  await check('故事线手稿：人工设计后保存到卡片，并按手稿开场', async () => {
-  await page.evaluate(() => {
-    const raw = localStorage.getItem('night-sugar-office:v1');
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    s.storylines = []; s.events = []; s.incidents = [];
-    const girl = s.girls.find(g => g.id === 'yue') ?? s.girls[0];
-    girl.bond = 60; girl.storyPlan = undefined;
-    localStorage.setItem('night-sugar-office:v1', JSON.stringify(s));
+  await check('故事蓝图：没有 Key 时用四幕模板生成，编辑资料后按蓝图开场', async () => {
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('night-sugar-office:v1');
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      s.storylines = []; s.events = []; s.incidents = [];
+      const girl = s.girls.find(g => g.id === 'yue') ?? s.girls[0];
+      girl.bond = 60; girl.storyPlan = undefined;
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(s));
+      const presets = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      for (const preset of presets) if (preset.api) preset.api.apiKey = '';
+      localStorage.setItem('night-sugar:presets', JSON.stringify(presets));
+      localStorage.removeItem('night-sugar:llm-config');
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-story-blueprint').click();
+    await expect(page.locator('.story-graph-modal')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.story-graph-notice')).toContainText('模板');
+    await page.locator('#story-graph-meta').click();
+    await page.locator('#story-graph-title').fill('未寄出的信');
+    await page.locator('#story-graph-premise').fill('她有一封没寄出的信，地址写着已经拆掉的旧事务所。');
+    await page.locator('#story-graph-tone').fill('克制');
+    await page.screenshot({ path: 'artifacts/story-graph-generated.png', fullPage: false, animations: 'disabled' });
+    await page.locator('#story-graph-save').click();
+    await expect(page.locator('#dossier-story-plan')).toContainText('未寄出的信');
+    await expect(page.locator('#dossier-story-start')).toContainText('按蓝图开场');
+    const savedPlan = (await stored()).girls.find(g => g.id === 'yue')?.storyPlan;
+    expect(savedPlan?.graph?.nodes.length).toBeGreaterThanOrEqual(8);
+    expect(savedPlan?.graph?.nodes.some(node => node.kind === 'end')).toBe(true);
+    await page.locator('#dossier-story-plan').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'artifacts/story-plan-dossier.png', animations: 'disabled' });
+    await page.locator('#dossier-story-start').click();
+    await expect(page.locator('.story-beat')).toBeVisible();
+    const saved = await stored();
+    expect(saved.girls.find(g => g.id === 'yue')?.storyPlan?.title).toBe('未寄出的信');
+    const story = saved.storylines.find(item => item.status === 'active');
+    expect(story?.source).toBe('manual');
+    expect(story?.graph?.nodes.length).toBeGreaterThanOrEqual(8);
+    expect(story?.beats.length).toBeGreaterThan(0);
+    await close();
   });
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.locator('#roster-girl-yue').click();
-  await page.locator('#dossier-story-edit').click();
-  await expect(page.locator('.story-plan-modal')).toBeVisible();
-  await page.locator('#story-plan-title').fill('未寄出的信');
-  await page.locator('#story-plan-premise').fill('她有一封没寄出的信。');
-  const titles = ['等到灯灭', '那件旧事', '没说出口的', '天亮之前'];
-  for (let i = 0; i < 4; i += 1) {
-    await page.locator(`#story-plan-beat-title-${i}`).fill(titles[i]);
-    await page.locator(`#story-plan-beat-hook-${i}`).fill(`第 ${i + 1} 幕的信。`);
-    await page.locator(`#story-plan-beat-scene-${i}`).fill('夜班的钟走到一半，她出现在门口。');
-  }
-  await page.screenshot({ path: 'artifacts/story-plan-editor.png', fullPage: false, animations: 'disabled' });
-  await page.locator('#story-plan-save').click();
-  await expect(page.locator('#dossier-story-plan')).toContainText('未寄出的信');
-  await expect(page.locator('#dossier-story-start')).toContainText('按手稿开场');
-  await page.screenshot({ path: 'artifacts/story-plan-dossier.png', animations: 'disabled' });
-  await page.locator('#dossier-story-start').click();
-  await expect(page.locator('.story-beat')).toBeVisible();
-  const saved = await stored();
-  expect(saved.girls.find(g => g.id === 'yue')?.storyPlan?.title).toBe('未寄出的信');
-  const story = saved.storylines.find(item => item.status === 'active');
-  expect(story?.source).toBe('manual');
-  expect(story?.beats.length).toBe(4);
-  await close();
-});
 await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按时回血', async () => {
     await page.evaluate(() => {
       localStorage.clear();
