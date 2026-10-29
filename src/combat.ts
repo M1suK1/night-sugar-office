@@ -1,7 +1,8 @@
-import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
+import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, findSkill, getSkill } from './content/skills.ts';
 import { findMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
+import { factionInfo } from './content/items.ts';
 import { districtAt, districts } from './districts.ts';
 import { SHIFT_START } from './shift.ts';
 
@@ -72,9 +73,10 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     initiativeBonus: gear.reduce((sum, item) => sum + (item.initiativeBonus ?? 0), 0),
   };
 }
-function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0): BattleUnit {
+function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0, powerPct = 0): BattleUnit {
   const monster = pool.find(m => m.id === id) ?? findMonster(id);
   const scale = (wounded ? 0.8 : 1) * Math.max(0.4, 1 + hpPct / 100);
+  const power = Math.max(0.4, 1 + powerPct / 100);
   if (!monster) {
     // 内容被删掉或存档引用了不存在的魔物：显示为残影，而不是冒充第一只魔物。
     return {
@@ -89,7 +91,7 @@ function unitFromMonster(id: string, index: number, wounded: boolean, pool: Mons
   return {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
     hp: maxHp, maxHp, spirit: Math.round(monster.maxSpirit * scale), maxSpirit: Math.round(monster.maxSpirit * scale),
-    stats: { ...monster.stats }, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false,
+    stats: { magic: Math.round(monster.stats.magic * power), insight: Math.round(monster.stats.insight * power), agility: Math.round(monster.stats.agility * power), empathy: Math.round(monster.stats.empathy * power) }, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false,
     insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0, monster,
   };
 }
@@ -181,6 +183,30 @@ export interface BattleSetup {
   minutes: number;
   woundedEnemies?: boolean;
   monsters?: MonsterTemplate[];
+  /** 拦截战：敌方是辖区当主的所属少女，而不是委托里的魔物。 */
+  battleKind?: 'commission' | 'interception';
+  enemyGirls?: FactionGirl[];
+}
+
+/**
+ * 把势力所属少女转成战斗单位。
+ *
+ * `FactionGirl` 只有属性/等级/技能，没有 HP 与精神上限，所以这里给一条写死的派生公式
+ * （`60 + level * 14` / `40 + level * 6`），再按推荐等级差做 ±10% 的缩放。
+ * 缩放只作用于生命与精神，属性保持静态——属性已经在污染里被 `enemyPowerPct` 放大过一次，
+ * 再叠一层会让高污染辖区的拦截战变成无法通过的墙。
+ */
+function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: number): BattleUnit {
+  const scale = clamp(0.9, 1.1, 1 + (recommendedLevel - girl.level) * 0.05);
+  const maxHp = Math.round((60 + girl.level * 14) * scale);
+  const maxSpirit = Math.round((40 + girl.level * 6) * scale);
+  return {
+    uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: girl.portrait, color: girl.color,
+    girlId: girl.id, codename: girl.codename, portraitSpec: girl.portraitSpec,
+    hp: maxHp, maxHp, spirit: maxSpirit, maxSpirit,
+    stats: { ...girl.stats }, skills: [...girl.skills], cooldown: {}, effects: [], down: false,
+    insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
+  };
 }
 export function simulateBattle(setup: BattleSetup): BattleState {
   const { mission, girls, day, minutes } = setup;
@@ -188,15 +214,23 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   const rng = seededRandom(seed);
   const rounds = mission.rounds ?? Math.max(2, Math.floor(mission.duration / ROUND_MINUTES));
   const region = districts[mission.district ?? districtAt(mission.x, mission.y)];
-  const env = region.effect;
+  // 派遣时冻结的环境优先：辖区在委托发出后易主或被人净化，不会回头改动这一战。
+  const env = mission.environment ?? region.effect;
+  const interception = setup.battleKind === 'interception';
   const units = [
     ...girls.map(unitFromGirl),
-    ...(mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [], env.enemyHpPct ?? 0)),
+    ...(interception
+      ? (setup.enemyGirls ?? []).map((girl, index) => unitFromEnemyGirl(girl, index, mission.recommendedLevel))
+      : (mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [], env.enemyHpPct ?? 0, env.enemyPowerPct ?? 0))),
   ];
   const startedAt = { day, minutes };
+  // 拦截战的战报标题要写明是谁拦的，正文仍保留原委托名，玩家才知道哪张单子被作废。
+  // 战报标题写全称（「拦战 · 星灯协会」），正文里才用短名，避免和辖区条上的短名混为一谈。
+  const title = interception ? `拦截战 · ${factionInfo[mission.interception?.faction ?? 'association'].name}` : mission.title;
   const state: BattleState = {
-    id: `b-${mission.id}-${day}-${minutes}-${seed.toString(16)}`, missionId: mission.id, missionTitle: mission.title, seed,
+    id: `b-${mission.id}-${day}-${minutes}-${seed.toString(16)}`, missionId: mission.id, missionTitle: title, seed,
     startedAt, round: 0, rounds, units, initiative: [], events: [], createdAt: new Date().toISOString(),
+    pollution: mission.pollutionAtSpawn,
   };
   const log = (event: Omit<BattleEvent, 'at'>) => state.events.push({ ...event, at: addClock(day, minutes, (event.round - 1) * ROUND_MINUTES) });
   const snapshot = () => {
@@ -352,7 +386,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   state.outcome ??= 'repelled';  const outcome = state.outcome;
   const goldRate = outcome === 'victory' ? 1 : outcome === 'repelled' ? 0.8 : outcome === 'draw' ? 0.6 : 0;
   const exp = outcome === 'victory' ? 24 + rounds * 3 : outcome === 'repelled' ? 10 : outcome === 'draw' ? 6 : 0;
-  state.rewards = { gold: Math.round(mission.reward * goldRate), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
+  // 拦截战没有委托报酬：打赢也只是把那张单子打作废，所以金币恒为 0，只发战斗经验。
+  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * goldRate), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
   if (outcome === 'defeat') {
     const at = `${day} 日 ${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     state.scars = [];

@@ -1,9 +1,10 @@
 import { useId, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
+import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { pensionFor } from '../contracts';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
@@ -24,6 +25,7 @@ type BaseViewProps = {
   onAssistant?: (girlId?: string) => void;
   onUseItem?: (girlId: string, itemId: string) => void;
   onCouncil?: () => void;
+  onOffice?: () => void;
 };
 type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onBattleNote?: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
 type Metric = 'income' | 'expense' | 'reputation';
@@ -102,6 +104,7 @@ export function BaseView({
   onAssistant,
   onUseItem,
   onCouncil,
+  onOffice,
 }: BaseViewProps) {
   const [selectedId, setSelectedId] = useState(state.rooms[0]?.id ?? 'lounge');
   const [loungeTab, setLoungeTab] = useState<'pending' | 'envoys' | 'resolved' | 'minutes'>('pending');
@@ -221,6 +224,7 @@ export function BaseView({
               <div className="av-module-panel">
                 <div className="av-module-subbar">
                   <span>值班助理：<b>{assistant ? assistant.name : '未任命'}</b></span>
+                  {assistant && <span className="av-assistant-origin" style={{ '--tag-color': factionTagColor(assistant.factionTag) } as React.CSSProperties}><Feather size={10} />{EMPLOYER_LABEL} · 出身{factionTagLabel(assistant.factionTag)}</span>}
                   {onCouncil && <button id="enter-council" type="button" className="av-mini-pill council-enter" onClick={onCouncil}>进入会客厅议事 →</button>}
                   {onAssistant && (
                     <div className="av-assistant-picks">
@@ -578,10 +582,17 @@ export function BaseView({
           <h1 id="av-base-title">灯火为你而留</h1>
           <p>所有基地设施功能（会客厅议事与三方来使、月光诊所治疗/重塑/复制、晚安宿舍降侵蚀休息与扩建、星象台远行）均已集成于下方平面图对应房间模块内。</p>
         </div>
-        <div className="av-heading-meta">
-          <Users size={14} />
-          <span>在职契约</span>
-          <strong>{active.length}<span className="av-capacity-denominator"> / {capacity}</span></strong>
+        <div className="av-heading-side">
+          <div className="av-heading-meta">
+            <Users size={14} />
+            <span>在职契约</span>
+            <strong>{active.length}<span className="av-capacity-denominator"> / {capacity}</span></strong>
+          </div>
+          {onOffice && (
+            <button id="open-office-profile" type="button" className="av-btn av-btn-small av-office-enter" onClick={onOffice}>
+              <Building2 size={12} />事务所档案
+            </button>
+          )}
         </div>
       </header>
 

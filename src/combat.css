@@ -463,9 +463,11 @@
 .expression-variant-hint{margin:8px 0 15px;font-size:8px;color:#776675;line-height:1.8}
 .expression-variant-hint code{padding:1px 4px;border-radius:2px;background:#ffffff0a;color:#bca3b1;font-family:var(--font-data);font-size:7.5px}
 .expression-variant-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px}
+.expression-variant-grid.is-drop-over{outline:1px dashed #f3aec999;outline-offset:4px;border-radius:8px;background:#f3aec908}
 .expression-variant-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid #ffffff10;border-radius:6px;background:#0a080e;transition:border-color .18s,box-shadow .18s}
 .expression-variant-card.has-image{border-color:#d9b68a38}
 .expression-variant-card.picked{border-color:#f3aec966;box-shadow:0 0 0 1px #f3aec922}
+.expression-variant-card.is-drop-over{border-color:#f3aec9;background:#f3aec910;box-shadow:0 0 0 1px #f3aec9aa}
 .expression-variant-preview{position:relative;aspect-ratio:3/4;overflow:hidden;background:radial-gradient(ellipse at 50% 28%,#2a1a2b,#09070c 76%)}
 .expression-variant-preview .girl-portrait{position:absolute;inset:0;width:100%;height:100%}
 .expression-variant-preview .girl-portrait>img{object-fit:cover;object-position:center top}
@@ -522,6 +524,7 @@
 .witch-form-layout{display:grid;grid-template-columns:minmax(230px,310px) minmax(0,1fr);gap:22px;align-items:start}
 .witch-form-preview{position:relative;aspect-ratio:3/4;overflow:hidden;border:1px solid #c478b855;border-radius:6px;background:radial-gradient(ellipse at 50% 30%,#2a1a2b,#09070c 76%)}
 .witch-form-preview.ready{border-color:#c478b888}
+.witch-form-preview.is-drop-over{outline:2px dashed #f3aec9;outline-offset:-5px}
 .witch-form-preview .girl-portrait{position:absolute;inset:0;width:100%;height:100%}
 .witch-form-preview .girl-portrait>img{object-fit:cover;object-position:center top}
 .witch-form-preview .girl-portrait>svg{width:100%;height:100%}
@@ -645,6 +648,7 @@
 .custom-gate-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .custom-gate-card{display:flex;flex-direction:column;align-items:flex-start;gap:7px;text-align:left;padding:20px;border:1px solid #f3aec926;background:linear-gradient(145deg,#f3aec90a,transparent);border-radius:6px;color:#d9c4dc;cursor:pointer;transition:.22s}
 .custom-gate-card:hover{border-color:#f3aec96b;background:#f3aec912;transform:translateY(-2px)}
+.custom-gate-card.is-drop-over{border-color:#f3aec9;background:#f3aec91a}
 .custom-gate-card svg{color:#f3aec9}
 .custom-gate-card b{font-family:var(--font-display);font-size:17px;font-weight:400;letter-spacing:.04em}
 .custom-gate-card small{font-size:8px;color:#8f7d99;line-height:1.8}

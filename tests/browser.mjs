@@ -30,6 +30,7 @@ async function settleIncidents() {
     await page.waitForTimeout(250);
   }
 }
+const openMission = id => page.evaluate(target => document.getElementById(`mission-${target}`)?.dispatchEvent(new MouseEvent('click', { bubbles: true })), id);
 async function check(name, fn) { currentFlow = name; try { await settleIncidents(); await fn(); results.push({ name, pass: true }); console.log(`PASS ${name}`); } catch (e) { results.push({ name, pass: false, error: e.message }); console.error(`FAIL ${name}: ${e.message}`); await page.screenshot({ path: 'artifacts/failure.png', fullPage: true, animations: 'disabled' }); throw e; } }
 async function layout(label) {
   const issues = await page.evaluate(() => { const seen = new Set(), duplicates = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) duplicates.push(e.id); seen.add(e.id); } const missing = [...document.querySelectorAll('button,input,textarea,select,a')].filter(e => !e.id).map(e => `${e.tagName}:${e.textContent?.slice(0, 24)}`); return { width: innerWidth, scroll: document.documentElement.scrollWidth, duplicates, missing }; });
@@ -362,7 +363,7 @@ try {
   await check('主页三方势力态度、基地平面图内嵌模块与记录页 v4 台账', async () => {
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.locator('#dispatch-faction-witch')).toContainText('戒备');
+    await expect(page.locator('#dispatch-faction-witch')).toContainText('中立');
     await expect(page.locator('#dispatch-faction-association')).toContainText('中立');
     await expect(page.locator('#dispatch-faction-government')).toContainText('中立');
     await page.screenshot({ path: 'artifacts/dispatch-desktop.png', fullPage: true, animations: 'disabled' });
@@ -864,6 +865,38 @@ try {
     await page.locator('#modal-close').click();
   });
 
+  await check('设置：Vertex AI 接受服务账号 JSON 导入并预览端点', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await expect(page.locator('#settings-llm-endpoint')).toBeVisible();
+    await page.locator('#settings-llm-provider-vertex').click();
+    await expect(page.locator('#settings-llm-json')).toBeVisible();
+    await expect(page.locator('#settings-llm-endpoint')).toHaveCount(0);
+    await expect(page.locator('#settings-llm-key')).toHaveCount(0);
+    const serviceAccount = JSON.stringify({
+      type: 'service_account',
+      project_id: 'night-sugar-demo',
+      client_email: 'svc@night-sugar-demo.iam.gserviceaccount.com',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nMIIBVAIBADANBgkq\\n-----END PRIVATE KEY-----\\n',
+      token_uri: 'https://oauth2.googleapis.com/token',
+    });
+    await page.setInputFiles('#settings-llm-import', { name: 'night-sugar-demo.json', mimeType: 'application/json', buffer: Buffer.from(serviceAccount) });
+    await expect(page.locator('#settings-llm-vertex-info')).toContainText('night-sugar-demo');
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
+    expect(saved.provider).toBe('vertex');
+    expect(saved.apiKey.includes('svc@night-sugar-demo.iam.gserviceaccount.com')).toBe(true);
+    await page.locator('#settings-llm-model').fill('gemini-2.5-pro');
+    await page.locator('#settings-llm-location').fill('asia-east1');
+    const endpointPreview = page.locator('#settings-llm-model + small');
+    await expect(endpointPreview).toContainText('asia-east1-aiplatform.googleapis.com');
+    await expect(endpointPreview).toContainText('/projects/night-sugar-demo/locations/asia-east1/publishers/google/models/gemini-2.5-pro:generateContent');
+    await page.screenshot({ path: 'artifacts/settings-vertex.png', animations: 'disabled' });
+    await page.locator('#settings-llm-json').fill('sk-plain-key');
+    await expect(page.locator('#settings-llm-vertex-info')).toContainText('Express');
+    await page.locator('#modal-close').click();
+    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
+  });
+
   await check('正则预览区分发给模型与界面显示', async () => {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
@@ -1002,8 +1035,8 @@ try {
     await expect(page.locator('.wb-hit', { hasText: '诊所' })).toHaveCount(1);
     await page.screenshot({ path: 'artifacts/worldbook-entries.png', fullPage: true, animations: 'disabled' });
     await page.locator('#worldbook-new').click();
-    await expect(page.locator('.wb-item')).toHaveCount(15);
-    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(15);
+    await expect(page.locator('.wb-item')).toHaveCount(16);
+    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(16);
     await page.locator('#worldbook-tab-balance').click();
     await page.locator('#balance-clinicBase').fill('150');
     await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);
@@ -1751,6 +1784,193 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     expect(created.witchForm.id).toBe('witchform');
     await close();
   });
+  await check('地图污染层：九区读数、五级图例与辖区污染面板', async () => {
+    await page.locator('#nav-dispatch').click();
+    await expect(page.locator('.district-pollution-label')).toHaveCount(9);
+    const legend = page.locator('#map-pollution-legend');
+    await expect(legend).toContainText('城市平均');
+    for (const label of ['清洁', '微浊', '浑浊', '深染', '灾厄']) await expect(legend).toContainText(label);
+    const pollution = (await stored()).pollution;
+    expect(Object.values(pollution).filter(level => level > 0).length).toBe(9);
+    await page.evaluate(() => document.querySelector('.district-fill')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    const panel = page.locator('[id^="district-pollution-"]');
+    await expect(panel).toHaveCount(1);
+    await expect(panel).toContainText('每日 +');
+    await expect(panel).toContainText('完成委托约 −');
+    await expect(panel).toContainText('当主');
+    const focusedId = ((await panel.getAttribute('id')) ?? '').replace('district-pollution-', '');
+    await expect(panel).toContainText(`污染 ${pollution[focusedId]}`);
+    await page.screenshot({ path: 'artifacts/pollution-panel.png', animations: 'disabled' });
+    await page.locator('#map-reset-view').click();
+    await expect(page.locator('[id^="district-pollution-"]')).toHaveCount(0);
+  });
+
+  await check('势力档案：会长立绘、五个页签与所属少女', async () => {
+    await page.locator('#dispatch-faction-association').click();
+    await expect(page.locator('#faction-dialog')).toBeVisible();
+    await expect(page.locator('#faction-leader-name')).toHaveText('白鹭千秋');
+    await expect(page.locator('#faction-leader-portrait svg')).toBeVisible();
+    await expect(page.locator('#faction-leader')).toContainText('名录之外，没有灯。');
+    for (const tab of ['origin', 'members', 'city', 'witch', 'relations']) await expect(page.locator(`#faction-tab-${tab}`)).toBeVisible();
+    await expect(page.locator('.faction-rows')).toContainText('量产与抑制剂');
+    await page.locator('#faction-tab-members').click();
+    await expect(page.locator('.faction-girl-list .faction-girl')).toHaveCount(3);
+    await page.locator('#faction-girl-fg-association-tou').click();
+    await expect(page.locator('.faction-girl-detail')).toContainText('只会在辖区戒备时出面拦截');
+    await page.locator('#faction-tab-city').click();
+    await expect(page.locator('.faction-city-facts')).toContainText('完成委托额外净化');
+    await layout('faction dialog');
+    await page.screenshot({ path: 'artifacts/faction-dialog.png', animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await layout('faction dialog 390');
+    await page.screenshot({ path: 'artifacts/faction-dialog-390.png', animations: 'disabled' });
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.locator('#faction-close').click();
+    await expect(page.locator('#faction-dialog')).toHaveCount(0);
+  });
+
+  await check('势力档案：月蚀庭政变线，档案可直接前往会客厅', async () => {
+    await page.locator('#dispatch-faction-witch').click();
+    await expect(page.locator('#faction-leader-name')).toHaveText('蚀医·夜鸮');
+    await page.locator('#faction-tab-witch').click();
+    await expect(page.locator('#faction-coup')).toBeVisible();
+    await expect(page.locator('.faction-tab-body')).toContainText('魔女化');
+    await page.locator('#faction-tab-relations').click();
+    await expect(page.locator('.faction-representative')).toContainText('事务所对外代表');
+    await expect(page.locator('.faction-rows')).toContainText('星灯协会');
+    await page.locator('#faction-go-base').click();
+    await expect(page.locator('#faction-dialog')).toHaveCount(0);
+    await expect(page.locator('#open-office-profile')).toBeVisible();
+  });
+
+  await check('出身标签：名册与详情页把雇主和出身分开显示', async () => {
+    await page.locator('#nav-dispatch').click();
+    const active = (await stored()).girls.filter(g => !g.dead && !g.retired);
+    await expect(page.locator('.roster-origin')).toHaveCount(active.length);
+    await expect(page.locator('.roster-origin').first()).toContainText(/星灯协会|市役所|月蚀庭|无所属/);
+    await page.locator('#roster-girl-yue').click();
+    await expect(page.locator('#girl-origin-yue')).toContainText('出身');
+    await expect(page.locator('.affiliation-employer')).toHaveText('夜糖事务所');
+    await page.screenshot({ path: 'artifacts/origin-tags.png', animations: 'disabled' });
+    await page.keyboard.press('Escape');
+  });
+
+  await check('市场候选卡显示出身，自定义登记可选任意出身', async () => {
+    await page.locator('#nav-market').click();
+    await expect(page.locator('[id^="av-candidate-origin-"]').first()).toContainText('出身');
+    await page.locator('#av-market-custom').click();
+    await page.locator('#custom-entry-blank').click();
+    await page.locator('#custom-name').fill('出身校验');
+    await expect(page.locator('#custom-origin-witch')).toBeVisible();
+    await expect(page.locator('#custom-origin-auto')).toBeDisabled();
+    await page.locator('#custom-origin-witch').click();
+    await expect(page.locator('#custom-origin-witch')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#custom-origin-auto')).toBeEnabled();
+    await expect(page.locator('#custom-origin-auto')).toContainText('按名字推导');
+    await page.locator('#custom-origin-auto').click();
+    await expect(page.locator('#custom-origin-witch')).toHaveAttribute('aria-checked', 'false');
+    await page.locator('#custom-origin-none').click();
+    await expect(page.locator('#custom-origin-none')).toHaveAttribute('aria-checked', 'true');
+    await page.screenshot({ path: 'artifacts/custom-origin.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+  });
+
+  await check('事务所档案：编辑背景与目标、任命代表并同步世界书', async () => {
+    const before = await stored();
+    const yue = before.girls.find(g => g.id === 'yue');
+    yue.bond = 60;
+    yue.status = 'idle';
+    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-base').click();
+    await page.locator('#open-office-profile').click();
+    await expect(page.locator('#office-dialog')).toBeVisible();
+    await expect(page.locator('#office-dialog')).toContainText('不属于任何一方');
+    await page.locator('#office-assistant-yue').click();
+    await expect(page.locator('#office-representative')).toContainText('月见桃');
+    await page.locator('#office-background').fill('旧糖果店的二楼，关门前是城里的失物招领处。');
+    await page.locator('#office-goal').fill('让每个出身的少女都有地方挂外套。');
+    await layout('office dialog');
+    await page.screenshot({ path: 'artifacts/office-dialog.png', animations: 'disabled' });
+    await page.locator('#office-save').click();
+    await expect(page.locator('#office-dialog')).toHaveCount(0);
+    const after = await stored();
+    expect(after.office.background).toBe('旧糖果店的二楼，关门前是城里的失物招领处。');
+    expect(after.office.goal).toBe('让每个出身的少女都有地方挂外套。');
+    expect(after.assistantId).toBe('yue');
+    await expect.poll(async () => page.evaluate(() => {
+      const book = JSON.parse(localStorage.getItem('night-sugar:worldbook') ?? '[]');
+      return book.find(item => item.id === 'office-profile')?.content ?? '';
+    })).toContain('失物招领处');
+    const content = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:worldbook') ?? '[]').find(item => item.id === 'office-profile').content);
+    expect(content).toContain('让每个出身的少女都有地方挂外套。');
+    expect(content).toContain('月见桃');
+  });
+
+  await check('世界书：事务所条目只读，并能跳回档案', async () => {
+    await page.locator('#open-worldbook').click();
+    await page.locator('#worldbook-tab-entries').click();
+    await page.locator('#worldbook-entry-office-profile').click();
+    await expect(page.locator('.wb-generated')).toContainText('由事务所档案自动生成');
+    await expect(page.locator('#worldbook-content')).toHaveJSProperty('readOnly', true);
+    await expect(page.locator('#worldbook-content')).toHaveValue(/失物招领处/);
+    await page.screenshot({ path: 'artifacts/worldbook-office.png', animations: 'disabled' });
+    await page.locator('#worldbook-open-office').click();
+    await expect(page.locator('#office-dialog')).toBeVisible();
+    await expect(page.locator('#office-background')).toHaveValue(/失物招领处/);
+    await page.locator('#office-cancel').click();
+    await expect(page.locator('#office-dialog')).toHaveCount(0);
+    await expect(page.locator('#worldbook-content')).toHaveValue(/失物招领处/);
+  });
+
+  await check('委托详情显示辖区污染、风险项与净化预估', async () => {
+    await page.locator('#nav-dispatch').click();
+    const open = (await stored()).missions.find(m => m.status === 'open' && m.district);
+    expect(Boolean(open)).toBe(true);
+    await openMission(open.id);
+    const block = page.locator(`#mission-pollution-${open.id}`);
+    await expect(block).toBeVisible();
+    await expect(block).toContainText('污染');
+    await expect(block).toContainText('完成委托预计净化 −');
+    await expect(page.locator('[id^="mission-interception-"]')).toHaveCount(0);
+    await page.screenshot({ path: 'artifacts/mission-pollution.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+  });
+
+  await check('戒备辖区：委托预警，派遣后拦截战覆盖原委托', async () => {
+    const before = await stored();
+    const target = before.missions.find(m => m.status === 'open' && m.work === 'combat' && m.district && !m.boss && !m.storylineId && m.duration <= 60 && !m.envoyFaction);
+    expect(Boolean(target)).toBe(true);
+    before.factions.witch.standing = 20;
+    before.territories[target.district] = 'witch';
+    before.battles = [];
+    for (const girl of before.girls) if (girl.status === 'mission') girl.status = 'idle';
+    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await page.reload({ waitUntil: 'networkidle' });
+    await openMission(target.id);
+    await expect(page.locator(`#mission-interception-${target.id}`)).toContainText('月蚀在此戒备');
+    await expect(page.locator(`#mission-interception-${target.id}`)).toContainText('拦截');
+    await page.screenshot({ path: 'artifacts/interception-warning.png', animations: 'disabled' });
+    for (const id of ['yue', 'tang', 'ling']) if (await page.locator(`#assign-${id}`).count()) await page.locator(`#assign-${id}`).click();
+    await page.locator('#dispatch-confirm').click();
+    await page.locator('#advance-time-30').click();
+    await page.locator('#advance-time-30').click();
+    await expect(page.locator('#battle-tab-replay')).toBeVisible({ timeout: 15000 });
+    await page.locator('#battle-skip').click();
+    await expect(page.locator('#battle-report-table')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/interception-battle.png', animations: 'disabled' });
+    await page.locator('#battle-close').click();
+    const after = await stored();
+    const covered = after.missions.find(m => m.id === target.id);
+    expect(covered.status).toBe('expired');
+    expect(covered.interception.faction).toBe('witch');
+    expect(covered.squad).toEqual([]);
+    expect(after.factions.witch.standing).toBeLessThan(20);
+    expect(['win', 'loss']).toContain(covered.interception.outcome);
+    expect(covered.interception.girlIds.length).toBeGreaterThan(0);
+    expect(after.logs.some(log => log.text.includes('拦截战'))).toBe(true);
+  });
+
   await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

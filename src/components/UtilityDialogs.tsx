@@ -4,6 +4,7 @@ import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
 import { loadLlmConfig, saveLlmConfig, testLlmConnection, type LlmConfig } from '../llm';
+import { describeVertexCredential, vertexLocation, vertexTarget } from '../vertex';
 import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
@@ -32,6 +33,14 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
   const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
   const update = (patch: Partial<LlmConfig>) => { const next = { ...llm, ...patch }; setLlm(next); saveLlmConfig(next); };
+  const importServiceAccount = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text().catch(() => '');
+    if (!text.trim()) { setLlmNote({ ok: false, text: '这个文件是空的，没能读到内容。' }); return; }
+    update({ apiKey: text.trim(), provider: 'vertex' });
+    const info = describeVertexCredential(text);
+    setLlmNote(info.kind === 'invalid' ? { ok: false, text: info.message } : { ok: true, text: info.kind === 'service-account' ? `已导入服务账号：${info.clientEmail}（项目 ${info.projectId}）。` : '已导入密钥。' });
+  };
   const updatePlayer = (patch: Partial<PlayerProfile>) => { const next = { ...player, ...patch }; setPlayer(next); savePlayerProfile(next); };
   const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
   const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
@@ -55,12 +64,31 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       <div className="prototype-note"><Info size={17}/><p><b>纯前端 · 本地剧情演示</b><br/>不包含后端、登录或支付。故事引擎的密钥只保存在当前浏览器，不会写入游戏存档或日志。</p></div>
     </>}
     {tab === 'llm' && <div className="llm-settings">
-      <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接任意 OpenAI 兼容接口。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
+      <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接 OpenAI 兼容接口，或直接用服务账号 JSON 接上 Google Vertex AI。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
       <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
       <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。</p>
+      <label className="llm-field"><span>接口类型</span>
+        <div className="llm-provider" role="radiogroup" aria-label="接口类型">
+          {([{ id: 'openai', label: 'OpenAI 兼容' }, { id: 'vertex', label: 'Vertex AI' }] as const).map(item => <button key={item.id} id={`settings-llm-provider-${item.id}`} type="button" role="radio" aria-checked={(llm.provider ?? 'openai') === item.id} className={`llm-provider-option ${(llm.provider ?? 'openai') === item.id ? 'active' : ''}`} onClick={() => update({ provider: item.id })}>{item.label}</button>)}
+        </div>
+        <small className="llm-field-hint">{llm.provider === 'vertex' ? '服务账号 JSON 或 Express 密钥；模型走 generateContent。' : '任意兼容 /chat/completions 的服务。'}</small>
+      </label>
+{llm.provider === 'vertex' ? <>
+        <label className="llm-field"><span>服务账号 JSON</span>
+          <textarea id="settings-llm-json" rows={5} value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder={'{\n  "type": "service_account",\n  "project_id": "my-project",\n  "client_email": "svc@my-project.iam.gserviceaccount.com",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n..."\n}'} />
+          <small className="llm-field-hint">直接粘贴服务账号 JSON，或用下面的按钮导入文件。私钥只写入 localStorage，不会进入存档或请求日志。</small>
+        </label>
+        <div className="llm-vertex-row">
+          <label className="btn llm-file"><Upload size={14}/>导入 JSON 文件<input id="settings-llm-import" type="file" accept=".json,application/json" onChange={e => { void importServiceAccount(e.target.files?.[0]); e.target.value = ''; }}/></label>
+          {llm.apiKey.trim() && <span id="settings-llm-vertex-info" className={`llm-vertex-info ${describeVertexCredential(llm.apiKey).kind === 'invalid' ? 'error' : ''}`}>{(() => { const info = describeVertexCredential(llm.apiKey); return info.kind === 'service-account' ? `服务账号 · ${info.projectId}` : info.message; })()}</span>}
+        </div>
+        <label className="llm-field"><span>区域</span><input id="settings-llm-location" value={llm.location ?? 'us-central1'} onChange={e => update({ location: e.target.value })} spellCheck={false} placeholder="us-central1"/><small className="llm-field-hint">填 global 走无区域前缀的主机；服务账号的主机按区域拼成 us-central1-aiplatform.googleapis.com 这种形式。</small></label>
+        <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gemini-2.5-pro"/><small className="llm-field-hint">端点：{(() => { const info = describeVertexCredential(llm.apiKey); return vertexTarget({ model: llm.model || 'gemini-2.5-pro', location: vertexLocation(llm.location), expressKey: info.kind === 'service-account' ? undefined : llm.apiKey }, info.kind === 'service-account' ? { projectId: info.projectId ?? '', clientEmail: info.clientEmail ?? '', privateKey: '', tokenUri: '' } : undefined).display; })()}</small></label>
+      </> : <>
       <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/><small className="llm-field-hint">填到 /v1 即可；也可直接粘贴完整的 /chat/completions 地址。</small></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
+      </>}
       <div className="llm-prompts">
         <div className="llm-prompts-head"><b>提示词词条</b><button id="settings-prompts-reset" className="llm-reset" onClick={() => onPresets()}>打开全部词条</button></div>
         <p className="llm-task-intro">世界观、语气与每个任务的写法都拆成了预设词条。点进某一项，只会看到并修改共用词条与该任务自己的词条；代码里的 JSON 输出契约始终最后追加。</p>

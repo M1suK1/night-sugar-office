@@ -4,7 +4,7 @@ import { createInitialState, act, loadState, importState, capacity, chance, squa
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
-import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { statsForArchetype } from '../src/content/archetypes.ts';
@@ -25,9 +25,13 @@ import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBri
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
 import { blueprintIssues, buildGraphFromDraft, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph, type StoryGraphDraft } from '../src/storygraph.ts';
-import { builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, sanitizeWorldbookEntry, worldbookContext } from '../src/worldbook.ts';
+import { WORLDBOOK_KEY, builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, loadWorldbook, officeWorldbookEntry, sanitizeWorldbookEntry, saveWorldbook, syncOfficeWorldbook, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
-import type { Incident, Mission, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
+import { POLLUTION_MAX, POLLUTION_MIN, clampPollution, cityAveragePollution, dirtiestDistrict, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionIsEstimated, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from '../src/pollution.ts';
+import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
+import { DEFAULT_OFFICE_PROFILE, OFFICE_LIMITS, OFFICE_WORLDBOOK_ID, officeWorldbookContent, representativeOf, sanitizeOfficeProfile } from '../src/office.ts';
+import type { DistrictId } from '../src/districts.ts';
+import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
@@ -117,7 +121,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 11);
+  assert.equal(s.version, 12);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -798,7 +802,7 @@ test('叙事输出被 length 截断时会放大 token 额度重试一次', async
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
     assert.equal(calls[0].max_tokens, 400);
-    assert.equal(calls[1].max_tokens, 3200);
+    assert.equal(calls[1].max_tokens, 8000);
     assert.equal(calls[1].messages.at(-1).role, 'user');
   } finally {
     globalThis.fetch = original;
@@ -1095,17 +1099,21 @@ test('辖区环境影响委托目标、报酬与截止时间', () => {
     difficulty: '★★', duration: 30, reward: 1000, requirement: 'insight', target: 100,
     color: '#fff', status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 3,
   };
+  // v19 起快照把辖区地形、当主势力与辖区污染三份效果叠在一起算，
+  // 所以这里的期望值同时锁定「地形 ±%」与「污染折算 %」两层。
   const short = annotateMission(state, base);
   assert.equal(short.district, 'cathedral');
   assert.equal(short.window, 'urgent');
-  assert.equal(short.target, 106);
-  assert.equal(short.reward, 1000);
+  assert.equal(short.environment?.targetPct, 16);
+  assert.equal(short.target, 116);
+  assert.equal(short.reward, 1180);
+  assert.equal(short.pollutionAtSpawn, 38);
   assert.equal(short.deadlineAt, state.day * 1440 + state.minutes + 120);
   const long = annotateMission(state, { ...base, duration: 120, x: 24, y: 27 });
   assert.equal(long.district, 'candy');
   assert.equal(long.window, 'long');
-  assert.equal(long.target, 94);
-  assert.equal(long.reward, 1080);
+  assert.equal(long.target, 101);
+  assert.equal(long.reward, 1210);
   assert.equal(long.deadlineAt, deadlineFor('long', state.day, state.minutes));
 });
 
@@ -1204,6 +1212,33 @@ test('SillyTavern 预设导入采样参数、主提示与忽略清单', () => {
   assert.equal(clamped.maxTokens, 64);
 });
 
+test('内置预设的最大输出统一抬到 6000–10000', () => {
+  const builtins = builtinPresets();
+  assert.equal(builtins.length, 3);
+  for (const preset of builtins) {
+    const runtime = presetRuntime(preset);
+    assert.ok((runtime.maxTokens ?? 0) >= 6000, `${preset.name} 最大输出 ${runtime.maxTokens} 低于 6000`);
+    assert.ok((runtime.maxTokens ?? 0) <= 10000, `${preset.name} 最大输出 ${runtime.maxTokens} 高于 1 万`);
+  }
+});
+
+test('存量预设的最大输出会被一次性抬到 8000', () => {
+  withMemoryStorage(() => {
+    const store = globalThis as unknown as { localStorage: { setItem: (key: string, value: string) => void } };
+    const stamp = '2025-01-01T00:00:00.000Z';
+    store.localStorage.setItem('night-sugar:presets', JSON.stringify([
+      { id: 'legacy-small', name: '旧的小预设', createdAt: stamp, updatedAt: stamp, settings: { temp_openai: 0.8, openai_max_tokens: 640 } },
+      { id: 'legacy-flat', name: '平铺键名预设', createdAt: stamp, updatedAt: stamp, settings: { temperature: 0.7, max_tokens: 320 } },
+      { id: 'legacy-high', name: '本来就够大', createdAt: stamp, updatedAt: stamp, settings: { openai_max_tokens: 16000 } },
+    ]));
+    const loaded = loadPresets();
+    assert.equal(loaded.find(preset => preset.id === 'legacy-small')?.settings.openai_max_tokens, 8000, '偏小的额度抬到 8000');
+    assert.equal(loaded.find(preset => preset.id === 'legacy-flat')?.settings.openai_max_tokens, 8000, '平铺键名也会被接管');
+    assert.equal(loaded.find(preset => preset.id === 'legacy-high')?.settings.openai_max_tokens, 16000, '已经更高的预设不动');
+    assert.equal(loadPresets().find(preset => preset.id === 'legacy-small')?.settings.openai_max_tokens, 8000, '第二次加载保持稳定');
+  });
+});
+
 test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => {
   const flat = importPresetJson(JSON.stringify({
     name: 'Reborn 风格', temperature: 1.08, top_p: 0.98, openai_max_tokens: 65535, openai_max_context: 2000000,
@@ -1270,11 +1305,11 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 11);
+  assert.equal(loaded.version, 12);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
-  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 12 })), null);
+  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 13 })), null);
 });
 
 // ── v6：势力辖区 ────────────────────────────────────────────────
@@ -1615,12 +1650,13 @@ test('自定义的「… 副本」不会被任务默认预设改名', () => {
   assert.equal(event.name, '私人事件');
   assert.notEqual(story.id, event.id);
 });
-test('世界书内置 14 条，默认只启用 6 条常驻词条', () => {
-  assert.equal(builtinWorldbook().length, 14);
+test('世界书内置 15 条，默认只启用 7 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 15);
   const defaults = defaultWorldbook();
-  assert.equal(defaults.filter(entry => entry.enabled).length, 6);
+  assert.equal(defaults.filter(entry => entry.enabled).length, 7);
   assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
   assert.ok(defaults.some(entry => entry.id === 'clinic'));
+  assert.ok(defaults.some(entry => entry.id === 'office-profile'));
 });
 
 test('世界书按关键词命中，常驻优先进入且超预算会跳过', () => {
@@ -2761,7 +2797,618 @@ test('状态模板按种类分组、能读写进技能，并正确计算先手�
       { kind: 'debuff', stat: 'initiative', amount: 4, duration: 2, source: '乱拍', remaining: 2 },
     ],
     initiativeBonus: 5,
-    scarHit: 0,
   } as unknown as Parameters<typeof initiativeOf>[0];
   assert.equal(initiativeOf(initiative, 3), 64, '50 洞察 + 3 随机 + 10 增益 − 4 减益 + 5 装备');
+});
+
+// ── v19：辖区污染、三方档案、出身标签、拦截战与事务所档案 ───────────────────
+
+/** 清掉开局就有的意见与事件，避免 `advance` 被「待决事项」挡住。 */
+const v19State = (): GameState => {
+  const state = createInitialState();
+  state.opinions = [];
+  state.incidents = [];
+  return state;
+};
+
+/** 打烊跨日：`processDay` 只在日界运行，污染日增与市场刷新都靠它。 */
+const endNightOnce = (state: GameState): GameState => {
+  const result = act(state, { type: 'endNight' });
+  assert.equal(result.ok, true, result.message);
+  return result.state;
+};
+
+/** 给委托重新打一次快照，避免测试依赖种子数据里有没有快照。 */
+const withSnapshot = (state: GameState, id: string, patch: Partial<Mission> = {}): GameState => {
+  state.missions = state.missions.map(mission => mission.id === id ? { ...annotateMission(state, mission), ...patch } : mission);
+  return state;
+};
+
+/** 世界书读写依赖 localStorage；node 里装一个内存替身，跑完还原。 */
+function withMemoryStorage<T>(run: () => T): T {
+  const store = new Map<string, string>();
+  const globals = globalThis as { localStorage?: unknown };
+  const previous = globals.localStorage;
+  globals.localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, String(value)); },
+    removeItem: (key: string) => { store.delete(key); },
+    clear: () => store.clear(),
+    key: (index: number) => [...store.keys()][index] ?? null,
+    get length() { return store.size; },
+  };
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete globals.localStorage;
+    else globals.localStorage = previous;
+  }
+}
+
+/** 把一名少女堆到能稳赢拦截战的强度。 */
+function buffGirl(state: GameState, id: string): void {
+  const girl = state.girls.find(item => item.id === id);
+  assert.ok(girl, `找不到少女 ${id}`);
+  for (const key of Object.keys(girl.stats) as Array<keyof typeof girl.stats>) {
+    girl.stats[key] = Math.round(girl.stats[key] * 12);
+    girl.baseStats[key] = Math.round(girl.baseStats[key] * 12);
+  }
+  girl.level = 40;
+  girl.maxHp = 4000;
+  girl.hp = 4000;
+  girl.maxSpirit = 2000;
+  girl.spirit = 2000;
+}
+
+/** 造一个「糖果街归协会、协会在戒备」的场面。 */
+function hostileCandy(): GameState {
+  const state = v19State();
+  state.territories.candy = 'association';
+  state.factions.association.standing = 20;
+  return state;
+}
+
+test('v19 污染初始值九区齐全，repairPollution 补缺、截断并修 NaN', () => {
+  const init = initialPollution();
+  assert.deepEqual(Object.keys(init).sort(), [...districtOrder].sort(), '九个辖区一个都不能少');
+  assert.equal(init.candy, 6);
+  assert.equal(init.oldtown, 46, '旧城区是开局最脏的辖区');
+  for (const level of Object.values(init)) {
+    assert.ok(level >= POLLUTION_MIN && level <= POLLUTION_MAX, `${level} 超出取值范围`);
+  }
+
+  assert.deepEqual(repairPollution(undefined), init, '整份缺失时回落到初始值');
+  assert.deepEqual(repairPollution({}), init);
+  const repaired = repairPollution({ candy: -20, station: 999, plaza: Number.NaN, oldtown: 12 });
+  assert.equal(repaired.candy, POLLUTION_MIN, '越界收敛到下限');
+  assert.equal(repaired.station, POLLUTION_MAX, '越界收敛到上限');
+  assert.equal(repaired.plaza, POLLUTION_MIN, 'NaN 收敛到下限');
+  assert.equal(repaired.oldtown, 12, '合法值原样保留');
+  assert.equal(repaired.docks, init.docks, '没提到的辖区补初始值');
+});
+
+test('v19 污染分五档，边界值落在 20/40/60/80', () => {
+  assert.equal(pollutionTier(0), 'clean');
+  assert.equal(pollutionTier(19), 'clean');
+  assert.equal(pollutionTier(20), 'hazy');
+  assert.equal(pollutionTier(39), 'hazy');
+  assert.equal(pollutionTier(40), 'murky');
+  assert.equal(pollutionTier(59), 'murky');
+  assert.equal(pollutionTier(60), 'deep');
+  assert.equal(pollutionTier(79), 'deep');
+  assert.equal(pollutionTier(80), 'calamity');
+  assert.equal(pollutionTier(100), 'calamity');
+  assert.equal(pollutionTier(-5), 'clean', '负数先被夹到 0');
+  assert.equal(pollutionTier(999), 'calamity');
+
+  assert.equal(pollutionTierLabel(0), '清洁');
+  assert.equal(pollutionTierLabel(30), '微浊');
+  assert.equal(pollutionTierLabel(50), '浑浊');
+  assert.equal(pollutionTierLabel(70), '深染');
+  assert.equal(pollutionTierLabel(90), '灾厄');
+});
+
+test('v19 污染数值后果按四舍五入给出，面板与结算不会分叉', () => {
+  assert.deepEqual(pollutionEffect(0), { enemyHpPct: 0, enemyPowerPct: 0, targetPct: 0, rewardPct: 0, fatigueFlat: 0, corruptionFlat: 0 });
+  assert.deepEqual(pollutionEffect(50), { enemyHpPct: 16, enemyPowerPct: 9, targetPct: 5, rewardPct: 8, fatigueFlat: 2, corruptionFlat: 1 });
+  assert.deepEqual(pollutionEffect(90), { enemyHpPct: 29, enemyPowerPct: 16, targetPct: 9, rewardPct: 14, fatigueFlat: 4, corruptionFlat: 2 });
+  assert.deepEqual(pollutionEffect(100), { enemyHpPct: 32, enemyPowerPct: 18, targetPct: 10, rewardPct: 16, fatigueFlat: 5, corruptionFlat: 2 });
+  assert.equal(pollutionEffect(150).enemyHpPct, 32, '先夹到 100 再算');
+});
+
+test('v19 污染每天只按等级自然上升，三方当主涨幅相同，跨档才写日志', () => {
+  assert.equal(pollutionDailyRise(0), 1);
+  assert.equal(pollutionDailyRise(29), 1);
+  assert.equal(pollutionDailyRise(30), 2);
+  assert.equal(pollutionDailyRise(59), 2);
+  assert.equal(pollutionDailyRise(60), 3);
+  assert.equal(pollutionDailyRise(90), 4);
+  assert.equal(pollutionDailyRise(100), 4);
+
+  const rises = FACTION_ORDER.map((faction: FactionId) => {
+    const state = v19State();
+    state.pollution.plaza = 19;
+    state.territories.plaza = faction;
+    return endNightOnce(state).pollution.plaza;
+  });
+  assert.deepEqual(rises, [20, 20, 20], '谁当主都不影响自然涨幅');
+
+  const crossed = v19State();
+  crossed.pollution.plaza = 19;
+  const crossedDay = endNightOnce(crossed);
+  assert.ok(crossedDay.logs.some(log => log.id.startsWith('log-pollution-plaza')), '跨档要留一条日志');
+
+  const quiet = v19State();
+  quiet.pollution.candy = 6;
+  const quietDay = endNightOnce(quiet);
+  assert.ok(!quietDay.logs.some(log => log.id.startsWith('log-pollution-candy')), '同档内不写日志');
+});
+
+test('v19 完成委托的净化量由时长、战斗与当主势力决定', () => {
+  const base = { duration: 60, work: 'investigation' as const };
+  assert.equal(pollutionRelief({ ...base, owner: 'witch' }), 7, '月蚀庭不提供净化加成');
+  assert.equal(pollutionRelief({ ...base, owner: 'association' }), 9);
+  assert.equal(pollutionRelief({ ...base, owner: 'government' }), 10, '市役所净化最有效率');
+  assert.equal(pollutionRelief({ duration: 0, work: 'investigation', owner: 'witch' }), 5);
+  assert.equal(pollutionRelief({ duration: 29, work: 'investigation', owner: 'witch' }), 5);
+  assert.equal(pollutionRelief({ duration: 30, work: 'investigation', owner: 'witch' }), 6);
+  assert.equal(pollutionRelief({ duration: 0, work: 'combat', owner: 'witch' }), 6, '战斗委托多净化一点');
+  assert.equal(pollutionRelief({ duration: 0, work: 'combat', owner: 'government' }), 9);
+  assert.equal(FACTION_PURIFICATION.witch.relief, 0);
+  assert.equal(factionPurification('association').relief, 2);
+
+  // 没办成的代价比净化小得多
+  assert.equal(pollutionPenalty({ duration: 60, work: 'combat', owner: 'witch' }), 2);
+  assert.equal(pollutionPenalty({ duration: 60, work: 'investigation', owner: 'witch' }), 1);
+  assert.equal(pollutionPenalty({ duration: 60, work: 'social', owner: 'government' }), 1);
+});
+
+test('v19 委托生成时冻结污染与当主，旧委托靠当前辖区估算', () => {
+  const state = v19State();
+  state.pollution.candy = 30;
+  state.territories.candy = 'association';
+  const mission = annotateMission(state, state.missions.find(item => item.id === 'candy')!);
+  assert.equal(mission.pollutionAtSpawn, 30);
+  assert.equal(mission.ownerAtSpawn, 'association');
+  assert.equal(pollutionIsEstimated(mission), false);
+
+  const legacy = { ...mission, pollutionAtSpawn: undefined, ownerAtSpawn: undefined };
+  assert.equal(pollutionIsEstimated(legacy), true);
+
+  const snapshot = pollutionSnapshotOf(state, legacy);
+  assert.equal(snapshot.owner, 'association', '没有快照时回落到当前当主');
+  assert.equal(snapshot.duration, legacy.duration);
+  assert.equal(snapshot.work, legacy.work);
+
+  const forecast = pollutionForecast(state, 'candy', mission);
+  assert.equal(forecast.level, 30);
+  assert.equal(forecast.tier, 'hazy');
+  assert.equal(forecast.dailyRise, 2);
+  assert.equal(forecast.estimatedRelief, pollutionRelief(snapshot), '带委托时给出预计净化');
+  assert.equal(pollutionForecast(state, 'candy').estimatedRelief, undefined, '不带委托时不算净化');
+});
+
+test('v19 快照不做事后追溯：辖区易主与污染上升都不改已派出的委托', () => {
+  const state = v19State();
+  state.pollution.candy = 20;
+  state.territories.candy = 'government';
+  const mission = annotateMission(state, state.missions.find(item => item.id === 'candy')!);
+  const before = pollutionRelief(pollutionSnapshotOf(state, mission));
+  assert.equal(before, 9, '糖果街 45 分钟调查 + 市役所 3 点 = 5 + 1 + 3');
+
+  state.territories.candy = 'witch';
+  state.pollution.candy = 95;
+  assert.equal(pollutionSnapshotOf(state, mission).owner, 'government', '当主仍是派出时那个');
+  assert.equal(pollutionRelief(pollutionSnapshotOf(state, mission)), before, '净化量不会因为换主而变');
+  assert.equal(pollutionIsEstimated(mission), false);
+});
+
+test('v19 打快照会把污染并进辖区效果，且只并一次', () => {
+  const low = v19State();
+  low.pollution.docks = 0;
+  const lowMission = annotateMission(low, low.missions.find(item => item.id === 'arcade')!);
+
+  const high = v19State();
+  high.pollution.docks = 90;
+  const highMission = annotateMission(high, high.missions.find(item => item.id === 'arcade')!);
+
+  const effect = pollutionEffect(90);
+  assert.ok(lowMission.environment && highMission.environment);
+  assert.equal(highMission.environment.targetPct, (lowMission.environment.targetPct ?? 0) + effect.targetPct);
+  assert.equal(highMission.environment.rewardPct, (lowMission.environment.rewardPct ?? 0) + effect.rewardPct);
+  assert.equal(highMission.environment.fatigueFlat, (lowMission.environment.fatigueFlat ?? 0) + effect.fatigueFlat);
+  assert.ok((highMission.reward ?? 0) > (lowMission.reward ?? 0), '脏辖区的委托给得更多');
+  assert.ok((highMission.target ?? 0) > (lowMission.target ?? 0), '脏辖区的门槛也更高');
+
+  const merged = mergeDistrictEffects({ targetPct: 5, fatigueFlat: 1 }, { targetPct: 3, rewardPct: 2 });
+  assert.equal(merged.targetPct, 8);
+  assert.equal(merged.rewardPct, 2);
+  assert.equal(merged.fatigueFlat, 1);
+});
+
+test('v19 旧档 v11 迁到 12：污染补齐、档案默认、出身按 id 重算', () => {
+  const state = createInitialState();
+  const legacy = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+  legacy.version = 11;
+  delete legacy.pollution;
+  delete legacy.office;
+  for (const girl of legacy.girls as Array<Record<string, unknown>>) delete girl.factionTag;
+  for (const candidate of legacy.candidates as Array<Record<string, unknown>>) delete candidate.factionTag;
+
+  const loaded = loadState(JSON.stringify(legacy));
+  assert.equal(loaded.version, 12);
+  assert.deepEqual(loaded.pollution, initialPollution(), '缺污染时整套补上初始值');
+  assert.deepEqual(loaded.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
+  for (const girl of loaded.girls) {
+    assert.equal(girl.factionTag, factionTagFor(girl.id), '没有出身的少女按 id 确定性重算');
+  }
+  assert.ok(importState(JSON.stringify(legacy)), '导入入口同样接受 v11');
+});
+
+test('v19 读档保留委托快照，并把非法污染/档案修回合法值', () => {
+  const state = v19State();
+  state.pollution.docks = 40;
+  withSnapshot(state, 'arcade');
+  const mission = state.missions.find(item => item.id === 'arcade')!;
+  assert.ok(mission.environment);
+
+  const loaded = loadState(JSON.stringify(state));
+  const reloaded = loaded.missions.find(item => item.id === 'arcade')!;
+  assert.deepEqual(reloaded.environment, mission.environment);
+  assert.equal(reloaded.pollutionAtSpawn, mission.pollutionAtSpawn);
+  assert.equal(reloaded.ownerAtSpawn, mission.ownerAtSpawn);
+
+  const broken = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+  (broken.pollution as Record<string, unknown>).candy = '很多';
+  (broken.pollution as Record<string, unknown>).station = -5;
+  (broken.pollution as Record<string, unknown>).plaza = 999;
+  broken.office = { background: 123, philosophy: '', goal: '只有目标' };
+  const fixed = loadState(JSON.stringify(broken));
+  assert.equal(fixed.pollution.candy, initialPollution().candy, '非法污染回落到初始值');
+  assert.equal(fixed.pollution.station, POLLUTION_MIN);
+  assert.equal(fixed.pollution.plaza, POLLUTION_MAX);
+  assert.equal(fixed.office.background, DEFAULT_OFFICE_PROFILE.background);
+  assert.equal(fixed.office.philosophy, DEFAULT_OFFICE_PROFILE.philosophy, '空串也回退默认值');
+  assert.equal(fixed.office.goal, '只有目标', '合法字段原样保留');
+});
+
+test('v19 三方档案自洽：领袖、附属少女、关系与净化加成都不缺', () => {
+  const factions: FactionId[] = ['association', 'government', 'witch'];
+  for (const faction of factions) {
+    const dossier = factionDossiers[faction];
+    assert.ok(dossier, `${faction} 缺档案`);
+    assert.ok(dossier.origin.length > 10 && dossier.doctrine.length > 5, `${faction} 档案太薄`);
+    assert.ok(dossier.technologyStance.length > 5, `${faction} 没写对技术的态度`);
+    assert.ok(dossier.witchStance.length > 5 && dossier.girlStance.length > 5);
+
+    const leader = factionLeader(faction);
+    assert.equal(leader.faction, faction);
+    assert.equal(dossier.leaderId, leader.id, '档案指向的领袖必须就是查出来的那个');
+    assert.ok(leader.name.length > 0 && leader.title.length > 0 && leader.quote.length > 0);
+    assert.equal(leader.portrait, '', '领袖走程序化立绘，不依赖图片资源');
+
+    const girls = factionGirlsOf(faction);
+    assert.ok(girls.length >= 3, `${faction} 的附属少女太少`);
+    assert.deepEqual(dossier.girlIds, girls.map(girl => girl.id), '档案成员顺序与成员表一致');
+    for (const girl of girls) {
+      assert.equal(girl.faction, faction);
+      assert.equal(girl.tag, faction, '附属少女的出身标签必须等于所属势力');
+      assert.ok(girl.name.length > 0 && girl.quote.length > 0);
+      assert.equal(girl.portrait, '');
+    }
+    assert.ok(factionPurification(faction).relief >= 0);
+    assert.ok(factionRelationLine(faction, faction).length > 0, `${faction} 没写对自己的看法`);
+  }
+  for (const faction of factions) {
+    for (const other of factions) {
+      assert.ok(factionRelationLine(faction, other).length > 0, `${faction} → ${other} 缺关系描述`);
+    }
+  }
+  assert.ok(factionDossiers.witch.coup, '月蚀庭要有内部政变线');
+  assert.ok(factionBrief('association', 20).includes('戒备'));
+  assert.ok(factionBrief('association', 50).includes('中立'));
+  assert.equal(EMPLOYER_LABEL, '夜糖事务所', '雇主是固定文案，不随出身变');
+});
+
+test('v19 出身标签生成确定，四档都能出', () => {
+  assert.equal(factionTagFor('yue'), factionTagFor('yue'), '同一个 seed 永远同一出身');
+  const seen = new Set<GirlFaction>();
+  for (let index = 0; index < 600; index++) seen.add(factionTagFor(`seed-${index}`));
+  assert.deepEqual([...seen].sort(), ['association', 'government', 'none', 'witch']);
+  for (const tag of seen) {
+    assert.ok(factionTagLabel(tag).length > 0);
+    assert.match(factionTagColor(tag), /^#[0-9a-f]{6}$/i);
+  }
+  assert.equal(factionTagLabel(undefined), '无所属');
+  assert.equal(isGirlFaction('office'), false, '事务所是雇主，不是出身');
+  assert.equal(isGirlFaction('witch'), true);
+  assert.deepEqual(Object.keys(girlFactionLabels).sort(), ['association', 'government', 'none', 'witch']);
+});
+
+test('v19 读档/导卡的出身清洗：合法值保留，非法值（含历史 office）重算', () => {
+  assert.equal(sanitizeGirlFaction('witch', 'yue'), 'witch');
+  assert.equal(sanitizeGirlFaction('none', 'yue'), 'none');
+  assert.equal(sanitizeGirlFaction('office', 'yue'), factionTagFor('yue'), '历史 office 不是出身');
+  assert.equal(sanitizeGirlFaction(undefined, 'yue'), factionTagFor('yue'));
+  assert.equal(sanitizeGirlFaction(42, 'yue'), factionTagFor('yue'));
+  assert.equal(sanitizeGirlFaction('', 'yue'), factionTagFor('yue'));
+});
+
+test('v19 世界书自动生成事务所条目，且标成只读', () => {
+  const entry = officeWorldbookEntry(DEFAULT_OFFICE_PROFILE);
+  assert.equal(entry.id, OFFICE_WORLDBOOK_ID);
+  assert.equal(entry.name, '夜糖事务所');
+  assert.equal(entry.constant, true);
+  assert.equal(entry.priority, 92);
+  assert.equal(entry.order, 4);
+  assert.equal(entry.generated, true, '生成条目必须能被 UI 认出来');
+  assert.ok(entry.keys.includes('夜糖事务所') && entry.keys.includes('对外代表'));
+  assert.ok(entry.content.includes('背景：') && entry.content.includes('理念：') && entry.content.includes('目标：'));
+  assert.ok(entry.content.includes('尚未任命对外代表。'));
+
+  const builtin = builtinWorldbook();
+  assert.equal(builtin[0].id, OFFICE_WORLDBOOK_ID, '生成条目排在最前');
+  assert.equal(builtin.filter(item => item.id === OFFICE_WORLDBOOK_ID).length, 1);
+});
+
+test('v19 世界书同步把「月蚀教团」的旧称迁到「月蚀庭」', () => {
+  withMemoryStorage(() => {
+    const legacy = {
+      id: 'legacy-witch', name: '旧势力', keys: ['月蚀教团'], content: '月蚀教团仍在暗巷卖药，月蚀教团不接受登记。',
+      constant: false, priority: 50, order: 9, enabled: true,
+    };
+    assert.equal(saveWorldbook([legacy]), true);
+    assert.equal(loadWorldbook().some(item => item.id === OFFICE_WORLDBOOK_ID), false, '起手只有玩家自己的条目');
+
+    assert.equal(syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE), true);
+    const entries = loadWorldbook();
+    assert.equal(entries[0].id, OFFICE_WORLDBOOK_ID, '缺条目时补在最前');
+    const migrated = entries.find(item => item.id === 'legacy-witch')!;
+    assert.equal(migrated.content.includes('月蚀教团'), false, '旧称要全部替换');
+    assert.ok(migrated.content.includes('月蚀庭'));
+    assert.equal(syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE), true, '再同步一次也不报错');
+    assert.equal(loadWorldbook().filter(item => item.id === OFFICE_WORLDBOOK_ID).length, 1, '不会重复插入');
+  });
+});
+
+test('v19 onlyIfMissing 不覆盖玩家手改，全量同步才重写', () => {
+  withMemoryStorage(() => {
+    saveWorldbook([officeWorldbookEntry(DEFAULT_OFFICE_PROFILE)]);
+    const edited = loadWorldbook().map(item => item.id === OFFICE_WORLDBOOK_ID ? { ...item, content: '玩家自己写的事务所介绍' } : item);
+    saveWorldbook(edited);
+
+    syncOfficeWorldbook({ background: '新背景', philosophy: '新理念', goal: '新目标' }, undefined, { onlyIfMissing: true });
+    assert.equal(loadWorldbook().find(item => item.id === OFFICE_WORLDBOOK_ID)!.content, '玩家自己写的事务所介绍', '首次挂载不推翻手改');
+
+    syncOfficeWorldbook({ background: '新背景', philosophy: '新理念', goal: '新目标' }, undefined);
+    const rewritten = loadWorldbook().find(item => item.id === OFFICE_WORLDBOOK_ID)!;
+    assert.ok(rewritten.content.includes('新背景') && rewritten.content.includes('新目标'), '玩家点保存才重写');
+    assert.equal(rewritten.generated, true);
+  });
+});
+
+test('v19 事务所条目里的对外代表随助理变化，卸任后回到未任命', () => {
+  withMemoryStorage(() => {
+    const state = v19State();
+    state.assistantId = 'yue';
+    const representative = representativeOf(state);
+    assert.ok(representative);
+    syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE, representative);
+    const withRep = loadWorldbook().find(item => item.id === OFFICE_WORLDBOOK_ID)!.content;
+    assert.ok(withRep.includes('对外代表'));
+    assert.ok(withRep.includes(representative.name));
+    assert.ok(withRep.includes(factionTagLabel(representative.factionTag)), '代表行要写出身');
+
+    syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE, undefined);
+    assert.ok(loadWorldbook().find(item => item.id === OFFICE_WORLDBOOK_ID)!.content.includes('尚未任命对外代表。'));
+    assert.ok(officeWorldbookContent(DEFAULT_OFFICE_PROFILE, representative).includes('出身'));
+    assert.ok(WORLDBOOK_KEY.length > 0);
+  });
+});
+
+test('v19 对外代表只认在职且活着的助理，卸任不会顺手清掉 assistantId', () => {
+  const state = v19State();
+  state.assistantId = 'yue';
+  assert.equal(representativeOf(state)?.id, 'yue');
+
+  const dead = v19State();
+  dead.assistantId = 'yue';
+  dead.girls = dead.girls.map(girl => girl.id === 'yue' ? { ...girl, dead: true } : girl);
+  assert.equal(representativeOf(dead), undefined, '死掉的人不能当代表');
+  assert.equal(dead.assistantId, 'yue', '身份本身保留，由玩家决定换谁');
+
+  const retired = v19State();
+  retired.assistantId = 'yue';
+  retired.girls = retired.girls.map(girl => girl.id === 'yue' ? { ...girl, retired: true } : girl);
+  assert.equal(representativeOf(retired), undefined, '离职的人也不能当代表');
+
+  const missing = v19State();
+  missing.assistantId = 'nobody';
+  assert.equal(representativeOf(missing), undefined);
+
+  const none = v19State();
+  none.assistantId = undefined;
+  assert.equal(representativeOf(none), undefined);
+});
+
+test('v19 事务所档案逐字段 trim、限长，非法或空值只影响自己那一栏', () => {
+  const long = 'x'.repeat(OFFICE_LIMITS.background + 40);
+  const profile = sanitizeOfficeProfile({ background: `  ${long}  `, philosophy: '', goal: '值夜' });
+  assert.equal(profile.background.length, OFFICE_LIMITS.background, '背景按上限截断');
+  assert.equal(profile.background.trim(), profile.background, '首尾空白应被去掉');
+  assert.equal(profile.philosophy, DEFAULT_OFFICE_PROFILE.philosophy, '空串回退默认值');
+  assert.equal(profile.goal, '值夜');
+
+  assert.deepEqual(sanitizeOfficeProfile(), DEFAULT_OFFICE_PROFILE);
+  assert.deepEqual(sanitizeOfficeProfile(null), DEFAULT_OFFICE_PROFILE);
+  const capped = sanitizeOfficeProfile({
+    background: 'b', philosophy: 'y'.repeat(OFFICE_LIMITS.philosophy + 10), goal: 'g'.repeat(OFFICE_LIMITS.goal + 10),
+  });
+  assert.equal(capped.philosophy.length, OFFICE_LIMITS.philosophy);
+  assert.equal(capped.goal.length, OFFICE_LIMITS.goal);
+});
+
+test('v19 新档是 version 12，带默认档案，三方态度统一 50', () => {
+  const state = createInitialState();
+  assert.equal(state.version, 12);
+  assert.deepEqual(state.pollution, initialPollution());
+  assert.deepEqual(state.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
+  for (const faction of FACTION_ORDER) {
+    assert.equal(state.factions[faction].standing, 50, `${faction} 应从 50 起步，不该有历史偏见`);
+  }
+  assert.ok(cityAveragePollution(state) > 0);
+  const dirtiest = dirtiestDistrict(state);
+  assert.equal(dirtiest.id, 'oldtown');
+  assert.equal(dirtiest.level, initialPollution().oldtown);
+});
+
+test('v19 保存事务所档案会写进档并留下日志', () => {
+  const state = v19State();
+  const profile: OfficeProfile = { background: '重开的第二天', philosophy: '先问她叫什么', goal: '让三方坐到同一张桌子' };
+  const result = act(state, { type: 'setOfficeProfile', profile });
+  assert.equal(result.ok, true, result.message);
+  assert.deepEqual(result.state.office, profile);
+  assert.ok(result.state.logs.some(log => log.text.includes('事务所档案已更新')), '要留下变更记录');
+
+  const trimmed = act(v19State(), { type: 'setOfficeProfile', profile: { background: '  ', philosophy: '理念', goal: '目标' } });
+  assert.equal(trimmed.state.office.background, DEFAULT_OFFICE_PROFILE.background, '写入前也会被清洗');
+});
+
+test('v19 拦截判定：只有被当主戒备的普通辖区委托才会被拦', () => {
+  const hostile = hostileCandy();
+  const candy = hostile.missions.find(item => item.id === 'candy')!;
+  assert.equal(canIntercept(hostile, candy), true);
+
+  const calm = hostileCandy();
+  calm.factions.association.standing = 50;
+  assert.equal(canIntercept(calm, calm.missions.find(item => item.id === 'candy')!), false, '中立不拦');
+
+  const boss = hostile.missions.find(item => item.boss);
+  if (boss) assert.equal(canIntercept(hostile, boss), false, 'BOSS 委托不拦');
+
+  const envoy = hostile.missions.find(item => item.envoy);
+  if (envoy) assert.equal(canIntercept(hostile, envoy), false, '来使委托不拦');
+
+  assert.equal(canIntercept(hostile, { ...candy, storylineId: 'arc-1' }), false, '剧情委托不拦');
+  assert.equal(canIntercept(hostile, { ...candy, interception: { faction: 'association', girlIds: ['fg-association-rin'] } }), false, '已经拦过的不再拦');
+  assert.equal(canIntercept(hostile, { ...candy, district: undefined }), false, '没有辖区的委托不拦');
+  assert.equal(canIntercept(hostile, { ...candy, district: 'nowhere' }), false, '没有当主的辖区不拦');
+});
+
+test('v19 拦截战胜利：声望 −4，原委托作废且不算完成', () => {
+  const state = hostileCandy();
+  buffGirl(state, 'yue');
+  const before = state.factions.association.standing;
+  const pollution = state.pollution.candy;
+
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  assert.equal(deployed.ok, true, deployed.message);
+  const settled = act(deployed.state, { type: 'advance', minutes: 180 });
+  assert.equal(settled.ok, true, settled.message);
+  assert.equal(settled.battle?.outcome, 'victory');
+
+  const mission = settled.state.missions.find(item => item.id === 'candy')!;
+  assert.equal(mission.interception?.faction, 'association');
+  assert.equal(mission.interception?.outcome, 'win');
+  assert.equal(mission.status, 'expired', '拦截战覆盖了原委托，不会完成');
+  assert.equal((mission.squad ?? []).length, 0, '作废的委托不能留着队伍');
+  assert.equal(mission.girlId, undefined);
+  assert.equal(settled.state.completed.includes('candy'), false);
+  assert.equal(settled.state.factions.association.standing, before - 4, '打退协会的人要付声望代价');
+  assert.equal(settled.state.pollution.candy, pollution, '拦截战不净化辖区');
+});
+
+test('v19 拦截战失利：声望 −2，原委托同样作废', () => {
+  const state = hostileCandy();
+  const before = state.factions.association.standing;
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  assert.equal(deployed.ok, true, deployed.message);
+  const settled = act(deployed.state, { type: 'advance', minutes: 180 });
+  assert.equal(settled.ok, true, settled.message);
+  assert.notEqual(settled.battle?.outcome, 'victory', '没堆强度的单人要输');
+
+  const mission = settled.state.missions.find(item => item.id === 'candy')!;
+  assert.equal(mission.interception?.outcome, 'loss');
+  assert.equal(mission.status, 'expired');
+  assert.equal((mission.squad ?? []).length, 0);
+  assert.equal(settled.state.factions.association.standing, before - 2);
+});
+
+test('v19 拦截战只换敌人：辖区归属与污染都不动，人也会放回来', () => {
+  const state = hostileCandy();
+  buffGirl(state, 'yue');
+  const pollution = state.pollution.candy;
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  const settled = act(deployed.state, { type: 'advance', minutes: 180 });
+  assert.equal(settled.state.territories.candy, 'association', '拦下来也不改归属');
+  assert.equal(settled.state.pollution.candy, pollution, '污染原样不动');
+  const yue = settled.state.girls.find(girl => girl.id === 'yue')!;
+  assert.notEqual(yue.status, 'mission', '人必须放回来');
+  assert.ok(settled.state.logs.some(log => log.text.includes('拦截')), '要在日志里说明被拦了');
+});
+
+test('v19 拦截战换上的敌人是当主附属少女，不是原委托的魔物', () => {
+  const state = hostileCandy();
+  buffGirl(state, 'yue');
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  const settled = act(deployed.state, { type: 'advance', minutes: 180 });
+  const battle = settled.battle;
+  assert.ok(battle);
+
+  const enemies = battle.units.filter(unit => unit.side === 'enemy');
+  assert.ok(enemies.length > 0);
+  const girls = factionGirlsOf('association');
+  const girlNames = new Set(girls.map(girl => girl.name));
+  for (const enemy of enemies) {
+    assert.ok(girlNames.has(enemy.name), `${enemy.name} 不是星灯协会的附属少女`);
+    assert.equal(enemy.monster, undefined, '附属少女不该带魔物模板');
+  }
+  const first = girls.find(girl => girl.name === enemies[0].name);
+  assert.ok(first);
+  assert.deepEqual(enemies[0].stats, first.stats, '附属少女的数值不按等级差缩放');
+});
+
+test('v19 战斗会记住辖区污染，战报摘要里也有一行', () => {
+  const state = v19State();
+  state.pollution.docks = 90;
+  withSnapshot(state, 'arcade');
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'arcade' });
+  assert.equal(deployed.ok, true, deployed.message);
+  const settled = act(deployed.state, { type: 'advance', minutes: 180 });
+  const battle = settled.battle;
+  assert.ok(battle);
+  assert.equal(battle.pollution, 90);
+  const digest = battleDigest(battle);
+  assert.ok(digest.includes('辖区污染 90'), digest);
+  assert.ok(digest.includes(pollutionTierLabel(90)), digest);
+});
+
+test('v19 净化的疲劳只算一次：有快照就不再叠加地形那份', () => {
+  const fatigueDelta = (extra: number): number => {
+    const state = v19State();
+    withSnapshot(state, 'candy');
+    state.missions = state.missions.map(mission => mission.id === 'candy'
+      ? { ...mission, environment: { ...mission.environment!, fatigueFlat: extra } }
+      : mission);
+    const before = state.girls.find(girl => girl.id === 'yue')!.fatigue;
+    const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+    assert.equal(deployed.ok, true, deployed.message);
+    const settled = act(deployed.state, { type: 'advance', minutes: 45 });
+    assert.equal(settled.ok, true, settled.message);
+    return settled.state.girls.find(girl => girl.id === 'yue')!.fatigue - before;
+  };
+
+  const plain = fatigueDelta(0);
+  const heavier = fatigueDelta(3);
+  assert.equal(heavier - plain, 3, '快照里的 fatigueFlat 只出现一次');
+  assert.ok(plain >= 0);
+
+  const legacy = v19State();
+  legacy.missions = legacy.missions.map(mission => mission.id === 'candy' ? { ...mission, environment: undefined } : mission);
+  const before = legacy.girls.find(girl => girl.id === 'yue')!.fatigue;
+  const deployed = act(legacy, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  const settled = act(deployed.state, { type: 'advance', minutes: 45 });
+  const legacyDelta = settled.state.girls.find(girl => girl.id === 'yue')!.fatigue - before;
+  assert.notEqual(legacyDelta, plain, '没有快照的旧委托走回退路径，两次地形效果会叠加');
+  assert.equal(clampPollution(0), POLLUTION_MIN);
 });

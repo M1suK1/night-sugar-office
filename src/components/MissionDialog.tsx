@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass } from 'lucide-react';
+import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
 import { chance, clock, inWithdrawal, missionDeadlineLabel, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { districtOfMission, effectLines } from '../districts';
 import { windowLabel } from '../shift';
 import { findMonster } from '../content/monsters';
 import { getItem } from '../content/items';
+import { canIntercept } from '../factions';
+import { factionName } from '../territories';
+import { clampPollution, pollutionEffect, pollutionIsEstimated, pollutionLines, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierColors, pollutionTierLabel } from '../pollution';
 import { MonsterGlyph } from './MonsterGlyph';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
@@ -61,6 +64,27 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           {mission.deadlineAt !== undefined && <span className="window-deadline">截止 {clock(((mission.deadlineAt % 1440) + 1440) % 1440)} · {missionDeadlineLabel(mission, state)}</span>}
           {mission.wave !== undefined && <span className="window-wave">第 {mission.wave + 1} 批信号</span>}
         </div>
+        {(() => {
+          const level = clampPollution(mission.pollutionAtSpawn ?? (mission.district ? state.pollution?.[mission.district] ?? 0 : 0));
+          const tier = pollutionTier(level);
+          const effect = pollutionEffect(level);
+          const snapshot = pollutionSnapshotOf(state, mission);
+          const relief = pollutionRelief(snapshot);
+          const estimated = pollutionIsEstimated(mission);
+          const intercept = canIntercept(state, mission);
+          const interceptOwner = mission.district ? state.territories[mission.district] : undefined;
+          return <div className="mission-pollution" id={`mission-pollution-${mission.id}`}>
+            <div className="mission-pollution-head">
+              <span className={`pollution-badge ${tier}`} style={{ color: pollutionTierColors[tier] }}><Wind size={11} />污染 {level} · {pollutionTierLabel(level)}</span>
+              {estimated && <small>（按当前辖区估算）</small>}
+            </div>
+            <ul>
+              {pollutionLines(effect).map(line => <li key={line}>{line}</li>)}
+            </ul>
+            <p className="mission-pollution-relief">完成委托预计净化 −{relief}</p>
+            {intercept && interceptOwner && <p className="mission-interception-warning" id={`mission-interception-${mission.id}`}><AlertTriangle size={13} /><span>{factionName[interceptOwner]}在此戒备。派遣后会被其所属少女拦截，原委托将被覆盖。</span></p>}
+          </div>;
+        })()}
       </section>
 
       {(mission.rewardEquipmentId || mission.rewardGirlLevel) && (

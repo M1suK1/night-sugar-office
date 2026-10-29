@@ -1,4 +1,5 @@
 import type { BattleNote, BattleNoteLine, BattleNoteScene, BattleState, Expression, MonsterTemplate, PortraitSpec } from './types';
+import { pollutionTierLabel } from './pollution.ts';
 
 export const BATTLE_NOTE_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
 const EXPRESSION_SET = new Set<string>(BATTLE_NOTE_EXPRESSIONS);
@@ -88,6 +89,7 @@ export function battleDigest(battle: BattleState): string {
   const parts = [
     `战斗：${battle.missionTitle}`,
     `结果：${battleOutcomeLabel(battle.outcome)}；共 ${total} 回合`,
+    ...(battle.pollution === undefined ? [] : [`辖区污染 ${battle.pollution} · ${pollutionTierLabel(battle.pollution)}`]),
     `参战：${actors.map(actorSummary).join('；') || '没有留下参战记录'}`,
     '逐回合记录：',
   ];

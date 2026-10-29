@@ -381,6 +381,17 @@ body {
 .llm-field textarea{width:100%;resize:vertical;padding:8px 10px;border:1px solid #ffffff1a;background:#0d0a10;color:#e9dcea;font:400 10px/1.7 var(--font-body);border-radius:4px;outline:none}
 .llm-field textarea:focus{border-color:#f3aec966;box-shadow:0 0 0 2px #f3aec91f}
 .llm-field-hint{color:#7c6b86;font-size:8px;line-height:1.6;letter-spacing:.02em}
+#settings-llm-json{font-family:var(--font-data);font-size:9px;line-height:1.7;min-height:96px}
+.llm-provider{display:flex;gap:6px}
+.llm-provider-option{flex:1;padding:8px 10px;border:1px solid #ffffff1a;background:#0d0a10;color:#a995b2;font:500 10px/1 var(--font-data);letter-spacing:.04em;border-radius:4px;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.llm-provider-option:hover{border-color:#f3aec955;color:#e9dcea}
+.llm-provider-option.active{border-color:#f3aec9aa;background:#f3aec914;color:#f7e6ee}
+.llm-vertex-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.llm-file{position:relative;overflow:hidden;cursor:pointer}
+.llm-file>input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.llm-vertex-info{font:400 9px/1.5 var(--font-data);color:#8fd3c7;letter-spacing:.02em;word-break:break-all}
+.llm-vertex-info.error{color:#e08a9b}
+@media(max-width:560px){.llm-provider{flex-direction:column}.llm-vertex-row{align-items:flex-start;flex-direction:column}}
 
 .llm-log{margin-top:14px;border:1px solid #ffffff12;background:#0c090f;border-radius:5px;padding:10px}
 .llm-log-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -443,9 +454,13 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-console-tip{display:inline-flex;align-items:center;gap:4px;color:#5d5866;font-size:8px;margin-left:auto;white-space:nowrap}
 .llm-console-icon{color:#8d8595;display:grid;place-items:center;padding:4px}
 .llm-console-icon:hover{color:#e6a9a2}
-.llm-console-list{overflow:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+.llm-console-list{overflow:auto;padding:6px 8px 6px 6px;display:flex;flex-direction:column;gap:5px;scrollbar-width:thin;scrollbar-color:#5b4a61 transparent;overscroll-behavior:contain}
+.llm-console-list::-webkit-scrollbar{width:6px}
+.llm-console-list::-webkit-scrollbar-track{background:#ffffff05;border-radius:3px}
+.llm-console-list::-webkit-scrollbar-thumb{background:#5b4a61;border-radius:3px}
+.llm-console-list::-webkit-scrollbar-thumb:hover{background:#7a6482}
 .llm-console-empty{color:#6c6573;font-size:9px;line-height:1.8;padding:14px 10px;text-align:center}
-.llm-entry{border:1px solid #ffffff0b;border-radius:6px;background:#17161d;overflow:hidden}
+.llm-entry{flex:0 0 auto;border:1px solid #ffffff0b;border-radius:6px;background:#17161d;overflow:hidden}
 .llm-entry.bad{border-color:#e6a9a21f}
 .llm-entry-head{display:flex;align-items:center;gap:7px;width:100%;padding:7px 8px;text-align:left;color:#b9b1bf}
 .llm-entry-head:hover{background:#ffffff04}
@@ -471,7 +486,9 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-sections summary{display:flex;align-items:center;gap:8px;padding:5px 7px;cursor:pointer;color:#a89fac;font-size:8.5px;list-style:none}
 .llm-sections summary::-webkit-details-marker{display:none}
 .llm-sections summary em{margin-left:auto;font-style:normal;color:#5d5866;font-size:7.5px;font-family:var(--font-data)}
-.llm-sections pre,.llm-reasoning{margin:0;padding:7px;border-top:1px solid #ffffff08;color:#b3aab8;font-size:8.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;max-height:230px;overflow:auto;font-family:var(--font-data)}
+.llm-sections pre,.llm-reasoning{margin:0;padding:7px;border-top:1px solid #ffffff08;color:#b3aab8;font-size:8.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;max-height:230px;overflow:auto;font-family:var(--font-data);scrollbar-width:thin;scrollbar-color:#5b4a61 transparent}
+.llm-sections pre::-webkit-scrollbar,.llm-reasoning::-webkit-scrollbar{width:5px}
+.llm-sections pre::-webkit-scrollbar-thumb,.llm-reasoning::-webkit-scrollbar-thumb{background:#5b4a61;border-radius:3px}
 .llm-reasoning{border:1px solid #b9a4d21f;border-radius:5px;background:#b9a4d20a;color:#b9b0c6}
 .llm-no-reasoning{color:#5d5866;font-size:8.5px;margin-top:6px}
 .llm-error{color:#e6a9a2;border:1px solid #e6a9a21f;background:#e6a9a20a;border-radius:4px;padding:5px 7px;font-size:8.5px;line-height:1.7;margin-top:8px}
@@ -580,6 +597,9 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .wardrobe-slot small{font-family:var(--font-data);font-size:8px;color:#5d5867}
 .wardrobe-slot-remove{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:20px;height:20px;border-radius:4px;color:#8c8492;background:#0000004d;border:1px solid #ffffff12}
 .wardrobe-slot-remove:hover{color:#f2a8b8;border-color:#f2a8b855}
+.wardrobe-slot-ai{margin-top:auto;align-self:flex-start;display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid #ffffff14;border-radius:4px;color:#a99bb0;font-size:8.5px;background:#ffffff05}
+.wardrobe-slot-ai:hover:not(:disabled){color:#f3aec9;border-color:#f3aec940;background:#f3aec90d}
+.wardrobe-slot-ai:disabled{opacity:.55}
 .wardrobe-import-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .wardrobe-import-block{display:flex;flex-direction:column;gap:9px;padding:12px;border:1px solid #ffffff10;border-radius:8px;background:#101117}
 .wardrobe-import-head{display:flex;align-items:flex-start;gap:9px;color:#c9aebe}
@@ -588,6 +608,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .wardrobe-import-head small{font-size:8.5px;color:#756e7c;line-height:1.6}
 .wardrobe-drop{display:flex;align-items:center;justify-content:center;gap:8px;min-height:62px;border:1px dashed #ffffff1f;border-radius:6px;color:#9a8fa2;font-size:10px;cursor:pointer;transition:border-color .2s,color .2s}
 .wardrobe-drop:hover{border-color:#f3aec966;color:#f0c8db}
+.wardrobe-drop.is-drop-over{border-style:solid;border-color:#f3aec9;color:#f6d3e2;background:#f3aec912}
 .wardrobe-copy-row{display:flex;gap:7px}
 .wardrobe-copy-row select{flex:1;min-width:0;background:#0c0d12;border:1px solid #ffffff14;border-radius:5px;color:#d6cfd8;font-size:10px;padding:9px}
 .wardrobe-paste{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid #ffffff10;border-radius:8px;background:#101117}

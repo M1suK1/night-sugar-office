@@ -97,6 +97,7 @@
 .custom-portrait-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:22px;margin-top:14px}
 .custom-crop-preview{position:relative;width:240px;height:300px;border:1px solid #f3aec92a;background:radial-gradient(ellipse at 50% 35%,#2a1b2d,#0b0910 75%);display:grid;place-items:center;overflow:hidden}
 .custom-crop-preview canvas{width:240px;height:300px;display:block}
+.custom-crop-preview.is-drop-over{outline:2px dashed #f3aec9;outline-offset:-5px}
 .custom-crop-preview>span{position:absolute;bottom:8px;left:9px;font-size:8px;letter-spacing:.1em;color:#a58dab}
 .custom-portrait-fields>label{margin-top:9px}
 .custom-portrait-fields input[type=range]{accent-color:#f49abd;width:100%}

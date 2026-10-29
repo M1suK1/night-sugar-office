@@ -3,6 +3,7 @@ import { sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
 import { skillById } from './content/skills.ts';
 import { traitById } from './content/traits.ts';
+import { sanitizeGirlFaction } from './factions.ts';
 
 const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
@@ -35,6 +36,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
       importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
       witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
+      factionTag: girl.factionTag,
     },
   };
 }
@@ -101,6 +103,8 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       importedVariants: sanitizeExpressionVariants(g.importedVariants),
       witchForm,
       storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
+      // 旧卡片没有出身，或写进了已经废弃的 'office'：一律按名字确定性补齐，保证导入结果稳定。
+      factionTag: sanitizeGirlFaction((g as Record<string, unknown>).factionTag, g.name!.trim()),
     },
   };
   return { ok: true, card: normalized };

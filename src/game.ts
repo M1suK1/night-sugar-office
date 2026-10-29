@@ -1,4 +1,4 @@
-import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, Incident, IncidentCard, IncidentEffect, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
+import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { playableStoryPlan, sanitizeStoryPlan } from './storyplan.ts';
@@ -18,8 +18,11 @@ import { advancedCost, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effe
 import { applyPct, districtAt, districts, type DistrictId } from './districts.ts';
 import { loadBalance, rules } from './balance.ts';
 import { SHIFT_START, SHIFT_END, WAVE_AT, WAVE_SIZES, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt, LONG_MIN_DAYS, LONG_MAX_DAYS, type CommissionWindow } from './shift.ts';
-import { FACTION_ORDER, assignTerritories, canClaim, effectiveDistrictEffect, factionName, ownedDistricts, repairTerritories, type TerritoryMap } from './territories.ts';
+import { FACTION_ORDER, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, factionName, ownedDistricts, repairTerritories, type TerritoryMap } from './territories.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from './opinions.ts';
+import { canIntercept, factionGirlsOf, factionTagFor, sanitizeGirlFaction } from './factions.ts';
+import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from './office.ts';
+import { clampPollution, districtName, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from './pollution.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
@@ -148,8 +151,15 @@ export function witchOutfitFor(girl: Pick<Girl, 'color' | 'portrait' | 'portrait
     portraitSpec: girl.portraitSpec,
   };
 }
-function hydrate(girl: Girl): Girl {
-  const g = clone(girl);
+/**
+ * 读档与建档的统一入口。
+ *
+ * 入参允许缺 `factionTag`（旧存档、外部导入的契约卡、种子包），所以这里收成
+ * `GirlInput`；返回值一定是完整的 `Girl`，其余模块不必再判空。
+ */
+type GirlInput = Omit<Girl, 'factionTag'> & { factionTag?: GirlFaction | string };
+function hydrate(girl: GirlInput): Girl {
+  const g = clone(girl) as Girl;
   g.baseMaxHp ??= g.maxHp;
   g.baseStats ??= { ...g.stats };
   g.skills ??= defaultSkills(g.id);
@@ -186,6 +196,9 @@ function hydrate(girl: Girl): Girl {
   g.eventBadge ??= undefined;
   g.pendingTalk ??= undefined;
   g.expression ??= 'calm';
+  // 出身在这里统一收口：缺字段、非法值、历史遗留的 `office` 都按 id 重新确定性生成，
+  // 合法值原样保留，所以一次存读不会把一个人的来历改掉。
+  g.factionTag = sanitizeGirlFaction(g.factionTag, g.id);
   g.corruption ??= 0;
   g.equipment ??= {};
   g.importedVariants = sanitizeExpressionVariants(g.importedVariants);
@@ -212,7 +225,7 @@ const candidateColors = ['#F49ABD', '#C7A7E8', '#9CC9D2', '#B9D8A8', '#D98A94', 
 const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系'] as const;
 const archetypes = ['输出', '守护', '控制', '治愈', '侦查'] as const;
 
-function makeCandidate(state: GameState, level: number, salt = 0): Girl {
+function makeCandidate(state: GameState, level: number, salt = 0, tag?: GirlFaction): Girl {
   const seed = hashText(`${state.day}:${state.marketDay}:${state.candidates.length}:${level}:${salt}`);
   const pick = <T,>(list: readonly T[], shift: number): T => list[(seed >>> shift) % list.length];
   const element = pick(elements, 0);
@@ -235,20 +248,60 @@ function makeCandidate(state: GameState, level: number, salt = 0): Girl {
     personality: pick(['认真、容易紧张，被夸奖时会短暂地失去语言。', '看起来冷淡，其实很怕给别人添麻烦。', '好奇心旺盛，总在记录本上画看不懂的符号。'], 9),
     outfitDescription: '见习契约者的简化制服，袖口还没有绣上事务所的标记。',
     wardrobe: [], outfitId: 'uniform', expression: 'calm', corruption: 0, equipment: {}, candidateUntilDay: state.day + (salt % 2 === 0 ? 1 : 3),
+    // 候选者来自三方与无所属；显式传入时用它，否则按 id 确定性分布。
+    factionTag: tag ?? factionTagFor(id),
   });
 }
 
+/**
+ * 补名册：先补出身缺口，再用确定性洗牌袋填满剩余名额。
+ *
+ * 市场只有 2–5 个非自定义槽位，纯随机经常连着几天都是同一方的人，玩家会觉得
+ * 全城只剩一种出身。所以这里分两步：先看当前名册缺哪几方，按洗牌袋的顺序补；
+ * 槽位不够时不硬塞，也不替换玩家自己的契约卡。
+ */
 function refreshMarket(state: GameState): void {
   state.candidates = state.candidates.filter(g => g.custom || (g.candidateUntilDay ?? 0) > state.day);
   const target = marketSize(state.marketLevel);
+  const bag = factionBag(state.marketDay);
+  let bagIndex = 0;
+  const nextTag = (): GirlFaction => {
+    const tag = bag[bagIndex % bag.length];
+    bagIndex += 1;
+    return tag;
+  };
+  const customCount = state.candidates.filter(g => g.custom).length;
+  const slots = Math.max(0, Math.min(target, 6 - customCount));
+  const nonCustom = () => state.candidates.filter(g => !g.custom);
+  // 第一步：补齐缺席的出身。已有的一方不再重复补，避免四五个名额被同一方吃掉。
+  for (const tag of bag) {
+    if (nonCustom().length >= slots) break;
+    if (nonCustom().some(g => g.factionTag === tag)) continue;
+    pushCandidate(state, nextTag(), slots);
+  }
+  // 第二步：仍有空位时按洗牌袋顺序填满；已出现的出身照样可以再来一个。
   let guard = 0;
-  while (state.candidates.filter(g => !g.custom).length < target && state.candidates.length < 6 && guard < 8) {
-    const level = hashText(`${state.day}:${state.marketDay}:${guard}`) % 10 < 7 ? 1 : 2;
-    const girl = makeCandidate(state, level, state.marketDay * 10 + guard);
-    if (!state.candidates.some(g => g.id === girl.id)) state.candidates.push(girl);
+  while (nonCustom().length < slots && guard < 12) {
+    pushCandidate(state, nextTag(), slots);
     guard += 1;
   }
   state.marketDay = state.day;
+}
+
+/** 同一天内稳定的出身洗牌袋：四个出身各一次，按 hash 轮转，不靠 `Math.random`。 */
+function factionBag(day: number): GirlFaction[] {
+  const order: GirlFaction[] = ['association', 'government', 'witch', 'none'];
+  const offset = hashText(`faction-bag:${day}`) % order.length;
+  return [...order.slice(offset), ...order.slice(0, offset)];
+}
+
+function pushCandidate(state: GameState, tag: GirlFaction, slots: number): void {
+  const roll = hashText(`${state.day}:${state.marketDay}:${state.candidates.length}:${tag}`);
+  const level = roll % 10 < 7 ? 1 : 2;
+  const girl = makeCandidate(state, level, state.marketDay * 10 + state.candidates.length, tag);
+  if (state.candidates.some(g => g.id === girl.id)) return;
+  if (state.candidates.filter(g => !g.custom).length >= slots) return;
+  state.candidates.push(girl);
 }
 
 export function makeFactionStock(faction: FactionId, day: number): MarketStockEntry[] {
@@ -331,14 +384,33 @@ function makeBossMission(state: GameState): Mission {
 /** 给任何来源的委托补上辖区、时段与接取时限（旧存档、派系、Boss、LLM 都走这里）。 */
 export function annotateMission(state: GameState, mission: Mission, wave = 0): Mission {
   const district = mission.district ?? districtAt(mission.x, mission.y);
-  const region = districts[district];
   const spawnAt = mission.spawnedAt ?? absoluteMinutes(state.day, state.minutes);
   const window: CommissionWindow = mission.window ?? (mission.duration >= 90 ? 'long' : 'urgent');
-  return {
+  const base: Mission = {
     ...mission, district, window, wave: mission.wave ?? wave,
     spawnedAt: spawnAt, deadlineAt: mission.deadlineAt ?? deadlineFor(window, state.day, spawnAt),
-    target: applyPct(mission.target, region.effect.targetPct),
-    reward: applyPct(mission.reward, region.effect.rewardPct),
+  };
+  // 已有快照的委托不再重算：发出去之后辖区易主或被人净化，不能回头改动这一单。
+  if (mission.environment) return base;
+  return { ...base, ...missionSnapshot(state, district, mission.target, mission.reward) };
+}
+
+/**
+ * 把辖区当前的环境、污染与当主冻结成委托快照。
+ *
+ * 目标与报酬只在这里应用一次，快照本身也留在这份数据里，所以详情面板、战斗与结算
+ * 读到的都是同一份口径。
+ */
+function missionSnapshot(state: GameState, district: DistrictId, target: number, reward: number): Pick<Mission, 'environment' | 'pollutionAtSpawn' | 'ownerAtSpawn' | 'target' | 'reward'> {
+  const owner = state.territories?.[district] ?? FACTION_ORDER[0];
+  const level = pollutionForecast(state, district).level;
+  const environment = mergeDistrictEffects(districts[district].effect, factionEffect[owner], pollutionEffect(level));
+  return {
+    environment,
+    pollutionAtSpawn: level,
+    ownerAtSpawn: owner,
+    target: applyPct(target, environment.targetPct),
+    reward: applyPct(reward, environment.rewardPct),
   };
 }
 
@@ -564,16 +636,16 @@ function makeCommission(state: GameState, wave: number, slot: number): Mission {
   const template = pool[hashText(`${state.day}:${wave}:${slot}:${districts[districtOrderFor(state.day, wave, slot)].id}`) % pool.length];
   const regionId = template.district ?? districtOrderFor(state.day, wave, slot);
   const region = districts[regionId];
-  const territory = effectiveDistrictEffect(state.territories, regionId);
   const window: CommissionWindow = template.window ?? (slot === 0 ? 'long' : 'urgent');
   const spawnAt = shiftStartAt(state.day) + WAVE_AT[wave];
   const pin = districtPin(regionId, `${state.day}-${wave}-${slot}`);
   const longDays = window === 'long'
     ? LONG_MIN_DAYS + (hashText(`long:${state.day}:${wave}:${slot}`) % (LONG_MAX_DAYS - LONG_MIN_DAYS + 1))
     : undefined;
-  const target = applyPct(template.target, (region.effect.targetPct ?? 0) + (territory.targetPct ?? 0)) + (longDays ? (longDays - 2) * 2 : 0);
+  const snapshot = missionSnapshot(state, regionId, template.target, template.reward);
+  const target = snapshot.target + (longDays ? (longDays - 2) * 2 : 0);
   const urgentBonus = window === 'urgent' ? 1.3 : 0.9 + 0.22 * (longDays ?? 2);
-  const reward = Math.round(applyPct(template.reward, (region.effect.rewardPct ?? 0) + (territory.rewardPct ?? 0)) * urgentBonus);
+  const reward = Math.round(snapshot.reward * urgentBonus);
   return {
     ...clone(template),
     id: `c-${state.day}-${wave}-${slot}-${template.id}`,
@@ -587,6 +659,9 @@ function makeCommission(state: GameState, wave: number, slot: number): Mission {
     y: pin.y,
     target,
     reward,
+    environment: snapshot.environment,
+    pollutionAtSpawn: snapshot.pollutionAtSpawn,
+    ownerAtSpawn: snapshot.ownerAtSpawn,
     color: template.templateId ? template.color : `rgb(${region.tint})`,
     category: `${region.name} · ${template.category}`,
     status: 'open',
@@ -608,8 +683,16 @@ export function deployMissionTemplate(state: GameState, template: MissionTemplat
   const window = template.window ?? 'urgent';
   const spawnAt = absoluteMinutes(state.day, state.minutes);
   const longDays = window === 'long' ? LONG_MIN_DAYS : undefined;
+  const seeded = missionSeed(template);
+  // 投放测试的委托同样要冻结环境：否则工坊里看到的数值和玩家接到的不是一份。
+  const snapshot = missionSnapshot(state, regionId, seeded.target, seeded.reward);
   return {
-    ...missionSeed(template),
+    ...seeded,
+    target: snapshot.target,
+    reward: snapshot.reward,
+    environment: snapshot.environment,
+    pollutionAtSpawn: snapshot.pollutionAtSpawn,
+    ownerAtSpawn: snapshot.ownerAtSpawn,
     id: `w-${state.day}-${state.minutes}-${state.missions.length}-${template.id}`,
     district: regionId,
     window,
@@ -1505,15 +1588,16 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     { id: 'l-3', time: '第 14 日 · 20:40', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   const state: GameState = {
-    version: 11, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    version: 12, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
-    factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
+    factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], storylines: [], events: [], treatments: [],
+    pollution: initialPollution(), office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
   };
   const seedAuthor = state.girls.find(girl => girl.id === 'ling');
   if (seedAuthor) {
@@ -1527,7 +1611,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
 /** 全空档案：只有启动资金、一间会客厅和城里的九片辖区。 */
 export function createBlankState(pack: ContentPack = createSeedPack(), seed = `${pack.hash}:${Math.random()}`): GameState {
   const state: GameState = {
-    version: 11, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    version: 12, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     girls: [], candidates: [], missions: [], completed: [],
     rooms: [{ id: 'lounge', name: '会客厅', type: 'lounge', level: 1, capacity: 0, description: '刚租下的会客厅，只有一张桌子、一盏灯和一把多余的椅子。' }],
     logs: [
@@ -1536,11 +1620,12 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     ],
     samples: sampleDays(), messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
-    factions: { witch: { standing: 20, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 45, stockDay: 14, envoyDay: 14 } },
+    factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], storylines: [], events: [], treatments: [],
+    pollution: initialPollution(), office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
   };
   syncShift(state);
   return state;
@@ -1583,12 +1668,86 @@ function recordBattle(state: GameState, battle: BattleState): void {
   const kept = new Set(state.battles.map(item => item.id));
   state.battleNotes = (state.battleNotes ?? []).filter(note => kept.has(note.battleId)).slice(0, 20);
 }
+/**
+ * 拦截战的结算分支。
+ *
+ * 只做「打完并作废原委托」这一件事：不发原委托的报酬与声望，不净化污染，不换辖区，
+ * 也不推故事节点。战后的人物状态（HP、疲惫、侵蚀、疤痕、羁绊）仍由 `settleCombat`
+ * 的公共收尾处理，这里不复制第二套。
+ */
+function settleInterception(state: GameState, mission: Mission, interception: Interception, battle: BattleState, at: { day: number; minutes: number }): void {
+  const win = battle.outcome === 'victory';
+  interception.outcome = win ? 'win' : 'loss';
+  mission.status = 'expired';
+  mission.squad = [];
+  mission.girlId = undefined;
+  const faction = interception.faction;
+  const drop = win ? 4 : 2;
+  state.factions[faction].standing = Math.max(0, state.factions[faction].standing - drop);
+  const name = factionName[faction];
+  state.logs.unshift({
+    id: `log-intercept-${mission.id}`,
+    time: dateLabel(at.day, at.minutes),
+    kind: 'battle',
+    text: win
+      ? `拦截战：我们在${districtOfMission(mission).name}打退了${name}的人，「${mission.title}」就此作废。他们不会忘记这笔账（${name}声望 −${drop}）。`
+      : `拦截战：${name}在${districtOfMission(mission).name}拦下了「${mission.title}」，原委托作废（${name}声望 −${drop}）。`,
+  });
+  state.reputation = Math.max(0, state.reputation - 1);
+  book(state, at.day, 0);
+}
+/**
+ * 月蚀庭委托的连带声望：帮他们一次，另外两方各记一笔。
+ *
+ * 只在成功结算之后调用（战斗胜利 / 调查成功），失败不额外扣。
+ */
+function applyWitchBounty(state: GameState): void {
+  const clamp = (value: number) => Math.max(0, Math.min(100, value));
+  state.factions.association.standing = clamp(state.factions.association.standing - 2);
+  state.factions.government.standing = clamp(state.factions.government.standing - 2);
+  state.factions.witch.standing = clamp(state.factions.witch.standing + 3);
+}
+
+/**
+ * 判断这次委托会不会被辖区当主拦下；命中时把拦截编队写进 `mission.interception`。
+ *
+ * `canIntercept` 是唯一判定入口：委托详情里的红色预警也调它，所以不会出现
+ * 「UI 说要被拦、结算却放过」的谎报。
+ */
+export function interceptionFor(state: GameState, mission: Mission): Interception | undefined {
+  if (mission.interception) return mission.interception;
+  if (!canIntercept(state, mission)) return undefined;
+  const owner = mission.district ? state.territories[mission.district] : undefined;
+  if (!owner) return undefined;
+  const roster = factionGirlsOf(owner);
+  if (!roster.length) return undefined;
+  const count = Math.max(1, Math.min(3, 1 + Math.floor(mission.recommendedLevel / 4)));
+  const highest = [...roster].sort((a, b) => b.level - a.level)[0];
+  const rest = roster.filter(girl => girl.id !== highest.id);
+  const seed = hashText(`intercept:${mission.id}`);
+  const picked = rest
+    .map((girl, index) => ({ girl, key: hashText(`${seed}:${girl.id}:${index}`) }))
+    .sort((a, b) => a.key - b.key)
+    .slice(0, Math.max(0, count - 1))
+    .map(entry => entry.girl);
+  mission.interception = { faction: owner, girlIds: [highest.id, ...picked.map(girl => girl.id)] };
+  return mission.interception;
+}
 function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
-  const battle = simulateBattle({ mission, girls: squad, day: at.day, minutes: at.minutes, woundedEnemies: mission.worsened, monsters: state.customMonsters });
+  const interception = mission.interception;
+  const enemies = interception ? factionGirlsOf(interception.faction).filter(girl => interception.girlIds.includes(girl.id)) : [];
+  const battle = simulateBattle({
+    mission, girls: squad, day: at.day, minutes: at.minutes,
+    woundedEnemies: mission.worsened, monsters: state.customMonsters,
+    battleKind: interception ? 'interception' : 'commission',
+    enemyGirls: interception ? enemies : undefined,
+  });
   mission.attempts += 1;
   mission.lastOutcome = battle.outcome;
   const rewards = battle.rewards ?? { gold: 0, exp: 0, bond: 0 };
-  if (battle.outcome === 'victory') {
+  if (interception) {
+    settleInterception(state, mission, interception, battle, at);
+  } else if (battle.outcome === 'victory') {
     state.gold += rewards.gold;
     state.reputation = Math.min(100, state.reputation + (mission.boss ? 8 : 2));
     book(state, at.day, rewards.gold);
@@ -1599,6 +1758,7 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     if (mission.faction) {
       state.factions[mission.faction].standing = Math.min(100, state.factions[mission.faction].standing + 6);
       state.reputation = Math.max(0, Math.min(100, state.reputation + (mission.faction === 'witch' ? -2 : mission.faction === 'association' ? 2 : 1)));
+      if (mission.faction === 'witch') applyWitchBounty(state);
     }
     if (mission.boss && state.boss) { state.boss = null; state.bossCycle += 1; }
     state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗胜利：${mission.title}。魔物已被清除，事件移出委托池。${mission.boss ? '空月退去，城市恢复呼吸。' : ''}`, delta: rewards.gold });
@@ -1643,7 +1803,8 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
       girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 12) + 6);
     }
     const gearCorruption = equipmentOf(girl).reduce((sum, item) => sum + (item.corruptionPerBattle ?? 0), 0);
-    addCorruption(state, girl, 3 + gearCorruption + (mission.boss ? 6 : 0) + (battle.outcome === 'defeat' ? 2 : 0));
+    // 污染造成的侵蚀只从快照读一份：`environment` 已经是地形 + 当主 + 污染的和。
+    addCorruption(state, girl, 3 + gearCorruption + (mission.boss ? 6 : 0) + (battle.outcome === 'defeat' ? 2 : 0) + (mission.environment?.corruptionFlat ?? 0));
   }
   if (battle.outcome === 'defeat') {
     for (const scar of battle.scars ?? []) {
@@ -1664,8 +1825,12 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     }
   }
   applySettleEnvironment(state, mission, squad.filter(girl => !girl.dead));
-  if (battle.outcome === 'victory' && mission.faction && mission.district) {
-    shiftTerritory(state, mission.district, mission.faction, '阵营委托完成');
+  // 拦截战不净化污染、也不换辖区：这不是完成委托，只是把那张单子打作废。
+  if (!interception) {
+    applyPollutionRelief(state, mission, battle.outcome === 'victory' ? 'win' : 'loss');
+    if (battle.outcome === 'victory' && mission.faction && mission.district) {
+      shiftTerritory(state, mission.district, mission.faction, '阵营委托完成');
+    }
   }
   recordBattle(state, battle);
   return battle;
@@ -1720,13 +1885,48 @@ export function treatmentFor(state: GameState, girlId: string): Treatment | unde
 /** 辖区环境在结算时的统一修正：疲劳、精神力。声望在各自分支里结算。 */
 function applySettleEnvironment(state: GameState, mission: Mission, squad: Girl[]): void {
   const region = districtOfMission(mission);
-  const territory = mission.district ? effectiveDistrictEffect(state.territories, mission.district) : { targetPct: 0, rewardPct: 0, fatigueFlat: 0, reputationFlat: 0 };
-  const extraFatigue = (region.effect.fatigueFlat ?? 0) + (territory.fatigueFlat ?? 0);
+  // 有快照时只认快照：`mission.environment` 已经是「静态地形 + 当主 + 污染」的和，
+  // 再读一次 terrain/territory 会把地形与当主的疲劳算两遍。
+  const extraFatigue = mission.environment
+    ? (mission.environment.fatigueFlat ?? 0)
+    : (region.effect.fatigueFlat ?? 0) + (mission.district ? effectiveDistrictEffect(state.territories, mission.district).fatigueFlat ?? 0 : 0);
   const spiritDrain = (region.effect.spiritPerHour ?? 0) * Math.max(0, Math.round(mission.duration / 60));
   for (const girl of squad) {
     if (extraFatigue) girl.fatigue = Math.max(0, Math.min(100, girl.fatigue + extraFatigue));
     if (spiritDrain) girl.spirit = Math.max(0, girl.spirit + spiritDrain);
   }
+}
+
+/**
+ * 委托结束后的污染变化。
+ *
+ * 完成降低、失败略升；势力只在这里影响数值（净化量），不影响每日自然上升。
+ * 没有辖区的委托（城市级威胁等）不动污染。
+ */
+function applyPollutionRelief(state: GameState, mission: Mission, result: 'win' | 'loss'): number {
+  const district = mission.district;
+  if (!district) return 0;
+  const before = clampPollution(state.pollution?.[district] ?? 0);
+  const snapshot = pollutionSnapshotOf(state, mission);
+  const relief = result === 'win' ? pollutionRelief(snapshot) : -pollutionPenalty(snapshot);
+  const after = clampPollution(before - relief);
+  state.pollution[district] = after;
+  const ownerName = factionName[snapshot.owner] ?? snapshot.owner;
+  state.logs.unshift({
+    id: `log-pollution-${mission.id}-${state.day}-${state.minutes}-${result}`,
+    time: dateLabel(state.day, state.minutes),
+    kind: 'dispatch',
+    text: `${districtName(district)}污染 ${before} → ${after}（${result === 'win' ? '完成' : '失败'}委托「${mission.title}」，${ownerName}净化 ${relief > 0 ? `+${relief}` : relief}）`,
+  });
+  if (pollutionTier(before) !== pollutionTier(after)) {
+    state.logs.unshift({
+      id: `log-pollution-tier-${district}-${state.day}-${after}`,
+      time: dateLabel(state.day, state.minutes),
+      kind: 'story',
+      text: `${districtName(district)}从「${pollutionTierLabel(before)}」变为「${pollutionTierLabel(after)}」。`,
+    });
+  }
+  return relief;
 }
 
 /** 工坊委托的额外报酬：装备进背包，契约者直接入职；席位不足时留作免费候选者。 */
@@ -1781,8 +1981,12 @@ function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], 
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
       gainTrait(state, girl, mission.title, 0.3);
     }
+    const corrupt = mission.environment?.corruptionFlat ?? 0;
+    if (corrupt) for (const girl of squad) addCorruption(state, girl, corrupt);
     applySettleEnvironment(state, mission, squad);
+    applyPollutionRelief(state, mission, 'win');
     if (mission.faction && mission.district) shiftTerritory(state, mission.district, mission.faction, '阵营委托完成');
+    if (mission.faction === 'witch') applyWitchBounty(state);
     if (hashText(`${mission.id}:${state.day}`) % 100 < 22) {
       const author = squad[0];
       if (author) state.opinions.unshift(makeOpinion(state, author, '城市', '关于下一次调查的路线', '她想把糖果街和旧钟楼的线索并在一起看。', '申请一次不消耗星砂的线索整理时间。'));
@@ -1794,7 +1998,10 @@ function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], 
     book(state, at.day, 0);
     state.logs.unshift({ id: `log-inv-fail-${mission.id}-${mission.attempts}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `调查受阻：${mission.title}。线索不足，委托仍在事件池中。${region.name}的环境让线索更难拼合。` });
     for (const girl of squad) girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 10));
+    const lost = mission.environment?.corruptionFlat ?? 0;
+    if (lost) for (const girl of squad) addCorruption(state, girl, lost);
     applySettleEnvironment(state, mission, squad);
+    applyPollutionRelief(state, mission, 'loss');
   }
   for (const girl of squad) {
     girl.status = 'idle'; girl.remaining = 0; girl.missionId = undefined;
@@ -1859,9 +2066,25 @@ function settleTreatments(state: GameState, to: number): void {
   }
 }
 function processDay(state: GameState): void {
+  // 顺序本身就是可测行为：药物 → 疲劳侵蚀 → 污染日增 → 势力库存/来使 → 市场 → BOSS。
   for (const girl of [...state.girls]) {
     drugTick(state, girl);
     if (!girl.dead && girl.fatigue >= 80) addCorruption(state, girl, 2);
+  }
+  // 污染只自然上涨，任何势力都不加也不减；三方只影响「完成委托后净化多少」。
+  // 只在跨档时写日志，避免每天九条噪声。
+  if (state.pollution) {
+    for (const id of Object.keys(state.pollution) as DistrictId[]) {
+      const level = clampPollution(state.pollution[id]);
+      const next = clampPollution(level + pollutionDailyRise(level));
+      state.pollution[id] = next;
+      if (pollutionTier(next) !== pollutionTier(level)) {
+        state.logs.unshift({
+          id: `log-pollution-${id}-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'territory',
+          text: `${districts[id].name}的污染跨过了一个台阶：${level} → ${next}（${pollutionTierLabel(next)}）。`,
+        });
+      }
+    }
   }
   for (const faction of Object.keys(state.factions) as FactionId[]) {
     if (state.factions[faction].stockDay < state.day) {
@@ -1927,10 +2150,13 @@ function advance(state: GameState, minutes: number): ActionResult {
     if (due.mission) {
       const mission = next.missions.find(m => m.id === due.mission!.id)!;
       const squad = mission.squad.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g));
-      if (mission.work === 'combat' && mission.enemyIds?.length) lastBattle = settleCombat(next, mission, squad, { day: next.day, minutes: next.minutes });
+      // 先判拦截再分流：被拦下的调查委托也打成一场战斗，而不是先结算调查再补一场。
+      const intercept = interceptionFor(next, mission);
+      if (intercept) lastBattle = settleCombat(next, mission, squad, { day: next.day, minutes: next.minutes });
+      else if (mission.work === 'combat' && mission.enemyIds?.length) lastBattle = settleCombat(next, mission, squad, { day: next.day, minutes: next.minutes });
       else settleInvestigation(next, mission, squad, { day: next.day, minutes: next.minutes });
       for (const girl of squad) { girl.status = 'idle'; girl.remaining = 0; girl.missionId = undefined; }
-      if (mission.work === 'combat' && mission.status === 'done') {
+      if (mission.status === 'done' || mission.status === 'expired') {
         mission.squad = [];
         mission.girlId = undefined;
       }
@@ -2186,6 +2412,17 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.logs.unshift({ id: `log-assistant-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl.name}开始担任值班助理，会替你整理议题与排班。` });
       return { state: next, ok: true, message: `${girl.name}成为值班助理。` };
     }
+    case 'setOfficeProfile': {
+      const next = clone(state);
+      const profile = sanitizeOfficeProfile(action.profile);
+      const before = state.office ?? DEFAULT_OFFICE_PROFILE;
+      if (profile.background === before.background && profile.philosophy === before.philosophy && profile.goal === before.goal) {
+        return { state, ok: false, message: '事务所档案没有变化。' };
+      }
+      next.office = profile;
+      next.logs.unshift({ id: `log-office-profile-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: '事务所档案已更新：背景、理念与目标写进了世界书。' });
+      return { state: next, ok: true, message: '事务所档案已写入世界书。' };
+    }
     case 'decideOpinion': {
       const next = clone(state); let opinion = next.opinions.find(o => o.id === action.opinionId);
       if (!opinion || opinion.status !== 'pending') return { state, ok: false, message: '这项议题已经处理过了。' };
@@ -2336,7 +2573,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}已转为文职，不再参与派遣。` };
     }
     case 'changeOutfit': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (girl.witch) return { state, ok: false, message: '魔女化期间已锁定在魔女化立绘；先点击衣柜第五格恢复普通形态。' };
       if (!girl.wardrobe.some(o => o.id === action.outfitId)) return { state, ok: false, message: '衣柜里没有这套服装。' };
@@ -2344,13 +2581,13 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}换上了「${girl.wardrobe.find(o => o.id === action.outfitId)?.name}」。` };
     }
     case 'setExpression': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       girl.expression = action.expression;
       return { state: next, ok: true, message: `${girl.name}的表情已切换。` };
     }
     case 'setPersonality': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       const text = action.text.trim().slice(0, 600);
       if (!text) return { state, ok: false, message: '性格描述不能为空。' };
@@ -2360,7 +2597,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     }
     case 'endNight': return endNight(state);
     case 'importWardrobe': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       const base = action.mode === 'replace' ? [] : girl.wardrobe;
       const incoming = action.outfits
@@ -2384,7 +2621,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `已导入 ${added} 套服装${dropped ? `，${dropped} 套因衣柜已满未导入` : ''}。` };
     }
     case 'removeOutfit': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (girl.wardrobe.length <= 1) return { state, ok: false, message: '至少要为契约者保留一套服装。' };
       const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
@@ -2395,7 +2632,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `「${outfit.name}」已从衣柜移除。` };
     }
     case 'renameOutfit': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
       if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
@@ -2595,6 +2832,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         appearance: draft.appearance, personality: draft.personality, outfitDescription: draft.outfitDescription,
         portraitHint: draft.portraitHint?.trim().slice(0, 80) ?? '',
         wardrobe, outfitId, importedVariants, witchForm, expression: 'calm', corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7,
+        factionTag: draft.factionTag,
       });
       next.gold -= 300; book(next, next.day, -300);
       next.candidates.push(girl);
@@ -2642,8 +2880,18 @@ export function act(state: GameState, action: GameAction): ActionResult {
       delete girl.importedVariants[action.key];
       return { state: next, ok: true, message: '表情差分已移除。' };
     }
+    case 'setOutfitDescription': {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
+      if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
+      const description = action.description.trim().slice(0, 200);
+      if (!description) return { state, ok: false, message: '描述不能为空。' };
+      outfit.description = description;
+      return { state: next, ok: true, message: `「${outfit.name}」的描述已更新。` };
+    }
     case 'setWitchForm': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!action.outfit) {
         if (!girl.witch) return { state, ok: false, message: `${girl.name}现在没有处于魔女化状态。` };
@@ -2656,6 +2904,8 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const outfit = sanitizeOutfit({ ...action.outfit, id: 'witchform', form: 'witch' }, girl.color);
       if (!outfit) return { state, ok: false, message: '这份魔女化立绘无法识别。' };
       girl.witchForm = { ...outfit, form: 'witch' };
+      const witchPersonality = action.personality?.trim().slice(0, 600);
+      if (witchPersonality) girl.witchPersonality = witchPersonality;
       if (!activate) return { state: next, ok: true, message: `${girl.name}的魔女化立绘已保存到衣柜第五格。` };
       girl.witch = true;
       if (!girl.witchPersonality?.trim()) girl.witchPersonality = defaultWitchPersonality(girl);
@@ -2663,7 +2913,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       return { state: next, ok: true, message: `${girl.name}已切换到魔女化立绘，普通服装暂时锁定。` };
     }
     case 'clearWitchForm': {
-      const next = clone(state); const girl = findGirl(next, action.girlId);
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!girl.witchForm) return { state, ok: false, message: '还没有保存过魔女化立绘。' };
       girl.witchForm = undefined;
@@ -3044,7 +3294,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10, 11].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(value.version as number)) return createInitialState();
   try {
     const blankSave = value.blank === true;
     if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
@@ -3078,7 +3328,7 @@ export function loadState(raw: string | null): GameState {
     }
     const state = clone(value) as unknown as GameState;
     const previousVersion = Number(value.version);
-    state.version = 11;
+    state.version = 12;
     state.girls = state.girls.map(hydrate);
     state.candidates = Array.isArray(state.candidates) ? state.candidates.map(hydrate).slice(0, 6) : [];
     if (previousVersion < 8 && (state.minutes < SHIFT_START || state.minutes >= SHIFT_END)) {
@@ -3098,6 +3348,9 @@ export function loadState(raw: string | null): GameState {
     state.shift ??= { day: state.day, wave: previousVersion < 7 ? WAVE_AT.length : 0 };
     if (state.shift.day !== state.day) state.shift = { day: state.day, wave: 0 };
     state.territories = repairTerritories((state.territories ?? {}) as Partial<TerritoryMap>, `${state.packHash ?? createSeedPack().hash}:${previousVersion}`);
+    // 污染在旧档里整段缺失：按九区初始值补齐，已有数值只做 0–100 收敛，不重置玩家清理过的辖区。
+    state.pollution = repairPollution(state.pollution);
+    state.office = sanitizeOfficeProfile(state.office ?? DEFAULT_OFFICE_PROFILE);
     state.territoryLog = Array.isArray(state.territoryLog) ? state.territoryLog.slice(0, 60) : [];
     state.incidents = Array.isArray(state.incidents) ? state.incidents.filter(item => item && typeof item.id === 'string' && Array.isArray(item.options)).slice(0, 5) : [];
     state.storylines = Array.isArray(state.storylines) ? state.storylines.filter(item => item && typeof item.id === 'string' && Array.isArray(item.beats)).slice(0, 12) : [];
@@ -3131,7 +3384,8 @@ export function loadState(raw: string | null): GameState {
     }
     state.expeditions = Array.isArray(state.expeditions) ? state.expeditions.slice(0, 1) : [];
     state.councilDay ??= state.day; state.pensionDebt ??= 0;
-    state.factions ??= { witch: { standing: 20, stockDay: state.day, envoyDay: state.day }, association: { standing: 50, stockDay: state.day, envoyDay: state.day }, government: { standing: 45, stockDay: state.day, envoyDay: state.day } };
+    // 极端旧档连 `factions` 都没有时按 50 补齐；有存档的声望一律原样保留，不重置进度。
+    state.factions ??= { witch: { standing: 50, stockDay: state.day, envoyDay: state.day }, association: { standing: 50, stockDay: state.day, envoyDay: state.day }, government: { standing: 50, stockDay: state.day, envoyDay: state.day } };
     for (const faction of Object.keys(state.factions) as FactionId[]) {
       const f = state.factions[faction];
       f.standing = Math.max(0, Math.min(100, Number(f.standing) || 0));
@@ -3171,7 +3425,7 @@ export function importState(raw: string): GameState | null {
   try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
-  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(Number(value.version))) return null;
+  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(Number(value.version))) return null;
   if (!Array.isArray(value.girls) || (!value.girls.length && value.blank !== true)) return null;
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;

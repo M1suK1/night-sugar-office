@@ -6,8 +6,11 @@ import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '.
 import { skills, tierLabels } from '../content/skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
+import { factionTagFor, factionTagLabel, girlFactionColors, girlFactionLabels } from '../factions';
+import type { GirlFaction } from '../types';
 import { loadImage, removeImageBackground } from '../image';
 import { readWardrobePackage, type WardrobePackage } from '../wardrobeImport';
+import { fileDropProps } from '../drop';
 import { CutoutPreview } from './CutoutPreview';
 
 type FieldKey = 'name' | 'codename' | 'title' | 'element' | 'archetype' | 'goal' | 'quote' | 'appearance' | 'personality' | 'outfitDescription';
@@ -40,6 +43,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
   const [quote, setQuote] = useState('请多指教。我会努力记住这座城市的路。'); const [goal, setGoal] = useState('完成第一次独立委托，并得到同伴的认可。');
   const [stats, setStats] = useState<Record<StatKey, number>>({ magic: 65, insight: 65, agility: 65, empathy: 65 });
+  /** 出身默认按名字推导；玩家一旦手动点过，就固定成他选的那个。 */
+  const [manualTag, setManualTag] = useState<GirlFaction | null>(null);
   const [skillIds, setSkillIds] = useState<string[]>([]); const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());
   const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
@@ -51,6 +56,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [cut, setCut] = useState<{ before: string; after: string; removed: number } | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [entry, setEntry] = useState<'gate' | 'wizard'>('gate');
+  const [overPortrait, setOverPortrait] = useState(false);
   const [filled, setFilled] = useState<Set<FieldKey>>(new Set());
   const [pending, setPending] = useState<Set<FieldKey>>(new Set());
   const [hasDraft, setHasDraft] = useState(false);
@@ -112,6 +118,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const updateTrait = (index: number, patch: Partial<DraftTrait>) => setDraftTraits(prev => prev.map((item, at) => at === index ? { ...item, ...patch } : item));
   const statInvalid = Object.values(stats).some(value => value < STAT_MIN || value > STAT_MAX);
   const filledTraits = draftTraits.filter(item => item.name.trim());
+  /** 没手动选过就按名字推导：同名总得到同一出身，重开游戏也不会变。 */
+  const tagOf = (value: string) => manualTag ?? factionTagFor(value.trim() || '未命名契约');
+  const currentTag = tagOf(name);
   const canCreate = name.trim().length > 0 && skillIds.length === 3 && filledTraits.length === 3 && remaining === 0 && !statInvalid;
   const createHint = [
     !name.trim() && '缺少名字',
@@ -131,6 +140,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
       portrait: preview || wardrobe?.portrait || undefined,
+      factionTag: tagOf(name),
       wardrobe: wardrobe?.outfits,
       outfitId: wardrobe?.outfitId,
       importedVariants: wardrobe?.importedVariants,
@@ -226,7 +236,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       <h2>先留下一个轮廓。</h2>
       <p>可以只导入一张立绘，让使魔根据她知道的名字与气质补全档案；也可以从空白开始，全部自己写。</p>
       <div className="custom-gate-grid">
-        <button id="custom-entry-import" type="button" className="custom-gate-card" onClick={() => fileRef.current?.click()}><ImagePlus size={22} /><b>只导入立绘</b><small>PNG / JPEG / WebP，4:5 实时裁剪；不生成任何文字。</small></button>
+        <button id="custom-entry-import" type="button" className={`custom-gate-card ${overPortrait ? 'is-drop-over' : ''}`} onClick={() => fileRef.current?.click()} {...fileDropProps(setOverPortrait, files => { if (files[0]) void pickFile(files[0]); })}><ImagePlus size={22} /><b>只导入立绘</b><small>PNG / JPEG / WebP，4:5 实时裁剪；也可以直接拖进来。</small></button>
         <button id="custom-entry-blank" type="button" className="custom-gate-card" onClick={() => setEntry('wizard')}><Wand2 size={22} /><b>从空白开始</b><small>直接进入五步向导，260 点由你分配。</small></button>
       </div>
       {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><label className="custom-gate-hint">给叙事者的一句话要求（可选）<input id="custom-portrait-hint" className="av-input" maxLength={80} placeholder="例：银白发，披风边缘像融化的糖，笑得很轻" value={hint} onChange={e => setHint(e.target.value)} /></label><div className="custom-gate-actions"><button id="custom-gate-cutout" type="button" className="btn" disabled={cutting} onClick={() => void cutBackground()}><Scissors size={14} />{cutting ? '正在去背景' : '去背景'}</button><button id="custom-draft" type="button" className="btn primary" disabled={drafting || Boolean(cut)} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
@@ -244,6 +254,21 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       <label>代表色<div className="custom-colors">{colors.map(c => <button key={c} type="button" id={`custom-color-${c.slice(1)}`} aria-label={`代表色 ${c}`} aria-pressed={color === c} style={{ background: c }} onClick={() => setColor(c)} />)}</div></label>
       <label>{fieldHead('当前目标', 'goal')}<input id="custom-goal" className={`av-input${shimmer('goal')}`} value={goal} onChange={e => editText('goal', setGoal, e.target.value)} maxLength={60} /></label>
       <label>{fieldHead('登场台词', 'quote')}<input id="custom-quote" className={`av-input${shimmer('quote')}`} value={quote} onChange={e => editText('quote', setQuote, e.target.value)} maxLength={80} /></label>
+      <div className="custom-origin">
+        <span className="field-head"><span>出身</span></span>
+        <p className="small-note">她从哪里来。事务所对所有出身开放，这只影响街上的目光与委托里的说辞，不影响属性。</p>
+        <div className="custom-origin-options" role="radiogroup" aria-label="出身">
+          {(['association', 'government', 'witch', 'none'] as GirlFaction[]).map(tag => (
+            <button key={tag} id={`custom-origin-${tag}`} type="button" role="radio" aria-checked={currentTag === tag}
+              className={`custom-origin-option${currentTag === tag ? ' active' : ''}`}
+              style={{ '--tag-color': girlFactionColors[tag] } as React.CSSProperties}
+              onClick={() => setManualTag(tag)}>
+              <i />{girlFactionLabels[tag]}
+            </button>
+          ))}
+          <button id="custom-origin-auto" type="button" className="custom-origin-auto" disabled={!manualTag} onClick={() => setManualTag(null)}>按名字推导（{factionTagLabel(factionTagFor(name.trim() || '未命名契约'))}）</button>
+        </div>
+      </div>
     </div>}
 
     {step === 1 && <div className="custom-step-body">
@@ -279,9 +304,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     </div>}
 
     {step === 4 && <div className="custom-step-body">
-      <h2>最后，让她有一个能被认出的轮廓。</h2><p className="muted">当前阶段使用剪影验证功能。可以导入 PNG 立绘，按 4:5 实时裁剪；不导入则使用代表色剪影。</p>
+      <h2>最后，让她有一个能被认出的轮廓。</h2><p className="muted">当前阶段使用剪影验证功能。可以导入 PNG 立绘，按 4:5 实时裁剪，也可以把图片直接拖到左边的预览框；不导入则使用代表色剪影。</p>
       <div className="custom-portrait-layout">
-        <div><div className="custom-crop-preview"><canvas ref={canvas => { if (canvas && preview) { const ctx = canvas.getContext('2d'); const img = new Image(); img.onload = () => ctx?.drawImage(img, 0, 0, canvas.width, canvas.height); img.src = preview; } }} width={240} height={300} /><span>{preview ? '导入立绘' : '代表色剪影'}</span></div>{preview && <button id="custom-portrait-remove" type="button" className="av-btn av-btn-small" onClick={() => { setSource(null); setPreview(''); }}><Trash2 size={12} />移除导入</button>}</div>
+        <div><div className={`custom-crop-preview ${overPortrait ? 'is-drop-over' : ''}`} {...fileDropProps(setOverPortrait, files => { if (files[0]) void pickFile(files[0]); })}><canvas ref={canvas => { if (canvas && preview) { const ctx = canvas.getContext('2d'); const img = new Image(); img.onload = () => ctx?.drawImage(img, 0, 0, canvas.width, canvas.height); img.src = preview; } }} width={240} height={300} /><span>{preview ? '导入立绘' : '代表色剪影'}</span></div>{preview && <button id="custom-portrait-remove" type="button" className="av-btn av-btn-small" onClick={() => { setSource(null); setPreview(''); }}><Trash2 size={12} />移除导入</button>}</div>
         <div className="custom-portrait-fields">
           <button type="button" className="av-btn" onClick={() => fileRef.current?.click()}><ImagePlus size={14} />导入 PNG / JPEG</button>
           {source && <><label>缩放<input aria-label="立绘缩放" type="range" min={1} max={3} step={0.05} value={zoom} onChange={e => setZoom(Number(e.target.value))} /></label><label>水平<input aria-label="立绘水平位置" type="range" min={-50} max={50} value={x} onChange={e => setX(Number(e.target.value))} /></label><label>垂直<input aria-label="立绘垂直位置" type="range" min={-50} max={50} value={y} onChange={e => setY(Number(e.target.value))} /></label></>}

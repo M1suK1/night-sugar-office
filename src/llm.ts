@@ -1,7 +1,16 @@
+import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation } from './vertex.ts';
+
+/** openai = 任意 OpenAI 兼容接口；vertex = Google Vertex AI（服务账号 JSON 或 Express 密钥）。 */
+export type LlmProvider = 'openai' | 'vertex';
+
 export interface LlmConfig {
   endpoint: string;
   apiKey: string;
   model: string;
+  /** 缺省按 OpenAI 兼容接口处理，老配置不需要迁移。 */
+  provider?: LlmProvider;
+  /** 仅 Vertex 用：区域，例如 us-central1 / asia-east1；global 走无区域前缀的主机。 */
+  location?: string;
 }
 
 const KEY = 'night-sugar:llm-config';
@@ -248,6 +257,8 @@ export const defaultLlmConfig: LlmConfig = {
   endpoint: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
+  provider: 'openai',
+  location: 'us-central1',
 };
 
 export function loadLlmConfig(): LlmConfig {
@@ -259,6 +270,8 @@ export function loadLlmConfig(): LlmConfig {
       endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : defaultLlmConfig.endpoint,
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
       model: typeof parsed.model === 'string' ? parsed.model : defaultLlmConfig.model,
+      provider: parsed.provider === 'vertex' ? 'vertex' : 'openai',
+      location: typeof parsed.location === 'string' && parsed.location.trim() ? parsed.location.trim() : defaultLlmConfig.location,
     };
   } catch {
     return { ...defaultLlmConfig };
@@ -273,7 +286,25 @@ export function saveLlmConfig(config: LlmConfig) {
   }
 }
 
+/** Vertex 的「测试连接」会真的发一次极小的 generateContent：一次验证密钥、权限、区域和模型名。 */
+async function testVertexConnection(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
+  const info = describeVertexCredential(config.apiKey);
+  if (info.kind === 'empty') return { ok: false, message: '请先导入服务账号 JSON，或填写 Express 模式密钥。' };
+  if (info.kind === 'invalid') return { ok: false, message: info.message };
+  const model = normalizeVertexModel(config.model);
+  if (!model) return { ok: false, message: '请先填写模型名称，例如 gemini-2.5-pro。' };
+  const probe = await vertexChat(
+    { model, location: config.location, secret: config.apiKey, timeoutMs: 25_000 },
+    [{ role: 'user', content: 'ping' }],
+    { maxTokens: 16, temperature: 0 },
+  );
+  if (!probe.ok) return { ok: false, message: probe.message };
+  const where = info.kind === 'service-account' ? `${info.projectId} · ${vertexLocation(config.location)}` : 'Express 模式';
+  return { ok: true, message: `连接成功，模型「${model}」可用（${where}）。` };
+}
+
 async function testLlmConnectionCore(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
+  if (config.provider === 'vertex') return testVertexConnection(config);
   if (!config.apiKey.trim()) return { ok: false, message: '请先填写 API 密钥。' };
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
   const model = config.model.trim();
@@ -334,6 +365,10 @@ export type LlmCallResult =
 
 export function requestParams(config: LlmConfig, params?: LlmCallParams): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = { model: config.model.trim() };
+  if (config.provider === 'vertex') {
+    out.provider = 'vertex';
+    out.location = vertexLocation(config.location);
+  }
   if (params?.temperature !== undefined) out.temperature = params.temperature;
   if (params?.topP !== undefined) out.top_p = params.topP;
   if (params?.maxTokens !== undefined) out.max_tokens = params.maxTokens;
@@ -367,7 +402,24 @@ function hasCredentials(config: LlmConfig): boolean {
   return Boolean(config.apiKey.trim()) || isLocalEndpoint(config.endpoint);
 }
 
+/** Vertex 走 generateContent，消息形状和 OpenAI 的 system/user/assistant 一一对应。 */
+async function chatVertex(config: LlmConfig, messages: ChatMessage[], options: LlmCallOptions = {}): Promise<LlmCallResult> {
+  const params = options.params ?? {};
+  return vertexChat(
+    { model: config.model, location: config.location, secret: config.apiKey, timeoutMs: options.timeoutMs },
+    messages,
+    {
+      temperature: params.temperature ?? 0.9,
+      topP: params.topP,
+      maxTokens: params.maxTokens,
+      presencePenalty: params.presencePenalty,
+      frequencyPenalty: params.frequencyPenalty,
+    },
+  );
+}
+
 async function chat(config: LlmConfig, messages: ChatMessage[], options: LlmCallOptions = {}): Promise<LlmCallResult> {
+  if (config.provider === 'vertex') return chatVertex(config, messages, options);
   if (!hasCredentials(config)) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   if (!/^https?:\/\//.test(config.endpoint)) return { ok: false, message: '接口地址必须以 http:// 或 https:// 开头。' };
   const model = config.model.trim();
@@ -482,8 +534,13 @@ interface JsonCallOutcome {
 
 /**
  * 请求一个 JSON 回复。推理模型的思维链也计入 max_tokens，
- * 预设里 1400 的上限很容易把正文 JSON 截断，所以识别到 length 时自动放大额度重试一次。
+ * 预设里偏小的上限很容易把正文 JSON 截断，所以识别到 length 时自动放大额度重试一次。
+ * 没选预设时也显式给一个额度：交给服务端默认值（常见 4096）会截断较长的提案与蓝图。
  */
+const DEFAULT_TOKEN_BUDGET = 8000;
+/** 截断重试的上限：低于这个额度都值得再试一次，再高就是上下文不够而不是额度不够。 */
+const RETRY_TOKEN_CEILING = 16384;
+
 async function chatJson(
   config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
 ): Promise<JsonCallOutcome> {
@@ -491,7 +548,8 @@ async function chatJson(
   const cfg = resolvePresetConfig(runtime, config);
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
-  if (tokenFloor > (params.maxTokens ?? 900)) params = { ...params, maxTokens: tokenFloor };
+  if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
+  else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
   const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入');
   let messages: ChatMessage[] = applyRegexToMessages([
     { role: 'system', content: system },
@@ -502,10 +560,10 @@ async function chatJson(
   let raw = result.ok ? extractJsonObject(result.text) : null;
   let attempts = 1;
   let truncated = Boolean(result.ok && result.finish === 'length');
-  const budget = params.maxTokens ?? 900;
-  if (!raw && result.ok && (truncated || !result.text.trim()) && budget < 4096) {
+  const budget = params.maxTokens ?? DEFAULT_TOKEN_BUDGET;
+  if (!raw && result.ok && (truncated || !result.text.trim()) && budget < RETRY_TOKEN_CEILING) {
     attempts = 2;
-    params = { ...params, maxTokens: Math.min(4096, Math.max(3200, budget * 2)) };
+    params = { ...params, maxTokens: Math.min(32768, Math.max(DEFAULT_TOKEN_BUDGET, budget * 2)) };
     messages = [...messages, { role: 'user', content: JSON_RETRY_MESSAGE }];
     result = await chat(cfg, messages, { params });
     captureCall(meta, messages, labels, cfg, params, result);
@@ -517,7 +575,7 @@ async function chatJson(
 
 function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
   if (outcome.truncated) {
-    return `${prefix}输出被截断（finish_reason: length，上限 ${outcome.maxTokens ?? '?'} tokens）。推理模型的思维链会占用同一份额度，已自动放大额度重试仍失败。请到 设置 → 对话补全预设 把「最大输出 token」调到 3200 以上，或换用非推理模型。`;
+    return `${prefix}输出被截断（finish_reason: length，上限 ${outcome.maxTokens ?? '?'} tokens）。推理模型的思维链会占用同一份额度，已自动放大额度重试仍失败。请到 设置 → 对话补全预设 把「最大输出 token」调到 8000 以上，或换用非推理模型。`;
   }
   return `${prefix}模型没有返回可解析的 JSON。可以在叙事引擎面板里查看这次请求，再重试一次。`;
 }
@@ -526,14 +584,14 @@ async function generateDailyCore(config: LlmConfig, state: GameState, context?: 
   if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const system = buildNightPrompt(state);
   const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
-  const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 2600);
+  const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 8000);
   if (!outcome.result.ok) return { ok: false, message: `生成失败：${outcome.result.message}` };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('生成失败：', outcome) };
   let validation = validateNightProposal(outcome.raw, state);
   let source = outcome;
   if (!validation.ok) {
     const repairBody = `${system}\n\n【上一次提案（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略任何字段；所有 id 必须来自上面的目录。`;
-    const repaired = await chatJson(config, preset, 'daily', repairBody, '请只提交修正后的完整 JSON。', ['共用词条 + 每日提案词条 + 今晚机制目录', '修复上一次提案'], meta, { context: '修复今晚的提案' }, 2600);
+    const repaired = await chatJson(config, preset, 'daily', repairBody, '请只提交修正后的完整 JSON。', ['共用词条 + 每日提案词条 + 今晚机制目录', '修复上一次提案'], meta, { context: '修复今晚的提案' }, 8000);
     if (!repaired.result.ok) return { ok: false, message: `提案未通过校验，修复请求失败：${repaired.result.message}` };
     if (!repaired.raw) return { ok: false, message: `提案未通过校验，且修复输出无法解析。${jsonFailureMessage('', repaired)}` };
     source = repaired;
@@ -660,7 +718,8 @@ export interface GeneratedEvent { title: string; hook: string; scenes: { title: 
 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
-  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；性格：${activePersonality(girl)}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
+  // 出身与雇主必须分开写：出身只交代她来自哪一方，雇主永远是把她们收进名册的夜糖事务所。
+  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
 }
 
 function parseEffect(raw: unknown): StoryEffect {
@@ -816,6 +875,7 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
   const body = `先读她的档案：${girlBrief(girl)}
+樱雾市由星灯协会、市役所、月蚀庭三方拉扯；协会会长白鹭千秋保守并排斥克隆与抑制剂，市役所课长雨宫澄把量产少女当勤务编号，月蚀庭净血派领袖夜枭政变后与普通魔法少女敌对；夜糖事务所是重开的中立委托机构，收留三方与无所属的少女。辖区污染会改变委托与魔物。
 ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
 请直接写一张「故事蓝图」（StoryGraph），不是四幕手稿。只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","premise":"","tone":"","nodes":[{"id":"n1","kind":"start","title":"开始","data":{"kind":"start"}}],"edges":[{"from":"n1","fromPort":"out","to":"n2"}]}
@@ -835,7 +895,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
 不要生成 incident 或 opinion 节点；不要给 x、y、边 id、颜色或额外字段。`;
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
   const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '' };
-  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 5200);
+  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 8000);
   if (!first.result.ok) {
     const message = `生成蓝图失败：${first.result.message}`;
     recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
@@ -866,7 +926,7 @@ ${JSON.stringify(first.raw)}
 ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).join('\n')}
 
 只输出修正后的完整 JSON。不要解释，不要省略节点；保持 8–16 个节点，并让每条路径都能走到 end。`;
-    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 5200);
+    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 8000);
     if (!second.result.ok) {
       const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
       recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
@@ -1108,6 +1168,54 @@ export async function generateOutfitDescription(config: LlmConfig, portrait: str
   return { ok: true, data: { name, description } };
 }
 
+export interface GeneratedWitchForm {
+  name: string;
+  description: string;
+  personality: string;
+}
+
+/** 看魔女化立绘写形态名、形态描述与魔女化人格；只补文字，不改侵蚀与形态状态。 */
+export async function generateWitchFormProfile(
+  config: LlmConfig,
+  input: { portrait: string; girlName: string; codename?: string; appearance?: string; personality: string },
+  preset?: PresetRuntime,
+): Promise<{ ok: true; data: GeneratedWitchForm } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  const who = `她叫${input.girlName}${input.codename ? `（${input.codename}）` : ''}，原本的性格：${input.personality.trim() || '安静'}。${input.appearance ? `\n外貌：${input.appearance}` : ''}`;
+  const body = `${who}
+只输出一个 JSON 对象，不要 Markdown 代码块：
+{"name":"","description":"","personality":""}
+要求：name 以「魔女化 · 」开头，后面接 2–6 个汉字的形态核心词；description 40–90 字，只写这张立绘上看得见的东西——轮廓、材质、光、可动的部件与它给人的压迫感，不写数值、技能或战斗规则；personality 120–260 字，是她在魔女化状态下的人格：保留原本的执念，但把它扭曲成占有、多疑与不肯放手，写清她说话的方式与对所长提出的要求，不要变成另一个人。`;
+  const outcome = await chatJson(config, preset, 'profile', body, [{ type: 'text', text: '请为这张魔女化立绘写形态名、形态描述与魔女化人格。' }, { type: 'image_url', image_url: { url: input.portrait } }], ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：魔女化形态'], meta);
+  const result = outcome.result;
+  if (!result.ok) {
+    const message = /image|vision|multimodal|图像|图片/i.test(result.message)
+      ? `写魔女化形态失败：当前模型似乎不支持图像输入，请换用支持视觉的模型。原始错误：${result.message}`
+      : `写魔女化形态失败：${result.message}`;
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  if (!outcome.raw) {
+    const message = jsonFailureMessage('写魔女化形态失败：', outcome);
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const raw = outcome.raw;
+  const pick = (key: string, limit: number) => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, limit) : '');
+  const name = pick('name', 24) || '魔女化 · 夜之形';
+  const description = pick('description', 200);
+  const personality = pick('personality', 600);
+  if (!description || !personality) {
+    const message = '模型没有给出可用的形态描述或人格，可以重试一次。';
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  recordLlmLog({ kind: '魔女化词条', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `魔女化形态：${name}`, request: meta.request, response: meta.response });
+  return { ok: true, data: { name, description, personality } };
+}
+
 /** 把一场已结算的战斗写成多人分场札记；只读，不改变任何战斗结果。 */
 export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
   const started = Date.now();
@@ -1234,6 +1342,7 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
+import { EMPLOYER_LABEL, factionTagLabel } from './factions.ts';
 import { skills } from './content/skills.ts';
 import { traits } from './content/traits.ts';
 import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';

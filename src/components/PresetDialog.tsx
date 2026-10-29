@@ -327,7 +327,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
               </div>}
             </li>)}
           </ol>
-          <p className="small-note">词条按顺序拼进系统提示词，再交给模型。空变量会被跳过；推理模型会把思维链计入输出额度，剧情类预设建议把「最大输出」设到 2000 以上。</p>
+          <p className="small-note">词条按顺序拼进系统提示词，再交给模型。空变量会被跳过；推理模型会把思维链计入输出额度，剧情类预设建议把「最大输出」设到 8000 以上（内置预设已在 6000–10000 之间）。</p>
         </div>}
       </div>}
     </div>

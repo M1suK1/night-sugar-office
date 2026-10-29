@@ -4,6 +4,7 @@ import type { Girl, GameState, Outfit } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { CutoutPreview } from './CutoutPreview';
 import { loadImage, removeImageBackground, resizeImageFile } from '../image';
+import { fileDropProps } from '../drop';
 
 type Mode = 'merge' | 'replace';
 
@@ -62,11 +63,12 @@ function readOutfits(raw: unknown, fallbackColor: string): { outfits: Outfit[]; 
   return { outfits, note };
 }
 
-export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, onClose }: {
+export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, onDescribeSaved, onClose }: {
   girl: Girl; state: GameState;
   onImport: (outfits: Outfit[], mode: Mode) => void;
   onRemove: (outfitId: string) => void;
   onDescribe: (portrait: string) => Promise<Described | null>;
+  onDescribeSaved: (outfitId: string, description: string) => void;
   onClose: () => void;
 }) {
   const [staged, setStaged] = useState<Outfit[]>([]);
@@ -75,6 +77,7 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
   const [paste, setPaste] = useState('');
   const [source, setSource] = useState('');
   const [busy, setBusy] = useState(false);
+  const [over, setOver] = useState(false);
   const [describing, setDescribing] = useState<string | null>(null);
   const [cut, setCut] = useState<{ id: string; before: string; after: string; removed: number } | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -167,6 +170,19 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     }
   };
 
+  const describeSaved = async (item: Outfit) => {
+    if (!item.portrait) { setNote({ ok: false, text: '这套服装没有立绘，叙事者看不见就写不了。' }); return; }
+    setDescribing(item.id);
+    try {
+      const data = await onDescribe(item.portrait);
+      if (!data) { setNote({ ok: false, text: '这次没有拿到描述，可以重试，或自己改一句。' }); return; }
+      onDescribeSaved(item.id, data.description);
+      setNote({ ok: true, text: `「${item.name}」的描述已让叙事者重写。` });
+    } finally {
+      setDescribing(null);
+    }
+  };
+
   const confirm = () => {
     if (!staged.length) { setNote({ ok: false, text: '还没有可导入的服装。' }); return; }
     onImport(staged, mode);
@@ -184,6 +200,7 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
         <span className="wardrobe-slot-preview"><GirlPortrait girl={{ ...girl, outfitId: outfit.id }} variant="avatar" /></span>
         <b>{outfit.name}{outfit.custom && <em>契约礼装</em>}</b>
         <small>0{index + 1}</small>
+        {outfit.portrait && <button id={`wardrobe-slot-ai-${outfit.id}`} type="button" className="wardrobe-slot-ai" title="让叙事者看这套立绘重写描述" disabled={describing === outfit.id} onClick={() => void describeSaved(outfit)}><Sparkles size={11} />{describing === outfit.id ? '写着…' : '写描述'}</button>}
         {girl.wardrobe.length > 1 && <button id={`wardrobe-remove-${outfit.id}`} className="wardrobe-slot-remove" aria-label={`删除${outfit.name}`} title={`删除${outfit.name}`} onClick={() => onRemove(outfit.id)}><Trash2 size={12} />删除</button>}
       </div>)}
       {Array.from({ length: slots }).map((_, index) => <div key={`empty-${index}`} className="wardrobe-slot empty"><span className="wardrobe-slot-preview">＋</span><b>空置</b><small>0{girl.wardrobe.length + index + 1}</small></div>)}
@@ -192,9 +209,9 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     <div className="wardrobe-import-grid">
       <div className="wardrobe-import-block">
         <div className="wardrobe-import-head"><ImagePlus size={14} /><div><b>立绘或衣柜包</b><small>PNG/JPG/WebP，或 JSON（衣柜、角色卡）</small></div></div>
-        <label className="wardrobe-drop" htmlFor="wardrobe-file-input">
+        <label className={`wardrobe-drop ${over ? 'is-drop-over' : ''}`} htmlFor="wardrobe-file-input" {...fileDropProps(setOver, files => { files.forEach(file => void readFile(file)); })}>
           <Upload size={17} />
-          <span>{busy ? '正在读取…' : '选择文件，可多选'}</span>
+          <span>{busy ? '正在读取…' : over ? '松手就导入' : '选择文件，可多选，或拖进来'}</span>
           <input id="wardrobe-file-input" ref={fileRef} type="file" accept=".json,application/json,image/png,image/jpeg,image/webp" multiple hidden onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void Promise.all(files.map(file => readFile(file))); }} />
         </label>
       </div>

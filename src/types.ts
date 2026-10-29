@@ -1,4 +1,4 @@
-import type { DistrictId } from './districts';
+import type { DistrictEffect, DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 
 export type StatKey = 'magic' | 'insight' | 'agility' | 'empathy';
@@ -15,6 +15,44 @@ export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen'
 export type TraitPolarity = 'positive' | 'negative' | 'neutral';
 export type Expression = 'calm' | 'smile' | 'surprise' | 'sad' | 'angry' | 'shy';
 export type FactionId = 'witch' | 'association' | 'government';
+/** 少女的出身，不是雇主。事务所收留任何出身的人，所以没有 `office` 这一种。 */
+export type GirlFaction = 'association' | 'government' | 'witch' | 'none';
+/** 事务所的自我介绍；唯一事实来源是 `GameState.office`，世界书条目由它生成。 */
+export interface OfficeProfile {
+  background: string;
+  philosophy: string;
+  goal: string;
+}
+/** 势力首领：档案顶部的固定卡，不参与日常拦截。 */
+export interface FactionLeader {
+  id: string;
+  faction: FactionId;
+  name: string;
+  title: string;
+  portrait: string;
+  portraitSpec?: PortraitSpec;
+  color: string;
+  quote: string;
+  note: string;
+}
+/** 势力所属少女：静态名册，参与辖区拦截战，不进玩家契约池。 */
+export interface FactionGirl {
+  id: string;
+  faction: FactionId;
+  name: string;
+  codename: string;
+  title: string;
+  portrait: string;
+  portraitSpec?: PortraitSpec;
+  color: string;
+  level: number;
+  stats: Record<StatKey, number>;
+  skills: string[];
+  /** 必须与 `faction` 一致。 */
+  tag: FactionId;
+  quote: string;
+  note: string;
+}
 export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {
   id: string; name: string; description: string;
@@ -55,6 +93,8 @@ export interface GirlDraft {
   stats: Record<StatKey, number>; skillIds: string[]; traits: DraftTrait[];
   portrait?: string; appearanceSpec?: PortraitSpec; portraitHint?: string;
   wardrobe?: Outfit[]; outfitId?: string; importedVariants?: Record<string, string>; witchForm?: Outfit;
+  /** 出身；留空时由名字确定性生成。 */
+  factionTag?: GirlFaction;
 }
 
 export interface GirlCard {
@@ -65,6 +105,8 @@ export interface GirlCard {
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
     portraitHint?: string; witchForm?: Outfit; witchPersonality?: string; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
+    /** 出身；旧卡没有时按名字确定性补齐。 */
+    factionTag?: GirlFaction;
   };
 }
 
@@ -418,6 +460,8 @@ export interface Girl {
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
   candidateUntilDay?: number; custom?: boolean; cardId?: string;
+  /** 出身（协会/市役所/月蚀庭/无所属）；雇主固定是夜糖事务所，不记在这里。 */
+  factionTag: GirlFaction;
 }
 export interface Memorial {
   girl: Girl; diedAt: string; cause: string; epitaph: string; lastBattleId: string;
@@ -454,6 +498,20 @@ export interface Mission {
   rewardGirlLevel?: number;
   /** 由内容工坊的委托模板生成时，记录来源模板 id，便于删除前检查引用。 */
   templateId?: string;
+  /** 派遣时冻结的环境修正：静态地形 + 当主效果 + 污染。之后易主不再改变。 */
+  environment?: DistrictEffect;
+  /** 派遣时的污染度，用于详情与战报显示。 */
+  pollutionAtSpawn?: number;
+  /** 派遣时的辖区当主；净化口径与拦截判定都用它，不用当前当主。 */
+  ownerAtSpawn?: FactionId;
+  /** 结算时被辖区当主的所属少女拦截。 */
+  interception?: Interception;
+}
+/** 辖区拦截战：辖区当主态度为「戒备」时，普通委托会被自己的少女截下。 */
+export interface Interception {
+  faction: FactionId;
+  girlIds: string[];
+  outcome?: 'win' | 'loss';
 }
 /** 内容工坊里的干净委托模板；注册时再转成带坐标与时限的委托快照。 */
 export interface MissionTemplate {
@@ -514,6 +572,8 @@ export interface BattleState {
   frames?: { round: number; units: BattleUnit[]; initiative: string[] }[];
   rewards?: { gold: number; exp: number; bond: number };
   scars?: Scar[]; fatal?: string[]; createdAt: string;
+  /** 这一战发生时辖区的污染等级，只用于战报摘要；旧战报没有这一项。 */
+  pollution?: number;
 }
 export interface BattleNoteLine {
   round: number;
@@ -562,8 +622,10 @@ export interface ChronicleEntry {
 }
 export interface TerritoryShift { day: number; minutes: number; district: DistrictId; from: FactionId; to: FactionId }
 export interface ShiftState { day: number; wave: number }
+/** 九区污染度，0–100。 */
+export type PollutionMap = Record<DistrictId, number>;
 export interface GameState {
-  version: 11; day: number; minutes: number; gold: number; reputation: number;
+  version: 12; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
@@ -592,6 +654,10 @@ export interface GameState {
   treatments: Treatment[];
   /** 空白档案开局。 */
   blank?: boolean;
+  /** 九区污染度，0–100；每天自然上升，完成委托下降。 */
+  pollution: PollutionMap;
+  /** 事务所档案：玩家可改的背景/理念/目标。 */
+  office: OfficeProfile;
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -604,6 +670,7 @@ export type GameAction =
   | { type: 'renewContract'; girlId: string }
   | { type: 'rehire'; girlId: string }
   | { type: 'setAssistant'; girlId?: string }
+  | { type: 'setOfficeProfile'; profile: OfficeProfile }
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
@@ -632,7 +699,8 @@ export type GameAction =
   | { type: 'importWardrobe'; girlId: string; outfits: Outfit[]; outfitId?: string; mode?: 'merge' | 'replace'; source?: string }
   | { type: 'removeOutfit'; girlId: string; outfitId: string }
   | { type: 'renameOutfit'; girlId: string; outfitId: string; name: string; description?: string }
-  | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null; activate?: boolean }
+  | { type: 'setOutfitDescription'; girlId: string; outfitId: string; description: string }
+  | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null; activate?: boolean; personality?: string }
   | { type: 'clearWitchForm'; girlId: string }
   | { type: 'addIncident'; incident: Incident }
   | { type: 'resolveIncident'; incidentId: string; optionId: string }

@@ -1,7 +1,8 @@
-import { GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3, Flame } from 'lucide-react';
+import { Feather, GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3, Flame } from 'lucide-react';
 import type { GameState } from '../types';
 import { capacity, drugDaysLeft, inWithdrawal, relationshipStage, stageLabels, statusLabels } from '../game';
 import { corruptionLabels, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats } from '../economy';
+import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { GirlPortrait } from './GirlPortrait';
 
 export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void }) {
@@ -37,6 +38,10 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                 <div className="roster-info">
                   <div className="roster-name"><h3>{g.name}</h3><span>Lv.{g.level.toString().padStart(2, '0')}</span></div>
                   <p>{g.codename} · <em>{corruptionLabels[cStage]}</em></p>
+                  <div className="roster-origin" style={{ '--tag-color': factionTagColor(g.factionTag) } as React.CSSProperties}>
+                    <span className="roster-employer">{EMPLOYER_LABEL}</span>
+                    <span className="roster-tag"><Feather size={9} />{factionTagLabel(g.factionTag)}</span>
+                  </div>
                   <div className="girl-status"><i />{statusLabels[g.status]}{g.status !== 'idle' && !g.retired && <small> · {g.remaining} 分钟</small>}</div>
                   <div className="mini-meters">
                     <span aria-label={`血量 ${g.hp}`}><Heart size={10} /><i><b style={{ width: `${Math.min(100, g.hp / effectiveMaxHp(g) * 100)}%` }} /></i><em>{g.hp}</em></span>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 夜糖事务所的九块辖区。
  *
  * 每块辖区的边界都是照着 `public/art/city.svg` 的地形手描的：
@@ -31,8 +31,12 @@ export interface DistrictEffect {
   damageTakenPct?: number;
   /** 敌人生命修正。 */
   enemyHpPct?: number;
+  /** 敌人属性（攻/防/速）修正；污染抬高的那一项。 */
+  enemyPowerPct?: number;
   /** 委托结束时额外增加的疲劳。 */
   fatigueFlat?: number;
+  /** 委托结束时额外增加的侵蚀。 */
+  corruptionFlat?: number;
   /** 在辖区内时每小时的精神力流失。 */
   spiritPerHour?: number;
   /** 委托成功时额外获得的声望。 */
@@ -302,8 +306,14 @@ export function effectLines(effect: DistrictEffect): EffectLine[] {
   if (effect.enemyHpPct) {
     lines.push({ label: '敌人生命', value: signed(effect.enemyHpPct), tone: effect.enemyHpPct < 0 ? 'good' : 'bad' });
   }
+  if (effect.enemyPowerPct) {
+    lines.push({ label: '敌人属性', value: signed(effect.enemyPowerPct), tone: effect.enemyPowerPct < 0 ? 'good' : 'bad' });
+  }
   if (effect.fatigueFlat) {
     lines.push({ label: '疲劳', value: signed(effect.fatigueFlat, ''), tone: effect.fatigueFlat < 0 ? 'good' : 'bad' });
+  }
+  if (effect.corruptionFlat) {
+    lines.push({ label: '侵蚀', value: signed(effect.corruptionFlat, ''), tone: effect.corruptionFlat > 0 ? 'bad' : 'good' });
   }
   if (effect.spiritPerHour) {
     lines.push({ label: '精神力', value: `${signed(effect.spiritPerHour, '')}/时`, tone: effect.spiritPerHour < 0 ? 'bad' : 'good' });

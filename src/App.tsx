@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Incident, StoryPassage, StoryPlan } from './types';
+import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, Incident, StoryPassage, StoryPlan } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
@@ -22,9 +22,12 @@ import { BattleReport } from './components/BattleReport';
 import { BattleNoteDialog } from './components/BattleNoteDialog';
 import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
+import { FactionDialog } from './components/FactionDialog';
+import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, loadLlmConfig } from './llm';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, loadLlmConfig } from './llm';
+import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
 import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
@@ -45,6 +48,8 @@ import { StartDialog } from './components/StartDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
 import { districtOrder, districts, effectLines } from './districts';
+import { representativeOf } from './office';
+import { syncOfficeWorldbook } from './worldbook';
 import './styles.css';
 import './combat.css';
 
@@ -59,7 +64,9 @@ type Modal =
   | { type: 'story-graph'; id: string }
   | { type: 'codex'; id?: string }
   | { type: 'presets'; scope?: PromptScope; presetId?: string }
-  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' };
+  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' }
+  | { type: 'faction'; id: FactionId }
+  | { type: 'office' };
 
 function readSave() { try { return loadState(localStorage.getItem(SAVE_KEY)); } catch { return loadState(null); } }
 function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
@@ -107,6 +114,7 @@ export default function App() {
   const [storyBusy, setStoryBusy] = useState<string | null>(null);
   const [storyNotice, setStoryNotice] = useState<string | null>(null);
   const lastIncidentDay = useRef(state.day);
+  const officeSynced = useRef(false);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
 
@@ -194,6 +202,15 @@ export default function App() {
     document.addEventListener('nso:open-girl', openGirl);
     return () => document.removeEventListener('nso:open-girl', openGirl);
   }, []);
+  /**
+   * 世界书的「夜糖事务所」条目由 `state.office` 生成：首次挂载只在缺失时补写，
+   * 之后玩家改档案或换代表才整条重写。读档时旧条目里残留的「月蚀教团」也在这里一并迁移。
+   */
+  useEffect(() => {
+    if (!officeSynced.current) { officeSynced.current = true; syncOfficeWorldbook(state.office, representativeOf(state), { onlyIfMissing: true }); return; }
+    syncOfficeWorldbook(state.office, representativeOf(state));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.office, state.assistantId]);
 
   const notify = (message: string, ok = true) => setToast({ message, ok, id: Date.now() });
 
@@ -221,6 +238,20 @@ export default function App() {
       : `已将「${current.name}」复制为可编辑副本，并绑定到「${promptScopeLabel(scope)}」。`);
   };
 
+  const describeWitchForm = async (girl: Girl, portrait: string) => {
+    const config = loadLlmConfig();
+    if (!config.apiKey.trim()) { notify('填写 API 密钥后，叙事者才能看图写魔女化形态。', false); return null; }
+    const result = await generateWitchFormProfile(config, {
+      portrait,
+      girlName: girl.name,
+      codename: girl.codename,
+      appearance: girl.appearance,
+      personality: activePersonality(girl),
+    }, presetRuntime(boundPreset('profile', presets, binding)));
+    if (!result.ok) { notify(result.message, false); return null; }
+    notify(`叙事者写好了「${result.data.name}」，顺带补上了魔女化人格。`);
+    return result.data;
+  };
   const describeOutfit = async (portrait: string) => {
     const config = loadLlmConfig();
     if (!config.apiKey.trim()) { notify('填写 API 密钥后，叙事者才能看图写服装描述。', false); return null; }
@@ -510,7 +541,7 @@ export default function App() {
   const selectedMission = modal?.type === 'mission' ? state.missions.find(m => m.id === modal.id) : undefined;
   const selectedBattle = modal?.type === 'battle' || modal?.type === 'battle-note' ? state.battles.find(b => b.id === modal.id) : undefined;
   const selectedNote = modal?.type === 'battle-note' ? state.battleNotes?.find(note => note.battleId === modal.id) : undefined;
-  const modalTitle = modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'expression' ? '表情差分管理' : modal?.type === 'witch-form' ? '魔女化立绘' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : '安排派遣';
+  const modalTitle = modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'expression' ? '表情差分管理' : modal?.type === 'witch-form' ? '魔女化立绘' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : modal?.type === 'faction' ? `查看${factionInfo[modal.id].name}档案` : modal?.type === 'office' ? '事务所档案' : '安排派遣';
   const stabilityStage = cityStage(state.reputation);
 
   return <div className="app-shell">
@@ -548,8 +579,8 @@ export default function App() {
                   type="button"
                   className={`world-faction-card tone-${att.tone}`}
                   style={{ '--faction-color': info.color } as React.CSSProperties}
-                  onClick={() => navigate('base')}
-                  title={`前往基地会客厅接见${info.name}代表${info.envoy}`}
+                  onClick={() => setModal({ type: 'faction', id: fid })}
+                  title={`查看${info.name}档案`}
                 >
                   <div className="world-faction-top">
                     <span className="world-faction-seal">{info.short}</span>
@@ -596,11 +627,12 @@ export default function App() {
           onAssistant={girlId => perform({ type: 'setAssistant', girlId })}
           onUseItem={(girlId, itemId) => perform({ type: 'useItem', girlId, itemId })}
           onCouncil={() => navigate('council')}
+          onOffice={() => setModal({ type: 'office' })}
         />
       ) : page === 'worldbook' ? (
         <>
           <PageHeading page="worldbook" />
-          <WorldbookView />
+          <WorldbookView onOpenOffice={() => setModal({ type: 'office' })} />
         </>
       ) : page === 'council' ? (
         <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} />
@@ -626,12 +658,12 @@ export default function App() {
       </div>
     </div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
-    {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form'}>
+    {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form' || modal.type === 'faction' || modal.type === 'office'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
-      {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
+      {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onDescribeSaved={(outfitId, description) => perform({ type: 'setOutfitDescription', girlId: selectedGirl.id, outfitId, description })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
-      {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} onSave={outfit => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, activate: false })} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
+      {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'mission' && selectedMission && <MissionDialog key={`${modal.id}-${modal.girlId ?? ''}`} state={state} mission={selectedMission} initialGirlId={modal.girlId} onGirl={girl} onEnemy={id => setModal({ type: 'codex', id })} onBattle={id => setModal({ type: 'battle', id })} onDispatch={(girlIds, missionId) => { if (perform({ type: 'dispatch', girlIds, missionId })) setModal(null); }} />}
       {modal.type === 'talk' && selectedGirl && <Conversation key={`talk-${selectedGirl.id}`} girl={selectedGirl} state={state} remote={modal.remote} modelEnabled={Boolean(loadLlmConfig().apiKey.trim())} onSend={text => sendTalk(selectedGirl.id, text, modal.remote)} />}
       {modal.type === 'assign' && <AssignmentPicker state={state} girlId={modal.id} onSelect={id => setModal({ type: 'mission', id, girlId: modal.id })} />}
@@ -640,6 +672,8 @@ export default function App() {
       {modal.type === 'room' && <RoomDialog state={state} id={modal.id} onGirl={girl} onTalk={talk} onBuild={() => setModal({ type: 'build', id: modal.id })} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })} onRecall={id => perform({ type: 'recallExpedition', expeditionId: id })} onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })} onRest={girlId => perform({ type: 'care', girlId, mode: 'resting' })} onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })} />}
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
+      {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
+      {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}

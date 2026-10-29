@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { rules } from '../balance';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVariantKey } from '../expressions';
 import { activePersonality } from '../personality';
@@ -12,6 +12,7 @@ import { expNeeded, progressLabel } from '../progression';
 import { GirlPortrait } from './GirlPortrait';
 import { ClinicPanel } from './ClinicPanel';
 import { getItem, items } from '../content/items';
+import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 
 const dossierTabs = [
   { id: 'overview', label: '状态概览' },
@@ -129,6 +130,13 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         <div className="modal-eyebrow">{candidate ? '招募档案' : '契约者档案'} / {girl.element}</div>
         <div className="dossier-name"><h2>{girl.name}</h2><span>Lv.{girl.level.toString().padStart(2, '0')}</span><button id="girl-export-card" type="button" className="dossier-export" onClick={onExportCard} title="把这位契约者导出为可再次导入的卡片"><Download size={13}/>导出卡片</button></div>
         <div className="dossier-codename">{girl.codename}<span className={`pill contract-pill ${girl.contractEndDay - state.day < 3 ? 'urgent' : ''}`}>{candidate ? '等待签约' : statusLabels[girl.status]}</span>{!candidate && <span className="contract-mini">{contract}</span>}</div>
+        <div className="dossier-affiliations">
+          <span className="affiliation-employer">{EMPLOYER_LABEL}</span>
+          <span className="affiliation-arrow" aria-hidden="true">/</span>
+          <span className="affiliation-origin" id={`girl-origin-${girl.id}`} style={{ '--tag-color': factionTagColor(girl.factionTag) } as React.CSSProperties}>
+            <Feather size={10} />出身 · {factionTagLabel(girl.factionTag)}
+          </span>
+        </div>
         <div className="dossier-tabs" role="tablist" aria-label="人物档案分页">
           {dossierTabs.map((t, index) => (
             <button role="tab" aria-selected={tab === t.id} aria-controls="dossier-tab-content" tabIndex={tab === t.id ? 0 : -1}

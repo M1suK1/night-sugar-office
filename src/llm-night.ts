@@ -10,6 +10,9 @@ import { listItems } from './content/items.ts';
 import { findSkill, skills } from './content/skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
+import { factionBrief, factionTagLabel } from './factions.ts';
+import { representativeOf } from './office.ts';
+import { pollutionTierLabel } from './pollution.ts';
 
 export const NIGHT_VERSION = 2;
 
@@ -34,11 +37,18 @@ export interface NightCatalog {
   reputation: number;
   factions: Record<FactionId, number>;
   territories: Record<DistrictId, FactionId>;
-  girls: { id: string; name: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number }[];
+  girls: { id: string; name: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string }[];
   items: { id: string; name: string; slot: string }[];
   skills: { id: string; name: string; school: string; side: string }[];
   monsters: { id: string; name: string; rank: string }[];
   pool: { missions: number; monsters: number; candidates: number };
+  /** 城市态势：三方态度与首领主张、最脏的两个辖区、辖区当主。数值仍由本地结算。 */
+  city?: {
+    briefs: string[];
+    dirtiest: { district: string; name: string; pollution: number; tier: string; owner: string }[];
+    ownerOf: Record<string, string>;
+    representative: string;
+  };
 }
 
 export interface NightStats { magic: number; insight: number; agility: number; empathy: number }
@@ -661,6 +671,11 @@ export function validateNightProposal(raw: unknown, state: GameState): NightVali
 
 export function buildNightCatalog(state: GameState): NightCatalog {
   const active = state.girls.filter(girl => !girl.retired && !girl.dead);
+  const dumpest = Object.entries(state.pollution ?? {})
+    .map(([district, pollution]) => ({ district, pollution: pollution ?? 0 }))
+    .sort((a, b) => b.pollution - a.pollution)
+    .slice(0, 2);
+  const rep = representativeOf(state);
   return {
     day: state.day,
     minutes: state.minutes,
@@ -668,7 +683,7 @@ export function buildNightCatalog(state: GameState): NightCatalog {
     reputation: state.reputation,
     factions: { witch: state.factions.witch.standing, association: state.factions.association.standing, government: state.factions.government.standing },
     territories: state.territories,
-    girls: active.map(girl => ({ id: girl.id, name: girl.name, element: girl.element, archetype: girl.archetype, level: girl.level, bond: girl.bond, fatigue: girl.fatigue, corruption: girl.corruption })),
+    girls: active.map(girl => ({ id: girl.id, name: girl.name, element: girl.element, archetype: girl.archetype, level: girl.level, bond: girl.bond, fatigue: girl.fatigue, corruption: girl.corruption, origin: factionTagLabel(girl.factionTag) })),
     items: [
       ...listItems().map(item => ({ id: item.id, name: item.name, slot: item.slot })),
       ...state.generatedItems.map(item => ({ id: item.id, name: item.name, slot: item.slot })),
@@ -682,6 +697,18 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       missions: Math.max(0, state.poolLimits.missions - state.missions.filter(mission => mission.status !== 'done').length),
       monsters: Math.max(0, state.poolLimits.monsters - (state.customMonsters.length + monsters.length - state.removedMonsters.length)),
       candidates: Math.max(0, state.poolLimits.candidates - state.candidates.length),
+    },
+    city: {
+      briefs: NIGHT_FACTIONS.map(id => factionBrief(id, state.factions[id].standing)),
+      dirtiest: dumpest.map(({ district, pollution }) => ({
+        district,
+        name: districts[district as DistrictId].name,
+        pollution,
+        tier: pollutionTierLabel(pollution),
+        owner: state.territories?.[district as DistrictId] ?? 'none',
+      })),
+      ownerOf: Object.fromEntries(DISTRICT_IDS.map(id => [id, state.territories?.[id] ?? 'none'])),
+      representative: rep ? `${rep.name}（${rep.codename}）` : '尚未任命',
     },
   };
 }
@@ -725,8 +752,20 @@ export const NIGHT_SCHEMA_EXAMPLE = {
 export function buildNightPrompt(state: GameState): string {
   const catalog = buildNightCatalog(state);
   const names = (values: readonly string[]) => values.join(' / ');
+  const city = catalog.city;
+  const cityBlock = city ? [
+    '【城市态势】',
+    ...city.briefs.map(brief => `- ${brief.split('\n').join(' / ')}`),
+    `- 最脏的辖区：${city.dirtiest.map(item => `${item.name}（污染 ${item.pollution} · ${item.tier} · 当主 ${item.owner}）`).join('、') || '无'}`,
+    `- 夜糖事务所是重开的中立委托机构，收留三方与无所属的少女；当前对外代表 ${city.representative}。`,
+    '- 辖区污染会改变委托目标与魔物状态，但污染数值只能由程序结算，不要出现在 JSON 里。',
+    '- 少女的「出身」只说明她从哪里来，不代表雇主；她们的雇主一律是夜糖事务所。',
+    '- 事件文本可以写协会的净化班与技术禁令、市役所的回收车与编号、月蚀庭净血派的受洗名单；但协会不是纯善，月蚀庭也不是单纯受害者。',
+  ].join('\n') : '';
   return `【今晚的机制目录】
 ${JSON.stringify(catalog)}
+
+${cityBlock}
 
 【硬性规则】
 1. 只输出一个 JSON 对象，不要 Markdown、解释或思维链。

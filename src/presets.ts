@@ -175,7 +175,7 @@ export const SAMPLING_FIELDS: SamplingField[] = [
 ];
 
 const SAMPLING_DEFAULTS: Record<string, number> = {
-  temp_openai: 0.9, top_p_openai: 1, openai_max_tokens: 640, pres_pen_openai: 0,
+  temp_openai: 0.9, top_p_openai: 1, openai_max_tokens: 8000, pres_pen_openai: 0,
   freq_pen_openai: 0, openai_max_context: 12_000, top_k_openai: 0, top_a_openai: 0,
   min_p_openai: 0, repetition_penalty_openai: 1,
 };
@@ -327,19 +327,19 @@ export function builtinPresets(): ChatPreset[] {
   return [
     {
       id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
-      settings: { temp_openai: 0.85, top_p_openai: 0.95, openai_max_tokens: 640, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
+      settings: { temp_openai: 0.85, top_p_openai: 0.95, openai_max_tokens: 8000, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
       prompts: defaultPromptCopies(),
     },
     {
-      id: 'builtin-strict', name: '严格 JSON', description: '低温、短输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
-      settings: { temp_openai: 0.35, top_p_openai: 0.8, openai_max_tokens: 1400, openai_max_context: 12000, pres_pen_openai: 0, freq_pen_openai: 0, main: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。', jailbreak: '' },
+      id: 'builtin-strict', name: '严格 JSON', description: '低温、结构化输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
+      settings: { temp_openai: 0.35, top_p_openai: 0.8, openai_max_tokens: 10000, openai_max_context: 12000, pres_pen_openai: 0, freq_pen_openai: 0, main: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。', jailbreak: '' },
       prompts: defaultPromptCopies([
         { id: 'json', name: 'JSON 约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。' },
       ]),
     },
     {
       id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
-      settings: { temp_openai: 0.65, top_p_openai: 0.9, openai_max_tokens: 420, openai_max_context: 9000, pres_pen_openai: 0.1, freq_pen_openai: 0.35, main: '', jailbreak: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
+      settings: { temp_openai: 0.65, top_p_openai: 0.9, openai_max_tokens: 6000, openai_max_context: 9000, pres_pen_openai: 0.1, freq_pen_openai: 0.35, main: '', jailbreak: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
       prompts: defaultPromptCopies([
         { id: 'restraint', name: '克制约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
       ]),
@@ -481,6 +481,34 @@ function migrateLegacyPromptText(presets: ChatPreset[]): ChatPreset[] {
   }
 }
 
+const TOKEN_BUDGET_MARKER = 'night-sugar:presets-token-budget-migrated';
+/** 旧版内置预设最多只给 1400，留给正文 JSON 的额度常常不够；一次性抬到新的默认档位。 */
+const TOKEN_BUDGET_FLOOR = 6000;
+const TOKEN_BUDGET_MIGRATED = 8000;
+
+/** 一次性把存量的自定义预设抬到 6000 以上；已经更高的预设不动。 */
+function upgradeTokenBudget(presets: ChatPreset[]): ChatPreset[] {
+  try {
+    if (localStorage.getItem(TOKEN_BUDGET_MARKER)) return presets;
+    localStorage.setItem(TOKEN_BUDGET_MARKER, '1');
+    let changed = false;
+    const next = presets.map(preset => {
+      const settings = { ...preset.settings };
+      const current = Number(settings.openai_max_tokens ?? settings.max_tokens ?? 0);
+      if (!Number.isFinite(current) || current >= TOKEN_BUDGET_FLOOR) return preset;
+      changed = true;
+      settings.openai_max_tokens = TOKEN_BUDGET_MIGRATED;
+      delete settings.max_tokens;
+      return { ...preset, settings, updatedAt: now() };
+    });
+    if (!changed) return presets;
+    savePresets(next);
+    return next;
+  } catch {
+    return presets;
+  }
+}
+
 export function loadPresets(): ChatPreset[] {
   const builtins = builtinPresets();
   try {
@@ -488,7 +516,7 @@ export function loadPresets(): ChatPreset[] {
     if (!raw) return migrateLegacyPromptText(builtins);
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return migrateLegacyPromptText(builtins);
-    const custom = parsed.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset)).map(ensurePromptScopes);
+    const custom = upgradeTokenBudget(parsed.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset)).map(ensurePromptScopes));
     return migrateLegacyPromptText([...builtins, ...custom]);
   } catch {
     return builtins;
@@ -508,7 +536,7 @@ export function savePresets(presets: ChatPreset[]): boolean {
 export function createPreset(name = '新的预设'): ChatPreset {
   return {
     id: presetId(), name, description: '', createdAt: now(), updatedAt: now(), schema: 3,
-    settings: { temp_openai: 0.8, top_p_openai: 0.95, openai_max_tokens: 600, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
+    settings: { temp_openai: 0.8, top_p_openai: 0.95, openai_max_tokens: 8000, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
     prompts: DEFAULT_PROMPTS.map(entry => ({ ...entry, builtin: false })),
     promptOrder: DEFAULT_PROMPTS.map(entry => ({ identifier: entry.id, enabled: entry.enabled })),
   };
@@ -816,7 +844,7 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
     name: preset?.name ?? '均衡叙事',
     temperature: pickNum(settings, ['temp_openai', 'temperature'], 0.85, 0, 2),
     topP: pickNum(settings, ['top_p_openai', 'top_p'], 0.95, 0, 1),
-    maxTokens: Math.round(pickNum(settings, ['openai_max_tokens', 'max_tokens'], 640, 64, 32768)),
+    maxTokens: Math.round(pickNum(settings, ['openai_max_tokens', 'max_tokens'], 8000, 64, 32768)),
     presencePenalty: pickNum(settings, ['pres_pen_openai', 'presence_penalty'], 0, -2, 2),
     frequencyPenalty: pickNum(settings, ['freq_pen_openai', 'frequency_penalty'], 0, -2, 2),
     maxContext: Math.round(pickNum(settings, ['openai_max_context', 'max_context'], 12000, 2000, 400000)),

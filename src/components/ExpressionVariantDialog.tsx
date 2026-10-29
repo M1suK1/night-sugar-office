@@ -3,6 +3,7 @@ import { Check, ImagePlus, Info, Loader2, Shirt, Sparkles, Trash2, Upload, X } f
 import type { Expression, Girl } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionFromFileName, expressionOutfits, expressionVariantKey } from '../expressions';
 import { resizeImageFile } from '../image';
+import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
 interface Note { ok: boolean; text: string }
@@ -15,6 +16,8 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [overCard, setOverCard] = useState<string | null>(null);
+  const [overGrid, setOverGrid] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
   const [outfitId, setOutfitId] = useState(currentExpressionOutfitId(girl));
   const wardrobe = expressionOutfits(girl);
@@ -116,15 +119,15 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
         />
       </label>
     </div>
-    <p className="expression-variant-hint">批量导入会按文件名识别表情，例如 <code>yue-calm.png</code>、<code>yue-smile.png</code>；同一套服装的同一表情只保留最后一张。</p>
+    <p className="expression-variant-hint">批量导入会按文件名识别表情，例如 <code>yue-calm.png</code>、<code>yue-smile.png</code>；同一套服装的同一表情只保留最后一张。也可以把图片直接拖到对应表情的卡片上。</p>
 
-    <div className="expression-variant-grid">
+    <div className={`expression-variant-grid ${overGrid ? 'is-drop-over' : ''}`} {...fileDropProps(setOverGrid, files => void readBatch(files))}>
       {EXPRESSIONS.map(expression => {
         const key = expressionVariantKey(activeOutfitId, expression);
         const has = Boolean(girl.importedVariants?.[key]);
         const meta = EXPRESSION_META[expression];
         const previewWitch = activeOutfitId === 'witchform';
-        return <article key={expression} id={`expression-variant-card-${expression}`} className={`expression-variant-card ${has ? 'has-image' : ''} ${girl.expression === expression ? 'picked' : ''}`}>
+        return <article key={expression} id={`expression-variant-card-${expression}`} className={`expression-variant-card ${has ? 'has-image' : ''} ${girl.expression === expression ? 'picked' : ''} ${overCard === expression ? 'is-drop-over' : ''}`} {...fileDropProps(over => setOverCard(over ? expression : null), files => { if (files[0]) void readOne(files[0], expression); })}>
           <div className="expression-variant-preview">
             <GirlPortrait girl={{ ...girl, outfitId: previewWitch ? 'witchform' : activeOutfitId, witch: previewWitch, expression }} variant="full" className="expression-variant-portrait" />
             <span className={`expression-variant-state ${has ? 'ready' : ''}`}>{has ? '已导入' : '基础立绘'}</span>

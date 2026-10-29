@@ -3,6 +3,7 @@ import { skills } from './skills.ts';
 import { monsters } from './monsters.ts';
 import { traitById } from './traits.ts';
 import { baseStatsAt } from '../progression.ts';
+import { factionTagFor } from '../factions.ts';
 
 const base = (magic: number, insight: number, agility: number, empathy: number): Record<StatKey, number> => ({ magic, insight, agility, empathy });
 const relations = (own: string, values: Record<string, number>): Record<string, number> => {
@@ -11,7 +12,7 @@ const relations = (own: string, values: Record<string, number>): Record<string, 
   return out;
 };
 
-type SeedGirl = Omit<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment'> & Partial<Pick<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment'>>;
+type SeedGirl = Omit<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment' | 'factionTag'> & Partial<Pick<Girl, 'baseStats' | 'goal' | 'goalKind' | 'traits' | 'conditions' | 'contractEndDay' | 'contractDays' | 'contractRenewals' | 'pensionMissed' | 'appearance' | 'personality' | 'outfitDescription' | 'wardrobe' | 'outfitId' | 'expression' | 'corruption' | 'equipment' | 'factionTag'>>;
 
 const appearanceText: Record<string, { appearance: string; personality: string; outfit: string }> = {
   yue: { appearance: '桃粉色长卷发，发尾有细碎的星屑，笑起来时眼角会弯成月牙。', personality: '温柔、擅长逞强，习惯先照顾别人再处理自己的伤口。', outfit: '黑粉配色的短披肩制服，胸前系着猫形领结。' },
@@ -46,7 +47,7 @@ function hydrateGirl(girl: SeedGirl, index: number): Girl {
   const plan = goals[girl.id] ?? { goal: '在城市与事务所之间，找到自己的位置。', goalKind: '生活' as const };
   const traits = (girl.traits ?? (seedTraits[girl.id] ?? []).map(id => traitById.get(id)).filter((t): t is Trait => Boolean(t)));
   const text = appearanceText[girl.id];
-  return { ...girl, baseStats: girl.baseStats ?? baseStatsAt(girl.stats, girl.level, girl.archetype), goal: girl.goal ?? plan.goal, goalKind: girl.goalKind ?? plan.goalKind, traits, conditions: girl.conditions ?? [], contractEndDay: girl.contractEndDay ?? 20 + index * 3, contractDays: girl.contractDays ?? 10, contractRenewals: girl.contractRenewals ?? 0, pensionMissed: girl.pensionMissed ?? 0, appearance: girl.appearance ?? text?.appearance ?? '她的轮廓在夜灯下显得很安静。', personality: girl.personality ?? text?.personality ?? '安静，习惯把心事留到天亮。', outfitDescription: girl.outfitDescription ?? text?.outfit ?? '事务所配发的深色值夜制服。', wardrobe: girl.wardrobe ?? wardrobeFor(girl.color), outfitId: girl.outfitId ?? 'uniform', expression: (girl.expression ?? 'calm') as Expression, corruption: girl.corruption ?? 0, equipment: girl.equipment ?? {} };
+  return { ...girl, factionTag: girl.factionTag ?? factionTagFor(girl.id), baseStats: girl.baseStats ?? baseStatsAt(girl.stats, girl.level, girl.archetype), goal: girl.goal ?? plan.goal, goalKind: girl.goalKind ?? plan.goalKind, traits, conditions: girl.conditions ?? [], contractEndDay: girl.contractEndDay ?? 20 + index * 3, contractDays: girl.contractDays ?? 10, contractRenewals: girl.contractRenewals ?? 0, pensionMissed: girl.pensionMissed ?? 0, appearance: girl.appearance ?? text?.appearance ?? '她的轮廓在夜灯下显得很安静。', personality: girl.personality ?? text?.personality ?? '安静，习惯把心事留到天亮。', outfitDescription: girl.outfitDescription ?? text?.outfit ?? '事务所配发的深色值夜制服。', wardrobe: girl.wardrobe ?? wardrobeFor(girl.color), outfitId: girl.outfitId ?? 'uniform', expression: (girl.expression ?? 'calm') as Expression, corruption: girl.corruption ?? 0, equipment: girl.equipment ?? {} };
 }
 
 const seedGirlData: SeedGirl[] = [

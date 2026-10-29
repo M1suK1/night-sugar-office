@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
-import { BookOpen, Download, Eye, EyeOff, FilePlus2, RotateCcw, Search, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { BookOpen, Download, Eye, EyeOff, FilePlus2, RotateCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
-  WORLDBOOK_BUDGET, defaultWorldbook, exportWorldbookJson, importWorldbookJson,
+  WORLDBOOK_BUDGET, WORLDBOOK_EVENT, defaultWorldbook, exportWorldbookJson, importWorldbookJson,
   loadWorldbook, saveWorldbook, worldbookContext, type WorldbookEntry,
 } from '../worldbook';
+import { OFFICE_WORLDBOOK_ID } from '../office';
 import { BALANCE_FIELDS, loadBalance, resetBalance, saveBalance, type BalanceRules } from '../balance';
 import './worldbook.css';
 
@@ -13,7 +14,7 @@ function newEntry(): WorldbookEntry {
   return { id: `wb-${Date.now().toString(36)}`, name: '新词条', keys: [], content: '', enabled: true, constant: false, priority: 0, order: 99 };
 }
 
-export function WorldbookView() {
+export function WorldbookView({ onOpenOffice }: { onOpenOffice?: () => void }) {
   const [tab, setTab] = useState<Tab>('entries');
   const [entries, setEntries] = useState<WorldbookEntry[]>(() => loadWorldbook());
   const [activeId, setActiveId] = useState<string>(() => loadWorldbook()[0]?.id ?? '');
@@ -21,6 +22,14 @@ export function WorldbookView() {
   const [note, setNote] = useState('');
   const [balance, setBalance] = useState<BalanceRules>(() => loadBalance());
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /** 事务所档案改动后由 `syncOfficeWorldbook` 广播，这里只负责重新读一遍磁盘上的副本。 */
+  useEffect(() => {
+    const reload = () => setEntries(loadWorldbook());
+    window.addEventListener(WORLDBOOK_EVENT, reload);
+    return () => window.removeEventListener(WORLDBOOK_EVENT, reload);
+  }, []);
+
 
   const active = entries.find(item => item.id === activeId) ?? entries[0];
   const context = useMemo(() => worldbookContext(trigger, entries), [trigger, entries]);
@@ -85,7 +94,10 @@ export function WorldbookView() {
             className={`wb-item ${entry.id === active?.id ? 'active' : ''} ${entry.enabled ? '' : 'off'}`}
             onClick={() => setActiveId(entry.id)}
           >
-            <span className="wb-item-name">{entry.name}</span>
+            <div className="wb-item-name-row">
+              <span className="wb-item-name">{entry.name}</span>
+              {entry.generated && <Sparkles size={10} className="wb-item-generated" />}
+            </div>
             <small>{entry.constant ? '常驻' : entry.keys.length ? `${entry.keys.length} 关键词` : '无触发词'} · P{entry.priority}</small>
             {entry.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
           </button>)}
@@ -99,6 +111,29 @@ export function WorldbookView() {
 
       <section className="wb-editor" aria-label="词条编辑">
         {active ? <>
+          {active.generated ? <>
+            <div className="wb-generated">
+              <div className="wb-generated-head"><Sparkles size={13} /><b>由事务所档案自动生成</b></div>
+              <p>这一条不是手写的词条，而是「基础 · 事务所档案」的投影：背景、理念、目标与对外代表都从那边取。改这里不会生效，下一次同步会被覆盖。</p>
+              {active.id === OFFICE_WORLDBOOK_ID && onOpenOffice && <button id="worldbook-open-office" type="button" className="wb-mini" onClick={onOpenOffice}><Sparkles size={12} />前往事务所档案</button>}
+            </div>
+            <div className="wb-editor-head">
+              <span id="worldbook-name" className="wb-input wb-name wb-readonly">{active.name}</span>
+              <span className="wb-switch wb-locked">{active.enabled ? '启用' : '停用'}</span>
+              <span className="wb-switch wb-locked">{active.constant ? '常驻' : '非常驻'}</span>
+            </div>
+            <label className="wb-field">
+              <span>关键词</span>
+              <span id="worldbook-keys" className="wb-input wb-readonly">{active.keys.join('，')}</span>
+            </label>
+            <label className="wb-field">
+              <span>内容（自动生成，随档案同步）</span>
+              <textarea id="worldbook-content" className="wb-input wb-content wb-readonly" value={active.content} readOnly rows={10} />
+            </label>
+            <div className="wb-numbers">
+              <span className="wb-tokens">优先 {active.priority} · 顺序 {active.order} · {Math.ceil(active.content.length / 1.6)} tokens</span>
+            </div>
+          </> : <>
           <div className="wb-editor-head">
             <input id="worldbook-name" className="wb-input wb-name" value={active.name} onChange={event => patch(active.id, { name: event.target.value })} aria-label="词条名称" />
             <label className="wb-switch"><input id="worldbook-enabled" type="checkbox" checked={active.enabled} onChange={event => patch(active.id, { enabled: event.target.checked })} /><span>{active.enabled ? '启用' : '停用'}</span></label>
@@ -118,6 +153,7 @@ export function WorldbookView() {
             <label><span>顺序</span><input id="worldbook-order" type="number" className="wb-input" value={active.order} onChange={event => patch(active.id, { order: Math.round(Number(event.target.value) || 0) })} /></label>
             <span className="wb-tokens">{Math.ceil(active.content.length / 1.6)} tokens</span>
           </div>
+          </>}
         </> : <p className="wb-empty">还没有词条。新建一条，或恢复内置。</p>}
       </section>
 
