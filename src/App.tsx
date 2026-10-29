@@ -26,11 +26,12 @@ import { FactionDialog } from './components/FactionDialog';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, loadLlmConfig } from './llm';
+import { taskRuntime } from './llm';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, llmHasKey, loadLlmConfig } from './llm';
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, presetRuntime, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
+import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -148,15 +149,15 @@ export default function App() {
     if (!autoGenerate) { lastGeneratedDay.current = state.day; return; }
     if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
     lastGeneratedDay.current = state.day;
-    if (generatingRef.current || !loadLlmConfig().apiKey) return;
+    if (generatingRef.current || !llmHasKey()) return;
     void generateContent('auto');
   }, [state.day, autoGenerate]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
     if (state.day <= lastIncidentDay.current) { lastIncidentDay.current = state.day; return; }
     lastIncidentDay.current = state.day;
-    if (state.incidents.some(item => item.status === 'pending') || !loadLlmConfig().apiKey) return;
-    void generateIncident(loadLlmConfig(), state, presetRuntime(boundPreset('incident', presets, binding))).then(result => {
+    if (state.incidents.some(item => item.status === 'pending') || !llmHasKey()) return;
+    void generateIncident(loadLlmConfig(), state, taskRuntime(boundPreset('incident', presets, binding), 'incident')).then(result => {
       if (!result.ok) return;
       const incident: Incident = { id: `inc-llm-${state.day}-${Date.now()}`, day: state.day, kind: 'faction', source: 'llm', title: result.data.title, body: result.data.body, options: result.data.options.map((option, index) => ({ id: `o${index + 1}`, label: option.label, hint: option.hint, effect: option.effect })), status: 'pending' };
       const applied = act(state, { type: 'addIncident', incident });
@@ -175,7 +176,7 @@ export default function App() {
     const beat = story?.beats.find(item => item.eventId === event.id);
     void (async () => {
       const config = loadLlmConfig();
-      const preset = presetRuntime(boundPreset('arc', presets, binding));
+      const preset = taskRuntime(boundPreset('arc', presets, binding), 'arc');
       const memory = story ? [story.title, story.premise, ...story.beats.filter(item => item.index < story.stage).map(item => `${item.title}：${item.hook}`)].join('\n') : '';
       const result = config.apiKey
         ? await generateStoryArc(config, target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset)
@@ -247,7 +248,7 @@ export default function App() {
       codename: girl.codename,
       appearance: girl.appearance,
       personality: activePersonality(girl),
-    }, presetRuntime(boundPreset('profile', presets, binding)));
+    }, taskRuntime(boundPreset('profile', presets, binding), 'profile'));
     if (!result.ok) { notify(result.message, false); return null; }
     notify(`叙事者写好了「${result.data.name}」，顺带补上了魔女化人格。`);
     return result.data;
@@ -255,7 +256,7 @@ export default function App() {
   const describeOutfit = async (portrait: string) => {
     const config = loadLlmConfig();
     if (!config.apiKey.trim()) { notify('填写 API 密钥后，叙事者才能看图写服装描述。', false); return null; }
-    const result = await generateOutfitDescription(config, portrait, presetRuntime(boundPreset('outfit', presets, binding)));
+    const result = await generateOutfitDescription(config, portrait, taskRuntime(boundPreset('outfit', presets, binding), 'outfit'));
     if (!result.ok) { notify(result.message, false); return null; }
     notify(result.data.name ? `叙事者写好了「${result.data.name}」。` : '叙事者写好了这套服装的描述。');
     return result.data;
@@ -270,7 +271,7 @@ export default function App() {
     generatingRef.current = true;
     setGenerating(true);
     try {
-      const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), presetRuntime(boundPreset('daily', presets, binding)));
+      const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), taskRuntime(boundPreset('daily', presets, binding), 'daily'));
       if (!result.ok) {
         if (mode === 'auto') notify(`夜间自动补充停笔：${result.message}`, false);
         return { ok: false, message: result.message };
@@ -307,7 +308,7 @@ export default function App() {
     notify(pendingProposal.warnings.length ? `提案已采纳；其中 ${pendingProposal.warnings.length} 处数值由本地规则裁剪。` : '提案已采纳，今晚的新内容已经入场。');
   };
   const draftGirlProfile = async (portrait?: string, hint?: string) => {
-    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, presetRuntime(boundPreset('profile', presets, binding)));
+    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, taskRuntime(boundPreset('profile', presets, binding), 'profile'));
     return result.ok ? { ok: true, message: '', profile: result.data } : { ok: false, message: result.message };
   };
   const perform = (action: GameAction, quiet = false) => {
@@ -323,7 +324,7 @@ export default function App() {
     setNoteError(undefined);
     try {
       const config = loadLlmConfig();
-      const result = await generateBattleNote(config, battle, presetRuntime(boundPreset('battle', presets, binding)));
+      const result = await generateBattleNote(config, battle, taskRuntime(boundPreset('battle', presets, binding), 'battle'));
       if (result.ok) {
         perform({ type: 'saveBattleNote', note: result.data }, true);
         notify(`战斗札记写好了：${result.data.charCount} 字，已收进战斗记录。`);
@@ -346,7 +347,7 @@ export default function App() {
     if (!target) return false;
     const config = loadLlmConfig();
     if (config.apiKey.trim()) {
-      const result = await generateDialogue(config, { girl: target, state, text, remote }, presetRuntime(boundPreset('chat', presets, binding)));
+      const result = await generateDialogue(config, { girl: target, state, text, remote }, taskRuntime(boundPreset('chat', presets, binding), 'chat'));
       if (result.ok) return perform({ type: 'talk', girlId: id, text, remote, reply: result.text }, true);
       notify(`叙事者没有回应：${result.message} 已切回本地剧情。`, false);
     }
@@ -492,7 +493,7 @@ export default function App() {
     setStoryBusy(girlId);
     setStoryNotice(null);
     try {
-      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, presetRuntime(boundPreset('storyline', presets, binding)));
+      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, taskRuntime(boundPreset('storyline', presets, binding), 'storyline'));
       if (result.ok) {
         const plan: StoryPlan = { title: result.data.title, premise: result.data.premise, tone: result.data.tone, beats: [], graph: result.data.graph };
         if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
@@ -521,7 +522,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     const storyline = state.storylines.find(item => item.girlId === girlId && item.status === 'active');
-    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, presetRuntime(boundPreset('event', presets, binding)));
+    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, taskRuntime(boundPreset('event', presets, binding), 'event'));
     const stamp = Date.now();
     const data = result.ok ? result.data : undefined;
     const fallbackTitle = storyline ? `${storyline.title} · 夜路` : '夜路';
@@ -665,7 +666,7 @@ export default function App() {
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'mission' && selectedMission && <MissionDialog key={`${modal.id}-${modal.girlId ?? ''}`} state={state} mission={selectedMission} initialGirlId={modal.girlId} onGirl={girl} onEnemy={id => setModal({ type: 'codex', id })} onBattle={id => setModal({ type: 'battle', id })} onDispatch={(girlIds, missionId) => { if (perform({ type: 'dispatch', girlIds, missionId })) setModal(null); }} />}
-      {modal.type === 'talk' && selectedGirl && <Conversation key={`talk-${selectedGirl.id}`} girl={selectedGirl} state={state} remote={modal.remote} modelEnabled={Boolean(loadLlmConfig().apiKey.trim())} onSend={text => sendTalk(selectedGirl.id, text, modal.remote)} />}
+      {modal.type === 'talk' && selectedGirl && <Conversation key={`talk-${selectedGirl.id}`} girl={selectedGirl} state={state} remote={modal.remote} modelEnabled={llmHasKey()} onSend={text => sendTalk(selectedGirl.id, text, modal.remote)} />}
       {modal.type === 'assign' && <AssignmentPicker state={state} girlId={modal.id} onSelect={id => setModal({ type: 'mission', id, girlId: modal.id })} />}
       {modal.type === 'hire' && selectedGirl && <HireDialog girl={selectedGirl} state={state} onConfirm={() => { if (perform({ type: 'hire', girlId: selectedGirl.id })) setModal(null); }} />}
       {modal.type === 'build' && <BuildDialog state={state} initialRoom={modal.id} onConfirm={roomId => { if (perform({ type: 'build', roomId })) setModal(null); }} />}

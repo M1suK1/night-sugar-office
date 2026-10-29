@@ -221,19 +221,39 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
           })}
         </div> : tab === 'advanced' ? <div className="preset-advanced">
           <section className="preset-advanced-block">
-            <div className="preset-advanced-head"><KeyRound size={13}/><b>这个预设专用的接口</b><span>三项齐全才生效；不填就走设置里的全局接口</span></div>
-            <div className="preset-api-grid">
-              <label className="preset-field"><span>Endpoint</span>
-                <input id="preset-api-endpoint" className="preset-text" value={preset.api?.endpoint ?? ''} readOnly={!editable} placeholder="https://api.example.com/v1" onChange={event => patchApi({ endpoint: event.target.value })} />
-              </label>
-              <label className="preset-field"><span>模型</span>
-                <input id="preset-api-model" className="preset-text" value={preset.api?.model ?? ''} readOnly={!editable} placeholder="deepseek-chat" onChange={event => patchApi({ model: event.target.value })} />
-              </label>
-              <label className="preset-field"><span>API 密钥</span>
-                <input id="preset-api-key" className="preset-text" type="password" value={preset.api?.apiKey ?? ''} readOnly={!editable} placeholder="只存在本地，导出时会剥离" onChange={event => patchApi({ apiKey: event.target.value })} />
-              </label>
+            <div className="preset-advanced-head"><KeyRound size={13}/><b>这个预设专用的接口</b><span>不填就跟随设置里的默认接口</span></div>
+            <div className="preset-api-provider" role="radiogroup" aria-label="预设接口">
+              {([{ id: '', label: '跟随默认' }, { id: 'openai', label: 'OpenAI 兼容' }, { id: 'vertex', label: 'Vertex AI' }] as const).map(item => {
+                const active = (preset.api?.provider ?? '') === item.id;
+                return <button key={item.id || 'default'} id={`preset-api-provider-${item.id || 'default'}`} type="button" role="radio" aria-checked={active} className={`preset-api-option ${active ? 'active' : ''}`} disabled={!editable} onClick={() => patchApi({ provider: item.id === 'vertex' ? 'vertex' : item.id === 'openai' ? 'openai' : undefined })}>{item.label}</button>;
+              })}
             </div>
-            <p className="small-note">远程接口必须同时填密钥；`localhost` / `127.0.0.1` 可以不填。导出预设时不会带上密钥。</p>
+            <div className="preset-api-grid">
+              {preset.api?.provider === 'vertex' ? <>
+                <label className="preset-field"><span>区域</span>
+                  <input id="preset-api-location" className="preset-text" value={preset.api?.location ?? ''} readOnly={!editable} placeholder="跟随默认（例如 asia-east1）" onChange={event => patchApi({ location: event.target.value })} />
+                </label>
+                <label className="preset-field"><span>模型</span>
+                  <input id="preset-api-model" className="preset-text" value={preset.api?.model ?? ''} readOnly={!editable} placeholder="跟随默认（例如 gemini-2.5-pro）" onChange={event => patchApi({ model: event.target.value })} />
+                </label>
+                <label className="preset-field"><span>Express 密钥（可选）</span>
+                  <input id="preset-api-key" className="preset-text" type="password" value={preset.api?.apiKey ?? ''} readOnly={!editable} placeholder="留空则用设置里 Vertex 那份凭证" onChange={event => patchApi({ apiKey: event.target.value })} />
+                </label>
+              </> : <>
+                <label className="preset-field"><span>Endpoint</span>
+                  <input id="preset-api-endpoint" className="preset-text" value={preset.api?.endpoint ?? ''} readOnly={!editable} placeholder="https://api.example.com/v1" onChange={event => patchApi({ endpoint: event.target.value })} />
+                </label>
+                <label className="preset-field"><span>模型</span>
+                  <input id="preset-api-model" className="preset-text" value={preset.api?.model ?? ''} readOnly={!editable} placeholder="deepseek-chat" onChange={event => patchApi({ model: event.target.value })} />
+                </label>
+                <label className="preset-field"><span>API 密钥</span>
+                  <input id="preset-api-key" className="preset-text" type="password" value={preset.api?.apiKey ?? ''} readOnly={!editable} placeholder="只存在本地，导出时会剥离" onChange={event => patchApi({ apiKey: event.target.value })} />
+                </label>
+              </>}
+            </div>
+            <p className="small-note">{preset.api?.provider === 'vertex'
+              ? '走 Vertex 时用设置里那份 Vertex 凭证；这里填的模型、区域或 Express 密钥会覆盖它。导出预设时不带密钥。'
+              : '远程接口必须同时填密钥；`localhost` / `127.0.0.1` 可以不填。选「跟随默认」则不使用本段设置。导出预设时不会带上密钥。'}</p>
           </section>
 
           <section className="preset-advanced-block">

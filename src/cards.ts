@@ -1,4 +1,4 @@
-import type { Expression, Girl, GirlCard, Outfit, StatKey } from './types';
+import type { Expression, Girl, GirlCard, Outfit, StatKey, Trait, TraitPolarity } from './types';
 import { sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
 import { skillById } from './content/skills.ts';
@@ -20,7 +20,7 @@ export function girlCardHash(card: GirlCard): string {
     .map(([key, value]) => `${key}:${hash(value)}`)
     .join('|');
   const plan = g.storyPlan ? hash(JSON.stringify(g.storyPlan)) : '';
-  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan].join(':'));
+  return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan, g.factionTag ?? ''].join(':'));
 }
 
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {
@@ -32,6 +32,8 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       witchPersonality: girl.witchPersonality?.trim() || undefined,
       outfitDescription: girl.outfitDescription, level: girl.level, storyPlan: girl.storyPlan ? { ...girl.storyPlan, beats: girl.storyPlan.beats.map(beat => ({ ...beat })) } : undefined,
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
+      // 自定义特性只活在这位少女身上，不写进卡片就再也还原不出来。
+      traits: girl.traits.map(trait => ({ ...trait, tags: [...trait.tags] })),
       portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
       wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
       importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
@@ -43,6 +45,49 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
 
 export function girlCardFileName(card: GirlCard): string {
   return `夜糖事务所-契约卡-${card.girl.name.replace(/[\\/:*?"<>|]/g, '')}.json`;
+}
+
+const POLARITIES: TraitPolarity[] = ['positive', 'neutral', 'negative'];
+
+/**
+ * 把卡片里的特性还原成 Trait 对象。
+ * 目录里有的按目录来（名字与描述以免被卡改坏）；目录里没有的（自定义特性）按卡片自带的定义还原；
+ * 两者都没有就跳过——旧卡只写了 id，特性丢了也不该让整张卡导入失败。
+ */
+export function resolveCardTraits(rawIds: unknown, rawDefs: unknown): Trait[] {
+  const byId = new Map<string, Trait>();
+  if (Array.isArray(rawDefs)) {
+    for (const item of rawDefs) {
+      if (!item || typeof item !== 'object') continue;
+      const def = item as Record<string, unknown>;
+      const id = typeof def.id === 'string' ? def.id.trim() : '';
+      const name = typeof def.name === 'string' ? def.name.trim().slice(0, 16) : '';
+      if (!id || !name || id.length > 64) continue;
+      const tags = Array.isArray(def.tags)
+        ? def.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0).slice(0, 4).map(tag => tag.trim().slice(0, 12))
+        : [];
+      byId.set(id, {
+        id,
+        name,
+        polarity: POLARITIES.includes(def.polarity as TraitPolarity) ? def.polarity as TraitPolarity : 'neutral',
+        tags: tags.length ? tags : ['自定义'],
+        description: typeof def.description === 'string' && def.description.trim() ? def.description.trim().slice(0, 120) : '从契约卡带来的特性。',
+      });
+    }
+  }
+  const wanted = Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string' && id.length <= 64) : [];
+  const traits: Trait[] = [];
+  const seen = new Set<string>();
+  for (const id of wanted) {
+    if (seen.has(id)) continue;
+    const catalog = traitById.get(id);
+    const trait = catalog ? { ...catalog, tags: [...catalog.tags] } : byId.get(id);
+    if (!trait) continue;
+    seen.add(id);
+    traits.push(trait);
+    if (traits.length >= 6) break;
+  }
+  return traits;
 }
 
 export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok: false; message: string } {
@@ -63,7 +108,10 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
     if (!Number.isFinite(value) || (value as number) < 40 || (value as number) > 150) return { ok: false, message: `能力值 ${key} 超出 40–150。` };
   }
   if (!Array.isArray(g.skillIds) || g.skillIds.length !== 3 || new Set(g.skillIds).size !== 3 || g.skillIds.some(id => !skillById.has(id))) return { ok: false, message: '技能必须是三个不同的已知技能。' };
-  if (!Array.isArray(g.traitIds) || g.traitIds.length > 6 || new Set(g.traitIds).size !== g.traitIds.length || g.traitIds.some(id => !traitById.has(id))) return { ok: false, message: '特性数量或标识无效。' };
+  if (!Array.isArray(g.traitIds)) return { ok: false, message: '特性数量或标识无效。' };
+  const traits = resolveCardTraits(g.traitIds, (g as Record<string, unknown>).traits);
+  const declaredTraits = new Set(g.traitIds.filter((id): id is string => typeof id === 'string')).size;
+  const skippedTraits = Math.max(0, declaredTraits - traits.length);
   const portraitOk = !g.portrait || (typeof g.portrait === 'string' && ((g.portrait.startsWith('/art/') && g.portrait.length < 200) || (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(g.portrait) && g.portrait.length <= 2_800_000)));
   if (!portraitOk) return { ok: false, message: '立绘必须是小于约 2MB 的 PNG、JPEG、WebP 或内置 SVG。' };
   const wardrobe: Outfit[] | undefined = Array.isArray(g.wardrobe) ? g.wardrobe.filter(outfit => outfit && typeof outfit.id === 'string' && typeof outfit.name === 'string').slice(0, 4) : undefined;
@@ -97,7 +145,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       witchPersonality: typeof g.witchPersonality === 'string' && g.witchPersonality.trim() ? g.witchPersonality.trim().slice(0, 600) : undefined,
       outfitDescription: typeof g.outfitDescription === 'string' ? g.outfitDescription.slice(0, 240) : '值夜制服。',
       level: g.level, stats: Object.fromEntries(STAT_KEYS.map(key => [key, Math.round((g.stats as Record<string, number>)[key])])) as Record<StatKey, number>,
-      skillIds: [...g.skillIds], traitIds: [...g.traitIds], portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
+      skillIds: [...g.skillIds], traitIds: traits.map(trait => trait.id), traits, skippedTraits: skippedTraits || undefined, portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',
       expression: EXPRESSIONS.includes(g.expression as Expression) ? g.expression : 'calm',
       importedVariants: sanitizeExpressionVariants(g.importedVariants),

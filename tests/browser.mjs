@@ -636,6 +636,7 @@ try {
     const card = JSON.parse(fs.readFileSync(cardPath, 'utf8'));
     expect(card.format).toBe('night-sugar/girl-card');
     expect(card.girl.name).toBe('月见桃');
+    expect(card.girl.factionTag).toBe('association');
     await close();
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'networkidle' });
@@ -644,10 +645,42 @@ try {
     await page.setInputFiles('#market-card-file', cardPath);
     await expect.poll(async () => (await stored()).candidates.some(g => g.name === '月见桃')).toBe(true);
     expect((await stored()).candidates.length).toBe(before + 1);
+    // 出身跟着卡片走：导入一位别的势力的少女，导入后不该被重新分配。
+    expect((await stored()).candidates.find(g => g.name === '月见桃').factionTag).toBe(card.girl.factionTag);
     await page.setInputFiles('#market-card-file', cardPath);
     await expect(page.locator('[role="status"]')).toContainText('已经导入过');
     expect((await stored()).candidates.length).toBe(before + 1);
     await page.screenshot({ path: 'artifacts/card-import.png', animations: 'disabled' });
+  });
+  await check('自定义特性契约卡：带定义能还原，旧卡跳过特性而不整卡失败', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    const element = (await stored()).girls[0].element;
+    const base = {
+      format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: 1,
+      girl: {
+        name: '宵坂 灯里', codename: 'C-9', title: '替夜巡街的人', element, color: '#b39ddb',
+        goal: '把整条街的灯都点一遍。', appearance: '短发，袖口有焦痕。', personality: '话不多。', outfitDescription: '改过的值夜制服。',
+        level: 2, stats: { magic: 62, insight: 64, agility: 58, empathy: 76 }, skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+        traitIds: ['custom-trait-abc123'],
+        traits: [{ id: 'custom-trait-abc123', name: '夜里不睡', polarity: 'neutral', tags: ['自定义'], description: '越晚越清醒。' }],
+        expression: 'calm',
+      },
+    };
+    fs.writeFileSync('artifacts/custom-trait-card.json', JSON.stringify(base));
+    await page.setInputFiles('#market-card-file', 'artifacts/custom-trait-card.json');
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '宵坂 灯里')).toBe(true);
+    const brought = (await stored()).candidates.find(g => g.name === '宵坂 灯里');
+    expect(brought.traits.map(trait => trait.name)).toEqual(['夜里不睡']);
+    expect(brought.traits[0].tags).toEqual(['自定义']);
+    const legacy = { ...base, girl: { ...base.girl, name: '宵坂 灯里 旧卡', traitIds: ['custom-trait-abc123', 'cat-sense'], traits: undefined } };
+    fs.writeFileSync('artifacts/custom-trait-card-legacy.json', JSON.stringify(legacy));
+    await page.setInputFiles('#market-card-file', 'artifacts/custom-trait-card-legacy.json');
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '宵坂 灯里 旧卡')).toBe(true);
+    const old = (await stored()).candidates.find(g => g.name === '宵坂 灯里 旧卡');
+    expect(old.traits.map(trait => trait.name)).toEqual(['猫缘']);
+    await expect(page.locator('[role="status"]')).toContainText('没能随卡片带来');
   });
   await check('存档导出、导入与损坏文件拒绝', async () => {
     await page.evaluate(() => localStorage.clear());
@@ -783,6 +816,23 @@ try {
     await page.locator('#preset-regex-replace-0').fill('');
     await page.locator('#preset-regex-input-0').check();
     await page.locator('#preset-format-scenario').fill('【场景】\n{0}');
+    await page.locator('#preset-api-provider-vertex').click();
+    await page.locator('#preset-api-location').fill('asia-east1');
+    await expect(page.locator('#preset-api-provider-vertex')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#preset-api-endpoint')).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => {
+      const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      const item = list.find(preset => preset.name === '均衡叙事 副本');
+      return item?.api?.provider ?? '';
+    })).toBe('vertex');
+    await page.screenshot({ path: 'artifacts/preset-api-vertex.png', animations: 'disabled' });
+    await page.locator('#preset-api-provider-default').click();
+    await expect(page.locator('#preset-api-endpoint')).toHaveCount(1);
+    await expect.poll(async () => page.evaluate(() => {
+      const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
+      const item = list.find(preset => preset.name === '均衡叙事 副本');
+      return item?.api?.provider ?? 'none';
+    })).toBe('none');
     await expect.poll(async () => page.evaluate(() => {
       const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       const item = list.find(preset => preset.name === '均衡叙事 副本');
@@ -865,6 +915,44 @@ try {
     await page.locator('#modal-close').click();
   });
 
+  await check('双接口凭证：两份并存，切换默认不覆盖另一份', async () => {
+    const serviceAccount = JSON.stringify({
+      type: 'service_account',
+      project_id: 'night-sugar-demo',
+      client_email: 'svc@night-sugar-demo.iam.gserviceaccount.com',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nMIIBVAIBADANBgkq\\n-----END PRIVATE KEY-----\\n',
+      token_uri: 'https://oauth2.googleapis.com/token',
+    });
+    await page.evaluate((sa) => localStorage.setItem('night-sugar:llm-config', JSON.stringify({
+      provider: 'openai',
+      openai: { endpoint: 'https://api.deepseek.com/v1', apiKey: 'sk-openai-demo', model: 'deepseek-chat', location: 'us-central1' },
+      vertex: { endpoint: '', apiKey: sa, model: 'gemini-2.5-pro', location: 'asia-east1' },
+    })), serviceAccount);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await expect(page.locator('#settings-llm-provider-openai')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.llm-default-item').nth(0)).toContainText('deepseek-chat');
+    await expect(page.locator('.llm-default-item').nth(1)).toContainText('night-sugar-demo');
+    await expect(page.locator('.llm-default-item').nth(1)).not.toContainText('默认');
+    await page.locator('#settings-llm-provider-vertex').click();
+    await expect(page.locator('#settings-llm-provider-vertex')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.llm-default-item').nth(1)).toContainText('默认');
+    await expect(page.locator('#settings-llm-credential')).toBeVisible();
+    // 切过去之后两份都还在：OpenAI 那份不能被 Vertex 的值抄掉。
+    await expect(page.locator('.llm-default-item').nth(0)).toContainText('deepseek-chat');
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
+    expect(saved.provider).toBe('vertex');
+    expect(saved.openai.apiKey).toBe('sk-openai-demo');
+    expect(saved.openai.model).toBe('deepseek-chat');
+    expect(saved.vertex.apiKey.startsWith('{')).toBe(true);
+    expect(saved.vertex.model).toBe('gemini-2.5-pro');
+    await page.screenshot({ path: 'artifacts/settings-dual-slot.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
+    await page.reload({ waitUntil: 'networkidle' });
+  });
+
   await check('设置：Vertex AI 接受服务账号 JSON 导入并预览端点', async () => {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
@@ -882,17 +970,33 @@ try {
     });
     await page.setInputFiles('#settings-llm-import', { name: 'night-sugar-demo.json', mimeType: 'application/json', buffer: Buffer.from(serviceAccount) });
     await expect(page.locator('#settings-llm-vertex-info')).toContainText('night-sugar-demo');
+    // 导入后私钥收起：只留遮住正文的摘要，界面上不应再出现邮箱明文。
+    await expect(page.locator('#settings-llm-credential')).toBeVisible();
+    await expect(page.locator('#settings-llm-json')).toBeHidden();
+    await expect(page.locator('#settings-llm-project')).toHaveText('night-sugar-demo');
+    await expect(page.locator('#settings-llm-account')).toContainText('••••');
+    await expect(page.locator('#settings-llm-account')).not.toContainText('svc@night-sugar-demo.iam.gserviceaccount.com');
+    expect(await page.evaluate(() => document.body.innerText.includes('BEGIN PRIVATE KEY'))).toBe(false);
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
     expect(saved.provider).toBe('vertex');
-    expect(saved.apiKey.includes('svc@night-sugar-demo.iam.gserviceaccount.com')).toBe(true);
+    expect(saved.vertex.apiKey.includes('svc@night-sugar-demo.iam.gserviceaccount.com')).toBe(true);
+    expect(saved.openai.apiKey).toBe('');
     await page.locator('#settings-llm-model').fill('gemini-2.5-pro');
     await page.locator('#settings-llm-location').fill('asia-east1');
     const endpointPreview = page.locator('#settings-llm-model + small');
     await expect(endpointPreview).toContainText('asia-east1-aiplatform.googleapis.com');
     await expect(endpointPreview).toContainText('/projects/night-sugar-demo/locations/asia-east1/publishers/google/models/gemini-2.5-pro:generateContent');
     await page.screenshot({ path: 'artifacts/settings-vertex.png', animations: 'disabled' });
-    await page.locator('#settings-llm-json').fill('sk-plain-key');
+    // 更换密钥重新打开输入框，填完点「使用」才落盘；取消则原密钥原样保留。
+    await page.locator('#settings-llm-replace').click();
+    await expect(page.locator('#settings-llm-json')).toBeVisible();
+    await expect(page.locator('#settings-llm-credential')).toHaveCount(0);
+    await page.locator('#settings-llm-json').fill('AIzaSy-demo-express-key');
+    await page.locator('#settings-llm-use').click();
     await expect(page.locator('#settings-llm-vertex-info')).toContainText('Express');
+    await expect(page.locator('#settings-llm-account')).toContainText('AIza');
+    await expect(page.locator('#settings-llm-account')).not.toContainText('demo-express');
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}').vertex.apiKey)).toBe('AIzaSy-demo-express-key');
     await page.locator('#modal-close').click();
     await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
   });
@@ -978,6 +1082,40 @@ try {
     await expect(page.locator('#settings-player-name')).toHaveValue('白鸟');
     await page.locator('#modal-close').click();
   });
+  await check('输出预算：统一值管住全部任务，单项可覆盖并在刷新后保留', async () => {
+    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-budget'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await expect(page.locator('#settings-budget-unified')).toHaveValue('2048');
+    await expect(page.locator('#settings-budget-task-daily')).toHaveValue('6000');
+    await expect(page.locator('#settings-budget-task-chat')).toHaveValue('');
+    await page.locator('#settings-budget-unified').fill('1200');
+    await page.locator('#settings-budget-task-chat').fill('900');
+    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-budget') ?? '{}').unified)).toBe(1200);
+    await page.screenshot({ path: 'artifacts/settings-budget.png', animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await layout('settings budget 390');
+    await page.screenshot({ path: 'artifacts/settings-budget-390.png', animations: 'disabled' });
+    await page.setViewportSize({ width: 320, height: 900 });
+    await layout('settings budget 320');
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.locator('#modal-close').click();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-llm').click();
+    await expect(page.locator('#settings-budget-unified')).toHaveValue('1200');
+    await expect(page.locator('#settings-budget-task-chat')).toHaveValue('900');
+    await expect(page.locator('#settings-budget-task-storyline')).toHaveValue('3000');
+    await page.locator('#settings-budget-task-daily').fill('');
+    await expect(page.locator('.llm-budget-tasks li').nth(1)).toContainText('跟随统一值');
+    await page.locator('#settings-budget-reset').click();
+    await expect(page.locator('#settings-budget-unified')).toHaveValue('2048');
+    await page.locator('#modal-close').click();
+    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-budget'));
+    await page.reload({ waitUntil: 'networkidle' });
+  });
+
   await check('衣柜导入：去背景预览、逐套编辑与移出', async () => {
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-tab-appearance').click();

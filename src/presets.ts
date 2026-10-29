@@ -65,11 +65,15 @@ export interface PresetPromptOrderItem {
   enabled: boolean;
 }
 
-/** 单个预设自带的接口配置：三项齐全时优先于全局设置里的接口。 */
+/** 单个预设自带的接口配置：可以单独指定走 OpenAI 兼容还是 Vertex AI。 */
 export interface PresetApi {
+  /** 不填则跟随设置里的默认接口。 */
+  provider?: 'openai' | 'vertex';
   endpoint?: string;
   apiKey?: string;
   model?: string;
+  /** 仅 Vertex：区域。不填则用设置里 Vertex 那份凭证的区域。 */
+  location?: string;
 }
 
 export type RegexTarget = 'input' | 'output';
@@ -164,7 +168,7 @@ export interface SamplingField {
 export const SAMPLING_FIELDS: SamplingField[] = [
   { key: 'temp_openai', label: '温度', min: 0, max: 2, step: 0.05, hint: '越高越发散；JSON 任务建议 0.2–0.5。', applied: true, aliases: ['temperature'] },
   { key: 'top_p_openai', label: 'Top P', min: 0, max: 1, step: 0.01, hint: '核采样阈值，和温度二选一调整。', applied: true, aliases: ['top_p'] },
-  { key: 'openai_max_tokens', label: '最大输出', min: 64, max: 32768, step: 32, hint: '单次回复的 token 上限。', applied: true, aliases: ['max_tokens'] },
+  { key: 'openai_max_tokens', label: '最大输出', min: 64, max: 32768, step: 32, hint: '预设自带的上限只作参考，实际额度由 设置 → 输出预算 决定。', applied: true, aliases: ['max_tokens'] },
   { key: 'pres_pen_openai', label: '存在惩罚', min: -2, max: 2, step: 0.05, hint: '减少重复话题。', applied: true, aliases: ['presence_penalty'] },
   { key: 'freq_pen_openai', label: '频率惩罚', min: -2, max: 2, step: 0.05, hint: '减少重复用词。', applied: true, aliases: ['frequency_penalty'] },
   { key: 'openai_max_context', label: '上下文预算', min: 2000, max: 400000, step: 1000, hint: '本地裁剪对话历史的上限（字符近似）。', applied: false, aliases: ['max_context'] },
@@ -381,9 +385,11 @@ function sanitizePreset(raw: unknown): ChatPreset | null {
   const apiRaw = value.api && typeof value.api === 'object' ? value.api as Partial<PresetApi> : null;
   const api: PresetApi | undefined = apiRaw
     ? {
+      provider: apiRaw.provider === 'vertex' ? 'vertex' : apiRaw.provider === 'openai' ? 'openai' : undefined,
       endpoint: typeof apiRaw.endpoint === 'string' ? apiRaw.endpoint.slice(0, 200) : undefined,
       apiKey: typeof apiRaw.apiKey === 'string' ? apiRaw.apiKey.slice(0, 400) : undefined,
       model: typeof apiRaw.model === 'string' ? apiRaw.model.slice(0, 120) : undefined,
+      location: typeof apiRaw.location === 'string' ? apiRaw.location.slice(0, 40) : undefined,
     }
     : undefined;
   const regex: RegexScript[] | undefined = Array.isArray(value.regex)
@@ -486,7 +492,9 @@ const TOKEN_BUDGET_MARKER = 'night-sugar:presets-token-budget-migrated';
 const TOKEN_BUDGET_FLOOR = 6000;
 const TOKEN_BUDGET_MIGRATED = 8000;
 
-/** 一次性把存量的自定义预设抬到 6000 以上；已经更高的预设不动。 */
+/** 一次性把存量的自定义预设抬到 6000 以上；已经更高的预设不动。
+ *  预设里的「最大输出」现在只用于导入/导出与展示，真正生效的额度由设置里的「输出预算」决定，
+ *  所以这段迁移只是保持老用户的数据形状，不再影响任何请求。 */
 function upgradeTokenBudget(presets: ChatPreset[]): ChatPreset[] {
   try {
     if (localStorage.getItem(TOKEN_BUDGET_MARKER)) return presets;
@@ -722,8 +730,10 @@ export function importPresetObject(data: unknown): PresetImportResult {
   const incomingApi = settings.api;
   const importedApi = incomingApi && typeof incomingApi === 'object'
     ? {
+      provider: (incomingApi as PresetApi).provider === 'vertex' ? 'vertex' as const : (incomingApi as PresetApi).provider === 'openai' ? 'openai' as const : undefined,
       endpoint: typeof (incomingApi as PresetApi).endpoint === 'string' ? String((incomingApi as PresetApi).endpoint).slice(0, 200) : undefined,
       model: typeof (incomingApi as PresetApi).model === 'string' ? String((incomingApi as PresetApi).model).slice(0, 120) : undefined,
+      location: typeof (incomingApi as PresetApi).location === 'string' ? String((incomingApi as PresetApi).location).slice(0, 40) : undefined,
     }
     : undefined;
   delete settings.api;
@@ -828,8 +838,13 @@ export function exportPresetJson(preset: ChatPreset): string {
   }
   const settings: Record<string, unknown> = { ...preset.settings, prompts, extensions };
   delete settings.api;
-  if (preset.api?.endpoint || preset.api?.model) {
-    settings.api = { endpoint: preset.api.endpoint ?? '', model: preset.api.model ?? '' };
+  if (preset.api?.provider || preset.api?.endpoint || preset.api?.model || preset.api?.location) {
+    settings.api = {
+      provider: preset.api?.provider ?? '',
+      endpoint: preset.api?.endpoint ?? '',
+      model: preset.api?.model ?? '',
+      location: preset.api?.location ?? '',
+    };
   }
   return JSON.stringify({
     schema: 4, ...settings, name: preset.name, description: preset.description ?? '',

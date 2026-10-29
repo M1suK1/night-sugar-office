@@ -3,7 +3,7 @@ import { Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings
 import type { GameState, Girl } from '../types';
 import { buildCost, capacity, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
-import { loadLlmConfig, saveLlmConfig, testLlmConnection, type LlmConfig } from '../llm';
+import { BUDGET_MAX, BUDGET_MIN, LLM_BUDGET_TASKS, budgetForTask, defaultLlmBudget, loadLlmBudget, loadLlmConfig, loadLlmSettings, resolveLlm, saveLlmBudget, setLlmProvider, testLlmConnection, updateLlmSlot, type LlmBudget, type LlmConfig, type LlmSettings, type LlmTaskKey } from '../llm';
 import { describeVertexCredential, vertexLocation, vertexTarget } from '../vertex';
 import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
@@ -22,22 +22,81 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:MapPin,title:'九块辖区，各有脾气',text:'点击地图上的辖区可以查看背景与「环境影响」：有的委托目标更低、报酬更高，有的更容易受伤。委托所属辖区决定这些修正。'},{Icon:Hourglass,title:'一夜只有六个小时',text:'事务所 20:00 开门、次日 02:00 打烊，午夜之后仍算同一夜。委托分三个时段（20:00 / 22:00 / 00:00）放出，紧急委托两小时内不接就会撤销；忙完后点「前往下一天」跳过白天。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。衣柜有四个格子，换装会同步立绘与头像。'},{Icon:Terminal,title:'终端与叙事者',text:'顶栏的 CMD 按钮或 Ctrl+K 可以打开事务所终端：help 查看命令，status 查看夜班状态，advance 推进时间，district 查询辖区，generate 呼叫叙事者。终端不会跳过打烊确认。'},{Icon:Moon,title:'叙事者只负责提案',text:'在设置里连接任意 OpenAI 兼容接口，并可从 SillyTavern 导入对话补全预设控制采样参数与主提示词。数值与结算仍由本地规则决定；屏幕右下角的面板能看到每次请求读了什么、思维链与成败。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
 type SettingsTab = 'general' | 'llm' | 'pools';
+/** 服务账号邮箱只留组织尾部和头两个字符，避免整串明文躺在界面上。 */
+function maskAccount(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email ? `${email.slice(0, 2)}••••` : '';
+  return `${local.slice(0, 2)}••••@${domain}`;
+}
+/** Express 密钥同理：露头尾各一点，中间一律遮住。 */
+function maskSecret(secret: string): string {
+  const text = secret.trim();
+  if (!text) return '';
+  return text.length <= 6 ? '••••••' : `${text.slice(0, 4)}••••••${text.slice(-2)}`;
+}
+
 export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onGenerate,autoGenerate,onAutoGenerate,onPresets}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onGenerate:()=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void;onPresets:(scope?: PromptScope)=>void}) {
   const [tab, setTab] = useState<SettingsTab>('general');
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
+  const [settings, setSettings] = useState<LlmSettings>(loadLlmSettings);
   const [llmNote, setLlmNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [budget, setBudget] = useState<LlmBudget>(loadLlmBudget);
   const [player, setPlayer] = useState<PlayerProfile>(loadPlayerProfile);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const openMissions = state.missions.filter(m => m.status !== 'done' && m.status !== 'expired');
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
   const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
-  const update = (patch: Partial<LlmConfig>) => { const next = { ...llm, ...patch }; setLlm(next); saveLlmConfig(next); };
+  // 改字段只写目标那份槽位；切默认接口只翻 provider。两份凭证互不覆盖。
+  const update = (patch: Partial<LlmConfig>) => {
+    const { provider: wantProvider, ...fields } = patch;
+    const current = llm.provider ?? 'openai';
+    const target = wantProvider ?? current;
+    if (wantProvider && wantProvider !== current) { setDraft(null); setLlmNote(null); }
+    let next = loadLlmSettings();
+    if (Object.keys(fields).length) next = updateLlmSlot(target, fields);
+    if (wantProvider && wantProvider !== next.provider) next = setLlmProvider(wantProvider);
+    setSettings(next);
+    setLlm(resolveLlm(next, wantProvider ?? next.provider));
+  };
+  const credential = describeVertexCredential(llm.apiKey);
+  // 只在「确实能用」时才收起输入框：服务账号 JSON，或 Vertex 的 AIza 前缀 Express 密钥。
+  // 旧的 OpenAI 风格密钥（sk-…）切过来时不能冒充已保存的 Vertex 凭证。
+  const looksExpress = credential.kind === 'express-key' && llm.apiKey.trim().startsWith('AIza');
+  const enteringCredential = draft !== null || (credential.kind !== 'service-account' && !looksExpress);
+  const commitBudget = (next: LlmBudget) => { setBudget(next); saveLlmBudget(next); };
+  const setUnified = (raw: string) => {
+    const num = Math.round(Number(raw));
+    if (!Number.isFinite(num) || num <= 0) return;
+    commitBudget({ ...budget, unified: Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, num)) });
+  };
+  const setTaskBudget = (key: LlmTaskKey, raw: string) => {
+    const tasks = { ...budget.tasks };
+    if (!raw.trim()) delete tasks[key];
+    else {
+      const num = Math.round(Number(raw));
+      if (!Number.isFinite(num) || num <= 0) return;
+      tasks[key] = Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, num));
+    }
+    commitBudget({ ...budget, tasks });
+  };
+  const useDraft = () => {
+    if (draft === null) return;
+    const text = draft.trim();
+    update({ apiKey: text, provider: 'vertex' });
+    setDraft(null);
+    const next = describeVertexCredential(text);
+    setLlmNote(next.kind === 'invalid'
+      ? { ok: false, text: next.message }
+      : { ok: true, text: next.kind === 'service-account' ? `已导入服务账号：项目 ${next.projectId}。` : '已保存 Express 模式密钥。' });
+  };
   const importServiceAccount = async (file: File | undefined) => {
     if (!file) return;
     const text = await file.text().catch(() => '');
     if (!text.trim()) { setLlmNote({ ok: false, text: '这个文件是空的，没能读到内容。' }); return; }
     update({ apiKey: text.trim(), provider: 'vertex' });
+    setDraft(null);
     const info = describeVertexCredential(text);
     setLlmNote(info.kind === 'invalid' ? { ok: false, text: info.message } : { ok: true, text: info.kind === 'service-account' ? `已导入服务账号：${info.clientEmail}（项目 ${info.projectId}）。` : '已导入密钥。' });
   };
@@ -67,17 +126,48 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接 OpenAI 兼容接口，或直接用服务账号 JSON 接上 Google Vertex AI。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
       <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
       <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。</p>
-      <label className="llm-field"><span>接口类型</span>
-        <div className="llm-provider" role="radiogroup" aria-label="接口类型">
-          {([{ id: 'openai', label: 'OpenAI 兼容' }, { id: 'vertex', label: 'Vertex AI' }] as const).map(item => <button key={item.id} id={`settings-llm-provider-${item.id}`} type="button" role="radio" aria-checked={(llm.provider ?? 'openai') === item.id} className={`llm-provider-option ${(llm.provider ?? 'openai') === item.id ? 'active' : ''}`} onClick={() => update({ provider: item.id })}>{item.label}</button>)}
-        </div>
-        <small className="llm-field-hint">{llm.provider === 'vertex' ? '服务账号 JSON 或 Express 密钥；模型走 generateContent。' : '任意兼容 /chat/completions 的服务。'}</small>
-      </label>
+      <div id="settings-llm-default" className="llm-default">
+        <div className="llm-default-head"><b>默认接口</b><span>两份凭证并存，这里选的那一份负责所有生成</span></div>
+        <ul className="llm-default-list">
+          {(['openai', 'vertex'] as const).map(provider => {
+            const slot = settings[provider];
+            const active = (llm.provider ?? 'openai') === provider;
+            const ready = Boolean(slot.apiKey.trim());
+            const detail = provider === 'vertex'
+              ? (() => { const info = describeVertexCredential(slot.apiKey); return info.kind === 'service-account' ? `服务账号 · ${info.projectId}` : info.kind === 'express-key' ? 'Express 密钥' : '未填写密钥'; })()
+              : (ready ? slot.model : '未填写密钥');
+            return <li key={provider} className={`llm-default-item ${active ? 'active' : ''}`}>
+              <button id={`settings-llm-provider-${provider}`} type="button" role="radio" aria-checked={active} className="llm-default-pick" onClick={() => update({ provider })}>
+                <i className="llm-default-dot" aria-hidden="true"/>
+                <b>{provider === 'vertex' ? 'Vertex AI' : 'OpenAI 兼容'}</b>
+                <span>{detail}</span>
+                {active && <em>默认</em>}
+              </button>
+            </li>;
+          })}
+        </ul>
+      </div>
 {llm.provider === 'vertex' ? <>
-        <label className="llm-field"><span>服务账号 JSON</span>
-          <textarea id="settings-llm-json" rows={5} value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder={'{\n  "type": "service_account",\n  "project_id": "my-project",\n  "client_email": "svc@my-project.iam.gserviceaccount.com",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n..."\n}'} />
-          <small className="llm-field-hint">直接粘贴服务账号 JSON，或用下面的按钮导入文件。私钥只写入 localStorage，不会进入存档或请求日志。</small>
+        <label className="llm-field" style={enteringCredential ? undefined : { display: 'none' }}><span>服务账号 JSON</span>
+          <textarea id="settings-llm-json" rows={5} value={draft ?? llm.apiKey} onChange={e => { const next = e.target.value; if (draft === null) update({ apiKey: next }); else setDraft(next); }} spellCheck={false} autoComplete="off" placeholder={'{\n  "type": "service_account",\n  "project_id": "my-project",\n  "client_email": "svc@my-project.iam.gserviceaccount.com",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n..."\n}'} />
+          <small className="llm-field-hint">直接粘贴服务账号 JSON，或用下面的按钮导入文件。导入后这里会收起来，只留一份遮住私钥的摘要；要改动时再点「更换密钥」。</small>
+          {credential.kind === 'express-key' && !looksExpress && <small id="settings-llm-key-warning" className="llm-field-hint warn">这段密钥不像 Vertex 的 Express 密钥（一般以 AIza 开头）。如果它属于 OpenAI 兼容接口，请先把上面的接口类型切回去。</small>}
         </label>
+        {!enteringCredential && <div id="settings-llm-credential" className="llm-credential">
+          <div className="llm-credential-head"><ShieldCheck size={15}/><b>{credential.kind === 'service-account' ? '服务账号已导入' : 'Express 密钥已保存'}</b><span>私钥已隐藏</span></div>
+          <dl className="llm-credential-facts">
+            {credential.kind === 'service-account' && <div><dt>项目</dt><dd id="settings-llm-project">{credential.projectId}</dd></div>}
+            <div><dt>{credential.kind === 'service-account' ? '服务账号' : '密钥'}</dt><dd id="settings-llm-account">{credential.kind === 'service-account' ? maskAccount(credential.clientEmail ?? '') : maskSecret(llm.apiKey)}</dd></div>
+          </dl>
+          <div className="llm-credential-actions">
+            <button id="settings-llm-replace" className="llm-reset" onClick={() => setDraft('')}><RotateCcw size={13}/>更换密钥</button>
+            <button id="settings-llm-clear" className="llm-reset danger" onClick={() => { update({ apiKey: '' }); setLlmNote(null); }}><Trash2 size={13}/>清除</button>
+          </div>
+        </div>}
+        {draft !== null && <div className="llm-vertex-row">
+          <button id="settings-llm-use" className="btn primary" onClick={useDraft}><Check size={14}/>使用这份密钥</button>
+          <button id="settings-llm-cancel" className="btn" onClick={() => setDraft(null)}>取消</button>
+        </div>}
         <div className="llm-vertex-row">
           <label className="btn llm-file"><Upload size={14}/>导入 JSON 文件<input id="settings-llm-import" type="file" accept=".json,application/json" onChange={e => { void importServiceAccount(e.target.files?.[0]); e.target.value = ''; }}/></label>
           {llm.apiKey.trim() && <span id="settings-llm-vertex-info" className={`llm-vertex-info ${describeVertexCredential(llm.apiKey).kind === 'invalid' ? 'error' : ''}`}>{(() => { const info = describeVertexCredential(llm.apiKey); return info.kind === 'service-account' ? `服务账号 · ${info.projectId}` : info.message; })()}</span>}
@@ -89,6 +179,22 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
       </>}
+      <section className="llm-budget" aria-label="输出预算">
+        <div className="llm-budget-head"><b>输出预算</b><span>{budget.unified} tokens 统一值</span></div>
+        <p className="llm-budget-note">预设里的「最大输出」只作参考，实际额度由这里决定。思维链也吃这份额度，给太宽反而容易被废话占满；填不满或截断时会自动放大一倍重试一次。</p>
+        <div className="llm-budget-unified">
+          <label htmlFor="settings-budget-unified">统一值</label>
+          <input id="settings-budget-unified" type="number" inputMode="numeric" min={BUDGET_MIN} max={BUDGET_MAX} step={128} value={budget.unified} onChange={e => setUnified(e.target.value)}/>
+          <button id="settings-budget-reset" className="llm-reset" onClick={() => commitBudget(defaultLlmBudget())}><RotateCcw size={13}/>恢复默认</button>
+        </div>
+        <ul className="llm-budget-tasks">
+          {LLM_BUDGET_TASKS.map(item => <li key={item.key}>
+            <label htmlFor={`settings-budget-task-${item.key}`}>{item.label}</label>
+            <input id={`settings-budget-task-${item.key}`} type="number" inputMode="numeric" min={BUDGET_MIN} max={BUDGET_MAX} step={128} value={budget.tasks[item.key] ?? ''} placeholder={String(budget.unified)} onChange={e => setTaskBudget(item.key, e.target.value)}/>
+            <small>{budget.tasks[item.key] === undefined ? '跟随统一值' : `自定义 · 生效 ${budgetForTask(budget, item.key)}`}</small>
+          </li>)}
+        </ul>
+      </section>
       <div className="llm-prompts">
         <div className="llm-prompts-head"><b>提示词词条</b><button id="settings-prompts-reset" className="llm-reset" onClick={() => onPresets()}>打开全部词条</button></div>
         <p className="llm-task-intro">世界观、语气与每个任务的写法都拆成了预设词条。点进某一项，只会看到并修改共用词条与该任务自己的词条；代码里的 JSON 输出契约始终最后追加。</p>

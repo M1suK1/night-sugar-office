@@ -6,6 +6,7 @@ import type {
 import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
+import { MAX_ENEMIES } from './combat.ts';
 import { listItems } from './content/items.ts';
 import { findSkill, skills } from './content/skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
@@ -309,7 +310,7 @@ function parseMissionTemplate(ctx: Ctx, value: unknown, path: string): MissionTe
   return {
     id: `mt_lm_${Math.random().toString(36).slice(2, 8)}`,
     title, category, description, difficulty, duration, requirement, target, work,
-    enemyIds: enemyIds.slice(0, 3), rounds, recommendedLevel, district, window, reward,
+    enemyIds: enemyIds.slice(0, MAX_ENEMIES), rounds, recommendedLevel, district, window, reward,
     rewardEquipmentId: itemRef(ctx, body.rewardEquipmentId ?? body.rewardItemRef, `${path}.rewardEquipmentId`),
     rewardGirlLevel: optionalInteger(ctx, body.rewardGirlLevel, `${path}.rewardGirlLevel`, 0, 5) ?? 0,
     color: '#8fd3c6',

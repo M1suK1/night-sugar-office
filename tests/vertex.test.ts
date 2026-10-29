@@ -235,3 +235,42 @@ test('设置页诊断：能区分空、服务账号、Express 与坏 JSON', () =
   assert.equal(broken.kind, 'invalid');
   assert.match(broken.message, /缺少 project_id/);
 });
+
+test('generateContent 空正文：区分额度耗尽、只有思维链、以及 404 换 v1beta1 重试', async () => {
+  const original = globalThis.fetch;
+  let step: 'max-tokens' | 'thought-only' | 'retry' = 'max-tokens';
+  const urls: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    urls.push(String(url));
+    if (step === 'retry' && !String(url).includes('v1beta1')) {
+      return new Response(JSON.stringify({ error: { code: 404, message: 'Method not found.' } }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (step === 'retry') {
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '回来了。' }] }, finishReason: 'STOP' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (step === 'max-tokens') {
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '只想了没答。', thought: true }] }, finishReason: 'STOP' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const starved = await vertexChat({ model: 'gemini-2.5-pro', location: 'global', secret: 'AIza-key' }, [{ role: 'user', content: 'hi' }]);
+    assert.equal(starved.ok, false);
+    if (!starved.ok) assert.match(starved.message, /MAX_TOKENS/);
+
+    step = 'thought-only';
+    const silent = await vertexChat({ model: 'gemini-2.5-pro', location: 'global', secret: 'AIza-key' }, [{ role: 'user', content: 'hi' }]);
+    assert.equal(silent.ok, false);
+    if (!silent.ok) assert.match(silent.message, /只返回了思维链/);
+
+    step = 'retry';
+    urls.length = 0;
+    const retried = await vertexChat({ model: 'gemini-2.5-pro', location: 'global', secret: 'AIza-key' }, [{ role: 'user', content: 'hi' }]);
+    assert.equal(retried.ok, true);
+    assert.equal(urls.length, 2);
+    assert.match(urls[0], /\/v1\/publishers/);
+    assert.match(urls[1], /\/v1beta1\/publishers/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

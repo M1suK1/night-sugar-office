@@ -98,16 +98,20 @@ export interface VertexTarget {
   display: string;
 }
 
+/** 新模型偶尔只挂在 v1beta1 上，404 时会用它再试一次。 */
+export type VertexVersion = 'v1' | 'v1beta1';
+
 /** Express 模式固定走 global；服务账号按 location 拼区域主机。 */
-export function vertexTarget(input: { model: string; location?: string; expressKey?: string }, serviceAccount?: VertexServiceAccount): VertexTarget {
+export function vertexTarget(input: { model: string; location?: string; expressKey?: string; version?: VertexVersion }, serviceAccount?: VertexServiceAccount): VertexTarget {
   const model = normalizeVertexModel(input.model);
+  const version = input.version ?? 'v1';
   if (serviceAccount) {
     const location = vertexLocation(input.location);
     const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-    const path = `/v1/projects/${serviceAccount.projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+    const path = `/${version}/projects/${serviceAccount.projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
     return { url: `https://${host}${path}`, model, display: `https://${host}${path}` };
   }
-  const path = `/v1/publishers/google/models/${model}:generateContent`;
+  const path = `/${version}/publishers/google/models/${model}:generateContent`;
   const key = input.expressKey?.trim();
   return {
     url: `https://aiplatform.googleapis.com${path}${key ? `?key=${encodeURIComponent(key)}` : ''}`,
@@ -288,7 +292,6 @@ export async function vertexChat(
     if (!result.ok) return { ok: false, message: result.message };
     token = result.token;
   }
-  const target = vertexTarget(input, serviceAccount);
   const { systemText, contents } = toContents(messages);
   const generationConfig: Record<string, unknown> = {};
   if (params.temperature !== undefined) generationConfig.temperature = params.temperature;
@@ -300,9 +303,12 @@ export async function vertexChat(
   if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
   if (Object.keys(generationConfig).length > 0) payload.generationConfig = generationConfig;
 
+  const model = normalizeVertexModel(input.model);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 60_000);
-  try {
+  /** 发一次请求；404 时换 v1beta1 再试，别让新模型卡在版本上。 */
+  const send = async (version: VertexVersion): Promise<{ ok: true; body: VertexResponseBody } | { ok: false; failure: { message: string; status?: number } }> => {
+    const target = vertexTarget({ model, location: input.location, expressKey: serviceAccount ? undefined : input.secret, version }, serviceAccount);
     const response = await fetch(target.url, {
       method: 'POST',
       headers: {
@@ -316,13 +322,17 @@ export async function vertexChat(
       const text = await response.text().catch(() => '');
       let body: VertexResponseBody | null = null;
       try { body = JSON.parse(text) as VertexResponseBody; } catch { /* 保持原文 */ }
-      return {
-        ok: false,
-        status: response.status,
-        message: errorMessage(response.status, body, text.replace(/\s+/g, ' ').slice(0, 220)),
-      };
+      return { ok: false, failure: { status: response.status, message: errorMessage(response.status, body, text.replace(/\s+/g, ' ').slice(0, 220)) } };
     }
-    const body = await response.json() as VertexResponseBody;
+    const body = await response.json().catch(() => null) as VertexResponseBody | null;
+    if (!body || typeof body !== 'object') return { ok: false, failure: { message: 'Vertex AI 返回了无法解析的响应体，可能被代理或网关改写了。' } };
+    return { ok: true, body };
+  };
+  try {
+    let attempt = await send('v1');
+    if (!attempt.ok && attempt.failure.status === 404) attempt = await send('v1beta1');
+    if (!attempt.ok) return { ok: false, status: attempt.failure.status, message: attempt.failure.message };
+    const body = attempt.body;
     const candidate = body.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
     const text = parts.filter(part => !part.thought && typeof part.text === 'string').map(part => part.text as string).join('');
@@ -333,13 +343,20 @@ export async function vertexChat(
     if (!text.trim()) {
       const blocked = body.promptFeedback?.blockReason;
       const reason = candidate?.finishReason;
+      const snippet = JSON.stringify(body).replace(/\s+/g, ' ').slice(0, 220);
       if (blocked) return { ok: false, message: `请求被安全策略拦截（${blocked}）${body.promptFeedback?.blockReasonMessage ? `：${body.promptFeedback.blockReasonMessage}` : '。'}`, reasoning, usage };
+      if (reason === 'MAX_TOKENS') return { ok: false, message: '输出额度在写出正文前就用完了（finishReason: MAX_TOKENS）。思维链会先吃掉额度，请把「最大输出」调高，或换一个非思维链模型。', reasoning, usage };
       if (reason && reasoning) return { ok: false, message: '模型只返回了思维链，没有给出最终文本。', reasoning, usage };
-      return { ok: false, message: '模型没有返回文本内容。请确认该模型支持 generateContent。', reasoning, usage };
+      const detail = [
+        reason ? `finishReason: ${reason}` : '响应里没有 candidates',
+        candidate?.finishMessage,
+        `原始响应：${snippet}`,
+      ].filter(Boolean).join('；');
+      return { ok: false, message: `模型没有返回文本内容（${detail}）。请确认该模型支持 generateContent，并检查模型名与区域。`, reasoning, usage };
     }
     return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), usage };
   } catch (error) {
-    if (controller.signal.aborted) return { ok: false, message: '请求超过 60 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
+    if (controller.signal.aborted) return { ok: false, message: '请求超时仍未返回，已中止。可以重试，或换一个更快的模型。' };
     const detail = error instanceof Error ? error.message : '';
     return { ok: false, message: `浏览器无法访问 Vertex AI，或网络被拦截。${detail ? `（${detail}）` : ''}` };
   } finally {

@@ -7,6 +7,7 @@ import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from 
 import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
+import { MAX_ENEMIES } from '../../combat';
 import {
   applyLibrary, contentUsage, emptyCombatMission, emptyIncidentCard, emptyInvestigationMission, emptyItem, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
   type ContentLibrary, type ImportStrategy, type WorkshopKind,
@@ -401,9 +402,9 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     const next = [...enemySlots];
     next[index] = id;
     setEnemySlots(next);
-    patchMission({ enemyIds: next.filter(Boolean).slice(0, 3) });
+    patchMission({ enemyIds: next.filter(Boolean).slice(0, MAX_ENEMIES) });
   };
-  const addEnemySlot = () => setEnemySlots(previous => [...previous, ''].slice(0, 3));
+  const addEnemySlot = () => setEnemySlots(previous => [...previous, ''].slice(0, MAX_ENEMIES));
   const removeEnemySlot = (index: number) => {
     const next = enemySlots.filter((_, at) => at !== index);
     const slots = next.length ? next : [''];

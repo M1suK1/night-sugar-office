@@ -224,7 +224,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     ? <span className="field-origin">由使魔补全</span>
     : pending.has(key) ? <span className="field-origin pending">补全中</span> : null;
   const fieldRewrite = (key: FieldKey) => hasDraft
-    ? <button key="rewrite" id={`custom-rewrite-${key}`} type="button" className="field-rewrite" disabled={drafting} onClick={() => runGenerate([key])}>重写这一项</button>
+    ? <button key="rewrite" id={`custom-rewrite-${key}`} type="button" className="field-rewrite" disabled={drafting} onClick={() => runGenerate([key])} title="让使魔重写这一项">重写</button>
     : null;
   const fieldHead = (label: string, key: FieldKey) => <span className="field-head"><span>{label}</span>{fieldOrigin(key)}{fieldRewrite(key)}</span>;
   const shimmer = (key: FieldKey) => pending.has(key) ? ' is-shimmer' : '';

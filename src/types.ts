@@ -103,6 +103,10 @@ export interface GirlCard {
     name: string; codename: string; title: string; element: Element; archetype?: Archetype;
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
+    /** 特性的完整定义。自定义特性（`custom-trait-*`）不在全局目录里，只能靠这份定义还原。 */
+    traits?: Trait[];
+    /** 只在导入时算出来：有多少条特性没能还原。导出不会写这个字段。 */
+    skippedTraits?: number;
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
     portraitHint?: string; witchForm?: Outfit; witchPersonality?: string; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
     /** 出身；旧卡没有时按名字确定性补齐。 */
@@ -384,6 +388,8 @@ export interface Skill {
   id: string; name: string; school: string; resource: SkillResource; power: number;
   targets: number; side: SkillSide; cooldown: number; tier: SkillTier;
   effects: SkillEffect[]; description: string;
+  /** 基础命中率（%）：不写就按目标数推导，见 `defaultSkillAccuracy`。 */
+  accuracy?: number;
 }
 export interface ActiveEffect extends SkillEffect {
   source: string; remaining: number;

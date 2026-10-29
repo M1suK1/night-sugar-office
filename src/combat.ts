@@ -7,7 +7,24 @@ import { districtAt, districts } from './districts.ts';
 import { SHIFT_START } from './shift.ts';
 
 export const ROUND_MINUTES = 15;
+/** 一场战斗里魔物数量的硬上限；委托与故事委托都会按它夹紧。 */
+export const MAX_ENEMIES = 6;
+/** 单条技能最多能打几个目标（群体技能的上限）。 */
+export const MAX_SKILL_TARGETS = 6;
 const clamp = (min: number, max: number, v: number) => Math.max(min, Math.min(max, v));
+
+/**
+ * 目标越多越难全中：1 目标 50%，此后每多一个目标 −6，最低 20%。
+ * 技能上显式写了 `accuracy` 就用它，不再走这条推导。
+ */
+export function defaultSkillAccuracy(targets: number): number {
+  const count = clamp(1, MAX_SKILL_TARGETS, Math.round(targets || 1));
+  return clamp(20, 95, 50 - 6 * (count - 1));
+}
+export function skillAccuracy(skill: Skill): number {
+  const base = skill.accuracy ?? defaultSkillAccuracy(skill.targets);
+  return clamp(20, 95, Math.round(base));
+}
 
 export function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
@@ -114,16 +131,17 @@ function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
 }
 function pickTargets(actor: BattleUnit, skill: Skill, units: BattleUnit[], rng: () => number): BattleUnit[] {
   if (skill.side === 'self') return [actor];
+  const count = clamp(1, MAX_SKILL_TARGETS, Math.round(skill.targets || 1));
   if (skill.side === 'ally') {
     const pool = alive(units, actor.side).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
-    return pool.slice(0, Math.min(skill.targets, pool.length));
+    return pool.slice(0, Math.min(count, pool.length));
   }
   const pool = alive(units, actor.side === 'ally' ? 'enemy' : 'ally');
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, Math.min(skill.targets, pool.length));
+  return pool.slice(0, Math.min(count, pool.length));
 }
 function absorb(unit: BattleUnit, amount: number): number {
   let left = amount;
@@ -309,16 +327,17 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       const skill = pickSkill(unit, round, rng);
       unit.cooldown[skill.id] = skill.cooldown;
       const targets = pickTargets(unit, skill, units, rng);
+      const baseAccuracy = skillAccuracy(skill);
       const effectNotes: string[] = [];
       for (const target of targets) {
         if (target.down && skill.side === 'enemy') continue;
         const agility = statOf(unit, 'agility');
         const targetAgility = statOf(target, 'agility');
         const bonus = hitBonus(unit);
-        const chance = clamp(15, 95, 50 + agility - targetAgility + bonus);
+        const chance = clamp(10, 95, baseAccuracy + agility - targetAgility + bonus);
         const roll = skill.side === 'enemy' ? rng() * 100 : 0;
         const hit = skill.side !== 'enemy' || roll <= chance;
-        const hitCalc = { base: 50, agility, targetAgility, bonus, chance, roll };
+        const hitCalc = { base: baseAccuracy, agility, targetAgility, bonus, chance, roll };
         if (!hit) {
           log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: '攻击落空', calc: { hit: hitCalc } });
           continue;

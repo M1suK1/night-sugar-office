@@ -17,7 +17,7 @@ const seed: Seed[] = [
 
   ['dream-touch', '梦触', '梦境系', 'spirit', 0.95, 1, 'enemy', 0, 'basic', [], '指尖碰到梦的边缘，现实就少了一小块。'],
   ['sheep-nebula', '绵羊星云', '梦境系', 'spirit', 0.8, 2, 'enemy', 2, 'signature', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.45 }], '数到第七只羊时，敌人会发现自己的影子正在打盹。'],
-  ['deep-dream-fall', '深梦坠落', '梦境系', 'hp', 1.2, 3, 'enemy', 4, 'ultimate', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.25 }], '把整片战场拖进一场没有底的梦。雾眠说，掉下去其实不可怕。'],
+  ['deep-dream-fall', '深梦坠落', '梦境系', 'hp', 1.2, 2, 'enemy', 4, 'ultimate', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.25 }], '把整片战场拖进一场没有底的梦。雾眠说，掉下去其实不可怕。'],
 
   ['flower-thorn', '花刺', '自然系', 'hp', 0.9, 1, 'enemy', 0, 'basic', [], '从袖口抽出一根带露水的刺。栀子会在事后向花道歉。'],
   ['flower-prescription', '花间处方', '自然系', 'spirit', 0.95, 2, 'ally', 2, 'signature', [{ kind: 'regen', amount: 10, duration: 3 }], '每一种伤口都有适合的春天。她只是把春天碾成粉，兑进温水。'],
@@ -29,14 +29,14 @@ const seed: Seed[] = [
 
   ['monster-claw', '裂爪', '魔物', 'hp', 1, 1, 'enemy', 0, 'basic', [], '用不合常理的角度撕开空气。'],
   ['monster-scream', '汽笛啸叫', '魔物', 'spirit', 0.9, 2, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'agility', amount: 14, duration: 2 }], '一声不属于任何站台的汽笛。'],
-  ['monster-static', '轨道静电', '魔物', 'spirit', 0.7, 3, 'enemy', 3, 'signature', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.3 }], '铁轨上积了太久的静电荷。'],
+  ['monster-static', '轨道静电', '魔物', 'spirit', 0.48, 6, 'enemy', 3, 'signature', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.3 }], '铁轨上积了太久的静电荷。'],
   ['monster-mirror', '镜面祷词', '魔物', 'spirit', 1, 2, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'insight', amount: 16, duration: 2 }], '每一面镜子都在念同一句祷词。'],
-  ['monster-mosaic', '万花筒', '魔物', 'spirit', 0.7, 3, 'enemy', 3, 'signature', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.35 }], '光被切成太多块，方向失去了意义。'],
-  ['monster-sweet-decree', '甜腻诏令', '魔物', 'spirit', 0.85, 3, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'empathy', amount: 18, duration: 2 }], '王座上的糖发出命令，所有人忽然很想服从。'],
+  ['monster-mosaic', '万花筒', '魔物', 'spirit', 0.46, 6, 'enemy', 3, 'signature', [{ kind: 'stun', amount: 1, duration: 1, chance: 0.35 }], '光被切成太多块，方向失去了意义。'],
+  ['monster-sweet-decree', '甜腻诏令', '魔物', 'spirit', 0.55, 6, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'empathy', amount: 18, duration: 2 }], '王座上的糖发出命令，所有人忽然很想服从。'],
   ['monster-dissolve', '溶解', '魔物', 'hp', 1, 2, 'enemy', 3, 'signature', [{ kind: 'dot', amount: 16, duration: 2 }], '糖浆漫过脚踝，连影子都开始融化。'],
   ['monster-scales', '鳞粉', '魔物', 'hp', 0.85, 2, 'enemy', 2, 'signature', [{ kind: 'dot', amount: 10, duration: 3 }], '细小的糖鳞落下来，像一场不祥的雪。'],
   ['monster-gaze', '空月凝视', '魔物', 'spirit', 1.1, 2, 'enemy', 2, 'signature', [{ kind: 'debuff', stat: 'magic', amount: 16, duration: 2 }], '月亮没有瞳孔，但你确定它在看你。'],
-  ['monster-tide', '引力潮汐', '魔物', 'hp', 1.15, 3, 'enemy', 3, 'signature', [], '整条街的重量忽然朝同一个方向倾斜。'],
+  ['monster-tide', '引力潮汐', '魔物', 'hp', 0.56, 6, 'enemy', 3, 'signature', [], '整条街的重量忽然朝同一个方向倾斜。'],
 
   ['night-prayer', '夜祷回响', '月影系', 'spirit', 0.85, 2, 'ally', 3, 'signature', [{ kind: 'regen', amount: 9, duration: 2 }], '指环内侧的祷词被念出来时，伤口会先于记忆合拢。'],
 ];

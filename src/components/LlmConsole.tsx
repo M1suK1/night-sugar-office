@@ -193,7 +193,7 @@ export function LlmConsole() {
             </>}
             {entry.response?.reasoning
               ? <><h4><Brain size={12} />思维链</h4><pre className="llm-reasoning">{entry.response.reasoning}</pre></>
-              : <p className="llm-no-reasoning">这次响应没有思维链字段（部分模型或网关不会返回 reasoning_content）。</p>}
+              : <p className="llm-no-reasoning">这次响应没有附带思维链（OpenAI 兼容接口看 reasoning_content，Vertex 看 thought 分段）。</p>}
             {!entry.ok && <p className="llm-error">{entry.message}</p>}
             <button type="button" className="llm-copy" id={`llm-copy-${entry.id}`} onClick={() => void copy(entry)}>
               {copied === entry.id ? <Check size={12} /> : <Copy size={12} />}{copied === entry.id ? '已复制' : '复制这次调用'}

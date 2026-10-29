@@ -8,7 +8,7 @@ import { ensureGraph, graphBeats, validateGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
 import { customIncidentCards, customMissionTemplates } from './content/library.ts';
-import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES } from './combat.ts';
+import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES, MAX_ENEMIES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
@@ -387,7 +387,9 @@ export function annotateMission(state: GameState, mission: Mission, wave = 0): M
   const spawnAt = mission.spawnedAt ?? absoluteMinutes(state.day, state.minutes);
   const window: CommissionWindow = mission.window ?? (mission.duration >= 90 ? 'long' : 'urgent');
   const base: Mission = {
-    ...mission, district, window, wave: mission.wave ?? wave,
+    ...mission,
+    enemyIds: mission.enemyIds ? mission.enemyIds.slice(0, MAX_ENEMIES) : mission.enemyIds,
+    district, window, wave: mission.wave ?? wave,
     spawnedAt: spawnAt, deadlineAt: mission.deadlineAt ?? deadlineFor(window, state.day, spawnAt),
   };
   // 已有快照的委托不再重算：发出去之后辖区易主或被人净化，不能回头改动这一单。
@@ -574,7 +576,7 @@ function missionSeed(template: MissionTemplate): Mission {
     status: 'open',
     squad: [],
     work: template.work,
-    enemyIds: [...template.enemyIds],
+    enemyIds: [...template.enemyIds].slice(0, MAX_ENEMIES),
     rounds: template.rounds,
     attempts: 0,
     recommendedLevel: template.recommendedLevel,
@@ -1164,7 +1166,7 @@ export function storyMissionForBeat(state: GameState, story: Storyline, beat: St
     status: 'open',
     squad: [],
     work: monsters.length ? 'combat' : 'investigation',
-    enemyIds: monsters.length ? monsters.map(monster => monster.id) : undefined,
+    enemyIds: monsters.length ? monsters.map(monster => monster.id).slice(0, MAX_ENEMIES) : undefined,
     rounds: monsters.length ? Math.max(2, Math.ceil(duration / ROUND_MINUTES)) : undefined,
     attempts: 0,
     recommendedLevel: 3,
@@ -2766,14 +2768,24 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!g.name || !Array.isArray(g.skillIds) || g.skillIds.length !== 3) return { state, ok: false, message: '契约卡资料不完整。' };
       const stats = { ...g.stats };
       const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
+      // 卡片自带定义的特性（自定义特性）优先；旧卡只写了 id，就只能靠全局目录。
+      const cardTraits = (g.traits?.length
+        ? g.traits.map(trait => ({ ...trait, tags: [...trait.tags] }))
+        : g.traitIds.map(traitId => traitById.get(traitId)).filter((trait): trait is NonNullable<typeof trait> => Boolean(trait))
+      ).slice(0, 6);
+      const lostTraits = g.skippedTraits ?? 0;
       const id = `g_card_${key}`;
+      // 出身按卡片来：导进来的少女保留她原来的立场，不再按 id 重新掷一次。
+      // 旧卡片没有这个字段时，退回按名字确定性补齐，同一张卡导入结果始终一致。
+      const cardOrigin = sanitizeGirlFaction(g.factionTag, g.name);
       const girl = hydrate({
         id, name: g.name, codename: g.codename, title: g.title, element: g.element, color: g.color,
+        factionTag: cardOrigin,
         portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: 1800 + g.level * 220,
         scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
-        goal: g.goal, goalKind: '成长', traits: g.traitIds.map(id => traitById.get(id)).filter((trait): trait is NonNullable<typeof trait> => Boolean(trait)), conditions: [],
+        goal: g.goal, goalKind: '成长', traits: cardTraits, conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
         appearance: g.appearance, personality: g.personality, witchPersonality: g.witchPersonality, outfitDescription: g.outfitDescription,
         wardrobe: g.wardrobe?.length
@@ -2787,8 +2799,9 @@ export function act(state: GameState, action: GameAction): ActionResult {
       });
       next.candidates.push(girl);
       archive(next, '登记', girl.name, `从契约卡导入。${girl.title}。${girl.appearance}`);
-      next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。` });
-      return { state: next, ok: true, message: `契约卡已导入：${girl.name}进入候选名册。` };
+      const lostNote = lostTraits > 0 ? `（${lostTraits} 条特性没能随卡片带来，已跳过）` : '';
+      next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。${lostNote}` });
+      return { state: next, ok: true, message: `契约卡已导入：${girl.name}进入候选名册。${lostNote}` };
     }
     case 'createGirl': {
       const next = clone(state); const draft = action.draft;

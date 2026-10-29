@@ -1,4 +1,4 @@
-import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation } from './vertex.ts';
+import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
 
 /** openai = 任意 OpenAI 兼容接口；vertex = Google Vertex AI（服务账号 JSON 或 Express 密钥）。 */
 export type LlmProvider = 'openai' | 'vertex';
@@ -103,6 +103,14 @@ function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { end
   return full;
 }
 
+/** 日志里的「接口」一栏：Vertex 显示真实端点，而不是留在配置里的 OpenAI 地址。 */
+export function llmEndpointLabel(config: LlmConfig): string {
+  if (config.provider !== 'vertex') return config.endpoint;
+  const info = describeVertexCredential(config.apiKey);
+  const account = info.kind === 'service-account' ? { projectId: info.projectId ?? '', clientEmail: info.clientEmail ?? '', privateKey: '', tokenUri: '' } : undefined;
+  return vertexTarget({ model: config.model || 'gemini-2.5-pro', location: vertexLocation(config.location), expressKey: account ? undefined : config.apiKey }, account).display;
+}
+
 function statusOf(message: string): number | undefined {
   const match = message.match(/服务返回\s*(\d{3})/);
   return match ? Number(match[1]) : undefined;
@@ -146,7 +154,7 @@ function presetParams(preset?: PresetRuntime): LlmCallParams | undefined {
 export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolean; message: string }> {
   const started = Date.now();
   const result = await testLlmConnectionCore(config);
-  recordLlmLog({ kind: '连接测试', ok: result.ok, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, message: result.message, endpoint: config.endpoint });
+  recordLlmLog({ kind: '连接测试', ok: result.ok, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, message: result.message, endpoint: llmEndpointLabel(config) });
   return result;
 }
 
@@ -156,7 +164,7 @@ export async function generateDaily(config: LlmConfig, state: GameState, context
   const result = await generateDailyCore(config, state, context, preset, meta);
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
-    durationMs: Date.now() - started, endpoint: config.endpoint,
+    durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
     message: result.ok ? `生成成功：${result.data.monster.name} / ${result.data.candidate.name} / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
@@ -170,7 +178,7 @@ export async function generateGirlProfile(config: LlmConfig, portrait?: string, 
   const result = await generateGirlProfileCore(config, portrait, hint, preset, meta);
   recordLlmLog({
     kind: '角色起草', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
-    durationMs: Date.now() - started, endpoint: config.endpoint,
+    durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
     message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}${portrait ? '（已读取立绘）' : '（无立绘）'}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
@@ -185,10 +193,10 @@ export interface DialogueContext {
 export async function generateDialogue(config: LlmConfig, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   const started = Date.now();
   const runtime = preset ?? EMPTY_RUNTIME;
-  const cfg = resolvePresetConfig(runtime, config);
+  const cfg = applyPresetApi(runtime, config);
   if (!hasCredentials(cfg)) {
     const message = '请先在设置中填写 API 密钥（本地接口可留空）。';
-    recordLlmLog({ kind: '角色对话', ok: false, model: cfg.model.trim(), durationMs: 0, message, endpoint: cfg.endpoint });
+    recordLlmLog({ kind: '角色对话', ok: false, model: cfg.model.trim(), durationMs: 0, message, endpoint: llmEndpointLabel(cfg) });
     return { ok: false, message };
   }
   const history = (state.messages[girl.id] ?? []).map(message => ({ role: message.role === 'player' ? 'user' as const : 'assistant' as const, content: message.text }));
@@ -245,7 +253,7 @@ ${remote ? '你们正在通电话，她退役后住在城南家中；电话那�
   const final = clean ? { ok: true as const, text: clean } : { ok: false as const, message: result.ok ? '模型没有返回可用的对话内容。' : result.message };
   recordLlmLog({
     kind: '角色对话', ok: final.ok, model: cfg.model.trim(), status: final.ok ? 200 : statusOf(final.message),
-    durationMs: Date.now() - started, endpoint: cfg.endpoint,
+    durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
     message: final.ok ? `与${girl.name}完成一次对话` : final.message,
     detail: final.ok ? undefined : final.message,
     request, response: { reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
@@ -253,37 +261,233 @@ ${remote ? '你们正在通电话，她退役后住在城南家中；电话那�
   return final;
 }
 
-export const defaultLlmConfig: LlmConfig = {
-  endpoint: 'https://api.openai.com/v1',
-  apiKey: '',
-  model: 'gpt-4o-mini',
+export const defaultLlmSettings: LlmSettings = {
   provider: 'openai',
-  location: 'us-central1',
+  openai: { endpoint: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', location: '' },
+  vertex: { endpoint: '', apiKey: '', model: 'gemini-2.5-pro', location: 'us-central1' },
 };
 
-export function loadLlmConfig(): LlmConfig {
+/** 设置页保存的形状：两份凭证并存，provider 只决定「默认用哪一个」。 */
+export interface LlmSettings {
+  provider: LlmProvider;
+  openai: LlmCredential;
+  vertex: LlmCredential;
+}
+
+/** 默认接口摊平后的配置；老代码直接用它当兜底。 */
+export const defaultLlmConfig: LlmConfig = resolveLlm(defaultLlmSettings);
+
+/** 一个接口自己的那份凭证；切换默认接口不会覆盖另一份。 */
+export interface LlmCredential {
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  location: string;
+}
+
+/** 输出预算：统一值之下，重 JSON 任务默认给更宽的口子，其余跟随统一值。 */
+export const BUDGET_MIN = 256;
+export const BUDGET_MAX = 32768;
+export const BUDGET_UNIFIED_DEFAULT = 2048;
+export const LLM_BUDGET_TASKS = [
+  { key: 'chat', label: '角色对话' },
+  { key: 'daily', label: '每日提案' },
+  { key: 'profile', label: '角色起草' },
+  { key: 'storyline', label: '故事线起点' },
+  { key: 'event', label: '故事事件' },
+  { key: 'arc', label: '故事线蓝图' },
+  { key: 'incident', label: '突发事件' },
+  { key: 'outfit', label: '服装词条' },
+  { key: 'battle', label: '战斗札记' },
+] as const;
+export type LlmTaskKey = (typeof LLM_BUDGET_TASKS)[number]['key'];
+export interface LlmBudget {
+  /** 未单独指定的任务都用这个值。 */
+  unified: number;
+  tasks: Partial<Record<LlmTaskKey, number>>;
+}
+const BUDGET_KEY = 'night-sugar:llm-budget';
+/** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, arc: 4000, battle: 3000, event: 3000, storyline: 3000 };
+
+function clampBudget(value: unknown, fallback: number): number {
+  const num = Math.round(Number(value));
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, num));
+}
+
+export function defaultLlmBudget(): LlmBudget {
+  return { unified: BUDGET_UNIFIED_DEFAULT, tasks: { ...DEFAULT_TASK_BUDGETS } };
+}
+
+export function loadLlmBudget(): LlmBudget {
+  const base = defaultLlmBudget();
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...defaultLlmConfig };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    return {
-      endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : defaultLlmConfig.endpoint,
-      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
-      model: typeof parsed.model === 'string' ? parsed.model : defaultLlmConfig.model,
-      provider: parsed.provider === 'vertex' ? 'vertex' : 'openai',
-      location: typeof parsed.location === 'string' && parsed.location.trim() ? parsed.location.trim() : defaultLlmConfig.location,
-    };
+    const raw = localStorage.getItem(BUDGET_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw) as Partial<LlmBudget>;
+    const tasks: Partial<Record<LlmTaskKey, number>> = {};
+    for (const item of LLM_BUDGET_TASKS) {
+      const raw = parsed.tasks?.[item.key];
+      const num = Math.round(Number(raw));
+      if (raw !== undefined && raw !== null && Number.isFinite(num) && num > 0) tasks[item.key] = clampBudget(num, base.unified);
+    }
+    return { unified: clampBudget(parsed.unified, base.unified), tasks };
   } catch {
-    return { ...defaultLlmConfig };
+    return base;
   }
 }
 
-export function saveLlmConfig(config: LlmConfig) {
+export function saveLlmBudget(budget: LlmBudget) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(config));
+    localStorage.setItem(BUDGET_KEY, JSON.stringify({ unified: clampBudget(budget.unified, BUDGET_UNIFIED_DEFAULT), tasks: budget.tasks }));
+  } catch { /* 隐私模式下忽略 */ }
+}
+
+export function budgetForTask(budget: LlmBudget, task?: LlmTaskKey): number {
+  const own = task ? budget.tasks[task] : undefined;
+  return clampBudget(own, clampBudget(budget.unified, BUDGET_UNIFIED_DEFAULT));
+}
+
+/** 生成任务实际使用的运行时：预设提供采样参数与词条，输出额度以设置里的预算为准。 */
+export function taskRuntime(preset: ChatPreset | undefined, task: LlmTaskKey): PresetRuntime {
+  const runtime = presetRuntime(preset);
+  return { ...runtime, maxTokens: budgetForTask(loadLlmBudget(), task) };
+}
+
+function cloneSettings(settings: LlmSettings): LlmSettings {
+  return { provider: settings.provider, openai: { ...settings.openai }, vertex: { ...settings.vertex } };
+}
+
+function mergeSlot(base: LlmCredential, raw: unknown): LlmCredential {
+  if (!raw || typeof raw !== 'object') return { ...base };
+  const value = raw as Partial<LlmCredential>;
+  return {
+    endpoint: typeof value.endpoint === 'string' ? value.endpoint : base.endpoint,
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey : base.apiKey,
+    model: typeof value.model === 'string' && value.model.trim() ? value.model : base.model,
+    location: typeof value.location === 'string' ? value.location : base.location,
+  };
+}
+
+/** 把设置里某一份凭证摊平成请求用的配置。 */
+export function resolveLlm(settings: LlmSettings, provider: LlmProvider = settings.provider): LlmConfig {
+  const slot = provider === 'vertex' ? settings.vertex : settings.openai;
+  return {
+    provider,
+    endpoint: slot.endpoint.trim(),
+    apiKey: slot.apiKey,
+    model: slot.model.trim(),
+    location: slot.location.trim() || 'us-central1',
+  };
+}
+
+/** 老存档只有一份扁平配置：按当时的 provider 放回对应槽位，另一份保持默认。 */
+export function loadLlmSettings(): LlmSettings {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return cloneSettings(defaultLlmSettings);
+    const parsed = JSON.parse(raw) as Partial<LlmSettings> & Partial<LlmConfig>;
+    if (parsed.openai || parsed.vertex) {
+      return {
+        provider: parsed.provider === 'vertex' ? 'vertex' : 'openai',
+        openai: mergeSlot(defaultLlmSettings.openai, parsed.openai),
+        vertex: mergeSlot(defaultLlmSettings.vertex, parsed.vertex),
+      };
+    }
+    const provider: LlmProvider = parsed.provider === 'vertex' ? 'vertex' : 'openai';
+    const legacy: LlmCredential = {
+      endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : defaultLlmSettings.openai.endpoint,
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+      model: typeof parsed.model === 'string' ? parsed.model : defaultLlmSettings[provider].model,
+      location: typeof parsed.location === 'string' && parsed.location.trim() ? parsed.location : defaultLlmSettings.vertex.location,
+    };
+    return provider === 'vertex'
+      ? { provider, openai: { ...defaultLlmSettings.openai }, vertex: legacy }
+      : { provider, openai: legacy, vertex: { ...defaultLlmSettings.vertex } };
+  } catch {
+    return cloneSettings(defaultLlmSettings);
+  }
+}
+
+export function saveLlmSettings(settings: LlmSettings) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(settings));
   } catch {
     // Storage can be unavailable in private windows; the form still works for this session.
   }
+}
+
+/** 当前默认接口摊平后的配置；所有请求入口都从这里取。 */
+export function loadLlmConfig(): LlmConfig {
+  return resolveLlm(loadLlmSettings());
+}
+
+/** 老调用点只改「当前接口」：写回对应槽位，另一份原样保留。 */
+export function saveLlmConfig(config: LlmConfig) {
+  const settings = loadLlmSettings();
+  const provider: LlmProvider = config.provider === 'vertex' ? 'vertex' : 'openai';
+  const slot: LlmCredential = {
+    endpoint: config.endpoint,
+    apiKey: config.apiKey,
+    model: config.model,
+    location: config.location ?? settings[provider].location,
+  };
+  saveLlmSettings(provider === 'vertex' ? { ...settings, provider, vertex: slot } : { ...settings, provider, openai: slot });
+}
+
+/** 只改「默认接口」，两份凭证各走各的，绝不把当前这份的值抄进另一份。 */
+export function setLlmProvider(provider: LlmProvider): LlmSettings {
+  const settings = loadLlmSettings();
+  const next: LlmSettings = { ...settings, provider: provider === 'vertex' ? 'vertex' : 'openai' };
+  saveLlmSettings(next);
+  return next;
+}
+
+/** 往某一份凭证里写字段。切接口、改地址、换密钥都只落在自己的槽位。 */
+export function updateLlmSlot(provider: LlmProvider, patch: Partial<LlmCredential>): LlmSettings {
+  const settings = loadLlmSettings();
+  const key: 'openai' | 'vertex' = provider === 'vertex' ? 'vertex' : 'openai';
+  const base = settings[key];
+  const slot: LlmCredential = {
+    endpoint: typeof patch.endpoint === 'string' ? patch.endpoint : base.endpoint,
+    apiKey: typeof patch.apiKey === 'string' ? patch.apiKey : base.apiKey,
+    model: typeof patch.model === 'string' && patch.model.trim() ? patch.model : base.model,
+    location: typeof patch.location === 'string' ? patch.location : base.location,
+  };
+  const next: LlmSettings = { ...settings, [key]: slot };
+  saveLlmSettings(next);
+  return next;
+}
+
+/** 两份凭证里只要有一份能用，就允许发起生成；具体用哪份由预设或默认接口决定。 */
+export function llmHasKey(): boolean {
+  const settings = loadLlmSettings();
+  const active = resolveLlm(settings);
+  if (active.apiKey.trim() || isLocalEndpoint(active.endpoint)) return true;
+  const other = resolveLlm(settings, active.provider === 'vertex' ? 'openai' : 'vertex');
+  return Boolean(other.apiKey.trim()) || isLocalEndpoint(other.endpoint);
+}
+
+/**
+ * 预设可以单独指定接口：它选 Vertex 时用设置里 Vertex 那份凭证，选 OpenAI 时用另一份。
+ * 预设自己填了的字段（模型、区域、甚至整套 endpoint + key）优先，没填的沿用那份凭证。
+ */
+export function applyPresetApi(runtime: PresetRuntime | undefined, config: LlmConfig, settings?: LlmSettings): LlmConfig {
+  const api = runtime?.api;
+  const want: LlmProvider = api?.provider === 'vertex' ? 'vertex' : api?.provider === 'openai' ? 'openai' : (config.provider === 'vertex' ? 'vertex' : 'openai');
+  const base = want === (config.provider === 'vertex' ? 'vertex' : 'openai') ? config : resolveLlm(settings ?? loadLlmSettings(), want);
+  if (!api) return base;
+  const model = api.model?.trim();
+  const apiKey = api.apiKey?.trim();
+  if (base.provider === 'vertex') {
+    return { ...base, model: model || base.model, apiKey: apiKey || base.apiKey, location: api.location?.trim() || base.location };
+  }
+  const endpoint = api.endpoint?.trim();
+  if (!endpoint) return { ...base, model: model || base.model, apiKey: apiKey || base.apiKey };
+  const remote = !isLocalEndpoint(endpoint);
+  if (remote && !apiKey && !base.apiKey) return { ...base, model: model || base.model };
+  return { ...base, endpoint, model: model || base.model, apiKey: apiKey || base.apiKey };
 }
 
 /** Vertex 的「测试连接」会真的发一次极小的 generateContent：一次验证密钥、权限、区域和模型名。 */
@@ -293,12 +497,13 @@ async function testVertexConnection(config: LlmConfig): Promise<{ ok: boolean; m
   if (info.kind === 'invalid') return { ok: false, message: info.message };
   const model = normalizeVertexModel(config.model);
   if (!model) return { ok: false, message: '请先填写模型名称，例如 gemini-2.5-pro。' };
+  // 探针不设输出上限：思维链模型会被 16 个 token 吃光额度，回一份空 candidates。
   const probe = await vertexChat(
-    { model, location: config.location, secret: config.apiKey, timeoutMs: 25_000 },
-    [{ role: 'user', content: 'ping' }],
-    { maxTokens: 16, temperature: 0 },
+    { model, location: config.location, secret: config.apiKey, timeoutMs: 40_000 },
+    [{ role: 'user', content: '你好，请只回复 pong。' }],
+    { temperature: 0 },
   );
-  if (!probe.ok) return { ok: false, message: probe.message };
+  if (!probe.ok) return { ok: false, message: `${probe.message}（端点 ${llmEndpointLabel(config)}）` };
   const where = info.kind === 'service-account' ? `${info.projectId} · ${vertexLocation(config.location)}` : 'Express 模式';
   return { ok: true, message: `连接成功，模型「${model}」可用（${where}）。` };
 }
@@ -399,6 +604,8 @@ function isLocalEndpoint(endpoint: string): boolean {
 }
 
 function hasCredentials(config: LlmConfig): boolean {
+  // Vertex 的 endpoint 是拼出来的，只有密钥能代表「配置好了」。
+  if (config.provider === 'vertex') return Boolean(config.apiKey.trim());
   return Boolean(config.apiKey.trim()) || isLocalEndpoint(config.endpoint);
 }
 
@@ -545,10 +752,12 @@ async function chatJson(
   config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
 ): Promise<JsonCallOutcome> {
   const runtime = preset ?? EMPTY_RUNTIME;
-  const cfg = resolvePresetConfig(runtime, config);
+  const cfg = applyPresetApi(runtime, config);
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
-  if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
+  // 设置里的输出预算优先：预算比契约下限低就按预算来，截断后还有一次自动放大重试。
+  if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: runtime.maxTokens };
+  else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
   else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
   const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入');
   let messages: ChatMessage[] = applyRegexToMessages([
@@ -575,13 +784,13 @@ async function chatJson(
 
 function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
   if (outcome.truncated) {
-    return `${prefix}输出被截断（finish_reason: length，上限 ${outcome.maxTokens ?? '?'} tokens）。推理模型的思维链会占用同一份额度，已自动放大额度重试仍失败。请到 设置 → 对话补全预设 把「最大输出 token」调到 8000 以上，或换用非推理模型。`;
+    return `${prefix}输出被截断（finish_reason: length，上限 ${outcome.maxTokens ?? '?'} tokens）。推理模型的思维链会占用同一份额度，已自动放大额度重试仍失败。请到 设置 → 故事引擎 → 输出预算 把这一项的额度调高，或换用非推理模型。`;
   }
   return `${prefix}模型没有返回可解析的 JSON。可以在叙事引擎面板里查看这次请求，再重试一次。`;
 }
 
 async function generateDailyCore(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const system = buildNightPrompt(state);
   const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
   const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 8000);
@@ -781,7 +990,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
     scenario: direction?.trim() ?? '',
   });
   if (!result.ok) {
-    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
   const raw = result.raw;
@@ -803,12 +1012,12 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
   });
   if (parsed.length < 4 || parsed.some(beat => beat.choices.length < 2)) {
     const message = '故事线返回的幕数或选项不足，已改用模板起草。';
-    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   if (parsed.some(beat => !beat.mission.title || !beat.mission.goal)) {
     const message = '故事线缺少明确的任务目标，已改用模板起草。';
-    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const data: GeneratedStoryline = {
@@ -817,7 +1026,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
     tone: typeof raw.tone === 'string' ? raw.tone.trim().slice(0, 24) : '克制',
     beats: parsed,
   };
-  recordLlmLog({ kind: '角色故事线', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `故事线生成成功：${data.title}（4 幕）`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '角色故事线', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `故事线生成成功：${data.title}（4 幕）`, request: meta.request, response: meta.response });
   return { ok: true, data };
 }
 
@@ -871,7 +1080,7 @@ function parseStoryBlueprintGraph(raw: Record<string, unknown>): { graph: StoryG
 export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) {
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
   const body = `先读她的档案：${girlBrief(girl)}
@@ -898,17 +1107,17 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
   const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 8000);
   if (!first.result.ok) {
     const message = `生成蓝图失败：${first.result.message}`;
-    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   if (!first.raw) {
     const message = jsonFailureMessage('生成蓝图失败：', first);
-    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   if (first.truncated) {
     const message = jsonFailureMessage('生成蓝图失败：', first);
-    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
 
@@ -929,17 +1138,17 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
     const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 8000);
     if (!second.result.ok) {
       const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
-      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
       return { ok: false, message };
     }
     if (!second.raw) {
       const message = jsonFailureMessage('蓝图未通过校验，且修复输出无法解析。', second);
-      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
       return { ok: false, message };
     }
     if (second.truncated) {
       const message = jsonFailureMessage('蓝图未通过校验，且修复输出被截断。', second);
-      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
       return { ok: false, message };
     }
     source = second;
@@ -947,7 +1156,7 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
   }
   if (!parsed.graph || parsed.errors.length) {
     const message = `蓝图未通过本地校验：${parsed.errors.slice(0, 6).join('；')}`;
-    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const graph = parsed.graph;
@@ -959,7 +1168,7 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
   };
   recordLlmLog({
     kind: '角色蓝图', ok: true, model: config.model.trim(), status: 200,
-    durationMs: Date.now() - started, endpoint: config.endpoint,
+    durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
     message: `蓝图生成成功：${data.title}（${graph.nodes.length} 节点 / ${graph.edges.length} 连线${repaired ? '，修复 1 次' : ''}）`,
     request: meta.request, response: meta.response,
   });
@@ -979,14 +1188,14 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
     scenario: `第 ${state.day} 日，事务所营业中`,
   });
   if (!result.ok) {
-    recordLlmLog({ kind: '强制事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '强制事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
   const raw = result.raw;
   const options = Array.isArray(raw.options) ? raw.options.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 3) : [];
   if (options.length < 2) {
     const message = '事件选项不足，已改用规则事件。';
-    recordLlmLog({ kind: '强制事件', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '强制事件', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const data: GeneratedIncident = {
@@ -998,7 +1207,7 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
       effect: parseIncidentEffect(option.effect),
     })),
   };
-  recordLlmLog({ kind: '强制事件', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `事件生成成功：${data.title}`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '强制事件', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `事件生成成功：${data.title}`, request: meta.request, response: meta.response });
   return { ok: true, data };
 }
 
@@ -1017,14 +1226,14 @@ ${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。
     story: storyline?.title ?? '',
   });
   if (!result.ok) {
-    recordLlmLog({ kind: '角色事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
   const raw = result.raw;
   const scenes = Array.isArray(raw.scenes) ? raw.scenes.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 3) : [];
   if (scenes.length < 2) {
     const message = '事件场次不足，已改用模板。';
-    recordLlmLog({ kind: '角色事件', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色事件', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const data: GeneratedEvent = {
@@ -1043,7 +1252,7 @@ ${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。
       };
     }),
   };
-  recordLlmLog({ kind: '角色事件', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `事件生成成功：${data.title}`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '角色事件', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `事件生成成功：${data.title}`, request: meta.request, response: meta.response });
   return { ok: true, data };
 }
 
@@ -1089,7 +1298,7 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
     story: input.storylineTitle ?? '',
   });
   if (!result.ok) {
-    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
   const raw = result.raw;
@@ -1115,7 +1324,7 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
   const total = passages.reduce((sum, passage) => sum + passage.narration.length, 0);
   if (passages.length < 3 || total < 900) {
     const message = '剧情段落或字数不足，已改用模板剧情。';
-    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const data: GeneratedStoryArc = {
@@ -1124,7 +1333,7 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
     summary: typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary.trim().slice(0, 300) : passages.map(passage => passage.title).join(' · '),
     passages,
   };
-  recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `剧情生成成功：${data.title}（${total} 字 / ${passages.length} 段）`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情生成成功：${data.title}（${total} 字 / ${passages.length} 段）`, request: meta.request, response: meta.response });
   return { ok: true, data };
 }
 
@@ -1137,7 +1346,7 @@ export interface GeneratedOutfit {
 export async function generateOutfitDescription(config: LlmConfig, portrait: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedOutfit } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const body = `只输出一个 JSON 对象，不要 Markdown 代码块：
 {"name":"","description":""}
 要求：name 是 4–10 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 50–90 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。`;
@@ -1145,15 +1354,15 @@ export async function generateOutfitDescription(config: LlmConfig, portrait: str
   const result = outcome.result;
   if (!result.ok) {
     if (/image|vision|multimodal|图像|图片/i.test(result.message)) {
-      recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
       return { ok: false, message: `写描述失败：当前模型似乎不支持图像输入，请换用支持视觉的模型。原始错误：${result.message}` };
     }
-    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return { ok: false, message: `写描述失败：${result.message}` };
   }
   if (!outcome.raw) {
     const message = jsonFailureMessage('写描述失败：', outcome);
-    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const raw = outcome.raw;
@@ -1161,10 +1370,10 @@ export async function generateOutfitDescription(config: LlmConfig, portrait: str
   const description = typeof raw.description === 'string' ? raw.description.trim().slice(0, 160) : '';
   if (!name || !description) {
     const message = '模型没有给出可用的服装描述，可以重试一次。';
-    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '服装描述', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
-  recordLlmLog({ kind: '服装描述', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `服装词条：${name}`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '服装描述', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `服装词条：${name}`, request: meta.request, response: meta.response });
   return { ok: true, data: { name, description } };
 }
 
@@ -1182,7 +1391,7 @@ export async function generateWitchFormProfile(
 ): Promise<{ ok: true; data: GeneratedWitchForm } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const who = `她叫${input.girlName}${input.codename ? `（${input.codename}）` : ''}，原本的性格：${input.personality.trim() || '安静'}。${input.appearance ? `\n外貌：${input.appearance}` : ''}`;
   const body = `${who}
 只输出一个 JSON 对象，不要 Markdown 代码块：
@@ -1194,12 +1403,12 @@ export async function generateWitchFormProfile(
     const message = /image|vision|multimodal|图像|图片/i.test(result.message)
       ? `写魔女化形态失败：当前模型似乎不支持图像输入，请换用支持视觉的模型。原始错误：${result.message}`
       : `写魔女化形态失败：${result.message}`;
-    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   if (!outcome.raw) {
     const message = jsonFailureMessage('写魔女化形态失败：', outcome);
-    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const raw = outcome.raw;
@@ -1209,10 +1418,10 @@ export async function generateWitchFormProfile(
   const personality = pick('personality', 600);
   if (!description || !personality) {
     const message = '模型没有给出可用的形态描述或人格，可以重试一次。';
-    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '魔女化词条', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
-  recordLlmLog({ kind: '魔女化词条', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `魔女化形态：${name}`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '魔女化词条', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `魔女化形态：${name}`, request: meta.request, response: meta.response });
   return { ok: true, data: { name, description, personality } };
 }
 
@@ -1220,7 +1429,7 @@ export async function generateWitchFormProfile(
 export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const total = totalBattleRounds(battle);
   const cast = battleCast(battle);
   const castText = cast.length
@@ -1238,12 +1447,12 @@ ${castText}
     char: castText,
   }, 3600);
   if (!outcome.result.ok) {
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: outcome.result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: outcome.result.message, request: meta.request, response: meta.response });
     return { ok: false, message: `写札记失败：${outcome.result.message}` };
   }
   if (!outcome.raw) {
     const message = jsonFailureMessage('写札记失败：', outcome);
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const normalized = normalizeBattleNoteDraft(outcome.raw);
@@ -1257,23 +1466,23 @@ ${castText}
     }, 3600);
     source = repaired;
     if (!repaired.result.ok) {
-      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: config.endpoint, message: repaired.result.message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: repaired.result.message, request: meta.request, response: meta.response });
       return { ok: false, message: `札记未通过校验，修复请求失败：${repaired.result.message}` };
     }
     if (!repaired.raw) {
       const message = jsonFailureMessage('札记未通过校验，且修复输出无法解析。', repaired);
-      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
       return { ok: false, message };
     }
     validation = validateBattleNoteDraft(normalizeBattleNoteDraft(repaired.raw), battle, { createdAt: new Date().toISOString(), model: config.model.trim(), presetId: preset?.id });
   }
   if (!validation.ok || !validation.note) {
     const message = `札记未通过校验：${validation.errors.join('；')}`;
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: config.endpoint, message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const note = validation.note;
-  recordLlmLog({ kind: '战斗札记', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: config.endpoint, message: `战斗札记：${battle.missionTitle}（${note.charCount} 字，${source.attempts} 次请求）`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '战斗札记', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `战斗札记：${battle.missionTitle}（${note.charCount} 字，${source.attempts} 次请求）`, request: meta.request, response: meta.response });
   return { ok: true, data: note };
 }
 
@@ -1284,7 +1493,7 @@ export interface GeneratedGirlProfile {
 }
 
 async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
-  if (!hasCredentials(resolvePresetConfig(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const skillList = skills.filter(s => s.school !== 'monster').map(s => `${s.id}(${s.name})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
@@ -1338,7 +1547,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
 }
 
 import {
-  applyFormat, applyRegexScripts, applyRegexToMessages, composeTaskSystem, promptTokens, resolvePresetConfig, resolvePresetWorld, type PresetRuntime, type PromptScope,
+  applyFormat, applyRegexScripts, applyRegexToMessages, composeTaskSystem, presetRuntime, promptTokens, resolvePresetWorld, type ChatPreset, type PresetRuntime, type PromptScope,
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';

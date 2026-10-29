@@ -20,7 +20,7 @@ import { effectText, skills, getSkill, findSkill } from '../src/content/skills.t
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
-import { initiativeOf, simulateBattle } from '../src/combat.ts';
+import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, simulateBattle, skillAccuracy } from '../src/combat.ts';
 import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
@@ -31,7 +31,7 @@ import { POLLUTION_MAX, POLLUTION_MIN, clampPollution, cityAveragePollution, dir
 import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
 import { DEFAULT_OFFICE_PROFILE, OFFICE_LIMITS, OFFICE_WORLDBOOK_ID, officeWorldbookContent, representativeOf, sanitizeOfficeProfile } from '../src/office.ts';
 import type { DistrictId } from '../src/districts.ts';
-import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, StoryGraph, Storyline } from '../src/types.ts';
+import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
@@ -891,6 +891,86 @@ test('契约卡可导出、校验并重新导入候选名册', () => {
   assert.equal(act({ ...base, poolLimits: { ...base.poolLimits, candidates: 1 } }, { type: 'importCard', card: parsed.card }).ok, false);
 });
 
+test('契约卡导入按卡片保留出身，旧卡按名字确定性补齐', () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  for (const tag of ['association', 'government', 'witch', 'none'] as const) {
+    const parsed = parseGirlCard(JSON.stringify(buildGirlCard({ ...yue, factionTag: tag }, base)));
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    assert.equal(parsed.card.girl.factionTag, tag);
+    const imported = act(base, { type: 'importCard', card: parsed.card });
+    assert.equal(imported.ok, true);
+    assert.equal(imported.state.candidates.at(-1)?.factionTag, tag, `导入后被改成了别的出身：${tag}`);
+  }
+  // 旧卡片没写出身：按名字补齐，和导入次数、候选 id 都无关。
+  const legacyCard = buildGirlCard(yue, base);
+  delete (legacyCard.girl as { factionTag?: string }).factionTag;
+  const legacy = parseGirlCard(JSON.stringify(legacyCard));
+  assert.equal(legacy.ok, true);
+  if (!legacy.ok) return;
+  const expected = factionTagFor('月见桃');
+  assert.equal(legacy.card.girl.factionTag, expected);
+  const once = act(base, { type: 'importCard', card: legacy.card });
+  assert.equal(once.state.candidates.at(-1)?.factionTag, expected);
+  // 已经废弃的 'office' 出身不该被当成合法值带进来。
+  const stale = parseGirlCard(JSON.stringify({ ...buildGirlCard(yue, base), girl: { ...buildGirlCard(yue, base).girl, factionTag: 'office' } }));
+  assert.equal(stale.ok, true);
+  if (!stale.ok) return;
+  assert.equal(isGirlFaction(stale.card.girl.factionTag), true);
+  assert.notEqual(stale.card.girl.factionTag, 'office' as never);
+});
+
+test('自定义特性的契约卡：带定义能还原，只有 id 时跳过而不再整卡失败', () => {
+  const base = createInitialState();
+  const yue = base.girls.find(girl => girl.id === 'yue')!;
+  const custom = { id: 'custom-trait-abc123', name: '夜里不睡', polarity: 'neutral' as const, tags: ['自定义'], description: '越晚越清醒。' };
+  const card = buildGirlCard({ ...yue, traits: [...yue.traits, custom] }, base);
+  assert.equal(card.girl.traitIds.includes('custom-trait-abc123'), true);
+  assert.equal(card.girl.traits?.some(trait => trait.id === 'custom-trait-abc123'), true);
+
+  const parsed = parseGirlCard(JSON.stringify(card));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.card.girl.traits?.map(trait => trait.name), [...yue.traits.map(trait => trait.name), '夜里不睡']);
+
+  const imported = act(base, { type: 'importCard', card: parsed.card });
+  assert.equal(imported.ok, true);
+  const brought = imported.state.candidates.at(-1)!;
+  assert.deepEqual(brought.traits.map(trait => trait.name), [...yue.traits.map(trait => trait.name), '夜里不睡']);
+  assert.equal(brought.traits.at(-1)?.polarity, 'neutral');
+  assert.deepEqual(brought.traits.at(-1)?.tags, ['自定义']);
+
+  // 旧卡：只有 id，没有定义——跳过未知特性，其余照常导入。
+  const legacy = parseGirlCard(JSON.stringify({ ...card, girl: { ...card.girl, traits: undefined } }));
+  assert.equal(legacy.ok, true);
+  if (!legacy.ok) return;
+  assert.equal(legacy.card.girl.traitIds.includes('custom-trait-abc123'), false);
+  assert.equal(legacy.card.girl.traitIds.length, yue.traits.length);
+  assert.equal(legacy.card.girl.skippedTraits, 1);
+  const legacyImport = act(base, { type: 'importCard', card: legacy.card });
+  assert.equal(legacyImport.ok, true);
+  assert.equal(legacyImport.message.includes('没能随卡片带来'), true);
+
+  // 目录 id、重复 id、未知 id 混在一起时，只保留能解析的。
+  const mixed = parseGirlCard(JSON.stringify({
+    ...card,
+    girl: { ...card.girl, traitIds: ['cat-sense', 'ghost-trait', 'cat-sense', 'nope'], traits: [{ id: 'ghost-trait', name: '幽灵', polarity: 'weird', tags: [], description: '' }] },
+  }));
+  assert.equal(mixed.ok, true);
+  if (!mixed.ok) return;
+  assert.deepEqual(mixed.card.girl.traitIds, ['cat-sense', 'ghost-trait']);
+  assert.equal(mixed.card.girl.traits?.[1]?.polarity, 'neutral');
+  assert.deepEqual(mixed.card.girl.traits?.[1]?.tags, ['自定义']);
+  assert.equal(mixed.card.girl.traits?.[1]?.description, '从契约卡带来的特性。');
+
+  // 超过六条只保留前六条。
+  const many = parseGirlCard(JSON.stringify({ ...card, girl: { ...card.girl, traits: undefined, traitIds: ['cat-sense', 'quiet', 'loyal', 'curious', 'talkative', 'night-owl', 'grudge'] } }));
+  assert.equal(many.ok, true);
+  if (!many.ok) return;
+  assert.equal(many.card.girl.traitIds.length, 6);
+});
+
 test('表情差分按服装保存，支持批量、删除、候补与契约卡往返', () => {
   const base = createInitialState();
   const yue = base.girls.find(girl => girl.id === 'yue')!;
@@ -1094,6 +1174,9 @@ test('九个辖区按 city.svg 地形覆盖全城，坐标归入正确辖区', (
 
 test('辖区环境影响委托目标、报酬与截止时间', () => {
   const state = createInitialState();
+  // 辖区归属是按内容包哈希洗出来的，改了技能或魔物就会换一轮当主。这里直接钉死两个辖区
+  // 的当主，让期望值只考验「地形 + 当主 + 污染」三层叠加本身。
+  state.territories = { ...state.territories, cathedral: 'witch', candy: 'witch' };
   const base: Mission = {
     id: 'probe', title: '测试信号', category: '调查', description: '', x: 76, y: 62,
     difficulty: '★★', duration: 30, reward: 1000, requirement: 'insight', target: 100,
@@ -3411,4 +3494,41 @@ test('v19 净化的疲劳只算一次：有快照就不再叠加地形那份', (
   const legacyDelta = settled.state.girls.find(girl => girl.id === 'yue')!.fatigue - before;
   assert.notEqual(legacyDelta, plain, '没有快照的旧委托走回退路径，两次地形效果会叠加');
   assert.equal(clampPollution(0), POLLUTION_MIN);
+});
+
+test('命中率按目标数推导：1 到 6 目标逐级下降', () => {
+  assert.equal(defaultSkillAccuracy(1), 50);
+  assert.equal(defaultSkillAccuracy(2), 44);
+  assert.equal(defaultSkillAccuracy(3), 38);
+  assert.equal(defaultSkillAccuracy(4), 32);
+  assert.equal(defaultSkillAccuracy(5), 26);
+  assert.equal(defaultSkillAccuracy(6), 20);
+  assert.equal(defaultSkillAccuracy(0), 50, '0 个目标按单体算');
+  assert.equal(defaultSkillAccuracy(12), 20, '超过 6 个目标按 6 个算，最低 20');
+});
+
+test('显式 accuracy 优先，并夹在 20–95 之间', () => {
+  const base: Skill = { ...getSkill('glimmer-spear'), accuracy: 88 };
+  assert.equal(skillAccuracy(base), 88);
+  assert.equal(skillAccuracy({ ...base, accuracy: 5 }), 20);
+  assert.equal(skillAccuracy({ ...base, accuracy: 200 }), 95);
+  const derived = { ...base, accuracy: undefined, targets: 6 };
+  assert.equal(skillAccuracy(derived), 20);
+});
+
+test('技能池守则：群体写满 6 目标、倍率摊薄，奥义最多 3 个目标', () => {
+  for (const skill of skills) {
+    assert.ok(skill.targets >= 1 && skill.targets <= MAX_SKILL_TARGETS, `${skill.id} 的目标数 ${skill.targets} 越界`);
+    if (skill.targets >= 4) assert.ok(skill.power <= 0.6, `${skill.id} 打 ${skill.targets} 个目标却还有 ${skill.power} 倍率`);
+    if (skill.tier === 'ultimate') assert.ok(skill.targets <= 3, `${skill.id} 是奥义却有 ${skill.targets} 个目标`);
+  }
+  assert.ok(skills.some(skill => skill.targets === MAX_SKILL_TARGETS), '池子里至少要有一条写满 6 目标的群体技能');
+});
+
+test('委托里的魔物超过 6 只会被夹到 6 只', () => {
+  const state = createInitialState();
+  const crowd = ['night-tram', 'echo-cat', 'mirror-nun', 'hollow-moon', 'sugar-moth', 'candy-king', 'mirror-nun', 'echo-cat'];
+  const mission = annotateMission(state, { ...state.missions[0], id: 'cap-mission', work: 'combat', enemyIds: crowd });
+  assert.equal(mission.enemyIds?.length, MAX_ENEMIES);
+  assert.deepEqual(mission.enemyIds, crowd.slice(0, MAX_ENEMIES));
 });
