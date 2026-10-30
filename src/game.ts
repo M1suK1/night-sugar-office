@@ -1,5 +1,5 @@
 import { applyResignationChoice, applyResignations, tickStrain } from './resignations.ts';
-import type { ActionResult, BattleNote, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack } from './types';
+import type { ActionResult, BattleNote, FactionGirl, FactionLeader, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { cardboxReport } from './cardbox.ts';
@@ -168,31 +168,103 @@ type GirlInput = Omit<Girl, 'factionTag'> & { factionTag?: GirlFaction | string 
 /** 雇佣覆灭势力的首领：一次性星砂。 */
 const LEADER_HIRE_COST = 12000;
 
-/** 校验并规整三方阵容；不合法时返回 null（调用方拒绝动作）。 */
-function sanitizeFactionRoster(input: unknown): Record<FactionId, FactionRoster> | null {
+/** 自定义少女的数字字段兜底，避免卡片里的脏数据流进战斗。 */
+function clampStat(value: unknown, fallback = 50): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : fallback;
+  return Math.max(1, Math.min(200, n));
+}
+function sanitizeSubjectStats(raw: unknown): Record<StatKey, number> {
+  const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const stats = {} as Record<StatKey, number>;
+  for (const key of ['magic', 'insight', 'agility', 'empathy'] as StatKey[]) stats[key] = clampStat(src[key]);
+  return stats;
+}
+/** 把 UI 交上来的自定义首领快照清洗成可信数据；阵营与 id 必须与名册一致。 */
+function sanitizeCustomLeader(input: unknown, faction: FactionId, id: string): FactionLeader | null {
+  if (!input || typeof input !== 'object') return null;
+  const src = input as Partial<FactionLeader>;
+  const name = typeof src.name === 'string' ? src.name.trim().slice(0, 40) : '';
+  if (!name) return null;
+  return {
+    id, faction, name,
+    title: typeof src.title === 'string' && src.title.trim() ? src.title.trim().slice(0, 30) : '外来者',
+    portrait: typeof src.portrait === 'string' ? src.portrait : '',
+    portraitSpec: src.portraitSpec,
+    color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
+    quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
+    note: '由事务所编入名册的少女。',
+    level: Math.max(1, Math.min(20, Math.round(typeof src.level === 'number' ? src.level : 1))),
+    stats: sanitizeSubjectStats(src.stats),
+    skillIds: Array.isArray(src.skillIds) ? src.skillIds.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
+    archetype: src.archetype ?? '输出',
+    origin: faction,
+    titles: { association: '', government: '', witch: '', ...(src.titles ?? {}) },
+    duty: src.duty ?? { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
+  };
+}
+/** 同上，随从版本。 */
+function sanitizeCustomGirl(input: unknown, faction: FactionId, id: string): FactionGirl | null {
+  if (!input || typeof input !== 'object') return null;
+  const src = input as Partial<FactionGirl>;
+  const name = typeof src.name === 'string' ? src.name.trim().slice(0, 40) : '';
+  if (!name) return null;
+  return {
+    id, faction, name,
+    codename: typeof src.codename === 'string' && src.codename.trim() ? src.codename.trim().slice(0, 20) : name,
+    title: typeof src.title === 'string' && src.title.trim() ? src.title.trim().slice(0, 30) : '外来者',
+    portrait: typeof src.portrait === 'string' ? src.portrait : '',
+    portraitSpec: src.portraitSpec,
+    color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
+    level: Math.max(1, Math.min(20, Math.round(typeof src.level === 'number' ? src.level : 1))),
+    stats: sanitizeSubjectStats(src.stats),
+    skills: Array.isArray(src.skills) ? src.skills.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
+    tag: faction,
+    quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
+    note: '由事务所编入名册的少女。',
+  };
+}
+
+/**
+ * 校验并规整三方阵容；不合法时返回 null（调用方拒绝动作）。
+ *
+ * 首领与随从都可以是原属成员，也可以是玩家自己带来的自定义少女：静态名册与
+ * `customLeaders` / `customGirls` 快照合起来算作可选池。
+ */
+function sanitizeFactionRoster(
+  input: unknown,
+  customLeaders: FactionLeader[] = [],
+  customGirls: FactionGirl[] = [],
+): { roster: Record<FactionId, FactionRoster>; leaders: FactionLeader[]; girls: FactionGirl[] } | null {
   if (!input || typeof input !== 'object') return null;
   const raw = input as Partial<Record<FactionId, { leaderId?: unknown; memberIds?: unknown }>>;
+  const leaderSource = new Map(customLeaders.map(leader => [leader.id, leader]));
+  const girlSource = new Map(customGirls.map(girl => [girl.id, girl]));
   const leaders = new Set<string>();
   const members = new Set<string>();
   const roster = {} as Record<FactionId, FactionRoster>;
-  let total = 0;
+  const usedLeaders: FactionLeader[] = [];
+  const usedGirls: FactionGirl[] = [];
   for (const faction of FACTION_ORDER) {
     const entry = raw[faction];
     const leaderId = typeof entry?.leaderId === 'string' ? entry.leaderId : '';
-    if (!leaderById(leaderId) || leaders.has(leaderId)) return null;
+    const customLeader = leaderSource.get(leaderId);
+    if (!leaderById(leaderId) && !customLeader) return null;
+    if (leaders.has(leaderId) || members.has(leaderId)) return null;
     leaders.add(leaderId);
+    if (customLeader) usedLeaders.push({ ...customLeader, faction });
     const ids = Array.isArray(entry?.memberIds) ? entry!.memberIds.filter((id): id is string => typeof id === 'string') : [];
     const unique = [...new Set(ids)];
     if (unique.length < 1 || unique.length > 4) return null;
     for (const id of unique) {
-      if (!factionGirls.some(girl => girl.id === id) || members.has(id)) return null;
+      const customGirl = girlSource.get(id);
+      if (!factionGirls.some(girl => girl.id === id) && !customGirl) return null;
+      if (members.has(id) || leaders.has(id)) return null;
       members.add(id);
+      if (customGirl) usedGirls.push({ ...customGirl, faction });
     }
-    total += unique.length;
     roster[faction] = { leaderId, memberIds: unique };
   }
-  if (total !== factionGirls.length) return null;
-  return roster;
+  return { roster, leaders: usedLeaders, girls: usedGirls };
 }
 
 /** 没被开局选中的候选：契约卡来的留在市场，事务所原班人马直接退场。 */
@@ -1663,6 +1735,8 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     version: 16, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     prologueSeen: false,
     factionRoster: defaultFactionRoster(),
+    customFactionLeaders: [],
+    customFactionGirls: [],
     startersPicked: false,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
@@ -1689,6 +1763,8 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     version: 16, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     prologueSeen: false,
     factionRoster: defaultFactionRoster(),
+    customFactionLeaders: [],
+    customFactionGirls: [],
     startersPicked: false,
     girls: [], candidates: [], missions: [], completed: [],
     rooms: [{ id: 'lounge', name: '会客厅', type: 'lounge', level: 1, capacity: 0, description: '刚租下的会客厅，只有一张桌子、一盏灯和一把多余的椅子。' }],
@@ -2533,22 +2609,44 @@ export function act(state: GameState, action: GameAction): ActionResult {
         ...state.girls.filter(girl => !girl.retired).map(girl => girl.id),
       ]);
       if (ids.some(id => !pool.has(id))) return { state, ok: false, message: '有一位少女不在候选里。' };
-      const roster = sanitizeFactionRoster(action.roster);
-      if (!roster) return { state, ok: false, message: '三方阵容不合法：每方 1 位首领、1–4 位随从。' };
+      const rawLeaders = Array.isArray(action.customLeaders) ? action.customLeaders : [];
+      const rawGirls = Array.isArray(action.customGirls) ? action.customGirls : [];
+      const pickFaction = (value: unknown): FactionId | undefined => FACTION_ORDER.find(faction => faction === value);
+      const pickId = (value: unknown): string => (typeof value === 'string' ? value.trim().slice(0, 64) : '');
+      const customLeaders = rawLeaders
+        .map(raw => {
+          const faction = pickFaction((raw as FactionLeader | undefined)?.faction);
+          const id = pickId((raw as FactionLeader | undefined)?.id);
+          return faction && id ? sanitizeCustomLeader(raw, faction, id) : null;
+        })
+        .filter((leader): leader is FactionLeader => Boolean(leader));
+      const customGirls = rawGirls
+        .map(raw => {
+          const faction = pickFaction((raw as FactionGirl | undefined)?.faction);
+          const id = pickId((raw as FactionGirl | undefined)?.id);
+          return faction && id ? sanitizeCustomGirl(raw, faction, id) : null;
+        })
+        .filter((girl): girl is FactionGirl => Boolean(girl));
+      const parsed = sanitizeFactionRoster(action.roster, customLeaders, customGirls);
+      if (!parsed) return { state, ok: false, message: '三方阵容不合法：每方 1 位首领、1–4 位随从，同一个人不能占两个位置。' };
+      const roster = parsed.roster;
       const drafted = ids.map(id => {
         const existing = [...state.candidates, ...state.girls].find(girl => girl.id === id);
         return existing;
       }).filter((girl): girl is Girl => Boolean(girl));
       if (drafted.length !== ids.length) return { state, ok: false, message: '有一位少女不在候选里。' };
-      const rosterGirlIds = new Set(FACTION_ORDER.flatMap(faction => roster[faction].memberIds));
-      if (drafted.some(girl => rosterGirlIds.has(girl.id))) return { state, ok: false, message: '已经进入名册的少女不能再进势力阵容。' };
+      const rostered = new Set(FACTION_ORDER.flatMap(faction => [roster[faction].leaderId, ...roster[faction].memberIds]));
+      if (drafted.some(girl => rostered.has(girl.id))) return { state, ok: false, message: '已经进入名册的少女不能再进事务所名册。' };
       const next = clone(state);
       const starters = drafted.map(girl => hydrate({ ...girl, candidateUntilDay: 0, status: 'idle', remaining: 0, roomId: 'lounge' }));
       const starterIds = new Set(starters.map(girl => girl.id));
       // 没被选中的原班人马直接离开事务所，不回市场。
       next.girls = starters;
-      next.candidates = next.candidates.filter(girl => !starterIds.has(girl.id) && starterKeepInPool(girl));
+      // 被编进势力的自定义少女是势力的人，不再留在候选池里等我们雇佣。
+      next.candidates = next.candidates.filter(girl => !starterIds.has(girl.id) && !rostered.has(girl.id) && starterKeepInPool(girl));
       next.factionRoster = roster;
+      next.customFactionLeaders = parsed.leaders;
+      next.customFactionGirls = parsed.girls;
       next.startersPicked = true;
       next.logs.unshift({ id: `log-starters-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `开局编成完成：${starters.length} 位契约少女，三方阵容已定。` });
       return { state: next, ok: true, message: '编成已确认。' };
@@ -3023,7 +3121,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       }
       const girl = hydrate({
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
-        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
+        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: 1800 + Math.max(0, sum - 260) * 40 + extra,
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
@@ -3045,7 +3143,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       const parsed = parseExpressionVariantKey(action.key);
       if (!parsed) return { state, ok: false, message: '表情差分的服装或表情无法识别。' };
-      if (!isExpressionVariantData(action.dataUrl)) return { state, ok: false, message: '差分需要是 1.6MB 以内的图片。' };
+      if (!isExpressionVariantData(action.dataUrl)) return { state, ok: false, message: '差分需要是 8MB 以内的图片。' };
       if (!girl.importedVariants) girl.importedVariants = {};
       const usedForOutfit = Object.keys(girl.importedVariants).filter(key => parseExpressionVariantKey(key)?.outfitId === parsed.outfitId).length;
       if (!girl.importedVariants[action.key] && usedForOutfit >= EXPRESSION_VARIANT_LIMIT) return { state, ok: false, message: `这套服装最多保存 ${EXPRESSION_VARIANT_LIMIT} 张表情差分，请先删除旧图。` };
@@ -3060,7 +3158,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const staged = { ...(girl.importedVariants ?? {}) };
       for (const [key, dataUrl] of entries) {
         if (!parseExpressionVariantKey(key)) return { state, ok: false, message: `无法识别差分键「${key}」。` };
-        if (!isExpressionVariantData(dataUrl)) return { state, ok: false, message: '差分需要是 1.6MB 以内的图片。' };
+        if (!isExpressionVariantData(dataUrl)) return { state, ok: false, message: '差分需要是 8MB 以内的图片。' };
         staged[key] = dataUrl;
       }
       const perOutfit = new Map<string, number>();
@@ -3572,7 +3670,27 @@ export function loadState(raw: string | null): GameState {
     // 老存档不该被开场打断：只有本版之后新建的档才可能没看过。
     state.prologueSeen = previousVersion >= 15 ? value.prologueSeen !== false : true;
     // 阵容：老存档直接沿用静态名册，编成保持“已完成”，不再逼老玩家重选。
-    state.factionRoster = sanitizeFactionRoster(state.factionRoster) ?? defaultFactionRoster();
+    const savedCustom = value as Partial<GameState>;
+    const rawCustomLeaders: FactionLeader[] = Array.isArray(savedCustom.customFactionLeaders) ? savedCustom.customFactionLeaders : [];
+    const rawCustomGirls: FactionGirl[] = Array.isArray(savedCustom.customFactionGirls) ? savedCustom.customFactionGirls : [];
+    state.customFactionLeaders = rawCustomLeaders
+      .map(raw => {
+        const faction = FACTION_ORDER.find(f => f === raw?.faction);
+        const id = typeof raw?.id === 'string' ? raw.id : '';
+        return faction && id ? sanitizeCustomLeader(raw, faction, id) : null;
+      })
+      .filter((leader): leader is FactionLeader => Boolean(leader));
+    state.customFactionGirls = rawCustomGirls
+      .map(raw => {
+        const faction = FACTION_ORDER.find(f => f === raw?.faction);
+        const id = typeof raw?.id === 'string' ? raw.id : '';
+        return faction && id ? sanitizeCustomGirl(raw, faction, id) : null;
+      })
+      .filter((girl): girl is FactionGirl => Boolean(girl));
+    const loadedRoster = sanitizeFactionRoster(state.factionRoster, state.customFactionLeaders, state.customFactionGirls);
+    state.factionRoster = loadedRoster?.roster ?? defaultFactionRoster();
+    state.customFactionLeaders = loadedRoster?.leaders ?? [];
+    state.customFactionGirls = loadedRoster?.girls ?? [];
     state.startersPicked = previousVersion >= 16 ? value.startersPicked === true : true;
     const rawHostility = (state.hostility ?? {}) as Partial<Record<FactionPair, HostilityTrack>>;
     state.hostility = HOSTILITY_PAIRS.reduce((map, pair) => {

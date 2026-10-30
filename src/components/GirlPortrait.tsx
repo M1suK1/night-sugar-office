@@ -17,6 +17,8 @@ export interface PortraitSubject {
   witchForm?: Outfit;
   portraitSpec?: PortraitSpec;
   importedVariants?: Record<string, string>;
+  /** 原图的取景：与导入时的拖动/缩放一致。 */
+  portraitCrop?: { zoom: number; x: number; y: number };
 }
 
 const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: string }> = {
@@ -27,6 +29,15 @@ const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: st
   angry: { open: 0.85, tilt: -5, mouth: 'M-9 4 L9 1' },
   shy: { open: 0.55, tilt: -1, mouth: 'M-8 2 Q0 7 8 2' },
 };
+
+/** 取景只在显示层做：存的是原图，4:5 由容器 + object-fit 裁出来。 */
+function cropStyle(crop?: { zoom: number; x: number; y: number }) {
+  if (!crop) return undefined;
+  const zoom = Math.max(1, Math.min(4, crop.zoom || 1));
+  const y = Math.max(-100, Math.min(100, crop.y || 0));
+  const x = Math.max(-100, Math.min(100, crop.x || 0));
+  return { objectPosition: `${50 - x / 2}% ${50 - y / 2}%`, transform: zoom === 1 ? undefined : `scale(${zoom})` } as const;
+}
 
 export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: PortraitSubject; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
   const id = useId().replace(/:/g, '');
@@ -54,7 +65,11 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
         data-expression={expression}
         data-expression-variant={activeVariant ? expression : undefined}
       >
-        <img src={shownPortrait} alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`} />
+        <img
+          src={shownPortrait}
+          alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`}
+          style={cropStyle(activeVariant ? undefined : girl.portraitCrop)}
+        />
       </span>
     );
   }

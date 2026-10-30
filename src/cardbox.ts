@@ -1,10 +1,18 @@
 import type { GirlCard, GirlFaction } from './types.ts';
 import { girlCardHash, parseGirlCard } from './cards.ts';
+import { kvGet, kvSet } from './store.ts';
 
 /** 卡库是玩家的文件柜：不进存档，重置进度也不该把卡扔掉。 */
 export const CARD_BOX_KEY = 'night-sugar:cardbox:v1';
 export const CARD_BOX_LIMIT = 60;
-export const CARD_BOX_MAX_BYTES = 256 * 1024;
+/**
+ * 单张卡的兜底上限。
+ *
+ * 这里只拦「明显不是契约卡」的文件：带立绘的卡通常在 1–3 MB（立绘是 base64），
+ * 256KB 那种老阈值会把正常的卡全挡在门外。真正的容量约束是 localStorage 配额，
+ * 由 `saveCardBox` 的返回值兜底，写不进去就回滚并报出来。
+ */
+export const CARD_BOX_MAX_BYTES = 24 * 1024 * 1024;
 
 export interface CardBoxEntry {
   hash: string;
@@ -29,7 +37,15 @@ export function cardBoxTagLabel(tag: GirlFaction): string {
 }
 
 export function cardBoxByteSize(text: string): number {
-  return text.length * 2;
+  if (typeof TextEncoder === 'undefined') return text.length * 2;
+  return new TextEncoder().encode(text).length;
+}
+
+/** 给人看的大小：1023B / 24KB / 3.4MB。 */
+export function formatByteSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${bytes}B`;
 }
 
 function entryOf(card: GirlCard, fileName: string, raw: string): CardBoxEntry {
@@ -45,13 +61,9 @@ function entryOf(card: GirlCard, fileName: string, raw: string): CardBoxEntry {
   };
 }
 
-/** 读坏了就当空库——卡库丢了比整个游戏打不开好。 */
-export function loadCardBox(): CardBoxEntry[] {
+function normalizeCardBox(parsed: unknown): CardBoxEntry[] {
+  if (!Array.isArray(parsed)) return [];
   try {
-    const raw = globalThis.localStorage?.getItem(CARD_BOX_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
     return parsed.filter((row): row is CardBoxEntry => {
       if (!row || typeof row !== 'object') return false;
       const entry = row as Partial<CardBoxEntry>;
@@ -69,26 +81,37 @@ export function loadCardBox(): CardBoxEntry[] {
   }
 }
 
-export function saveCardBox(entries: CardBoxEntry[]): void {
+/** 读坏了就当空库——卡库丢了比整个游戏打不开好。 */
+export async function loadCardBox(): Promise<CardBoxEntry[]> {
   try {
-    globalThis.localStorage?.setItem(CARD_BOX_KEY, JSON.stringify(entries.slice(0, CARD_BOX_LIMIT)));
+    return normalizeCardBox(await kvGet<unknown>(CARD_BOX_KEY));
   } catch {
-    /* 配额满了就静默失败：卡还在内存里，至少这次能导入 */
+    return [];
+  }
+}
+
+/** 写不进去（空间不足 / 隐私模式）时返回 `false`，由调用方回滚并提示。 */
+export async function saveCardBox(entries: CardBoxEntry[]): Promise<boolean> {
+  try {
+    await kvSet(CARD_BOX_KEY, entries.slice(0, CARD_BOX_LIMIT));
+    return true;
+  } catch {
+    return false;
   }
 }
 
 /**
  * 批量收卡：坏卡只记一条失败，不牵连同批的其它卡；同 hash 只提示重复，不覆盖已有的文件名。
  */
-export function cardboxAdd(
+export async function cardboxAdd(
   inputs: { name: string; text: string }[],
-  existing: CardBoxEntry[] = loadCardBox(),
-): {
+  existing: CardBoxEntry[],
+): Promise<{
   entries: CardBoxEntry[];
   added: CardBoxEntry[];
   duplicates: string[];
   failed: { name: string; message: string }[];
-} {
+}> {
   const entries = [...existing];
   const added: CardBoxEntry[] = [];
   const duplicates: string[] = [];
@@ -96,8 +119,9 @@ export function cardboxAdd(
   const seen = new Set(entries.map(entry => entry.hash));
 
   for (const input of inputs) {
-    if (cardBoxByteSize(input.text) > CARD_BOX_MAX_BYTES) {
-      failed.push({ name: input.name, message: '文件超过 256KB，可能不是契约卡' });
+    const size = cardBoxByteSize(input.text);
+    if (size > CARD_BOX_MAX_BYTES) {
+      failed.push({ name: input.name, message: `文件 ${formatByteSize(size)}，超过 ${formatByteSize(CARD_BOX_MAX_BYTES)}，可能不是契约卡` });
       continue;
     }
     const parsed = parseGirlCard(input.text);
@@ -120,14 +144,25 @@ export function cardboxAdd(
     added.push(entry);
   }
 
-  if (added.length) saveCardBox(entries);
+  if (added.length && !(await saveCardBox(entries))) {
+    // 配额放不下：整批回滚，别让界面显示「已导入」而刷新后全没。
+    const kept = entries.filter(entry => !added.some(row => row.hash === entry.hash));
+    await saveCardBox(kept);
+    for (const entry of added) {
+      failed.push({
+        name: entry.fileName,
+        message: `卡库放不下这张卡（约 ${formatByteSize(cardBoxByteSize(entry.raw))}）：先删几张旧卡，或直接用「导入角色卡」把它编进名册`,
+      });
+    }
+    return { entries: kept, added: [], duplicates, failed };
+  }
   return { entries, added, duplicates, failed };
 }
 
-export function cardboxRemove(hashes: string[], entries: CardBoxEntry[] = loadCardBox()): CardBoxEntry[] {
+export async function cardboxRemove(hashes: string[], entries: CardBoxEntry[]): Promise<CardBoxEntry[]> {
   const drop = new Set(hashes);
   const kept = entries.filter(entry => !drop.has(entry.hash));
-  saveCardBox(kept);
+  await saveCardBox(kept);
   return kept;
 }
 

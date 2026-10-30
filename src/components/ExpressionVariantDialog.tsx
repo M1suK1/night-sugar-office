@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Check, ImagePlus, Info, Loader2, Shirt, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { Expression, Girl } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionFromFileName, expressionOutfits, expressionVariantKey } from '../expressions';
-import { resizeImageFile } from '../image';
+import { originalImageDataUrl } from '../image';
 import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -33,7 +33,7 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
     if (!file.type.startsWith('image/')) { setNote({ ok: false, text: '请选择 PNG、JPG 或 WebP 图片。' }); return; }
     setBusy(expression);
     try {
-      const dataUrl = await resizeImageFile(file);
+      const dataUrl = await originalImageDataUrl(file);
       const key = expressionVariantKey(activeOutfitId, expression);
       const ok = onSave(key, dataUrl);
       setNote({ ok, text: ok ? `「${EXPRESSION_META[expression].label}」表情差分已保存到这套服装。` : '这张差分没有保存成功，请检查存档空间。' });
@@ -54,7 +54,7 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
         const expression = expressionFromFileName(file.name);
         if (!file.type.startsWith('image/') || !expression) { skipped.push(file.name); continue; }
         try {
-          variants[expressionVariantKey(activeOutfitId, expression)] = await resizeImageFile(file);
+          variants[expressionVariantKey(activeOutfitId, expression)] = await originalImageDataUrl(file);
         } catch {
           skipped.push(file.name);
         }

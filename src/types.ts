@@ -58,6 +58,16 @@ export interface FactionFront {
   battleId?: string;
 }
 
+/**
+ * 立绘在 IndexedDB `assets` 表里的键。
+ *
+ * 存进去的是**原始字节**（PNG 还是 PNG、1024 还是 1024），不再重编码。`state` 里只留这个键，
+ * 所以存档体积与立绘数量解耦。
+ */
+export type AssetId = string;
+/** 4:5 容器里的取景：缩放倍数与平移百分比，与立绘裁剪界面同一套手感。 */
+export interface CropBox { zoom: number; x: number; y: number }
+
 export interface OfficeProfile {
   background: string;
   philosophy: string;
@@ -117,6 +127,9 @@ export interface Outfit {
   form?: OutfitForm;
   /** 这套衣服专属的立绘（data URL）。有它就不再走程序化立绘。 */
   portrait?: string;
+  /** 立绘的 assets 键（原字节）；新数据只写这个。 */
+  portraitAsset?: AssetId;
+  portraitCrop?: CropBox;
   /** 与立绘同批生成的外形规格，用于头像/详情页。 */
   portraitSpec?: PortraitSpec;
   /** 来自角色卡或衣柜包，导出时原样带走。 */
@@ -147,7 +160,7 @@ export interface GirlDraft {
   color: string; quote: string; goal: string;
   appearance: string; personality: string; outfitDescription: string;
   stats: Record<StatKey, number>; skillIds: string[]; traits: DraftTrait[];
-  portrait?: string; appearanceSpec?: PortraitSpec; portraitHint?: string;
+  portrait?: string; portraitCrop?: CropBox; appearanceSpec?: PortraitSpec; portraitHint?: string;
   wardrobe?: Outfit[]; outfitId?: string; importedVariants?: Record<string, string>; witchForm?: Outfit;
   /** 出身；留空时由名字确定性生成。 */
   factionTag?: GirlFaction;
@@ -571,6 +584,10 @@ export interface Girl {
   stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string;
   skill: string; skills: string[]; description: string; cost: number;
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
+  /** 立绘的 assets 键；有它就不必再背 dataURL。 */
+  portraitAsset?: AssetId;
+  /** 显示取景，缺省居中、zoom 1。 */
+  portraitCrop?: CropBox;
   retired?: boolean; dead?: boolean; diedAt?: string; archetype?: Archetype; quote?: string;
   lastTalkDay?: number; talksToday?: number;
   goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[]; storyPlan?: StoryPlan;
@@ -818,6 +835,10 @@ export interface GameState {
   prologueSeen: boolean;
   /** 三方阵容：每方现任首领与随从，开局编成时确定。 */
   factionRoster: Record<FactionId, FactionRoster>;
+  /** 被编进势力的自定义首领快照；与 `factionRoster` 只存 id 相对，这里存全量数据。 */
+  customFactionLeaders: FactionLeader[];
+  /** 被编进势力的自定义随从快照。 */
+  customFactionGirls: FactionGirl[];
   /** 开局编成是否已完成。 */
   startersPicked: boolean;
 }
@@ -834,7 +855,14 @@ export type GameAction =
   | { type: 'setAssistant'; girlId?: string }
   | { type: 'setOfficeProfile'; profile: OfficeProfile }
   | { type: 'seenPrologue' }
-  | { type: 'setStarters'; girlIds: string[]; roster: Record<FactionId, FactionRoster> }
+  | {
+      type: 'setStarters';
+      girlIds: string[];
+      roster: Record<FactionId, FactionRoster>;
+      /** 编进势力的自定义少女快照（契约卡库/名册里的人也可以被编成）。 */
+      customLeaders?: FactionLeader[];
+      customGirls?: FactionGirl[];
+    }
   | { type: 'hireLeader'; leaderId: string }
   | { type: 'joinFront'; frontId: string; side: 'attacker' | 'defender'; girlIds: string[] }
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }

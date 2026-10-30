@@ -18,6 +18,7 @@ const types = {
 };
 
 http.createServer((req, res) => {
+  if ((req.url ?? '').startsWith('/api/cards')) { void handleCardsApi(req, res); return; }
   const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
   let file = path.join(root, url === '/' ? 'index.html' : url);
   if (!file.startsWith(root)) { res.writeHead(403).end('forbidden'); return; }

@@ -325,10 +325,13 @@ export function cardboxFilter(entries: CardBoxEntry[], query: string): CardBoxEn
 
 ### 4.3 三方阵容：首领与随从都可指派
 
-- 三位首领可以分给任意一方，一对一占位：每方恰好 1 位，三人用完。默认回原属（星灯协会 → 白鹭千秋；市役所 → 雨宫澄；月蚀庭 → 蚀医·夜鸮）。
-- 随从：9 位 `factionGirls` 在三方之间自由分配，每方 1–4 人，总数不变。默认沿用现有的 3 / 3 / 3。
+- 每方恰好 1 位首领、1–4 位随从。**候选人不再限定系统给定的 12 人**：三方原属首领（3）、`factionGirls`（9）、以及玩家自己的少女——在编的、市场候选里的、契约卡库里的卡、现场登记的自定义，全都可以当首领或随从。
+- 候选统一成 `RosterSubject { id; name; level; title; faction; origin: 'leader'|'faction'|'custom'|'roster'; color; portrait; portraitSpec?; stats; skillIds; archetype }`，由 `rosterPool(state)` 现算，不落库；编成只存 id。
+- 默认阵容沿用原属：星灯协会 → 白鹭千秋 + 篠宫灯里 / 藤枝小夜 / 朝仓凛，市役所 → 雨宫澄 + 三只编号体，月蚀庭 → 蚀医·夜鸮 + 黑川眠 / 苏我夜 / 鹿岛棘。
+- 同一个人只能占一个位置：不能既是首领又是随从，也不能同时挂在两方；已经在名册里被你选中的少女不再出现在三方候选里。
+- 自定义少女没有三套头衔，`titles` 缺省时用她自己的 `title`（登记时写的职阶名）兜底。
 - 分配结果落进存档：`state.factionRoster: Record<FactionId, { leaderId: string; memberIds: string[] }>`。
-- 拦截战、势力档案「首领」与「成员」页、敌意值文案都改成读 `factionRoster`，不再读静态的 `factionGirls` 分组，也不再读 `factionLeader()` 的固定映射。
+- 拦截战、势力档案「首领」与「成员」页、敌意值文案都改成读 `factionRoster`，再经 `rosterSubject(state, id)` 解析成具体的人，不再读静态的 `factionGirls` 分组，也不再读 `factionLeader()` 的固定映射。
 - **头衔按现属势力显示**：`FactionLeader` 增加 `origin: FactionId`（原属，只用于档案里的小字「原属 星灯协会」）与 `titles: Record<FactionId, string>`（三套头衔）。指派到她方后，档案与拦截战文案用现属那一套。
 
 | 首领 | 原属 | 现属 = 星灯协会 | 现属 = 市役所 | 现属 = 月蚀庭 |
@@ -406,7 +409,7 @@ export interface FactionLeader {
 
 `setStarters`：
 
-- 校验：4–6 人、id 都在池子里（事务所在编 / 卡库卡 / 刚登记的自定义）、不重复；`roster` 每方恰好 1 位首领（三位不重复、都是真实首领 id）、随从每方 1–4 人、随从合计 9 人、不重复、不含已进名册的人。
+- 校验：4–6 人、id 都在池子里（事务所在编 / 卡库卡 / 刚登记的自定义）、不重复；`roster` 每方恰好 1 位首领、随从每方 1–4 人；`leaderId` 与 `memberIds` 都必须能经 `rosterSubject` 解析到真人，全员不重复、不跨位；已在名册里的人不得再占三方位置。随从**不再要求凑满 9 人**。
 - 效果：名册换成选中的这批；`state.factionRoster = roster`；`startersPicked = true`。
 - 失败返回消息，不改状态。
 
@@ -417,7 +420,7 @@ export interface FactionLeader {
 
 ### 4.9 UI
 
-新建 `src/components/StarterDialog.tsx`，全屏、两块并排。
+新建 `src/components/StarterDialog.tsx`：居中浮层（`.starter-dialog` 是遮罩 + `.starter-sheet` 是面板，宽 `min(1180px, 100%)`、`max-height: calc(100vh - 68px)` 内部滚动、页脚 sticky），四个页签——「你的少女」+ 三方，全部是头像网格，点卡片选人、点星标指派首领。
 
 | 选择器 | 作用 |
 | --- | --- |
@@ -431,16 +434,20 @@ export interface FactionLeader {
 | `#starter-count` | 「已选 4 / 6 · 至少 4 人」 |
 | `#starter-default` | 恢复默认四人 + 默认阵容（首领回原属、随从 3/3/3） |
 | `#starter-reset-roster` | **只**把首领与随从按原属重置，不动你已选的少女 |
-| `#starter-roster-{faction}` | ② 某一方的随从分配区 |
-| `#starter-roster-pick-{girlId}` | 把这位随从指派给当前势力（已属别方时显示「从另方调来」） |
-| `#starter-roster-count-{faction}` | 「随从 3 人 · 至少 1 人」 |
-| `#starter-leader-pool` | ② 首领待选区，三位首领并排 |
-| `#starter-leader-pick-{leaderId}` | 选中某位首领，再点下方的首领空位放下 |
-| `#starter-leader-slot-{faction}` | 某方的首领位：显示现任首领（含现属头衔）或「待指派」 |
-| `#starter-leader-slot-clear-{faction}` | 清空某方首领位，首领回到待选区 |
+| `#starter-leader-slot-{faction}` | 某方首领位：头像 + 名字 + 现属头衔，未指派时显示「待指派」 |
+| `#starter-leader-name-{faction}` | 该方现任首领的名字 |
+| `#starter-leader-reset-{faction}` | 「换回原属首领」 |
+| `#starter-roster-count-{faction}` | 「随从 3 / 4 · 至少 1 人」 |
+| `#starter-members-{faction}` | 已选随从的头像 chip 区 |
+| `#starter-member-chip-{id}` | 点掉一位随从 |
+| `#starter-pool-{faction}` | 该方候选人头像网格（首领 + `factionGirls` + 自定义少女） |
+| `#starter-subject-{id}` | 点一下加入/移除随从 |
+| `#starter-set-leader-{id}` | 星标：把这个人指为该方首领 |
+| `#starter-source-all` / `-native` / `-custom` | 候选来源筛选：全部 / 原属 / 自定义 |
+| `#starter-search` | 按名字找人 |
 | `#starter-confirm` | 确认编成；人数或分配不合法时禁用 |
 
-立绘用 `GirlPortrait`；卡片网格 1440 三列、768 两列、320 一列。
+立绘用 `GirlPortrait`；「你的少女」网格 1440 三列 / 768 两列 / 320 一列，三方候选网格 1440 四列、768 两列、320 一列。已占位的人加 `.starter-tile.leader` / `.member` 高亮，挂在别方的显示「已任某方首领 / 随从」并压暗。
 
 ### 4.11 实施记录
 
@@ -627,3 +634,12 @@ export function sanitizeGirlColor(value: unknown, seed: string): string; // 非�
 4. **卡库要不要随存档导出？** 现在只存本地。
 5. **波动幅度**：现在是 ±10（总点 260 不变）。若觉得差异还不够明显，调到 ±14 仍能夹在 40–90 内。
 6. **空月的机制**（献祭 / 封印进度）留到主线与结局定稿后再开一版，本版不碰。
+
+### 4.12 存档位与重新开始（补充）
+
+- `src/saves.ts`：`SAVE_SLOT_IDS = [1,2,3]`，键 `night-sugar-office:slot:{n}`，内容 `{ schema: 1, savedAt, state }`；
+  `loadState` 负责校验与迁移，裸 state JSON 也能读，损坏槽位返回空而不是崩溃。
+- 自动存档仍写 `SAVE_KEY`（当前进度）；三个槽位只在玩家按下保存时才变。
+- 单槽上限 `SLOT_BYTES_LIMIT = 1_600_000` 字符，超了直接提示体积与清理办法，避免静默失败。
+- `src/components/SaveSlotsDialog.tsx`：三张卡片 + 底部「重新开始」（二次确认）；设置页入口 `#settings-save-slots`。
+- 「重新开始」走既有的 `reset` 动作：回到第 14 日 20:00、重放开场三幕、不动三个档位与契约卡库。

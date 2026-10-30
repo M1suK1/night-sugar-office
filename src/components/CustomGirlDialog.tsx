@@ -147,7 +147,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
-      portrait: preview || wardrobe?.portrait || undefined,
+      // 存原图，取景另存：不再把立绘压成 768×960 的 WebP。
+      portrait: source?.src || preview || wardrobe?.portrait || undefined,
+      portraitCrop: source ? { zoom, x, y } : undefined,
       factionTag: tagOf(name),
       wardrobe: wardrobe?.outfits,
       outfitId: wardrobe?.outfitId,

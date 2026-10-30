@@ -33,6 +33,21 @@ export function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, 
   return canvas.toDataURL('image/webp', 0.78);
 }
 
+/**
+ * 原样保留：不裁、不缩放、不转码，直接把文件读成 dataURL。
+ *
+ * v22 起立绘存进 IndexedDB，没有 5MB 总配额的压力，所以不必为了存档体积牺牲画质；
+ * 取景交给 `portraitCrop` 与 CSS 的 `object-fit: cover`。
+ */
+export async function originalImageDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('图片读取失败。'));
+    reader.readAsDataURL(file);
+  });
+}
+
 /** 把用户选中的图片按 4:5 居中裁好，供立绘、礼装和表情差分共用。 */
 export async function resizeImageFile(file: File): Promise<string> {
   if (!file.type.startsWith('image/')) throw new Error('请选择图片文件。');

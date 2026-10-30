@@ -1,6 +1,7 @@
 import test from 'node:test';
 import { INCIDENT_POOL_CAP, sanitizeGeneratedIncident } from '../src/incidents.ts';
 import { PROLOGUE } from '../src/prologue.ts';
+import { clearSlot, formatSlotTime, readSlot, slotKey, slotLabel, slotSummary, slotsUsedBytes, writeSlot } from '../src/saves.ts';
 import { TASK_VISIBLE, taskInbox } from '../src/tasks.ts';
 import { leaveGirl, resignationPressure } from '../src/resignations.ts';
 import assert from 'node:assert/strict';
@@ -12,7 +13,9 @@ import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activeProm
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { mulberry32, rollStats, statsForArchetype } from '../src/content/archetypes.ts';
-import { defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers } from '../src/factions.ts';
+import { customGirlOf, customLeaderOf, defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers, subjectOfLeader } from '../src/factions.ts';
+import { rosterPool } from '../src/roster.ts';
+import { subjectOfCustom } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
@@ -41,7 +44,8 @@ import { HOSTILITY_AFTER_WAR, HOSTILITY_COOLDOWN_CAP, applyHostility, clampHosti
 import { openFrontIn, planFronts, resolveDueFronts, squadPower } from '../src/fronts.ts';
 import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
-import { CARD_BOX_LIMIT, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, loadCardBox, saveCardBox } from '../src/cardbox.ts';
+import { __resetKvForTests, __setKvWriteFaultForTests, kvSet } from '../src/store.ts';
+import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, saveCardBox } from '../src/cardbox.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
@@ -4217,9 +4221,10 @@ function sampleCard(name: string, tag: GirlFaction = 'witch') {
   } as unknown as Parameters<typeof cardboxAdd>[0][number] extends { text: string } ? never : never;
 }
 
-test('卡库：一叠收进来，坏卡只记一条失败，不牵连同批', () => withMemoryStorage(() => {
+test('卡库：一叠收进来，坏卡只记一条失败，不牵连同批', async () => {
+  __resetKvForTests();
   const good = sampleCard('卡库甲');
-  const result = cardboxAdd([
+  const result = await cardboxAdd([
     { name: 'a.json', text: JSON.stringify(good) },
     { name: 'broken.json', text: '{"format":"night-sugar/girl-card"}' },
   ], []);
@@ -4228,51 +4233,135 @@ test('卡库：一叠收进来，坏卡只记一条失败，不牵连同批', ()
   assert.equal(result.added[0].factionTag, 'witch');
   assert.equal(result.failed.length, 1);
   assert.equal(result.failed[0].name, 'broken.json');
-  assert.equal(loadCardBox().length, 1);
-}));
+  assert.equal((await loadCardBox()).length, 1);
+});
 
-test('卡库：同一个哈希只提示重复，不覆盖已有的文件名', () => withMemoryStorage(() => {
+test('卡库：同一个哈希只提示重复，不覆盖已有的文件名', async () => {
+  __resetKvForTests();
   const text = JSON.stringify(sampleCard('卡库乙'));
-  const first = cardboxAdd([{ name: '原名.json', text }], []);
-  const again = cardboxAdd([{ name: '改过名.json', text }], first.entries);
+  const first = await cardboxAdd([{ name: '原名.json', text }], []);
+  const again = await cardboxAdd([{ name: '改过名.json', text }], first.entries);
   assert.equal(again.added.length, 0);
   assert.deepEqual(again.duplicates, ['卡库乙']);
   assert.equal(again.entries.length, 1);
   assert.equal(again.entries[0].fileName, '原名.json');
-}));
+});
 
-test('卡库：满 60 张拒绝新增而不是悄悄踢掉旧的', () => withMemoryStorage(() => {
+test('卡库：满 60 张拒绝新增而不是悄悄踢掉旧的', async () => {
+  __resetKvForTests();
   const full = Array.from({ length: CARD_BOX_LIMIT }, (_, index) => ({
     hash: `hash-${index}`, name: `占位${index}`, level: 1, element: '星光系', factionTag: 'none' as GirlFaction,
     fileName: `${index}.json`, addedAt: 0, raw: '{}',
   }));
-  saveCardBox(full);
-  const result = cardboxAdd([{ name: 'new.json', text: JSON.stringify(sampleCard('卡库丙')) }], full);
+  await saveCardBox(full);
+  const result = await cardboxAdd([{ name: 'new.json', text: JSON.stringify(sampleCard('卡库丙')) }], full);
   assert.equal(result.added.length, 0);
   assert.equal(result.failed.length, 1);
   assert.ok(result.failed[0].message.includes('先删'));
-  assert.equal(loadCardBox().length, CARD_BOX_LIMIT);
-}));
+  assert.equal((await loadCardBox()).length, CARD_BOX_LIMIT);
+});
 
-test('卡库：搜索认名字、文件名和出身', () => withMemoryStorage(() => {
-  const witch = cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库丁', 'witch')) }], []);
-  const gov = cardboxAdd([{ name: 'b.json', text: JSON.stringify(sampleCard('卡库戊', 'government')) }], witch.entries);
+test('卡库：带立绘的大卡不再被 256KB 误杀，字节按 UTF-8 算', async () => {
+  __resetKvForTests();
+  const card = sampleCard('大立绘') as unknown as { girl: Record<string, unknown> };
+  card.girl.portrait = `data:image/png;base64,${'A'.repeat(300000)}`;
+  const text = JSON.stringify(card);
+  assert.ok(text.length > 256 * 1024, '这张卡按字符数已经超过老阈值');
+  assert.ok(cardBoxByteSize(text) < CARD_BOX_MAX_BYTES);
+  const result = await cardboxAdd([{ name: 'big.json', text }], []);
+  assert.equal(result.failed.length, 0, result.failed[0]?.message);
+  assert.equal(result.added.length, 1);
+  assert.equal((await loadCardBox()).length, 1);
+});
+
+test('卡库：真·超大文件仍然拦下，提示里带上实际大小', async () => {
+  __resetKvForTests();
+  const text = 'A'.repeat(CARD_BOX_MAX_BYTES + 1);
+  const result = await cardboxAdd([{ name: 'huge.json', text }], []);
+  assert.equal(result.added.length, 0);
+  assert.match(result.failed[0].message, /可能不是契约卡/);
+  assert.ok(result.failed[0].message.includes(formatByteSize(CARD_BOX_MAX_BYTES)));
+});
+
+test('卡库：写不进去时整批回滚，而不是假装导入成功', async () => {
+  __resetKvForTests();
+  __setKvWriteFaultForTests(true);
+  try {
+    const result = await cardboxAdd([{ name: 'big.json', text: JSON.stringify(sampleCard('放不下')) }], []);
+    assert.equal(result.added.length, 0);
+    assert.equal(result.entries.length, 0);
+    assert.match(result.failed[0].message, /卡库放不下/);
+  } finally {
+    __setKvWriteFaultForTests(false);
+  }
+  assert.equal((await loadCardBox()).length, 0);
+});
+
+test('卡库：搜索认名字、文件名和出身', async () => {
+  __resetKvForTests();
+  const witch = await cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库丁', 'witch')) }], []);
+  const gov = await cardboxAdd([{ name: 'b.json', text: JSON.stringify(sampleCard('卡库戊', 'government')) }], witch.entries);
   assert.equal(cardboxFilter(gov.entries, '卡库丁').length, 1);
   assert.equal(cardboxFilter(gov.entries, 'b.json').length, 1);
   assert.equal(cardboxFilter(gov.entries, cardBoxTagLabel('government')).length, 1);
   assert.equal(cardboxFilter(gov.entries, '').length, 2);
-}));
+});
 
-test('卡库：删库只动文件柜，不碰名册', () => withMemoryStorage(() => {
-  const added = cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库己')) }], []);
+test('卡库：删库只动文件柜，不碰名册', async () => {
+  __resetKvForTests();
+  const added = await cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库己')) }], []);
   const hash = added.added[0].hash;
   assert.equal(cardboxCards(added.entries, [hash]).length, 1);
-  const kept = cardboxRemove([hash], added.entries);
+  const kept = await cardboxRemove([hash], added.entries);
   assert.equal(kept.length, 0);
-  assert.equal(loadCardBox().length, 0);
+  assert.equal((await loadCardBox()).length, 0);
   // 原始文本还在手上时仍能解析，说明「删的是库，不是卡」。
   assert.equal(cardboxCards(added.entries, [hash]).length, 1);
-}));
+});
+
+test('卡库：2.3MB 立绘的契约卡收得进来，进存档位再读回字节不变', async () => {
+  __resetKvForTests();
+  const card = sampleCard('大立绘存档') as unknown as { girl: Record<string, unknown> };
+  const bigPortrait = `data:image/png;base64,${'A'.repeat(2_300_000)}`;
+  card.girl.portrait = bigPortrait;
+  const text = JSON.stringify(card);
+  const added = await cardboxAdd([{ name: 'big.json', text }], []);
+  assert.equal(added.failed.length, 0, added.failed[0]?.message);
+  assert.equal(added.added.length, 1);
+
+  const state = createInitialState();
+  const girl = state.girls[0];
+  girl.portrait = bigPortrait;
+  girl.portraitCrop = { zoom: 1.4, x: 12, y: -8 };
+  const result = await writeSlot(2, state);
+  assert.equal(result.ok, true, result.message);
+  assert.ok((result.summary?.bytes ?? 0) > 2_000_000, '存档位里应该真的是原图');
+  const loaded = await readSlot(2);
+  assert.ok(loaded);
+  assert.equal(loaded.girls[0].portrait.length, bigPortrait.length);
+  assert.deepEqual(loaded.girls[0].portraitCrop, { zoom: 1.4, x: 12, y: -8 });
+  assert.equal((await loadCardBox())[0].raw.length, text.length);
+});
+
+test('立绘取景：portraitCrop 会随自定义少女一起建档并读回', () => {
+  const s = createInitialState();
+  const result = act(s, { type: 'createGirl', draft: {
+    name: '取景测试', codename: 'C-01', title: '登记用', element: '星光系', archetype: 'striker', color: '#f0a9c8',
+    quote: '先看一眼再决定。', goal: '测试取景', appearance: '银发', personality: '安静', outfitDescription: '制服',
+    stats: { magic: 70, insight: 65, agility: 60, empathy: 65 }, skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+    traits: [
+      { name: '甲', description: '甲的效果', polarity: 'good' },
+      { name: '乙', description: '乙的效果', polarity: 'good' },
+      { name: '丙', description: '丙的效果', polarity: 'bad' },
+    ],
+    portrait: 'data:image/png;base64,AAAA', portraitCrop: { zoom: 1.2, x: 4, y: 6 },
+  } } as never);
+  assert.equal(result.ok, true, result.message);
+  const next = result.state;
+  const girl = next.candidates.find(item => item.name === '取景测试') ?? next.girls.find(item => item.name === '取景测试');
+  assert.ok(girl);
+  assert.deepEqual(girl.portraitCrop, { zoom: 1.2, x: 4, y: 6 });
+});
 
 test('批量导入：一次进多张，重复的跳过并逐张记日志', () => {
   const s = createInitialState();
@@ -4294,6 +4383,64 @@ test('批量导入：全都重复时明确说没有新的，不伪造成功', ()
   const twice = act(once.state, { type: 'importCards', cards: [card] });
   assert.equal(twice.ok, false);
   assert.ok(twice.message.includes('跳过重复'));
+});
+
+// ── v21 §4.12 自定义少女也能编进势力 ──────────────
+test('v21 编成：自定义少女可以当势力首领，被编进来的人占住那个位置', () => {
+  const base = createInitialState();
+  const subject = subjectOfLeader({ ...leaderById('leader-association')!, id: 'card-abc', name: '外来首领', faction: 'government' });
+  const customLeader = customLeaderOf('government', subject);
+  const roster = defaultFactionRoster();
+  roster.government.leaderId = 'card-abc';
+  roster.government.memberIds = roster.government.memberIds.filter(id => id !== 'fg-government-mio');
+  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customLeaders: [customLeader] });
+  assert.equal(next.ok, true, next.message);
+  const leader = rosterLeader(next.state, 'government');
+  assert.equal(leader.name, '外来首领');
+  assert.equal(leader.faction, 'government');
+  assert.equal(next.state.customFactionLeaders.length, 1);
+});
+
+test('v21 编成：自定义少女可以当随从，拦截战按她的数值出场', () => {
+  const base = createInitialState();
+  const subject = subjectOfLeader({ ...leaderById('leader-witch')!, id: 'card-def', name: '外来随从', faction: 'association' });
+  const customGirl = customGirlOf('association', { ...subject, stats: { magic: 88, insight: 40, agility: 40, empathy: 40 }, level: 9 });
+  const roster = defaultFactionRoster();
+  roster.association.memberIds = [...roster.association.memberIds.slice(0, 2), 'card-def'];
+  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customGirls: [customGirl] });
+  assert.equal(next.ok, true, next.message);
+  const members = rosterMembers(next.state, 'association');
+  assert.equal(members.length, 3);
+  const mine = members.find(girl => girl.id === 'card-def');
+  assert.ok(mine);
+  assert.equal(mine.level, 9);
+  assert.equal(mine.stats.magic, 88);
+});
+
+test('v21 编成：同一个人不能既当首领又当随从，也不能被两方各占一次', () => {
+  const base = createInitialState();
+  const subject = subjectOfLeader({ ...leaderById('leader-association')!, id: 'card-dup', name: '重名的人', faction: 'association' });
+  const customLeader = customLeaderOf('association', subject);
+  const roster = defaultFactionRoster();
+  roster.association.leaderId = 'card-dup';
+  roster.association.memberIds = [...roster.association.memberIds, 'card-dup'];
+  const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customLeaders: [customLeader] });
+  assert.equal(bad.ok, false);
+  assert.equal(base.startersPicked, false);
+});
+
+test('v21 编成：自定义名册随存档往返，读档后仍认得出是谁', () => {
+  const base = createInitialState();
+  const subject = subjectOfLeader({ ...leaderById('leader-government')!, id: 'card-keep', name: '存下来的人', faction: 'witch' });
+  const customGirl = customGirlOf('witch', subject);
+  const roster = defaultFactionRoster();
+  roster.witch.memberIds = [...roster.witch.memberIds.slice(0, 2), 'card-keep'];
+  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customGirls: [customGirl] });
+  assert.equal(next.ok, true, next.message);
+  const reloaded = loadState(JSON.stringify(next.state));
+  assert.ok(reloaded);
+  const members = rosterMembers(reloaded, 'witch');
+  assert.equal(members.find(girl => girl.id === 'card-keep')?.name, '存下来的人');
 });
 
 // ── v21 §4 开局编成 ──────────────────────────────
@@ -4408,4 +4555,142 @@ test('v21 市场候选的属性按 id 稳定波动，读档不再抖', () => {
   const reloaded = loadState(JSON.stringify(state));
   assert.ok(reloaded);
   assert.deepEqual(reloaded.candidates.find(item => item.id === girl.id)?.stats, girl.stats);
+});
+
+// ── v21 存档位 ──────────────────────────────────
+class MemoryStorage {
+  private map = new Map<string, string>();
+  get length() { return this.map.size; }
+  clear() { this.map.clear(); }
+  getItem(key: string) { return this.map.has(key) ? this.map.get(key)! : null; }
+  key(index: number) { return [...this.map.keys()][index] ?? null; }
+  removeItem(key: string) { this.map.delete(key); }
+  setItem(key: string, value: string) { this.map.set(key, String(value)); }
+}
+
+function withStorage(run: () => void) {
+  const target = globalThis as { localStorage?: Storage };
+  const previous = target.localStorage;
+  target.localStorage = new MemoryStorage() as unknown as Storage;
+  try { run(); } finally { target.localStorage = previous; }
+}
+
+test('存档位：写入、摘要、读取都能对上当前这一局', async () => {
+  __resetKvForTests();
+  {
+    const state = createInitialState();
+    state.gold = 4321;
+    const result = await writeSlot(1, state);
+    assert.equal(result.ok, true, result.message);
+    const summary = await slotSummary(1);
+    assert.ok(summary);
+    assert.equal(summary.day, 14);
+    assert.equal(summary.gold, 4321);
+    assert.equal(summary.members, state.girls.filter(girl => !girl.left && !girl.retired).length);
+    assert.ok(summary.bytes > 0);
+    assert.ok(summary.savedAt > 0);
+    const loaded = await readSlot(1);
+    assert.ok(loaded);
+    assert.equal(loaded.gold, 4321);
+    assert.deepEqual(loaded.girls.map(girl => girl.id), state.girls.map(girl => girl.id));
+  }
+});
+
+test('存档位：三个位置互不覆盖，清空后回到空档', async () => {
+  __resetKvForTests();
+  {
+    const state = createInitialState();
+    await writeSlot(1, state);
+    const second = createInitialState();
+    second.gold = 999;
+    await writeSlot(3, second);
+    assert.equal(await slotSummary(2), null);
+    assert.equal((await slotSummary(1))?.gold, state.gold);
+    assert.equal((await slotSummary(3))?.gold, 999);
+    assert.equal(await clearSlot(1), true);
+    assert.equal(await slotSummary(1), null);
+    assert.equal((await slotSummary(3))?.gold, 999);
+    assert.ok((await slotsUsedBytes()) > 0);
+  }
+});
+
+test('存档位：损坏内容不会被当成存档，裸 state 仍可读', async () => {
+  __resetKvForTests();
+  {
+    await kvSet(slotKey(2), '{不是 JSON');
+    assert.equal(await slotSummary(2), null);
+    assert.equal(await readSlot(2), null);
+    await kvSet(slotKey(2), createInitialState());
+    assert.ok(await slotSummary(2));
+    assert.ok(await readSlot(2));
+  }
+});
+
+test('存档位：标签与时间对人类友好', async () => {
+  __resetKvForTests();
+  assert.equal(slotLabel(null), '空存档位');
+  assert.equal(formatSlotTime(0), '没有时间戳');
+  assert.match(formatSlotTime(Date.UTC(2026, 9, 30, 12, 5)), /月/);
+  await writeSlot(1, createInitialState());
+  const summary = await slotSummary(1);
+  assert.ok(summary);
+  assert.match(slotLabel(summary), /第 14 日/);
+});
+
+
+test('v21 编成池：三方首领与随从之外，自定义少女也能进池，系统少女不进池', () => {
+  const state = createInitialState();
+  const plain = rosterPool(state);
+  assert.equal(plain.length, 12, '默认池就是 3 位首领 + 9 位随从');
+  assert.equal(plain.some(subject => subject.id === 'yue'), false, '系统少女不进三方候选');
+
+  state.girls = state.girls.map(girl => (girl.id === 'zhi' ? { ...girl, custom: true, retired: false, dead: false } : girl));
+  const widened = rosterPool(state);
+  const zhi = widened.find(subject => subject.id === 'zhi');
+  assert.ok(zhi, '登记过的自定义少女要出现在候选里');
+  assert.equal(zhi.origin, 'custom');
+  assert.equal(widened.length, 13);
+});
+
+test('v21 编成：自定义少女可以坐首领位，快照存进存档并顶替原属首领', () => {
+  const state = createInitialState();
+  state.girls = state.girls.map(girl => (girl.id === 'zhi' ? { ...girl, custom: true, retired: false, dead: false } : girl));
+  const subject = rosterPool(state).find(item => item.id === 'zhi');
+  assert.ok(subject);
+  const roster = defaultFactionRoster();
+  roster.witch.leaderId = 'zhi';
+  roster.witch.memberIds = ['fg-witch-mian'];
+
+  const next = act(state, {
+    type: 'setStarters',
+    girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster,
+    customLeaders: [customLeaderOf('witch', subject)],
+  });
+  assert.equal(next.ok, true, next.message);
+  assert.equal(rosterLeader(next.state, 'witch').id, 'zhi');
+  assert.equal(rosterLeader(next.state, 'witch').name, '栀子');
+  assert.equal(next.state.customFactionLeaders?.length, 1);
+  assert.equal(leaderTitle(rosterLeader(next.state, 'witch'), 'witch'), subject.title);
+});
+
+test('v21 编成：已经在名册里的人不能再占三方位置', () => {
+  const state = createInitialState();
+  const yue = state.girls.find(girl => girl.id === 'yue');
+  assert.ok(yue);
+  const subject = subjectOfCustom({
+    id: 'yue', name: yue.name, factionTag: yue.factionTag, level: yue.level, color: yue.color,
+    portrait: yue.portrait, stats: { ...yue.stats }, skillIds: [...yue.skills],
+    codename: yue.codename, quote: yue.quote, title: yue.title,
+  });
+  const roster = defaultFactionRoster();
+  roster.association.memberIds = ['yue'];
+  const next = act(state, {
+    type: 'setStarters',
+    girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster,
+    customGirls: [customGirlOf('association', subject)],
+  });
+  assert.equal(next.ok, false);
+  assert.equal(next.state.girls.length, state.girls.length, '被拒绝时不该改状态');
 });

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, StoryPassage, StoryPlan } from './types';
-import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
+import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
+import { kvSet, storeAvailable } from './store';
+import { SAVE_CURRENT_KEY, bootState } from './migrate';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
@@ -54,6 +56,8 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { StartDialog } from './components/StartDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
+import { SaveSlotsDialog } from './components/SaveSlotsDialog';
+import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { StarterDialog } from './components/StarterDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
@@ -69,6 +73,7 @@ type Modal =
   | { type: 'mission'; id: string; girlId?: string }
   | { type: 'front'; id: string }
   | { type: 'cardbox' }
+  | { type: 'slots' }
   | { type: 'starter' }
   | { type: 'battle'; id: string }
   | { type: 'battle-note'; id: string }
@@ -81,7 +86,6 @@ type Modal =
   | { type: 'faction'; id: FactionId }
   | { type: 'office' };
 
-function readSave() { try { return loadState(localStorage.getItem(SAVE_KEY)); } catch { return loadState(null); } }
 function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
 function readReduced() { try { return localStorage.getItem('night-sugar:motion') === 'reduced' || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } }
 function leftLabel(minutes: number) {
@@ -103,7 +107,9 @@ function worldBrief(state: GameState) {
 }
 
 export default function App() {
-  const [state, setState] = useState<GameState>(readSave);
+  // 初始先给一份空档占位，真正的进度在挂载后从 IndexedDB 读出来。
+  const [state, setState] = useState<GameState>(() => loadState(null));
+  const [booted, setBooted] = useState(false);
   const [page, setPage] = useState<Page>('dispatch');
   const [modal, setModal] = useState<Modal | null>(null);
   const [library, setLibrary] = useState<ContentLibrary>(loadLibrary);
@@ -120,7 +126,7 @@ export default function App() {
   const [arcBusy, setArcBusy] = useState<string | null>(null);
   const STARTED_KEY = 'night-sugar-office:started';
   const markStarted = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setStarted(true); };
-  const [started, setStarted] = useState(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1' || Boolean(localStorage.getItem(SAVE_KEY)); } catch { return false; } });
+  const [started, setStarted] = useState(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1'; } catch { return false; } });
   const [generating, setGenerating] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
@@ -131,6 +137,10 @@ export default function App() {
   const officeSynced = useRef(false);
   const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
+  const savingRef = useRef(false);
+  const queuedSave = useRef<GameState | null>(null);
+  const latestState = useRef<GameState | null>(null);
+  const writtenState = useRef<GameState | null>(null);
 
   useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } }, [presets]);
   useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } }, [binding]);
@@ -146,15 +156,61 @@ export default function App() {
     try { localStorage.setItem(TASK_PRESET_MARKER, '1'); } catch { /* 下次启动再拆一次。 */ }
   }, []);
 
+  // 启动：先做一次性迁移（localStorage → IndexedDB），再读进度。
   useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const boot = await bootState({ keepInline: true });
+      if (!alive) return;
+      setState(boot.state);
+      if (boot.hadSave) setStarted(true);
+      setBooted(true);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // 自动存档：每个状态变更立即排队写入（写入串行化，IDB 事务不能并发冲同一键）。
+  // 不做防抖——刷新页面丢掉最后一步的代价，比多写几 kB 大得多。
+  useEffect(() => {
+    if (!booted) return;
+    latestState.current = state;
+    void persist(state);
+  }, [booted, state]);
+
+  // 关页/切后台时补一次落盘——只在这份状态还没写成功时才写，
+  // 免得把外部（例如测试脚本）刚写进去的存档又盖回内存里的旧版本。
+  useEffect(() => {
+    const flush = () => {
+      if (!booted || !latestState.current) return;
+      if (writtenState.current === latestState.current) return;
+      void kvSet(SAVE_CURRENT_KEY, latestState.current);
+    };
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [booted]);
+
+  async function persist(next: GameState) {
+    if (savingRef.current) { queuedSave.current = next; return; }
+    savingRef.current = true;
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      await kvSet(SAVE_CURRENT_KEY, next);
+      writtenState.current = next;
       setSaved(true);
     } catch {
       setSaved(false);
-      setToast({ message: '浏览器存储空间不足，本次进度没有写入。请导出存档并清理浏览器站点数据。', ok: false, id: Date.now() });
+      setToast({ message: '浏览器存储写入失败，本次进度没有保存。请导出存档并清理站点数据。', ok: false, id: Date.now() });
+    } finally {
+      savingRef.current = false;
+      const queued = queuedSave.current;
+      queuedSave.current = null;
+      if (queued) void persist(queued);
     }
-  }, [state]);
+  }
   useEffect(() => { document.documentElement.classList.toggle('reduced-motion', reduced); try { localStorage.setItem('night-sugar:motion', reduced ? 'reduced' : 'full'); } catch { /* Preferences are optional when storage is unavailable. */ } }, [reduced]);
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
@@ -408,6 +464,16 @@ export default function App() {
     setPendingSave(next);
   };
 
+  const saveToSlot = async (id: SaveSlotId) => { const result = await writeSlot(id, state); notify(result.message, result.ok); };
+  const loadFromSlot = async (id: SaveSlotId) => {
+    const next = await readSlot(id);
+    if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
+    setModal(null);
+    setPendingSave(next);
+  };
+  const deleteSlot = async (id: SaveSlotId) => { await clearSlot(id); notify(`存档位 ${id} 已清空。`); };
+  const restartGame = () => { setAuto(false); setModal(null); perform({ type: 'reset' }); notify('新的一局开始了，先看看开场。'); };
+
   const runCommand = async (line: string): Promise<string> => {
     const raw = line.trim();
     const [head, ...rest] = raw.split(/\s+/);
@@ -570,16 +636,34 @@ export default function App() {
   const selectedMission = modal?.type === 'mission' ? state.missions.find(m => m.id === modal.id) : undefined;
   const selectedBattle = modal?.type === 'battle' || modal?.type === 'battle-note' ? state.battles.find(b => b.id === modal.id) : undefined;
   const selectedNote = modal?.type === 'battle-note' ? state.battleNotes?.find(note => note.battleId === modal.id) : undefined;
-  const modalTitle = modal?.type === 'starter' ? '开局编成' : modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'expression' ? '表情差分管理' : modal?.type === 'witch-form' ? '魔女化立绘' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : modal?.type === 'faction' ? `查看${factionInfo[modal.id].name}档案` : modal?.type === 'office' ? '事务所档案' : modal?.type === 'cardbox' ? '契约卡库' : '安排派遣';
+  const modalTitle = modal?.type === 'starter' ? '开局编成' : modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'expression' ? '表情差分管理' : modal?.type === 'witch-form' ? '魔女化立绘' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : modal?.type === 'faction' ? `查看${factionInfo[modal.id].name}档案` : modal?.type === 'office' ? '事务所档案' : modal?.type === 'slots' ? '存档位' : modal?.type === 'cardbox' ? '契约卡库' : '安排派遣';
   const stabilityStage = cityStage(state.reputation);
+  const durable = storeAvailable();
+
+  // 进度还在 IndexedDB 里读，先给一块占位屏，避免闪一帧空档。
+  if (!booted) {
+    return (
+      <div className="boot-splash" id="boot-splash" role="status">
+        <span className="boot-mark">夜糖事务所</span>
+        <p>正在读取档案…</p>
+      </div>
+    );
+  }
 
   return <div className="app-shell">
+    {!durable && (
+      <div className="storage-warning" id="storage-warning" role="alert">
+        <TriangleAlert size={13} />这台浏览器没给出可用的 IndexedDB（隐私模式或存储被禁用），本次进度不会被保存。
+      </div>
+    )}
     {!started && <StartDialog onStandard={markStarted} onBlank={() => { setState(act(state, { type: 'reset', mode: 'blank' }).state); markStarted(); }} />}
     {started && !state.prologueSeen && <PrologueDialog onDone={() => setState(prev => act(prev, { type: 'seenPrologue' }).state)} />}
     {modal?.type === 'starter' && (
       <StarterDialog
         state={state}
-        onConfirm={(girlIds, roster) => { if (perform({ type: 'setStarters', girlIds, roster })) setModal(null); }}
+        onConfirm={(girlIds, roster, custom) => {
+          if (perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls })) setModal(null);
+        }}
         onAddCard={() => setModal({ type: 'cardbox' })}
         onAddCustom={() => setModal({ type: 'custom' })}
         onClose={() => setModal(null)}
@@ -732,9 +816,10 @@ export default function App() {
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
+      {modal.type === 'slots' && <SaveSlotsDialog onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} />}
       {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) setModal(null); }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
+      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
@@ -849,7 +934,7 @@ export default function App() {
       <div className="standard-modal import-save-modal">
         <div className="modal-eyebrow"><ShieldCheck size={14} />存档恢复 / 覆盖确认</div>
         <h2>要回到那个夜晚吗？</h2>
-        <p className="muted">导入会把当前进度替换为第 {pendingSave.day} 日、{pendingSave.girls.length} 位契约者、{pendingSave.gold.toLocaleString('zh-CN')} 星砂的存档。当前进度尚未自动备份，建议先取消并导出。</p>
+        <p className="muted">恢复会把当前进度替换为第 {pendingSave.day} 日、{pendingSave.girls.length} 位契约者、{pendingSave.gold.toLocaleString('zh-CN')} 星砂的存档。当前进度尚未自动备份，建议先取消并导出。</p>
         <div className="confirmation-facts">
           <span>目标日期<b>第 {pendingSave.day} 日</b></span>
           <span>契约者<b>{pendingSave.girls.length} 人</b></span>

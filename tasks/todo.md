@@ -210,3 +210,32 @@
 - [x] 存档版本 16；旧存档补齐阵容与编成标记。
 - [x] 219 项状态测试、77 组浏览器流程、生产构建通过。
 - [x] README 与 `tasks/plan-v21.md` 实施记录。
+- [x] 三个独立存档位：`src/saves.ts` 管读写与摘要，面板显示日期 / 星砂 / 契约者 / 时间 / 体积，支持覆盖、读取、删除。
+- [x] 重新开始：设置页按钮改名「重新开始」，存档位面板内也有一处（带二次确认，不影响三个档位）。
+- [x] 开局编成改成头像网格：`.starter-sheet` 居中面板、四个页签、点卡片选人、星标指派首领、来源筛选（全部 / 原属 / 自定义）与按名字找人。
+- [x] 三方首领与随从不再限定系统 12 人：`src/roster.ts` 把首领、`factionGirls`、已编入的自定义少女、契约卡库的卡、名册与候选池里登记过的少女折成同一种 `RosterSubject`，编成只存 id、确认时把自定义的拍成快照。
+- [x] 契约卡库单卡上限从 256KB（按字符算）改成 8MB（按 UTF-8 字节算）：带立绘的卡不再被误杀；localStorage 配额写不进去时整批回滚并提示改用「导入角色卡」。
+- [x] 233 项状态测试、80 组浏览器流程。
+
+## v22 存储搬到 IndexedDB / 立绘按原字节保存
+
+- [x] `src/store.ts`：IndexedDB 两表（`kv` 放对象、`assets` 放字节），没有 IndexedDB 时退化为进程内 Map，状态测试无需装假 IDB。
+- [x] `src/migrate.ts`：首次启动把 localStorage 里的当前进度、三个存档位、卡库、世界书、预设搬进 IDB，搬完打标记，旧键保留不删。
+- [x] 自动存档改走 IDB 并即时落盘；`pagehide` / `visibilitychange` 时兜底 flush。
+- [x] 启动期渲染 `#boot-splash`，读完档案再进主界面，避免闪一下初始演示档。
+- [x] `saves.ts` / `cardbox.ts` 全异步化，对话框改成 effect 里刷新；单槽上限从 1.6MB 放到 8MB。
+- [x] 立绘不再压缩：新增 `originalImageDataUrl()`（FileReader 原读），上传、礼装、魔女化、表情差分、自定义登记都用它；取景存 `portraitCrop`，由 `GirlPortrait` 在显示层换算 `object-position` + `scale`。
+- [x] 表情差分单张上限 1.6MB → 8MB，浏览器流程里 `data:image/webp` 的断言改成 `data:image/`（不再强制转码）。
+- [x] 235 项状态测试、81 组浏览器流程（新增「2.3MB 立绘的卡收得进来、原图字节带到存档位」）。
+- [ ] `stores/assets` 表暂未启用：立绘字节内联在存档 JSON 里，三个档位各存一份（见 `tasks/plan-v22.md` §4 的实施偏差说明）。
+
+## v22（存储迁移 IndexedDB + 立绘原字节）
+
+- [x] `src/store.ts`：IndexedDB `kv` / `assets` 双库，node 下退化为内存后端，`assetSweep` 按内容哈希回收孤儿。
+- [x] `src/migrate.ts`：`night-sugar-office:v1` → `save/current`，写 `meta/migrated` 记一次，重复启动不再搬。
+- [x] `src/saves.ts` / `src/cardbox.ts` 全面异步化，`writeSave` 立即落库 + 串行刷新，切页不再丢进度。
+- [x] 自定义立绘、衣柜、魔女化、表情差分统一走 `originalImageDataUrl`，不再压成 768×960。
+- [x] `GirlPortrait` 显示层按 4:5 裁剪（`objectFit: cover` + `portraitCrop`），存档保留原始字节。
+- [x] 存储上限放宽到 24MB / 32MB，配额不足时给出明确提示；不可用时顶部横幅告警。
+- [x] `tests/store.test.ts` 9 条：kv 读写删、写故障、asset 去重与回收、迁移幂等、内联/引用两种抽取。
+- [x] 255 项状态测试、83 组浏览器流程（新增「旧档迁移」「1024 原图保真」）。

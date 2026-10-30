@@ -16,7 +16,7 @@ export const EXPRESSION_META: Record<Expression, { label: string; note: string; 
 export const EXPRESSION_VARIANT_LIMIT = EXPRESSIONS.length;
 
 /** 单张差分的数据上限，避免 localStorage 被几张原图挤爆。 */
-export const EXPRESSION_VARIANT_MAX_CHARS = 1_600_000;
+export const EXPRESSION_VARIANT_MAX_CHARS = 8_000_000;
 
 export function isExpression(value: unknown): value is Expression {
   return typeof value === 'string' && (EXPRESSIONS as string[]).includes(value);

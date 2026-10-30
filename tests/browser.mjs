@@ -14,13 +14,101 @@ await page.addInitScript(() => {
   };
   setInterval(tick, 150);
 });
+// 页面内桥接：让老测试里 `page.evaluate` 内部的读写代码继续可用（异步版）。
+await page.addInitScript(() => {
+  const open = () => new Promise((resolve, reject) => {
+    const req = indexedDB.open('night-sugar');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  window.__readSave = async () => {
+    const db = await open();
+    if (!db.objectStoreNames.contains('kv')) { db.close(); return null; }
+    const row = await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readonly');
+      const req = tx.objectStore('kv').get('save/current');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return row ? row.value : null;
+  };
+  window.__writeSave = async value => {
+    const db = await open();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put({ key: 'save/current', value });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error('写入失败。'));
+    });
+    db.close();
+  };
+});
 const errors = [], failures = [], results = [];
 let currentFlow = '启动';
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push(`${currentFlow} | ${m.text()} @ ${m.location().url}`); });
 page.on('requestfailed', r => failures.push(`${r.method()} ${r.url()}: ${r.failure()?.errorText}`));
-const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar-office:v1')));
-const stored = async () => { await page.waitForTimeout(120); return state(); };
+// v22 起当前进度存在 IndexedDB（库 night-sugar、表 kv、键 save/current），localStorage 只留偏好。
+const openDb = () => page.evaluate(async () => new Promise(resolve => {
+  const req = indexedDB.open('night-sugar');
+  req.onsuccess = () => resolve(true);
+  req.onerror = () => resolve(false);
+}));
+const readSave = () => page.evaluate(async () => {
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open('night-sugar');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  if (!db.objectStoreNames.contains('kv')) { db.close(); return null; }
+  const row = await new Promise((resolve, reject) => {
+    const tx = db.transaction('kv', 'readonly');
+    const req = tx.objectStore('kv').get('save/current');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return row ? row.value : null;
+});
+const writeSave = value => page.evaluate(async v => {
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open('night-sugar');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put({ key: 'save/current', value: v });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('写入失败。'));
+  });
+  db.close();
+}, value);
+const resetAll = () => page.evaluate(async () => {
+  // 只清进度相关的存储；sessionStorage 里的「已开始」与开场旗标是所有流程共享的上下文，不能顺手清掉。
+  try { localStorage.clear(); } catch { /* 忽略 */ }
+  const db = await new Promise(resolve => {
+    const req = indexedDB.open('night-sugar');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+  if (!db) return;
+  const stores = ['kv', 'assets'].filter(name => db.objectStoreNames.contains(name));
+  if (stores.length) {
+    await new Promise(resolve => {
+      const tx = db.transaction(stores, 'readwrite');
+      for (const name of stores) tx.objectStore(name).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+  }
+  db.close();
+});
+const state = () => readSave();
+// 存档是防抖 + IndexedDB 异步写入，读之前要给它一个窗口。
+const stored = async () => { await page.waitForTimeout(420); return state(); };
 const nightProposal = {
   version: 2,
   monster: { name: '纸月', epithet: '被折起来的月亮', rank: '游荡', element: '月影系', trait: '害怕被展开', description: '一张悬在空中的纸月亮。', habit: '深夜贴着窗户移动。', weakness: '遇水变软。', maxHp: 132, maxSpirit: 84, stats: { magic: 71, insight: 49, agility: 66, empathy: 35 }, skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }] },
@@ -44,13 +132,13 @@ async function settleIncidents() {
 const openMission = id => page.evaluate(target => document.getElementById(`mission-${target}`)?.dispatchEvent(new MouseEvent('click', { bubbles: true })), id);
 async function check(name, fn) { currentFlow = name; try { await settleIncidents(); await fn(); results.push({ name, pass: true }); console.log(`PASS ${name}`); } catch (e) { results.push({ name, pass: false, error: e.message }); console.error(`FAIL ${name}: ${e.message}`); await page.screenshot({ path: 'artifacts/failure.png', fullPage: true, animations: 'disabled' }); throw e; } }
 async function layout(label) {
-  const issues = await page.evaluate(() => { const seen = new Set(), duplicates = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) duplicates.push(e.id); seen.add(e.id); } const missing = [...document.querySelectorAll('button,input,textarea,select,a')].filter(e => !e.id).map(e => `${e.tagName}:${e.textContent?.slice(0, 24)}`); return { width: innerWidth, scroll: document.documentElement.scrollWidth, duplicates, missing }; });
+  const issues = await page.evaluate(async () => { const seen = new Set(), duplicates = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) duplicates.push(e.id); seen.add(e.id); } const missing = [...document.querySelectorAll('button,input,textarea,select,a')].filter(e => !e.id).map(e => `${e.tagName}:${e.textContent?.slice(0, 24)}`); return { width: innerWidth, scroll: document.documentElement.scrollWidth, duplicates, missing }; });
   expect(issues.duplicates, `${label} duplicate IDs`).toEqual([]); expect(issues.missing, `${label} interactive IDs`).toEqual([]); expect(issues.scroll, `${label} horizontal overflow`).toBeLessThanOrEqual(issues.width + 1);
 }
 try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
-  await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
-  await page.evaluate(() => sessionStorage.setItem('__keepPrologue', '1'));
+  await resetAll(); await page.reload({ waitUntil: 'networkidle' }); await page.evaluate(async () => document.fonts.ready);
+  await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '1'));
   await page.locator('#start-standard').click();
   await check('开场三幕：三方各一句、可跳过、只弹一次、记录页能重看', async () => {
     await expect(page.locator('#prologue-beat')).toBeVisible();
@@ -75,7 +163,7 @@ try {
     await page.locator('#prologue-skip').click();
     await expect(page.locator('#prologue-beat')).toHaveCount(0);
     await page.locator('#nav-dispatch').click();
-    await page.evaluate(() => sessionStorage.removeItem('__keepPrologue'));
+    await page.evaluate(async () => sessionStorage.removeItem('__keepPrologue'));
   });
   await expect(page.locator('.map-viewport')).toBeVisible();
   await check('首页地图、首批时段委托与分类筛选', async () => {
@@ -275,9 +363,8 @@ try {
     await expect(page.locator('.battle-note-scene')).toHaveCount(3);
     await page.locator('#battle-note-close').click();
     await page.locator('#battle-close').click();
-    await page.evaluate(({ battleId }) => {
-      const key = 'night-sugar-office:v1';
-      const raw = JSON.parse(localStorage.getItem(key));
+    {
+      const raw = await readSave();
       const battle = raw.battles.find(item => item.id === battleId);
       const ally = battle.units.find(unit => unit.side === 'ally');
       battle.units.push({
@@ -289,8 +376,8 @@ try {
         round: 1, speakerSide: 'enemy', speakerId: 'enemy-norma', expression: 'smile',
         text: '……人家说不用你啦，BOSS。', mode: 'speech',
       }];
-      localStorage.setItem(key, JSON.stringify(raw));
-    }, { battleId });
+      await writeSave(raw);
+    }
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-records').click(); await layout('records');
     await page.locator(`#records-note-${battleId}`).click();
@@ -339,6 +426,79 @@ try {
     expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(5); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
     await page.locator('#dismiss-toast').click();
   });
+  await check('存档位：存入 / 重新开始 / 读回 / 删除', async () => {
+    await page.locator('#open-command').click();
+    await page.locator('#cmd-input').fill('advance 60');
+    await page.locator('#cmd-input').press('Enter');
+    await page.locator('#cmd-close').click().catch(() => {});
+    const before = (await stored()).minutes;
+
+    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await expect(page.locator('#save-slots-dialog')).toBeVisible();
+    await expect(page.locator('#slot-label-2')).toContainText('空存档位');
+    await page.locator('#slot-save-1').click();
+    await expect(page.locator('#slot-label-1')).toContainText('第 14 日');
+    await expect(page.locator('#slot-time-1')).not.toContainText('没有时间戳');
+    await page.waitForTimeout(500);
+
+    await page.locator('#slots-restart').click();
+    await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '1'));
+    await page.locator('#slots-restart-confirm').click();
+    await expect(page.locator('#prologue-beat')).toBeVisible();
+    await page.locator('#prologue-skip').click();
+    await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '0'));
+    expect((await stored()).minutes).toBeLessThan(before);
+
+    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await expect(page.locator('#slot-label-1')).toContainText('第 14 日');
+    await page.locator('#slot-load-1').click();
+    await expect(page.locator('#import-save-confirm')).toBeVisible();
+    await page.locator('#import-save-confirm').click();
+    await page.waitForTimeout(500);
+    const loaded = await stored();
+    expect(loaded.minutes).toBe(before);
+
+    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await page.locator('#slot-delete-1').click();
+    await expect(page.locator('#slot-label-1')).toContainText('空存档位');
+    await page.locator('#modal-close').click();
+  });
+  await check('开局编成：头像网格选人、星标指派首领、自定义来源可筛', async () => {
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-starter').click();
+    await expect(page.locator('#starter-dialog')).toBeVisible();
+    await expect(page.locator('#starter-card-yue .starter-card-art')).toHaveCount(1);
+    await expect(page.locator('#starter-count')).toContainText('4 / 6');
+    await page.locator('#starter-card-zhi').click();
+    await expect(page.locator('#starter-count')).toContainText('5 / 6');
+    await page.locator('#starter-card-zhi').click();
+    await expect(page.locator('#starter-count')).toContainText('4 / 6');
+
+    await page.locator('#starter-tab-witch').click();
+    await expect(page.locator('#starter-leader-name-witch')).toContainText('蚀医');
+    await expect(page.locator('#starter-subject-leader-witch')).toBeVisible();
+    await expect(page.locator('#starter-pool-witch .starter-tile')).toHaveCount(12);
+
+    await page.locator('#starter-set-leader-fg-association-tou').click();
+    await expect(page.locator('#starter-leader-name-witch')).toContainText('篠宫灯里');
+    await expect(page.locator('#starter-subject-fg-association-tou')).toContainText('本阵首领');
+    await page.locator('#starter-leader-reset-witch').click();
+    await expect(page.locator('#starter-leader-name-witch')).toContainText('蚀医');
+
+    await page.locator('#starter-source-custom').click();
+    await expect(page.locator('#starter-pool-witch .starter-tile')).toHaveCount(0);
+    await page.locator('#starter-source-all').click();
+    await page.locator('#starter-search').fill('黑川');
+    await expect(page.locator('#starter-pool-witch .starter-tile')).toHaveCount(1);
+    await page.locator('#starter-search').fill('');
+
+    const before = await stored();
+    await page.locator('#starter-close').click();
+    await expect(page.locator('#starter-dialog')).toHaveCount(0);
+    const after = await stored();
+    expect(after.girls.length).toBe(before.girls.length);
+    expect(after.startersPicked).toBe(before.startersPicked);
+  });
   await check('契约成长页：目标、经验、契约与诊所入口', async () => {
     await page.locator('#nav-dispatch').click();
     await page.locator('#roster-girl-yue').click();
@@ -370,14 +530,14 @@ try {
     await expect.poll(async () => (await stored()).expeditions.length).toBe(0);
   });
   await check('退休区、退休金与远程手机联络', async () => {
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    {
+      const raw = await readSave();
       const yue = raw.girls.find(g => g.id === 'yue');
       const scar = i => ({ id: `test-scar-${i}`, name: '旧伤', kind: 'physical', condition: '阴雨天会疼', description: '她不太提起。', effect: { kind: 'stat', stat: 'agility', amount: -1 }, maxHpLoss: 8, gainedAt: '第 13 日 · 02:10', missionId: 'mirror' });
       yue.retired = true; yue.retiredReason = 'contract'; yue.status = 'retired'; yue.scars = [1, 2, 3, 4].map(scar);
       yue.contractEndDay = 14; yue.pensionMissed = 2; yue.roomId = 'dorm';
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
-    });
+      await writeSave(raw);
+    }
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
     await page.locator('#av-market-tab-retired').click();
@@ -393,7 +553,7 @@ try {
     await close();
   });
   await check('市场四标签、升级与自定义登记', async () => {
-    await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'networkidle' });
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
     await expect(page.locator('#av-market-tab-candidates')).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('.av-candidate')).toHaveCount(1);
@@ -422,13 +582,13 @@ try {
     await expect.poll(async () => (await stored()).candidates.some(g => g.name === '测试契约')).toBe(true);
   });
   await check('断药期禁止派遣与 Boss 危机横幅', async () => {
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    {
+      const raw = await readSave();
       const yue = raw.girls.find(g => g.id === 'yue');
       yue.witch = true; yue.corruption = 80; yue.withdrawalDays = 5; yue.drugUntilDay = 13; yue.status = 'idle';
       raw.boss = { id: 'boss-test', appearedDay: raw.day, lastTick: 0, deadline: raw.day * 1440 + 1200, missionId: 'boss-test' };
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
-    });
+      await writeSave(raw);
+    }
     await page.reload({ waitUntil: 'networkidle' });
     await expect(page.locator('.boss-banner')).toContainText('空月降临');
     await expect(page.locator('.girl-roster-card:has(#roster-girl-yue)')).toContainText('断药');
@@ -438,7 +598,7 @@ try {
     await close();
   });
   await check('主页三方势力态度、基地平面图内嵌模块与记录页 v4 台账', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await expect(page.locator('#dispatch-faction-witch')).toContainText('中立');
     await expect(page.locator('#dispatch-faction-association')).toContainText('中立');
@@ -461,13 +621,13 @@ try {
     await page.screenshot({ path: 'artifacts/records-desktop.png', fullPage: true, animations: 'disabled' });
   });
   await check('外观装备页：三套衣柜、六种表情、侵蚀归位与拖拽装备', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    {
+      const raw = await readSave();
       raw.inventory = { 'moon-weapon': 2, 'star-charm': 1 };
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
-    });
+      await writeSave(raw);
+    }
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
     await expect(page.locator('.corruption-inline')).toBeVisible();
@@ -493,7 +653,7 @@ try {
   });
   await check('表情差分：按服装导入、批量识别、切换立绘与移除', async () => {
     const face = (color, label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100"><rect width="80" height="100" fill="${color}"/><circle cx="40" cy="42" r="24" fill="#f7dce8"/><text x="40" y="90" text-anchor="middle" font-size="12" fill="#20101a">${label}</text></svg>`);
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-tab-appearance').click();
@@ -535,8 +695,9 @@ try {
     const shySrc = await page.locator('.dossier-art .girl-portrait.imported img').getAttribute('src');
     expect(calmSrc).not.toBe(shySrc);
     const outfitId = (await stored()).girls.find(g => g.id === 'yue').outfitId;
-    expect(calmSrc).toContain('data:image/webp');
-    expect(shySrc).toContain('data:image/webp');
+    // v22 起差分按原字节保存，不再统一转成 WebP。
+    expect(calmSrc).toContain('data:image/');
+    expect(shySrc).toContain('data:image/');
 
     await page.locator('#dossier-outfit-casual').click();
     await expect(page.locator('.dossier-art .girl-portrait.imported')).toHaveCount(0);
@@ -552,7 +713,7 @@ try {
     await close();
   });
   await check('势力物资每日货位、单次限购与售罄状态', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
     await page.locator('#av-market-tab-supplies').click();
@@ -568,7 +729,7 @@ try {
     await close();
   });
   await check('完成委托可回看战斗记录', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#mission-mirror').click();
     for (const id of ['yue', 'tang', 'ling']) await page.locator(`#assign-${id}`).click();
@@ -585,9 +746,9 @@ try {
     await page.locator('#battle-close').click();
   });
   await check('自定义登记：只导入立绘、逐字段补全与未确认不落库', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
-    const png = await page.evaluate(() => {
+    const png = await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
       const ctx = canvas.getContext('2d'); if (!ctx) return '';
       const gradient = ctx.createLinearGradient(0, 0, 0, 500); gradient.addColorStop(0, '#2b1c31'); gradient.addColorStop(1, '#120d18');
@@ -604,7 +765,7 @@ try {
       const content = { name: calls === 1 ? '使魔草稿' : '重写后的名字', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈', quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfitDescription: '宽大的值夜制服。', focus: 'empathy', skillIds: ['glimmer-spear', 'peach-ward', 'starlight-fall'], traitIds: ['cat-sense', 'protective', 'star-allergy'] };
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }) });
     });
-    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    await page.evaluate(async () => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
     const before = (await stored()).candidates.length;
     await page.locator('#nav-market').click();
     await page.locator('#av-market-custom').click();
@@ -626,7 +787,7 @@ try {
     expect((await stored()).candidates.length).toBe(before);
     await close();
     await page.unroute('**/chat/completions');
-    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-prompts'); localStorage.removeItem('night-sugar:llm-auto'); });
+    await page.evaluate(async () => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-prompts'); localStorage.removeItem('night-sugar:llm-auto'); });
     await page.reload({ waitUntil: 'networkidle' });
   });
   await check('只导入立绘后可手动完成登记', async () => {
@@ -653,7 +814,7 @@ try {
     await expect.poll(async () => (await stored()).candidates.some(g => g.name === '门口登记')).toBe(true);
     await close();
   });  await check('模型对话与生成内容编年史', async () => {
-    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    await page.evaluate(async () => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
     await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: '「今晚的月色像一颗没拆开的糖。」她把手机贴近耳边。' } }] }) }));
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
@@ -664,7 +825,7 @@ try {
     await expect(page.locator('.chat-message.typing')).toHaveCount(0);
     await close();
     await page.unroute('**/chat/completions');
-    await page.evaluate(() => { const key = 'night-sugar-office:v1'; const saved = JSON.parse(localStorage.getItem(key)); saved.chronicle = [{ id: 'ch-browser', day: 14, at: '21:40', kind: '魔物', title: '纸月', summary: '被折起来的月亮在窗外停了一夜。' }]; localStorage.setItem(key, JSON.stringify(saved)); });
+    await page.evaluate(async () => { const saved = await window.__readSave(); saved.chronicle = [{ id: 'ch-browser', day: 14, at: '21:40', kind: '魔物', title: '纸月', summary: '被折起来的月亮在窗外停了一夜。' }]; await window.__writeSave(saved); });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-records').click();
     await page.locator('#av-record-chronicle').click();
@@ -673,12 +834,12 @@ try {
     await expect(page.locator('.chronicle-entry h3')).toHaveText('纸月');
     await page.screenshot({ path: 'artifacts/chronicle-desktop.png', animations: 'disabled' });
     await close();
-    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); });
+    await page.evaluate(async () => { localStorage.removeItem('night-sugar:llm-config'); });
   });
   await check('完整提案先预览，采纳后才写入事务所与装备库', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
-    await page.evaluate(() => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
+    await page.evaluate(async () => localStorage.setItem('night-sugar:llm-config', JSON.stringify({ endpoint: 'https://mock.local/v1', apiKey: 'test-key', model: 'mock' })));
     await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(nightProposal) } }] }) }));
     const before = await stored();
     await page.locator('#open-settings').click();
@@ -701,11 +862,11 @@ try {
     expect(after.missions.some(mission => mission.envoy && mission.title === '替协会送一盏灯')).toBe(true);
     expect(after.opinions.some(opinion => opinion.title === '窗边的空位' && opinion.dialogue?.length === 3)).toBe(true);
     await page.unroute('**/chat/completions');
-    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-auto'); });
+    await page.evaluate(async () => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-auto'); });
     await page.reload({ waitUntil: 'networkidle' });
   });
   await check('契约卡导出并在新游戏中导入', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#girl-export-card').click()]);
@@ -716,7 +877,7 @@ try {
     expect(card.girl.name).toBe('月见桃');
     expect(card.girl.factionTag).toBe('association');
     await close();
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
     const before = (await stored()).candidates.length;
@@ -731,7 +892,7 @@ try {
     await page.screenshot({ path: 'artifacts/card-import.png', animations: 'disabled' });
   });
   await check('自定义特性契约卡：带定义能还原，旧卡跳过特性而不整卡失败', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-market').click();
     const element = (await stored()).girls[0].element;
@@ -760,10 +921,60 @@ try {
     expect(old.traits.map(trait => trait.name)).toEqual(['猫缘']);
     await expect(page.locator('[role="status"]')).toContainText('没能随卡片带来');
   });
-  await check('契约卡库：一叠收进来、坏卡只记一条、选中才导入、删库不动名册', async () => {
-    await page.evaluate(() => localStorage.clear());
+  await check('卡库与存档位：2.3MB 立绘的卡不再被拦，原图字节一路带到存档位', async () => {
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
-    await page.evaluate(() => localStorage.removeItem('night-sugar:cardbox:v1'));
+    await page.locator('#nav-market').click();
+    const element = (await stored()).girls[0].element;
+    const bigPortrait = `data:image/png;base64,${'A'.repeat(2_300_000)}`;
+    const card = {
+      format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: 1,
+      girl: {
+        name: '大立绘卡', codename: 'B-1', title: '一张很大的卡', element, color: '#c9b36a',
+        goal: '证明体积不再是门槛。', appearance: '原图像素。', personality: '沉默。', outfitDescription: '值夜制服。',
+        level: 5, stats: { magic: 68, insight: 64, agility: 62, empathy: 66 }, skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+        traitIds: [], factionTag: 'government', portrait: bigPortrait,
+      },
+    };
+    fs.writeFileSync('artifacts/cardbox-big.json', JSON.stringify(card));
+    await page.locator('#av-market-cardbox').click();
+    await expect(page.locator('#cardbox-dialog')).toBeVisible();
+    await page.setInputFiles('#cardbox-file', ['artifacts/cardbox-big.json']);
+    await expect(page.locator('#cardbox-list .cardbox-row')).toHaveCount(1);
+    await expect(page.locator('#cardbox-errors li')).toHaveCount(0);
+    await page.locator('#cardbox-select-all').click();
+    await page.locator('#cardbox-import').click();
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '大立绘卡')).toBe(true);
+    const brought = (await stored()).candidates.find(g => g.name === '大立绘卡');
+    expect(brought.portrait.length).toBe(bigPortrait.length);
+
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-save-slots').click();
+    await expect(page.locator('#save-slots-dialog')).toBeVisible();
+    await page.locator('#slot-save-1').click();
+    await expect(page.locator('#slot-card-1')).toContainText('第');
+    const slotChars = await page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('night-sugar');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const row = await new Promise(resolve => {
+        const get = db.transaction('kv', 'readonly').objectStore('kv').get('save/slot/1');
+        get.onsuccess = () => resolve(get.result ?? null);
+        get.onerror = () => resolve(null);
+      });
+      db.close();
+      return JSON.stringify(row ?? '').length;
+    });
+    // 2.3MB 原图被完整写进 IndexedDB，没有被裁成小图。
+    expect(slotChars).toBeGreaterThan(2_400_000);
+  });
+
+  await check('契约卡库：一叠收进来、坏卡只记一条、选中才导入、删库不动名册', async () => {
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:cardbox:v1'));
     await page.locator('#nav-market').click();
     const element = (await stored()).girls[0].element;
     const card = {
@@ -802,8 +1013,33 @@ try {
     expect((await stored()).candidates.some(g => g.name === '卡库测试')).toBe(true);
     await close();
   });
+  await check('契约卡库：带 300KB 立绘的卡不再被 256KB 误杀', async () => {
+    await page.locator('#nav-market').click();
+    const element = (await stored()).girls[0].element;
+    const big = {
+      format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: 1,
+      girl: {
+        name: '大立绘卡', codename: 'K-BIG', title: '带着一整张立绘来的人', element, color: '#8fd3c7',
+        goal: '让立绘完整地进来。', appearance: '细节多到画不完。', personality: '安静。', outfitDescription: '干净的值夜制服。',
+        level: 4, stats: { magic: 66, insight: 62, agility: 60, empathy: 72 }, skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+        traitIds: [], factionTag: 'association',
+        portrait: `data:image/png;base64,${'A'.repeat(300000)}`,
+      },
+    };
+    fs.writeFileSync('artifacts/cardbox-big.json', JSON.stringify(big));
+    await page.locator('#av-market-cardbox').click();
+    await expect(page.locator('#cardbox-dialog')).toBeVisible();
+    await page.setInputFiles('#cardbox-file', ['artifacts/cardbox-big.json']);
+    await expect(page.locator('#cardbox-list .cardbox-row')).toHaveCount(1);
+    await expect(page.locator('#cardbox-list .cardbox-row').first()).toContainText('大立绘卡');
+    await expect(page.locator('#cardbox-errors li')).toHaveCount(0);
+    await page.locator('#cardbox-select-all').click();
+    await page.locator('#cardbox-delete').click();
+    await expect(page.locator('#cardbox-empty')).toBeVisible();
+    await close();
+  });
   await check('存档导出、导入与损坏文件拒绝', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#advance-time-30').click();
     const before = await stored();
@@ -814,7 +1050,7 @@ try {
     expect(exported.day).toBe(before.day);
     expect(exported.girls.length).toBe(before.girls.length);
     await close();
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#open-settings').click();
     await page.setInputFiles('#settings-import-save-file', savePath);
@@ -828,7 +1064,7 @@ try {
     await page.screenshot({ path: 'artifacts/save-import.png', animations: 'disabled' });
   });
   await check('地图九辖区：地形边界、区域面板与环境影响', async () => {
-    await page.evaluate(() => localStorage.clear());
+    await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await expect(page.locator('.district-shape')).toHaveCount(9);
     await page.locator('.district-shape .district-fill').first().dispatchEvent('click');
@@ -883,21 +1119,21 @@ try {
     await page.mouse.up();
     await expect.poll(async () => (await page.locator('.llm-console').boundingBox()).width).toBeGreaterThan(beforeBox.width + 40);
     await expect.poll(async () => (await page.locator('.llm-console').boundingBox()).height).toBeGreaterThan(beforeBox.height + 30);
-    const savedSize = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-console-size') ?? 'null'));
+    const savedSize = await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:llm-console-size') ?? 'null'));
     expect(savedSize.w).toBeGreaterThan(beforeBox.width);
     await page.locator('#llm-console-toggle').click();
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-open-presets').click();
     await expect(page.locator('#preset-item-builtin-balanced')).toBeVisible();
-    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length);
+    const before = await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length);
     await page.locator('#preset-import-paste').fill(JSON.stringify({ name: '浏览器预设', temp_openai: 0.5, top_p_openai: 0.9, main: '保持短句', wi_format: '[WI]', extensions: { SPreset: {} }, prompts: [{ identifier: 'tool', content: '调用 game_content 输出。' }] }));
     await page.locator('#preset-import-paste-run').click();
     await expect(page.locator('.preset-report.ok')).toContainText('已导入');
     await expect(page.locator('.preset-report.ok')).toContainText('wi_format');
     await expect(page.locator('.preset-notes')).toContainText('SPreset');
     await expect(page.locator('.preset-unsupported')).toContainText('game_content');
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length)).toBeGreaterThan(before);
+    await expect.poll(async () => page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]').length)).toBeGreaterThan(before);
     await page.screenshot({ path: 'artifacts/presets.png', animations: 'disabled' });
     await close();
   });
@@ -921,7 +1157,7 @@ try {
     await expect(page.locator('#preset-bind-current')).toHaveValue(/preset-/);
     const arcBefore = await page.locator('#preset-bind-current').inputValue();
     await page.locator('#preset-bind-current').selectOption({ label: '均衡叙事 副本' });
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').arc)).toContain('preset-');
+    await expect.poll(async () => page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').arc)).toContain('preset-');
     await page.locator('#preset-task-tab-storyline').click();
     await expect(page.locator('#preset-bind-current')).not.toHaveValue(arcBefore);
     await page.locator('#preset-task-tab-all').click();
@@ -940,7 +1176,7 @@ try {
     await page.locator('#preset-api-location').fill('asia-east1');
     await expect(page.locator('#preset-api-provider-vertex')).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('#preset-api-endpoint')).toHaveCount(0);
-    await expect.poll(async () => page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(async () => {
       const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       const item = list.find(preset => preset.name === '均衡叙事 副本');
       return item?.api?.provider ?? '';
@@ -948,17 +1184,17 @@ try {
     await page.screenshot({ path: 'artifacts/preset-api-vertex.png', animations: 'disabled' });
     await page.locator('#preset-api-provider-default').click();
     await expect(page.locator('#preset-api-endpoint')).toHaveCount(1);
-    await expect.poll(async () => page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(async () => {
       const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       const item = list.find(preset => preset.name === '均衡叙事 副本');
       return item?.api?.provider ?? 'none';
     })).toBe('none');
-    await expect.poll(async () => page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(async () => {
       const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       const item = list.find(preset => preset.name === '均衡叙事 副本');
       return item?.api?.model ?? '';
     })).toBe('story-local');
-    await expect.poll(async () => page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(async () => {
       const list = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       const item = list.find(preset => preset.name === '均衡叙事 副本');
       return item?.regex?.[0]?.targets?.join(',') ?? '';
@@ -1012,7 +1248,7 @@ try {
     await expect(page.locator('#preset-bind-current')).toHaveValue(/preset-/);
     await expect(page.locator('#preset-bind-current')).not.toHaveValue(dailyBound);
     await page.locator('#preset-task-tab-daily').click();
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').daily)).toContain('preset-');
+    await expect.poll(async () => page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:preset-binding') ?? '{}').daily)).toContain('preset-');
     await expect(page.locator('.preset-entry')).toHaveCount(1);
     await expect(page.locator('.preset-entry textarea')).toHaveValue(/为今晚的夜班提案/);
     await page.locator('#modal-close').click();
@@ -1022,7 +1258,7 @@ try {
     await page.locator('#settings-open-presets').click();
     await page.locator('.preset-list button', { hasText: '均衡叙事 副本' }).click();
     await page.locator('#preset-tab-prompts').click();
-    const dailyIndex = await page.evaluate(() => [...document.querySelectorAll('.preset-entry')]
+    const dailyIndex = await page.evaluate(async () => [...document.querySelectorAll('.preset-entry')]
       .findIndex(item => (item.querySelector('select[id^="preset-entry-scope-"]'))?.value === 'daily'));
     expect(dailyIndex).toBeGreaterThanOrEqual(0);
     const dailyEntry = page.locator('.preset-entry').nth(dailyIndex);
@@ -1043,7 +1279,7 @@ try {
       private_key: '-----BEGIN PRIVATE KEY-----\\nMIIBVAIBADANBgkq\\n-----END PRIVATE KEY-----\\n',
       token_uri: 'https://oauth2.googleapis.com/token',
     });
-    await page.evaluate((sa) => localStorage.setItem('night-sugar:llm-config', JSON.stringify({
+    await page.evaluate(async (sa) => localStorage.setItem('night-sugar:llm-config', JSON.stringify({
       provider: 'openai',
       openai: { endpoint: 'https://api.deepseek.com/v1', apiKey: 'sk-openai-demo', model: 'deepseek-chat', location: 'us-central1' },
       vertex: { endpoint: '', apiKey: sa, model: 'gemini-2.5-pro', location: 'asia-east1' },
@@ -1061,7 +1297,7 @@ try {
     await expect(page.locator('#settings-llm-credential')).toBeVisible();
     // 切过去之后两份都还在：OpenAI 那份不能被 Vertex 的值抄掉。
     await expect(page.locator('.llm-default-item').nth(0)).toContainText('deepseek-chat');
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
+    const saved = await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
     expect(saved.provider).toBe('vertex');
     expect(saved.openai.apiKey).toBe('sk-openai-demo');
     expect(saved.openai.model).toBe('deepseek-chat');
@@ -1069,7 +1305,7 @@ try {
     expect(saved.vertex.model).toBe('gemini-2.5-pro');
     await page.screenshot({ path: 'artifacts/settings-dual-slot.png', animations: 'disabled' });
     await page.locator('#modal-close').click();
-    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:llm-config'));
     await page.reload({ waitUntil: 'networkidle' });
   });
 
@@ -1096,8 +1332,8 @@ try {
     await expect(page.locator('#settings-llm-project')).toHaveText('night-sugar-demo');
     await expect(page.locator('#settings-llm-account')).toContainText('••••');
     await expect(page.locator('#settings-llm-account')).not.toContainText('svc@night-sugar-demo.iam.gserviceaccount.com');
-    expect(await page.evaluate(() => document.body.innerText.includes('BEGIN PRIVATE KEY'))).toBe(false);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
+    expect(await page.evaluate(async () => document.body.innerText.includes('BEGIN PRIVATE KEY'))).toBe(false);
+    const saved = await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}'));
     expect(saved.provider).toBe('vertex');
     expect(saved.vertex.apiKey.includes('svc@night-sugar-demo.iam.gserviceaccount.com')).toBe(true);
     expect(saved.openai.apiKey).toBe('');
@@ -1116,9 +1352,9 @@ try {
     await expect(page.locator('#settings-llm-vertex-info')).toContainText('Express');
     await expect(page.locator('#settings-llm-account')).toContainText('AIza');
     await expect(page.locator('#settings-llm-account')).not.toContainText('demo-express');
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}').vertex.apiKey)).toBe('AIzaSy-demo-express-key');
+    expect(await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:llm-config') ?? '{}').vertex.apiKey)).toBe('AIzaSy-demo-express-key');
     await page.locator('#modal-close').click();
-    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:llm-config'));
   });
 
   await check('正则预览区分发给模型与界面显示', async () => {
@@ -1163,7 +1399,7 @@ try {
   });
 
   await check('旧版世界观与每日要求会迁移成可编辑预设', async () => {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       localStorage.setItem('night-sugar:llm-prompts', JSON.stringify({ world: '旧世界：霓虹灯下的樱雾市，夜班永不结束。', daily: '为今晚写一份只谈气氛的提案，不要给任何数值。' }));
       localStorage.removeItem('night-sugar:presets');
       localStorage.removeItem('night-sugar:llm-prompts-migrated');
@@ -1179,7 +1415,7 @@ try {
     await expect(page.locator('#preset-entry-content-5')).toHaveValue(/只谈气氛/);
     await page.screenshot({ path: 'artifacts/preset-legacy-migration.png', animations: 'disabled' });
     await page.locator('#modal-close').click();
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       localStorage.removeItem('night-sugar:llm-prompts');
       localStorage.removeItem('night-sugar:presets');
       localStorage.removeItem('night-sugar:llm-prompts-migrated');
@@ -1194,7 +1430,7 @@ try {
     await page.locator('#settings-player-alias').fill('所长');
     await page.locator('#settings-player-appearance').fill('总是穿着旧风衣，左手戴一只停摆的表。');
     await page.locator('#settings-player-background').fill('三年前签下这间事务所，再没离开过这条街。');
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:player-profile') ?? '{}').name)).toBe('白鸟');
+    await expect.poll(async () => page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:player-profile') ?? '{}').name)).toBe('白鸟');
     await page.screenshot({ path: 'artifacts/player-profile.png', animations: 'disabled' });
     await page.locator('#modal-close').click();
     await page.reload({ waitUntil: 'networkidle' });
@@ -1203,7 +1439,7 @@ try {
     await page.locator('#modal-close').click();
   });
   await check('输出预算：统一值管住全部任务，单项可覆盖并在刷新后保留', async () => {
-    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-budget'));
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:llm-budget'));
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
@@ -1212,7 +1448,7 @@ try {
     await expect(page.locator('#settings-budget-task-chat')).toHaveValue('');
     await page.locator('#settings-budget-unified').fill('1200');
     await page.locator('#settings-budget-task-chat').fill('900');
-    await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:llm-budget') ?? '{}').unified)).toBe(1200);
+    await expect.poll(async () => page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:llm-budget') ?? '{}').unified)).toBe(1200);
     await page.screenshot({ path: 'artifacts/settings-budget.png', animations: 'disabled' });
     await page.setViewportSize({ width: 390, height: 900 });
     await layout('settings budget 390');
@@ -1232,7 +1468,7 @@ try {
     await page.locator('#settings-budget-reset').click();
     await expect(page.locator('#settings-budget-unified')).toHaveValue('2048');
     await page.locator('#modal-close').click();
-    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-budget'));
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:llm-budget'));
     await page.reload({ waitUntil: 'networkidle' });
   });
 
@@ -1295,10 +1531,10 @@ try {
     await page.locator('#worldbook-new').click();
     // v21 给内置词条加了「空月」，比 v20 多一条。
     await expect(page.locator('.wb-item')).toHaveCount(17);
-    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(17);
+    await expect.poll(async () => JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(17);
     await page.locator('#worldbook-tab-balance').click();
     await page.locator('#balance-clinicBase').fill('150');
-    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);
+    await expect.poll(async () => JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);
     await page.screenshot({ path: 'artifacts/worldbook.png', fullPage: true, animations: 'disabled' });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#open-worldbook').click();
@@ -1324,7 +1560,7 @@ try {
     await expect(page.locator('#workshop-effect-amount-0')).toHaveValue('12');
     await page.locator('#workshop-effect-amount-0').fill('3');
     await page.locator('#workshop-save').click();
-    const afterSkill = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterSkill = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterSkill.skills.length).toBe(1);
     const skillId = afterSkill.skills[0].id;
     expect(afterSkill.skills[0].effects[0].amount).toBe(3);
@@ -1339,7 +1575,7 @@ try {
     await page.locator('#workshop-damage-bonus').fill('40');
     await page.locator('#workshop-initiative-bonus').fill('8');
     await page.locator('#workshop-save').click();
-    const afterItem = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterItem = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterItem.items.length).toBe(1);
     expect(afterItem.items[0].damageBonus).toBe(40);
     expect(afterItem.items[0].initiativeBonus).toBe(8);
@@ -1365,7 +1601,7 @@ try {
     await expect(page.locator('#workshop-preview')).toContainText('减免 25%');
     await page.locator('#workshop-tab-form').click();
     await page.locator('#workshop-save').click();
-    const afterMonster = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterMonster = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterMonster.monsters.length).toBe(1);
     const monsterId = afterMonster.monsters[0].id;
     expect(afterMonster.monsters[0].rules[0].effect).toBe('damageReduce');
@@ -1380,7 +1616,7 @@ try {
     await page.locator('#workshop-mission-reward-item').selectOption(itemId);
     await page.locator('#workshop-mission-reward-girl').fill('1');
     await page.locator('#workshop-save').click();
-    const afterInvestigation = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterInvestigation = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterInvestigation.missions.length).toBe(1);
     const investigation = afterInvestigation.missions.find(entry => entry.work === 'investigation');
     expect(investigation.work).toBe('investigation');
@@ -1406,7 +1642,7 @@ try {
     await page.locator('#workshop-mission-district').selectOption('candy');
     await page.locator('#workshop-mission-window').selectOption('long');
     await page.locator('#workshop-save').click();
-    const afterMission = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterMission = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterMission.missions.length).toBe(2);
     const combat = afterMission.missions.find(entry => entry.work === 'combat');
     const missionId = combat.id;
@@ -1432,7 +1668,7 @@ try {
     await page.locator('#workshop-incident-days-0').fill('2');
     await page.locator('#workshop-incident-target-0').fill('9');
     await page.locator('#workshop-save').click();
-    const afterIncident = JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:content:v1')));
+    const afterIncident = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
     expect(afterIncident.incidents.length).toBe(1);
     expect(afterIncident.incidents[0].options.length).toBe(3);
     const incidentId = afterIncident.incidents[0].id;
@@ -1469,7 +1705,7 @@ try {
     expect(pack.skills.length).toBe(1);
     expect(pack.missions.length).toBe(2);
     expect(pack.incidents.length).toBe(1);
-    await page.evaluate(() => localStorage.removeItem('night-sugar:content:v1'));
+    await page.evaluate(async () => localStorage.removeItem('night-sugar:content:v1'));
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#open-workshop').click();
     await page.locator('#workshop-tab-skill').click();
@@ -1507,14 +1743,14 @@ try {
     };
     before.storylines = []; before.events = []; before.incidents = [];
     before.missions = before.missions.filter(m => !m.storylineId);
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       const presets = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       for (const preset of presets) if (preset.api) preset.api.apiKey = '';
       localStorage.setItem('night-sugar:presets', JSON.stringify(presets));
       localStorage.setItem('night-sugar:preset-binding', JSON.stringify({ chat: 'builtin-balanced', daily: 'builtin-strict', profile: 'builtin-strict', storyline: 'builtin-balanced', event: 'builtin-balanced', arc: 'builtin-balanced', incident: 'builtin-balanced', outfit: 'builtin-strict' }));
       localStorage.removeItem('night-sugar:llm-config');
     });
-    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await writeSave(before);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-story-start').click();
@@ -1549,7 +1785,7 @@ try {
     base.events = [{ id: 'ev-arc-test', girlId: 'yue', title: '临时的一晚', hook: '她把伞收起来，水滴了一路。', scenes: [], stage: 0, status: 'active', day: base.day, source: 'template', badge: true, mode: 'story', passages: [], passageIndex: 0, pending: true }];
     const yue = base.girls.find(g => g.id === 'yue');
     yue.eventBadge = '新'; yue.status = 'idle'; yue.remaining = 0;
-    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), base);
+    await writeSave(base);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-event-enter').scrollIntoViewIfNeeded();
@@ -1575,15 +1811,15 @@ try {
   });
 
   await check('故事蓝图：可加节点、校验并保存进卡片', async () => {
-    await page.evaluate(() => { localStorage.setItem('night-sugar-office:started', '1'); });
+    await page.evaluate(async () => { localStorage.setItem('night-sugar-office:started', '1'); });
     await page.reload({ waitUntil: 'networkidle' });
-    await page.evaluate(() => {
-      const key = 'night-sugar-office:v1';
-      const s = JSON.parse(localStorage.getItem(key));
+    await page.evaluate(async () => {
+      
+      const s = await window.__readSave();
       s.storylines = []; s.events = []; s.incidents = [];
       const yue = s.girls.find(g => g.id === 'yue');
       yue.bond = 60; yue.storyPlan = undefined;
-      localStorage.setItem(key, JSON.stringify(s));
+      await window.__writeSave(s);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
@@ -1692,7 +1928,7 @@ try {
     for (let i = 0; i < 6; i += 1) await page.locator('#story-graph-zoom-in').click();
 
     // 右键拖动平移
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       const host = document.querySelector('.story-graph-canvas');
       if (host) { host.scrollLeft = 300; host.scrollTop = 120; }
     });
@@ -1701,11 +1937,11 @@ try {
     await page.mouse.down({ button: 'right' });
     await page.mouse.move(panBox.x + panBox.width / 2 + 150, panBox.y + panBox.height / 2 + 60, { steps: 8 });
     await page.mouse.up({ button: 'right' });
-    await expect.poll(async () => page.evaluate(() => document.querySelector('.story-graph-canvas')?.scrollLeft ?? -1)).toBeLessThan(300);
+    await expect.poll(async () => page.evaluate(async () => document.querySelector('.story-graph-canvas')?.scrollLeft ?? -1)).toBeLessThan(300);
     await page.locator('#story-graph-zoom-reset').click();
 
     // 空白处框选两个以上节点
-    await page.evaluate(() => { const host = document.querySelector('.story-graph-canvas'); if (host) { host.scrollLeft = 0; host.scrollTop = 0; } });
+    await page.evaluate(async () => { const host = document.querySelector('.story-graph-canvas'); if (host) { host.scrollLeft = 0; host.scrollTop = 0; } });
     const canvasBox = await page.locator('.story-graph-canvas').boundingBox();
     await page.mouse.move(canvasBox.x + 12, canvasBox.y + 56);
     await page.mouse.down();
@@ -1743,19 +1979,19 @@ try {
   });
 
   await check('故事蓝图：事件节点可从内容工坊弹窗卡导入', async () => {
-    const incidentId = await page.evaluate(() => {
+    const incidentId = await page.evaluate(async () => {
       const library = JSON.parse(localStorage.getItem('night-sugar:content:v1') ?? '{}');
       return library.incidents?.[0]?.id ?? '';
     });
     expect(incidentId).toBeTruthy();
-    await page.evaluate(() => {
-      const raw = localStorage.getItem('night-sugar-office:v1');
+    await page.evaluate(async () => {
+      const raw = JSON.stringify(await window.__readSave());
       if (!raw) return;
       const state = JSON.parse(raw);
       state.storylines = []; state.events = []; state.incidents = [];
       const girl = state.girls.find(entry => entry.id === 'yue') ?? state.girls[0];
       girl.bond = 60; girl.storyPlan = undefined;
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(state));
+      await window.__writeSave(state);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
@@ -1775,14 +2011,14 @@ try {
   });
 
   await check('故事蓝图：没有 Key 时用四幕模板生成，编辑资料后按蓝图开场', async () => {
-    await page.evaluate(() => {
-      const raw = localStorage.getItem('night-sugar-office:v1');
+    await page.evaluate(async () => {
+      const raw = JSON.stringify(await window.__readSave());
       if (!raw) return;
       const s = JSON.parse(raw);
       s.storylines = []; s.events = []; s.incidents = [];
       const girl = s.girls.find(g => g.id === 'yue') ?? s.girls[0];
       girl.bond = 60; girl.storyPlan = undefined;
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(s));
+      await window.__writeSave(s);
       const presets = JSON.parse(localStorage.getItem('night-sugar:presets') ?? '[]');
       for (const preset of presets) if (preset.api) preset.api.apiKey = '';
       localStorage.setItem('night-sugar:presets', JSON.stringify(presets));
@@ -1817,18 +2053,18 @@ try {
     await close();
   });
 await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按时回血', async () => {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       localStorage.clear();
       sessionStorage.setItem('night-sugar-office:started', '1');
     });
     await page.reload({ waitUntil: 'networkidle' });
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    await page.evaluate(async () => {
+      const raw = await window.__readSave();
       raw.girls.forEach(g => { g.status = 'idle'; g.remaining = 0; g.retired = false; });
       const yue = raw.girls.find(g => g.id === 'yue');
       yue.hp = 40;
       raw.gold = 4000; raw.treatments = [];
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+      await window.__writeSave(raw);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await settleIncidents();
@@ -1871,7 +2107,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await settleIncidents();
   });
   await check('叙事引擎快照能按 prompt_order 显示预设槽位', async () => {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       const entry = {
         id: 'slot-test-1', at: new Date().toISOString(), kind: '角色剧情', ok: true, model: 'mock-story',
         endpoint: 'https://mock.local/v1', status: 200, durationMs: 1200, message: '测试槽位顺序',
@@ -1893,7 +2129,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.locator('#llm-console-toggle').click();
   });
   await check('魔女化：独立表情页、真实立绘切换与恢复普通服装', async () => {
-    const witchArt = await page.evaluate(() => {
+    const witchArt = await page.evaluate(async () => {
       const make = (fill) => {
         const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
         const ctx = canvas.getContext('2d'); if (!ctx) return '';
@@ -1904,13 +2140,13 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
       return { base: make('#315f9a'), variant: make('#b23a5e') };
     });
     const beforeWitch = await stored();
-    await page.evaluate(({ base, variant }) => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    await page.evaluate(async ({ base, variant }) => {
+      const raw = await window.__readSave();
       const yue = raw.girls.find(girl => girl.id === 'yue');
       yue.corruption = 60; yue.witch = false;
       yue.witchForm = { id: 'witchform', name: '魔女化 · 夜之形', description: '另一种轮廓。', palette: ['#2a1524', '#c478b8', '#f3aec9'], layerKey: 'formal', form: 'witch', portrait: base };
       yue.importedVariants = { ...(yue.importedVariants ?? {}), 'witchform:calm': variant };
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+      await window.__writeSave(raw);
     }, witchArt);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-dispatch').click();
@@ -1926,25 +2162,25 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.screenshot({ path: 'artifacts/expression-variants-witch.png', animations: 'disabled' });
     await page.locator('#expression-variant-close').click();
     await close();
-    await page.evaluate(snapshot => localStorage.setItem('night-sugar-office:v1', JSON.stringify(snapshot)), beforeWitch);
+    await writeSave(beforeWitch);
     await page.reload({ waitUntil: 'networkidle' });
   });
   await check('魔女化：预留导入、服装锁定与档案性格编辑', async () => {
     const beforeWitch = await stored();
     const normalPersonality = beforeWitch.girls.find(girl => girl.id === 'yue').personality;
-    const art = await page.evaluate(() => {
+    const art = await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
       const ctx = canvas.getContext('2d'); if (!ctx) return '';
       ctx.fillStyle = '#3b2254'; ctx.fillRect(0, 0, 400, 500);
       ctx.fillStyle = '#e8b3d3'; ctx.beginPath(); ctx.arc(200, 210, 86, 0, Math.PI * 2); ctx.fill();
       return canvas.toDataURL('image/png');
     });
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    await page.evaluate(async () => {
+      const raw = await window.__readSave();
       const yue = raw.girls.find(girl => girl.id === 'yue');
       yue.corruption = 20; yue.witch = false;
       delete yue.witchForm; delete yue.witchPersonality;
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+      await window.__writeSave(raw);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-dispatch').click();
@@ -1964,10 +2200,10 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.locator('#dossier-witch-slot').click();
     await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(false);
 
-    await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem('night-sugar-office:v1'));
+    await page.evaluate(async () => {
+      const raw = await window.__readSave();
       raw.girls.find(girl => girl.id === 'yue').corruption = 60;
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(raw));
+      await window.__writeSave(raw);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-dispatch').click();
@@ -1995,11 +2231,11 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     expect(restored.witch).toBe(false);
     expect(restored.witchForm?.portrait?.startsWith('data:image/')).toBe(true);
     await close();
-    await page.evaluate(snapshot => localStorage.setItem('night-sugar-office:v1', JSON.stringify(snapshot)), beforeWitch);
+    await writeSave(beforeWitch);
     await page.reload({ waitUntil: 'networkidle' });
   });
   await check('自定义登记：衣柜包带入多套服装、表情差分与魔女化立绘', async () => {
-    const swatches = await page.evaluate(() => {
+    const swatches = await page.evaluate(async () => {
       const make = (fill) => {
         const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 500;
         const ctx = canvas.getContext('2d'); if (!ctx) return '';
@@ -2051,7 +2287,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     for (const label of ['清洁', '微浊', '浑浊', '深染', '灾厄']) await expect(legend).toContainText(label);
     const pollution = (await stored()).pollution;
     expect(Object.values(pollution).filter(level => level > 0).length).toBe(9);
-    await page.evaluate(() => document.querySelector('.district-fill')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await page.evaluate(async () => document.querySelector('.district-fill')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     const panel = page.locator('[id^="district-pollution-"]');
     await expect(panel).toHaveCount(1);
     await expect(panel).toContainText('每日 +');
@@ -2173,7 +2409,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     const yue = before.girls.find(g => g.id === 'yue');
     yue.bond = 60;
     yue.status = 'idle';
-    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await writeSave(before);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#nav-base').click();
     await page.locator('#open-office-profile').click();
@@ -2191,11 +2427,11 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     expect(after.office.background).toBe('旧糖果店的二楼，关门前是城里的失物招领处。');
     expect(after.office.goal).toBe('让每个出身的少女都有地方挂外套。');
     expect(after.assistantId).toBe('yue');
-    await expect.poll(async () => page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(async () => {
       const book = JSON.parse(localStorage.getItem('night-sugar:worldbook') ?? '[]');
       return book.find(item => item.id === 'office-profile')?.content ?? '';
     })).toContain('失物招领处');
-    const content = await page.evaluate(() => JSON.parse(localStorage.getItem('night-sugar:worldbook') ?? '[]').find(item => item.id === 'office-profile').content);
+    const content = await page.evaluate(async () => JSON.parse(localStorage.getItem('night-sugar:worldbook') ?? '[]').find(item => item.id === 'office-profile').content);
     expect(content).toContain('让每个出身的少女都有地方挂外套。');
     expect(content).toContain('月见桃');
   });
@@ -2238,7 +2474,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     before.territories[target.district] = 'witch';
     before.battles = [];
     for (const girl of before.girls) if (girl.status === 'mission') girl.status = 'idle';
-    await page.evaluate(next => localStorage.setItem('night-sugar-office:v1', JSON.stringify(next)), before);
+    await writeSave(before);
     await page.reload({ waitUntil: 'networkidle' });
     await openMission(target.id);
     await expect(page.locator(`#mission-interception-${target.id}`)).toContainText('月蚀在此戒备');
@@ -2266,15 +2502,15 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
 
   await check('势力档案：两条敌意线带档位与起因，临战时会客厅挂角标', async () => {
     await close();
-    await page.evaluate(() => {
-      const key = 'night-sugar-office:v1';
-      const raw = JSON.parse(localStorage.getItem(key));
+    await page.evaluate(async () => {
+      
+      const raw = await window.__readSave();
       raw.hostility = {
         'association-government': { pair: 'association-government', value: 52, updatedDay: 1, reason: '灯油配额谈了三次，一次都没谈拢' },
         'association-witch': { pair: 'association-witch', value: 92, updatedDay: 1, reason: '协会烧了她们一本名录' },
         'government-witch': { pair: 'government-witch', value: 41, updatedDay: 1, reason: '市役所的编号名单上还留着没销的案子' },
       };
-      localStorage.setItem(key, JSON.stringify(raw));
+      await window.__writeSave(raw);
     });
     await page.reload({ waitUntil: 'networkidle' });
     if (await page.locator('#start-standard').count()) await page.locator('#start-standard').click();
@@ -2292,9 +2528,9 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
 
   await check('战线：地图上有标记，进去能看清两边、选边派人出发', async () => {
     await close();
-    await page.evaluate(() => {
-      const key = 'night-sugar-office:v1';
-      const raw = JSON.parse(localStorage.getItem(key));
+    await page.evaluate(async () => {
+      
+      const raw = await window.__readSave();
       raw.fronts = [{
         id: 'front-spec-1', pair: 'association-witch', day: raw.day, district: 'oldtown',
         attacker: 'association', defender: 'witch',
@@ -2302,13 +2538,13 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
         attackerPower: 78, defenderPower: 61, status: 'open', reason: '协会烧了她们一本名录',
       }];
       raw.hostility['association-witch'] = { pair: 'association-witch', value: 25, updatedDay: raw.day, reason: '打起来了，账先记着' };
-      localStorage.setItem(key, JSON.stringify(raw));
+      await window.__writeSave(raw);
     });
     await page.reload({ waitUntil: 'networkidle' });
     if (await page.locator('#start-standard').count()) await page.locator('#start-standard').click();
     await expect(page.locator('.map-viewport')).toBeVisible();
     await expect(page.locator('#map-front-oldtown')).toBeVisible();
-    await page.evaluate(() => document.getElementById('map-front-oldtown')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await page.evaluate(async () => document.getElementById('map-front-oldtown')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await expect(page.locator('#front-dialog')).toBeVisible();
     await expect(page.locator('#front-reason')).toContainText('协会烧了她们一本名录');
     await expect(page.locator('#front-power-attacker')).toContainText('78');
@@ -2326,12 +2562,12 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
   });
 
   await check('故事线分成三段，前面没讲完时后面两段锁着', async () => {
-    await page.evaluate(() => {
-      const raw = localStorage.getItem('night-sugar-office:v1');
+    await page.evaluate(async () => {
+      const raw = JSON.stringify(await window.__readSave());
       if (!raw) return;
       const state = JSON.parse(raw);
       state.storylines = [];
-      localStorage.setItem('night-sugar-office:v1', JSON.stringify(state));
+      await window.__writeSave(state);
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
@@ -2343,6 +2579,91 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await expect(slots.nth(1)).toContainText('等前一段讲完');
     await expect(slots.nth(2)).toContainText('等前一段讲完');
     await page.screenshot({ path: 'artifacts/story-slots.png', fullPage: false, animations: 'disabled' });
+    await close();
+  });
+
+  await check('存储迁移：旧 localStorage 档进 IndexedDB，旧键清掉且进度不丢', async () => {
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    const snapshot = await stored();
+    // 造一份「只有 localStorage 有档」的旧状态，并抹掉迁移标记，逼它重跑一次迁移。
+    await page.evaluate(async value => {
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(value));
+      const db = await new Promise(resolve => { const req = indexedDB.open('night-sugar'); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); });
+      if (!db) return;
+      await new Promise(resolve => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').delete('save/current');
+        tx.objectStore('kv').delete('meta/migrated');
+        tx.oncomplete = () => resolve(); tx.onerror = () => resolve(); tx.onabort = () => resolve();
+      });
+      db.close();
+    }, snapshot);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(600);
+    const after = await state();
+    expect(after.day).toBe(snapshot.day);
+    expect(after.gold).toBe(snapshot.gold);
+    const legacyLeft = await page.evaluate(() => localStorage.getItem('night-sugar-office:v1'));
+    expect(legacyLeft).toBeNull();
+    const marker = await page.evaluate(async () => {
+      const db = await new Promise(resolve => { const req = indexedDB.open('night-sugar'); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); });
+      if (!db) return null;
+      const value = await new Promise(resolve => {
+        const tx = db.transaction('kv', 'readonly');
+        const req = tx.objectStore('kv').get('meta/migrated');
+        req.onsuccess = () => resolve(req.result?.value ?? null); req.onerror = () => resolve(null);
+      });
+      db.close();
+      return value;
+    });
+    expect(marker).toBeTruthy();
+  });
+
+  await check('立绘保真：1024 见方的原图按原字节存进去，不被压成 768×960', async () => {
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    const base64 = await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 1024;
+      const ctx = canvas.getContext('2d'); if (!ctx) return '';
+      const gradient = ctx.createLinearGradient(0, 0, 1024, 1024);
+      gradient.addColorStop(0, '#241530'); gradient.addColorStop(1, '#0d0a12');
+      ctx.fillStyle = gradient; ctx.fillRect(0, 0, 1024, 1024);
+      ctx.fillStyle = '#f3aec9'; ctx.beginPath(); ctx.arc(512, 430, 240, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8fd3c7'; ctx.fillRect(120, 800, 784, 60);
+      return canvas.toDataURL('image/png').split(',')[1] ?? '';
+    });
+    const bytes = Buffer.from(base64, 'base64');
+    fs.writeFileSync('artifacts/fixture-portrait-big.png', bytes);
+    expect(bytes.length).toBeGreaterThan(10000);
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await page.setInputFiles('#custom-portrait-file', 'artifacts/fixture-portrait-big.png');
+    await expect(page.locator('.custom-gate-draft img')).toBeVisible();
+    await page.locator('#custom-gate-manual').click();
+    await page.locator('#custom-name').fill('原图少女');
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    for (let i = 0; i < 3; i++) await page.locator('.custom-pick').nth(i).click();
+    await page.locator('#custom-next').click();
+    await expect(page.locator('#custom-create')).toBeEnabled();
+    await page.locator('#custom-create').click();
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '原图少女')).toBe(true);
+    const saved = (await stored()).candidates.find(g => g.name === '原图少女');
+    const kept = await page.evaluate(async src => {
+      const size = await new Promise(resolve => {
+        const probe = new Image();
+        probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+        probe.onerror = () => resolve({ width: 0, height: 0 });
+        probe.src = src;
+      });
+      return { payload: String(src).split(',')[1] ?? '', ...size };
+    }, saved.portrait);
+    expect(kept.width).toBe(1024);
+    expect(kept.height).toBe(1024);
+    expect(Buffer.from(kept.payload, 'base64').length).toBe(bytes.length);
     await close();
   });
 

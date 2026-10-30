@@ -732,20 +732,68 @@ function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], lab
 
 const JSON_RETRY_MESSAGE = '上一次输出在写到 JSON 中途被截断了。这一次只输出完整的 JSON 对象，不要思维链、不要解释、不要 Markdown 代码块。';
 
-/** 从回复里找出 JSON；推理模型常在 JSON 前写一段说明，偶尔还会在代码块里包一层。 */
+/** 从 start 处的 { 找到配对的 }：字符串里的括号与转义引号不计数。 */
+function matchBrace(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escape) escape = false;
+      else if (char === '\\') escape = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function parseJsonObject(candidate: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 从回复里找出 JSON。
+ * 模型常会先说一句、包一层代码块，或者把同一个对象写两遍；这里按「配对括号」逐个候选试，
+ * 而不是从第一个 { 直接切到最后一个 }——那会把两段 JSON 连同中间的说明一起交给 JSON.parse。
+ */
 function extractJsonObject(text: string): Record<string, unknown> | null {
-  const cleaned = text.replace(/```(?:json)?/gi, '').trim();
-  const start = cleaned.indexOf('{');
-  if (start < 0) return null;
-  const end = cleaned.lastIndexOf('}');
-  const candidates = end > start ? [cleaned.slice(start, end + 1), cleaned.slice(start)] : [cleaned.slice(start)];
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
-    } catch { /* 可能被 length 截断，下面尝试补齐 */ }
+  const cleaned = text.replace(/```(?:json)?/gi, '').replace(/^\uFEFF/, '').trim();
+  for (let start = cleaned.indexOf('{'); start >= 0; start = cleaned.indexOf('{', start + 1)) {
+    const end = matchBrace(cleaned, start);
+    if (end < 0) {
+      // 括号没闭合，多半是被 length 截断了：把剩下的都交给解析器试一次，失败就继续找下一个 {
+      const tail = parseJsonObject(cleaned.slice(start));
+      if (tail) return tail;
+      continue;
+    }
+    const parsed = parseJsonObject(cleaned.slice(start, end + 1));
+    if (parsed) return parsed;
   }
   return null;
+}
+
+/** 解析失败时给一段可判断的说明：长度、括号数量、首尾片段。 */
+function jsonDigest(text: string | undefined): string {
+  if (!text) return '这次响应是空的';
+  const clean = text.replace(/```(?:json)?/gi, '').trim();
+  const open = (clean.match(/\{/g) ?? []).length;
+  const close = (clean.match(/\}/g) ?? []).length;
+  const head = clean.slice(0, 36).replace(/\s+/g, ' ');
+  const tail = clean.slice(-36).replace(/\s+/g, ' ');
+  return `响应 ${text.length} 字，{ ×${open} / } ×${close}，开头「${head}」结尾「${tail}」`;
 }
 
 interface JsonCallOutcome {
@@ -803,7 +851,7 @@ function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
   if (outcome.truncated) {
     return `${prefix}输出被截断（finish_reason: length，上限 ${outcome.maxTokens ?? '?'} tokens）。推理模型的思维链会占用同一份额度，已自动放大额度重试仍失败。请到 设置 → 故事引擎 → 输出预算 把这一项的额度调高，或换用非推理模型。`;
   }
-  return `${prefix}模型没有返回可解析的 JSON。可以在叙事引擎面板里查看这次请求，再重试一次。`;
+  return `${prefix}模型没有返回可解析的 JSON（${jsonDigest(outcome.result.ok ? outcome.result.text : undefined)}）。可以在叙事引擎面板里查看这次请求，再重试一次。`;
 }
 
 async function generateDailyCore(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {

@@ -1,4 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { kvGet } from '../store';
+import { SAVE_CURRENT_KEY } from '../migrate';
+import { SAVE_KEY } from '../game';
 
 interface Props { children: ReactNode }
 interface State { error: Error | null }
@@ -14,6 +17,25 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('夜糖事务所遇到未处理的界面错误', error, info.componentStack);
   }
 
+  /** 应急导出：优先从 IndexedDB 取，取不到再退回旧的 localStorage 键。 */
+  async exportEmergency() {
+    let raw = '';
+    try {
+      const stored = await kvGet<unknown>(SAVE_CURRENT_KEY);
+      if (stored) raw = JSON.stringify(stored);
+    } catch { /* IndexedDB 不可用时退回 localStorage。 */ }
+    if (!raw) {
+      try { raw = localStorage.getItem(SAVE_KEY) ?? ''; } catch { raw = ''; }
+    }
+    if (!raw) return;
+    const anchor = document.createElement('a');
+    anchor.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    anchor.download = '夜糖事务所-应急存档.json';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -25,16 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <pre>{this.state.error.message}</pre>
           <div className="fatal-actions">
             <button id="fatal-reload" className="btn primary" onClick={() => window.location.reload()}>刷新并继续</button>
-            <button id="fatal-export" className="btn" onClick={() => {
-              const raw = localStorage.getItem('night-sugar-office:v1');
-              if (!raw) return;
-              const anchor = document.createElement('a');
-              anchor.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
-              anchor.download = '夜糖事务所-应急存档.json';
-              document.body.appendChild(anchor);
-              anchor.click();
-              anchor.remove();
-            }}>导出应急存档</button>
+            <button id="fatal-export" className="btn" onClick={() => { void this.exportEmergency(); }}>导出应急存档</button>
           </div>
           <small>如果问题反复出现，请把上面的错误信息与浏览器控制台记录一起反馈。</small>
         </div>

@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { cardsApiPlugin } from './scripts/cards-api.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), cardsApiPlugin()],
   build: {
     target: 'es2022',
     rollupOptions: {
@@ -17,3 +18,4 @@ export default defineConfig({
     },
   },
 });
+

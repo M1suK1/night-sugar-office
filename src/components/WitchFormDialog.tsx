@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Sparkles, Trash2 } from 'lucide-react';
 import type { Girl, Outfit } from '../types';
 import { rules } from '../balance';
-import { resizeImageFile } from '../image';
+import { originalImageDataUrl } from '../image';
 import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -43,7 +43,7 @@ export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose, i
     setBusy(true);
     setNote('正在裁切魔女化立绘…');
     try {
-      const data = await resizeImageFile(file);
+      const data = await originalImageDataUrl(file);
       setPortrait(data);
       setNote('立绘已就位，保存后会留在衣柜第五格。');
     } catch (error) {

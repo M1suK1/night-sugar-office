@@ -5,7 +5,7 @@
  * 首领与所属少女分别来自 `content/factionLeaders.ts` 与 `content/factionGirls.ts`。
  * 档案 UI 与结算都经由访问器读取，不各自复制一份数值。
  */
-import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction } from './types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey } from './types.ts';
 import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
 import { factionGirls, girlsOfFaction } from './content/factionGirls.ts';
@@ -141,17 +141,110 @@ export function defaultFactionRoster(): Record<FactionId, FactionRoster> {
   return roster;
 }
 
-/** 某一方现存的首领；名册缺失时退回原属静态映射。 */
-export function rosterLeader(state: Pick<GameState, 'factionRoster'>, faction: FactionId): FactionLeader {
-  const id = state.factionRoster?.[faction]?.leaderId;
-  return (id && leaderById(id)) || factionLeaders[faction];
+type RosterState = Pick<GameState, 'factionRoster'>
+  & Partial<Pick<GameState, 'customFactionLeaders' | 'customFactionGirls'>>;
+
+/** 编成面板里的一个人：原属首领、原属随从、或者玩家自己带来的少女，统一成同一形状。 */
+export interface RosterSubject {
+  id: string;
+  name: string;
+  /** 她原本属于哪一方；自定义少女用她的出身标签。 */
+  faction: GirlFaction;
+  title: string;
+  level: number;
+  color: string;
+  portrait: string;
+  portraitSpec?: PortraitSpec;
+  quote: string;
+  origin: 'leader' | 'member' | 'custom';
+  /** 自定义少女的原始数据，编成确认时要拿它做快照。 */
+  stats?: Record<StatKey, number>;
+  skillIds?: string[];
+  codename?: string;
 }
 
-/** 某一方现存的随从（按编成结果）。 */
-export function rosterMembers(state: Pick<GameState, 'factionRoster'>, faction: FactionId): FactionGirl[] {
+/** 原属首领 → 面板条目。 */
+export function subjectOfLeader(leader: FactionLeader): RosterSubject {
+  return {
+    id: leader.id, name: leader.name, faction: leader.faction, title: leader.title,
+    level: leader.level, color: leader.color, portrait: leader.portrait,
+    portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
+    stats: leader.stats, skillIds: leader.skillIds,
+  };
+}
+
+/** 原属随从 → 面板条目。 */
+export function subjectOfGirl(girl: FactionGirl): RosterSubject {
+  return {
+    id: girl.id, name: girl.name, faction: girl.tag, title: girl.title,
+    level: girl.level, color: girl.color, portrait: girl.portrait,
+    portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
+    stats: girl.stats, skillIds: girl.skills, codename: girl.codename,
+  };
+}
+
+/** 玩家自定义的少女 → 面板条目；出身决定她默认算哪一方的人。 */
+export function subjectOfCustom(input: {
+  id: string; name: string; factionTag: GirlFaction; level: number; color: string;
+  portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
+  skillIds: string[]; codename?: string; quote?: string; title?: string;
+}): RosterSubject {
+  return {
+    id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
+    level: input.level, color: input.color, portrait: input.portrait,
+    portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
+    origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename,
+  };
+}
+
+/** 把面板条目固化成某一方的随从。 */
+export function customGirlOf(faction: FactionId, subject: RosterSubject): FactionGirl {
+  return {
+    id: subject.id, faction, name: subject.name, codename: subject.codename ?? subject.name,
+    title: subject.title, portrait: subject.portrait, portraitSpec: subject.portraitSpec,
+    color: subject.color, level: subject.level,
+    stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
+    skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
+  };
+}
+
+/** 把面板条目固化成某一方的首领。 */
+export function customLeaderOf(faction: FactionId, subject: RosterSubject): FactionLeader {
+  return {
+    id: subject.id, faction, name: subject.name, title: subject.title,
+    portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
+    quote: subject.quote, note: '由事务所编入名册的少女。',
+    level: subject.level,
+    stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
+    skillIds: subject.skillIds ?? [],
+    archetype: '输出',
+    origin: faction,
+    titles: { association: subject.title, government: subject.title, witch: subject.title },
+    duty: { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
+  };
+}
+
+/** 某一方现存的首领；自定义首领优先，其次原属首领，最后退回静态映射。 */
+export function rosterLeader(state: RosterState, faction: FactionId): FactionLeader {
+  const id = state.factionRoster?.[faction]?.leaderId;
+  if (!id) return factionLeaders[faction];
+  const custom = state.customFactionLeaders?.find(leader => leader.id === id);
+  return custom ?? leaderById(id) ?? factionLeaders[faction];
+}
+
+/** 某一方现存的随从（按编成结果）。自定义随从优先。 */
+export function rosterMembers(state: RosterState, faction: FactionId): FactionGirl[] {
   const ids = state.factionRoster?.[faction]?.memberIds;
   if (!ids) return girlsOfFaction(faction);
-  return ids.map(id => factionGirls.find(girl => girl.id === id)).filter((girl): girl is FactionGirl => Boolean(girl));
+  return ids.map(id => state.customFactionGirls?.find(girl => girl.id === id) ?? factionGirls.find(girl => girl.id === id))
+    .filter((girl): girl is FactionGirl => Boolean(girl));
+}
+
+/** 三方名册里所有的自定义少女（含首领），用于校验与去重。 */
+export function customRosterOf(state: Partial<Pick<GameState, 'customFactionLeaders' | 'customFactionGirls'>>): RosterSubject[] {
+  const leaders = (state.customFactionLeaders ?? []).map(subjectOfLeader);
+  const girls = (state.customFactionGirls ?? []).map(subjectOfGirl);
+  return [...leaders, ...girls];
 }
 
 /** 首领的现属头衔。 */

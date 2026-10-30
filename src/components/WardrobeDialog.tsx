@@ -3,7 +3,7 @@ import { Upload, FileJson, ImagePlus, ClipboardPaste, Sparkles, Scissors, Trash2
 import type { Girl, GameState, Outfit } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { CutoutPreview } from './CutoutPreview';
-import { loadImage, removeImageBackground, resizeImageFile } from '../image';
+import { loadImage, removeImageBackground, originalImageDataUrl } from '../image';
 import { fileDropProps } from '../drop';
 
 type Mode = 'merge' | 'replace';
@@ -99,7 +99,7 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     setBusy(true);
     try {
       if (file.type.startsWith('image/')) {
-        const portrait = await resizeImageFile(file);
+        const portrait = await originalImageDataUrl(file);
         const name = file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 16) || '导入立绘';
         addStaged([{ id: `import-${Date.now().toString(36)}`, name, description: '还没有描述。可以先去掉背景，再让叙事者看图补全。', palette: paletteFrom(girl.color), layerKey: layerFrom(file.name), portrait, imported: true }], `已读取立绘「${name}」`);
         return;
