@@ -5,6 +5,15 @@ const baseURL = process.env.PROTOTYPE_URL ?? 'http://127.0.0.1:5173';
 fs.mkdirSync('artifacts', { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, deviceScaleFactor: 1 });
+// 开场三层是模态的：除了专门测它的那条流程，其余流程统一点掉，免得挡住后续点击。
+await page.addInitScript(() => {
+  const tick = () => {
+    if (sessionStorage.getItem('__keepPrologue') === '1') return;
+    const skip = document.querySelector('#prologue-skip');
+    if (skip) skip.click();
+  };
+  setInterval(tick, 150);
+});
 const errors = [], failures = [], results = [];
 let currentFlow = '启动';
 page.on('pageerror', e => errors.push(e.message));
@@ -41,7 +50,33 @@ async function layout(label) {
 try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => sessionStorage.setItem('__keepPrologue', '1'));
   await page.locator('#start-standard').click();
+  await check('开场三幕：三方各一句、可跳过、只弹一次、记录页能重看', async () => {
+    await expect(page.locator('#prologue-beat')).toBeVisible();
+    await expect(page.locator('.prologue-line')).toHaveCount(3);
+    await expect(page.locator('#prologue-beat')).toContainText('三方分着管');
+    await expect(page.locator('#prologue-next')).toContainText('继续');
+    await page.locator('#prologue-next').click();
+    await expect(page.locator('#prologue-beat')).toContainText('关门七年');
+    await page.locator('#prologue-next').click();
+    await expect(page.locator('#prologue-beat')).toContainText('接委托、派人出勤');
+    await expect(page.locator('#prologue-next')).toContainText('推开门');
+    await page.locator('#prologue-next').click();
+    await expect(page.locator('#prologue-beat')).toHaveCount(0);
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#prologue-beat')).toHaveCount(0);
+    await expect(page.locator('.map-viewport')).toBeVisible();
+    expect((await stored()).prologueSeen).toBe(true);
+    await page.locator('#nav-records').click();
+    await page.locator('#replay-prologue').click();
+    await expect(page.locator('#prologue-beat')).toBeVisible();
+    await expect(page.locator('#prologue-skip')).toContainText('关闭');
+    await page.locator('#prologue-skip').click();
+    await expect(page.locator('#prologue-beat')).toHaveCount(0);
+    await page.locator('#nav-dispatch').click();
+    await page.evaluate(() => sessionStorage.removeItem('__keepPrologue'));
+  });
   await expect(page.locator('.map-viewport')).toBeVisible();
   await check('首页地图、首批时段委托与分类筛选', async () => {
     const open = (await stored()).missions.filter(m => m.status === 'open');
@@ -725,6 +760,48 @@ try {
     expect(old.traits.map(trait => trait.name)).toEqual(['猫缘']);
     await expect(page.locator('[role="status"]')).toContainText('没能随卡片带来');
   });
+  await check('契约卡库：一叠收进来、坏卡只记一条、选中才导入、删库不动名册', async () => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.evaluate(() => localStorage.removeItem('night-sugar:cardbox:v1'));
+    await page.locator('#nav-market').click();
+    const element = (await stored()).girls[0].element;
+    const card = {
+      format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: 1,
+      girl: {
+        name: '卡库测试', codename: 'K-1', title: '被收进文件柜的人', element, color: '#8fd3c7',
+        goal: '在文件柜里等到被翻开。', appearance: '发梢有折痕。', personality: '安静。', outfitDescription: '干净的值夜制服。',
+        level: 4, stats: { magic: 66, insight: 62, agility: 60, empathy: 72 }, skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+        traitIds: [], factionTag: 'witch',
+      },
+    };
+    fs.writeFileSync('artifacts/cardbox-a.json', JSON.stringify(card));
+    fs.writeFileSync('artifacts/cardbox-broken.json', '{"format":"night-sugar/girl-card"}');
+    await page.locator('#av-market-cardbox').click();
+    await expect(page.locator('#cardbox-dialog')).toBeVisible();
+    await expect(page.locator('#cardbox-empty')).toBeVisible();
+    await page.setInputFiles('#cardbox-file', ['artifacts/cardbox-a.json', 'artifacts/cardbox-broken.json']);
+    await expect(page.locator('#cardbox-list .cardbox-row')).toHaveCount(1);
+    await expect(page.locator('#cardbox-errors li')).toHaveCount(1);
+    await expect(page.locator('#cardbox-count')).toContainText('库里 1 张');
+    await page.locator('#cardbox-select-all').click();
+    await expect(page.locator('#cardbox-count')).toContainText('已选 1 张');
+    await page.screenshot({ path: 'artifacts/cardbox.png', animations: 'disabled' });
+    await page.locator('#cardbox-import').click();
+    await expect(page.locator('#cardbox-dialog')).toHaveCount(0);
+    await expect.poll(async () => (await stored()).candidates.some(g => g.name === '卡库测试')).toBe(true);
+    const brought = (await stored()).candidates.find(g => g.name === '卡库测试');
+    // 卡库收进来的卡照样带得住出身。
+    expect(brought.factionTag).toBe('witch');
+    await page.locator('#av-market-cardbox').click();
+    await expect(page.locator('#cardbox-list .cardbox-row').first()).toBeVisible();
+    await page.locator('#cardbox-select-all').click();
+    await page.locator('#cardbox-delete').click();
+    await expect(page.locator('#cardbox-empty')).toBeVisible();
+    // 删库不动名册。
+    expect((await stored()).candidates.some(g => g.name === '卡库测试')).toBe(true);
+    await close();
+  });
   await check('存档导出、导入与损坏文件拒绝', async () => {
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'networkidle' });
@@ -1216,8 +1293,9 @@ try {
     await expect(page.locator('.wb-hit', { hasText: '诊所' })).toHaveCount(1);
     await page.screenshot({ path: 'artifacts/worldbook-entries.png', fullPage: true, animations: 'disabled' });
     await page.locator('#worldbook-new').click();
-    await expect(page.locator('.wb-item')).toHaveCount(16);
-    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(16);
+    // v21 给内置词条加了「空月」，比 v20 多一条。
+    await expect(page.locator('.wb-item')).toHaveCount(17);
+    await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(17);
     await page.locator('#worldbook-tab-balance').click();
     await page.locator('#balance-clinicBase').fill('150');
     await expect.poll(async () => JSON.parse(await page.evaluate(() => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);

@@ -535,6 +535,9 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-sections pre::-webkit-scrollbar,.llm-reasoning::-webkit-scrollbar{width:5px}
 .llm-sections pre::-webkit-scrollbar-thumb,.llm-reasoning::-webkit-scrollbar-thumb{background:#5b4a61;border-radius:3px}
 .llm-reasoning{border:1px solid #b9a4d21f;border-radius:5px;background:#b9a4d20a;color:#b9b0c6}
+.llm-response{margin:0;padding:8px;border:1px solid #9fceb62e;border-radius:5px;background:#9fceb60a;color:#c6d9cd;font-size:8.5px;line-height:1.8;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;font-family:var(--font-data);scrollbar-width:thin;scrollbar-color:#5b4a61 transparent}
+.llm-response::-webkit-scrollbar{width:5px}
+.llm-response::-webkit-scrollbar-thumb{background:#5b4a61;border-radius:3px}
 .llm-no-reasoning{color:#5d5866;font-size:8.5px;margin-top:6px}
 .llm-error{color:#e6a9a2;border:1px solid #e6a9a21f;background:#e6a9a20a;border-radius:4px;padding:5px 7px;font-size:8.5px;line-height:1.7;margin-top:8px}
 .llm-copy{display:inline-flex;align-items:center;gap:5px;margin-top:9px;border:1px solid #ffffff14;border-radius:4px;padding:4px 8px;font-size:8.5px;color:#a89fac}

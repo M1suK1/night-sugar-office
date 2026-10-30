@@ -1,16 +1,18 @@
 import test from 'node:test';
 import { INCIDENT_POOL_CAP, sanitizeGeneratedIncident } from '../src/incidents.ts';
+import { PROLOGUE } from '../src/prologue.ts';
 import { TASK_VISIBLE, taskInbox } from '../src/tasks.ts';
 import { leaveGirl, resignationPressure } from '../src/resignations.ts';
 import assert from 'node:assert/strict';
-import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
+import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createBlankState, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
 import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
-import { statsForArchetype } from '../src/content/archetypes.ts';
+import { mulberry32, rollStats, statsForArchetype } from '../src/content/archetypes.ts';
+import { defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
@@ -39,6 +41,7 @@ import { HOSTILITY_AFTER_WAR, HOSTILITY_COOLDOWN_CAP, applyHostility, clampHosti
 import { openFrontIn, planFronts, resolveDueFronts, squadPower } from '../src/fronts.ts';
 import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
+import { CARD_BOX_LIMIT, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, loadCardBox, saveCardBox } from '../src/cardbox.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
@@ -128,7 +131,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 14);
+  assert.equal(s.version, 16);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -1395,7 +1398,7 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 14);
+  assert.equal(loaded.version, 16);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
@@ -1744,10 +1747,10 @@ test('自定义的「… 副本」不会被任务默认预设改名', () => {
   assert.equal(event.name, '私人事件');
   assert.notEqual(story.id, event.id);
 });
-test('世界书内置 15 条，默认只启用 7 条常驻词条', () => {
-  assert.equal(builtinWorldbook().length, 15);
+test('世界书内置 16 条，默认只启用 8 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 16);
   const defaults = defaultWorldbook();
-  assert.equal(defaults.filter(entry => entry.enabled).length, 7);
+  assert.equal(defaults.filter(entry => entry.enabled).length, 8);
   assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
   assert.ok(defaults.some(entry => entry.id === 'clinic'));
   assert.ok(defaults.some(entry => entry.id === 'office-profile'));
@@ -3131,7 +3134,7 @@ test('v19 旧档 v11 迁到 12：污染补齐、档案默认、出身按 id 重�
   for (const candidate of legacy.candidates as Array<Record<string, unknown>>) delete candidate.factionTag;
 
   const loaded = loadState(JSON.stringify(legacy));
-  assert.equal(loaded.version, 14);
+  assert.equal(loaded.version, 16);
   assert.deepEqual(loaded.pollution, initialPollution(), '缺污染时整套补上初始值');
   assert.deepEqual(loaded.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const girl of loaded.girls) {
@@ -3242,7 +3245,8 @@ test('v19 世界书自动生成事务所条目，且标成只读', () => {
   assert.ok(entry.content.includes('尚未任命对外代表。'));
 
   const builtin = builtinWorldbook();
-  assert.equal(builtin[0].id, OFFICE_WORLDBOOK_ID, '生成条目排在最前');
+  assert.equal(builtin[0].id, 'moon', '空月是优先级最高的常驻词条，排最前');
+  assert.equal(builtin[1].id, OFFICE_WORLDBOOK_ID, '生成条目紧跟常驻设定');
   assert.equal(builtin.filter(item => item.id === OFFICE_WORLDBOOK_ID).length, 1);
 });
 
@@ -3343,9 +3347,9 @@ test('v19 事务所档案逐字段 trim、限长，非法或空值只影响自�
   assert.equal(capped.goal.length, OFFICE_LIMITS.goal);
 });
 
-test('v19 新档是 version 12，带默认档案，三方态度统一 50', () => {
+test('v19 新档是 version 16，带默认档案，三方态度统一 50', () => {
   const state = createInitialState();
-  assert.equal(state.version, 14);
+  assert.equal(state.version, 16);
   assert.deepEqual(state.pollution, initialPollution());
   assert.deepEqual(state.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const faction of FACTION_ORDER) {
@@ -3867,7 +3871,7 @@ test('v20 弹窗能推拉敌意值，模型来的夹在 ±3', () => {
   assert.equal(incidentHostility('association-witch', 0).delta, 0);
 });
 
-test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 14', () => {
+test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 15', () => {
   const state = createInitialState();
   state.gold = 4321;
   state.hostility['association-government'] = { pair: 'association-government', value: 320, updatedDay: 3, reason: '越界' };
@@ -3877,7 +3881,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 14', () => 
   ];
   state.warHistory = [{ pair: 'government-witch', day: 2 }, { pair: 'nonsense' as never, day: 3 }];
   const loaded = loadState(JSON.stringify(state));
-  assert.equal(loaded.version, 14);
+  assert.equal(loaded.version, 16);
   assert.equal(loaded.gold, 4321);
   assert.equal(hostilityValue(loaded, 'association-government'), 100, '越界值被夹回来');
   assert.equal(loaded.fronts.length, 1);
@@ -3890,7 +3894,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 14', () => 
   delete (old as unknown as Record<string, unknown>).fronts;
   delete (old as unknown as Record<string, unknown>).warHistory;
   const migrated = loadState(JSON.stringify(old));
-  assert.equal(migrated.version, 14);
+  assert.equal(migrated.version, 16);
   assert.equal(Object.keys(migrated.hostility).length, 3, '老档按初始旧账补齐');
   assert.deepEqual(migrated.fronts, []);
   assert.deepEqual(migrated.warHistory, []);
@@ -4142,4 +4146,266 @@ test('故事线按三段排队：前一段讲完才能开下一段，第四段�
   const third = act(full, { type: 'startStoryline', girlId: girl.id });
   assert.equal(third.ok, false);
   assert.ok(third.message.includes('三段'));
+});
+
+test('开场三幕：三方各一句、每幕都有旁白，且不写空月台词', () => {
+  assert.equal(PROLOGUE.length, 3);
+  assert.deepEqual(PROLOGUE.map(beat => beat.id), ['ledger', 'lamp', 'tonight']);
+  assert.ok(PROLOGUE.every(beat => beat.narration.length > 0 && beat.narration.every(line => line.trim().length > 8)));
+  const speakers = PROLOGUE.flatMap(beat => beat.lines.map(line => line.speaker));
+  assert.deepEqual(speakers, ['白鹭千秋', '雨宫澄', '蚀医·夜鸮'], '只让三方首领各说一句，不介绍细节');
+  assert.ok(PROLOGUE.every(beat => beat.lines.every(line => !line.speaker.includes('空月'))), '空月不说话');
+});
+
+test('开场只弹一次：新档未看过，看过之后幂等', () => {
+  const fresh = createInitialState();
+  assert.equal(fresh.prologueSeen, false);
+  assert.equal(createBlankState().prologueSeen, false);
+  const first = act(fresh, { type: 'seenPrologue' });
+  assert.equal(first.ok, true);
+  assert.equal(first.state.prologueSeen, true);
+  const again = act(first.state, { type: 'seenPrologue' });
+  assert.equal(again.state, first.state, '重复标记不应产生新对象');
+});
+
+test('v15 读档保留 prologueSeen，v14 旧档按已看过处理', () => {
+  const fresh = createInitialState();
+  const pending = loadState(JSON.stringify(fresh));
+  assert.ok(pending);
+  assert.equal(pending.prologueSeen, false, '新档刷新后开场还没看，要再弹一次');
+
+  const seen = act(fresh, { type: 'seenPrologue' }).state;
+  const reloaded = loadState(JSON.stringify(seen));
+  assert.ok(reloaded);
+  assert.equal(reloaded.prologueSeen, true);
+
+  const legacy = JSON.parse(JSON.stringify(fresh));
+  delete legacy.prologueSeen;
+  legacy.version = 14;
+  const migrated = loadState(JSON.stringify(legacy));
+  assert.ok(migrated);
+  assert.equal(migrated.version, 16);
+  assert.equal(migrated.prologueSeen, true, '旧档不该被开场打断');
+});
+
+test('导出导入保留 prologueSeen', () => {
+  const seen = act(createInitialState(), { type: 'seenPrologue' }).state;
+  const restored = importState(JSON.stringify(seen));
+  assert.ok(restored);
+  assert.equal(restored.prologueSeen, true);
+});
+
+test('空月是世界的底色：常驻、最高优先级、排在最前', () => {
+  const moon = builtinWorldbook().find(entry => entry.id === 'moon');
+  assert.ok(moon);
+  assert.equal(moon.constant, true);
+  assert.equal(moon.priority, 96);
+  assert.equal(moon.order, 0);
+  assert.ok(moon.content.includes('空月') && moon.content.includes('献祭'), '要写清三方的延期办法');
+  assert.ok(!moon.content.includes('「'), '空月不给台词');
+});
+
+function sampleCard(name: string, tag: GirlFaction = 'witch') {
+  return {
+    format: 'night-sugar/girl-card', version: 1, exportedAt: '2026-01-01T00:00:00.000Z', sourceDay: 1,
+    girl: {
+      name, codename: 'K-1', title: '被收进文件柜的人', element: '星光系', color: '#8fd3c7',
+      goal: '等到被翻开。', appearance: '发梢有折痕。', personality: '安静。', outfitDescription: '干净的值夜制服。',
+      level: 4, stats: { magic: 66, insight: 62, agility: 60, empathy: 72 },
+      skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'], traitIds: [], factionTag: tag,
+    },
+  } as unknown as Parameters<typeof cardboxAdd>[0][number] extends { text: string } ? never : never;
+}
+
+test('卡库：一叠收进来，坏卡只记一条失败，不牵连同批', () => withMemoryStorage(() => {
+  const good = sampleCard('卡库甲');
+  const result = cardboxAdd([
+    { name: 'a.json', text: JSON.stringify(good) },
+    { name: 'broken.json', text: '{"format":"night-sugar/girl-card"}' },
+  ], []);
+  assert.equal(result.added.length, 1);
+  assert.equal(result.added[0].name, '卡库甲');
+  assert.equal(result.added[0].factionTag, 'witch');
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.failed[0].name, 'broken.json');
+  assert.equal(loadCardBox().length, 1);
+}));
+
+test('卡库：同一个哈希只提示重复，不覆盖已有的文件名', () => withMemoryStorage(() => {
+  const text = JSON.stringify(sampleCard('卡库乙'));
+  const first = cardboxAdd([{ name: '原名.json', text }], []);
+  const again = cardboxAdd([{ name: '改过名.json', text }], first.entries);
+  assert.equal(again.added.length, 0);
+  assert.deepEqual(again.duplicates, ['卡库乙']);
+  assert.equal(again.entries.length, 1);
+  assert.equal(again.entries[0].fileName, '原名.json');
+}));
+
+test('卡库：满 60 张拒绝新增而不是悄悄踢掉旧的', () => withMemoryStorage(() => {
+  const full = Array.from({ length: CARD_BOX_LIMIT }, (_, index) => ({
+    hash: `hash-${index}`, name: `占位${index}`, level: 1, element: '星光系', factionTag: 'none' as GirlFaction,
+    fileName: `${index}.json`, addedAt: 0, raw: '{}',
+  }));
+  saveCardBox(full);
+  const result = cardboxAdd([{ name: 'new.json', text: JSON.stringify(sampleCard('卡库丙')) }], full);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.failed.length, 1);
+  assert.ok(result.failed[0].message.includes('先删'));
+  assert.equal(loadCardBox().length, CARD_BOX_LIMIT);
+}));
+
+test('卡库：搜索认名字、文件名和出身', () => withMemoryStorage(() => {
+  const witch = cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库丁', 'witch')) }], []);
+  const gov = cardboxAdd([{ name: 'b.json', text: JSON.stringify(sampleCard('卡库戊', 'government')) }], witch.entries);
+  assert.equal(cardboxFilter(gov.entries, '卡库丁').length, 1);
+  assert.equal(cardboxFilter(gov.entries, 'b.json').length, 1);
+  assert.equal(cardboxFilter(gov.entries, cardBoxTagLabel('government')).length, 1);
+  assert.equal(cardboxFilter(gov.entries, '').length, 2);
+}));
+
+test('卡库：删库只动文件柜，不碰名册', () => withMemoryStorage(() => {
+  const added = cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库己')) }], []);
+  const hash = added.added[0].hash;
+  assert.equal(cardboxCards(added.entries, [hash]).length, 1);
+  const kept = cardboxRemove([hash], added.entries);
+  assert.equal(kept.length, 0);
+  assert.equal(loadCardBox().length, 0);
+  // 原始文本还在手上时仍能解析，说明「删的是库，不是卡」。
+  assert.equal(cardboxCards(added.entries, [hash]).length, 1);
+}));
+
+test('批量导入：一次进多张，重复的跳过并逐张记日志', () => {
+  const s = createInitialState();
+  const before = s.candidates.length;
+  const cards = [sampleCard('卡库庚'), sampleCard('卡库辛', 'association')].map(card => card as unknown as Parameters<typeof act>[1] extends { card: infer C } ? C : never);
+  const result = act(s, { type: 'importCards', cards });
+  assert.equal(result.ok, true);
+  assert.equal(result.state.candidates.length, before + 2);
+  assert.ok(result.state.candidates.some(girl => girl.name === '卡库庚' && girl.factionTag === 'witch'));
+  assert.ok(result.state.candidates.some(girl => girl.name === '卡库辛' && girl.factionTag === 'association'));
+  assert.ok(result.state.logs[0].text.includes('契约卡库导入 2 张'));
+  assert.ok(result.message.includes('已导入 2 张'));
+});
+
+test('批量导入：全都重复时明确说没有新的，不伪造成功', () => {
+  const s = createInitialState();
+  const card = sampleCard('卡库壬') as unknown as Parameters<typeof act>[1] extends { card: infer C } ? C : never;
+  const once = act(s, { type: 'importCards', cards: [card] });
+  const twice = act(once.state, { type: 'importCards', cards: [card] });
+  assert.equal(twice.ok, false);
+  assert.ok(twice.message.includes('跳过重复'));
+});
+
+// ── v21 §4 开局编成 ──────────────────────────────
+test('v21 新档带默认三方阵容：首领回原属，随从 3/3/3', () => {
+  const state = createInitialState();
+  assert.equal(state.version, 16);
+  assert.equal(state.startersPicked, false);
+  for (const faction of FACTION_ORDER) {
+    const entry = state.factionRoster[faction];
+    assert.equal(entry.leaderId, `leader-${faction}`);
+    assert.equal(entry.memberIds.length, 3);
+  }
+  assert.equal(defaultFactionRoster().association.memberIds.length, 3);
+});
+
+test('v21 首领可以换位：现属头衔跟着势力走，台词不变', () => {
+  const roster = defaultFactionRoster();
+  const assoc: FactionId = 'association';
+  const witch: FactionId = 'witch';
+  const swap = roster[assoc].leaderId;
+  roster[assoc].leaderId = roster[witch].leaderId;
+  roster[witch].leaderId = swap;
+  const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster });
+  assert.equal(next.ok, true, next.message);
+  const moved = rosterLeader(next.state, assoc);
+  assert.equal(moved.name, '蚀医·夜鸮');
+  assert.equal(leaderTitle(moved, assoc), '净血讲师 · 客卿');
+  assert.equal(leaderTitle(moved, witch), '净血派领袖');
+  assert.equal(moved.quote, '城市不把魔女当人，我们就自己写人的定义。');
+});
+
+test('v21 编成：人数必须是 4–6，非法阵容被拒绝且不改状态', () => {
+  const base = createInitialState();
+  const tooFew = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling'], roster: defaultFactionRoster() });
+  assert.equal(tooFew.ok, false);
+  const dupLeader = defaultFactionRoster();
+  dupLeader.government.leaderId = dupLeader.association.leaderId;
+  const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: dupLeader });
+  assert.equal(bad.ok, false);
+  assert.equal(base.startersPicked, false);
+});
+
+test('v21 编成后名册只剩选中的人，没被选中的原班人马不回市场', () => {
+  const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: defaultFactionRoster() });
+  assert.equal(next.ok, true);
+  assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue']);
+  assert.equal(next.state.candidates.some(girl => girl.id === 'zhi'), false);
+  assert.equal(next.state.startersPicked, true);
+});
+
+test('v21 拦截战改读阵容：把某方随从搬空后不再拦截', () => {
+  const state = createInitialState();
+  const creator = { ...state, factionRoster: { ...defaultFactionRoster() } };
+  for (const faction of FACTION_ORDER) creator.factionRoster[faction].memberIds = [];
+  creator.factionRoster.association.memberIds = ['fg-association-tou'];
+  creator.factions.association.standing = 20;
+  const district = districtOrder.find(id => state.territories[id] === 'association');
+  assert.ok(district);
+  const mission = { ...state.missions[0], district } as typeof state.missions[number];
+  assert.equal(rosterMembers(creator, 'association').length, 1);
+  assert.equal(canIntercept(creator, mission), true);
+  creator.factionRoster.association.memberIds = [];
+  assert.equal(canIntercept(creator, mission), false);
+});
+
+test('v21 势力覆灭后才能雇佣首领，且只扣一次星砂', () => {
+  const state = createInitialState();
+  state.gold = 20000;
+  const taken = act(state, { type: 'hireLeader', leaderId: 'leader-association' });
+  assert.equal(taken.ok, false, '辖区还在时不该能雇');
+
+  for (const id of districtOrder) if (state.territories[id] === 'association') state.territories[id] = 'government';
+  const hired = act(state, { type: 'hireLeader', leaderId: 'leader-association' });
+  assert.equal(hired.ok, true, hired.message);
+  assert.equal(hired.state.gold, 8000);
+  const leader = hired.state.girls.find(girl => girl.id === 'leader-association');
+  assert.ok(leader);
+  assert.equal(leader.leader, true);
+  assert.equal(leader.level, 7);
+  assert.equal(hired.state.factions.association.standing, 0);
+  assert.equal(hired.state.factions.government.standing, 53);
+  const again = act(hired.state, { type: 'hireLeader', leaderId: 'leader-association' });
+  assert.equal(again.ok, false);
+});
+
+test('v21 谎报首领会失败；名字与属性来自数据表', () => {
+  const state = createInitialState();
+  const bogus = act(state, { type: 'hireLeader', leaderId: 'leader-nobody' });
+  assert.equal(bogus.ok, false);
+  const leader = leaderById('leader-witch');
+  assert.ok(leader);
+  assert.equal(leader.level, 8);
+  assert.deepEqual(leader.stats, { magic: 88, insight: 70, agility: 66, empathy: 50 });
+});
+
+test('v21 属性波动：总额仍 260、单值夹在 40–90，且同一 seed 可复现', () => {
+  const a = rollStats('输出', mulberry32(42));
+  const b = rollStats('输出', mulberry32(42));
+  assert.deepEqual(a, b);
+  const total = a.magic + a.insight + a.agility + a.empathy;
+  assert.equal(total, 260);
+  for (const value of Object.values(a)) { assert.ok(value >= 40 && value <= 90); }
+  const base = statsForArchetype('输出');
+  assert.deepEqual(base, { magic: 88, insight: 54, agility: 72, empathy: 46 });
+  assert.notDeepEqual(a, base);
+});
+
+test('v21 市场候选的属性按 id 稳定波动，读档不再抖', () => {
+  const state = createInitialState();
+  const girl = state.candidates[0];
+  assert.ok(girl);
+  const reloaded = loadState(JSON.stringify(state));
+  assert.ok(reloaded);
+  assert.deepEqual(reloaded.candidates.find(item => item.id === girl.id)?.stats, girl.stats);
 });

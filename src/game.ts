@@ -1,7 +1,8 @@
 import { applyResignationChoice, applyResignations, tickStrain } from './resignations.ts';
-import type { ActionResult, BattleNote, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack } from './types';
+import type { ActionResult, BattleNote, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
+import { cardboxReport } from './cardbox.ts';
 import { STORY_SLOT_MAX, playableStoryPlan, sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey, sanitizeExpressionVariants } from './expressions.ts';
 import { defaultWitchPersonality } from './personality.ts';
@@ -15,13 +16,15 @@ import { battleExp, grantExp, investigationExp } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
 import { factionInfo, getItem, items } from './content/items.ts';
 import { monsters } from './content/monsters.ts';
+import { STAT_JITTER, STAT_MIN, mulberry32 } from './content/archetypes.ts';
 import { advancedCost, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf, factionPrice, marketSize, marketUpgradeCost } from './economy.ts';
 import { applyPct, districtAt, districts, type DistrictId } from './districts.ts';
 import { loadBalance, rules } from './balance.ts';
 import { SHIFT_START, SHIFT_END, WAVE_AT, WAVE_SIZES, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt, LONG_MIN_DAYS, LONG_MAX_DAYS, type CommissionWindow } from './shift.ts';
 import { FACTION_ORDER, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, factionName, ownedDistricts, repairTerritories, type TerritoryMap } from './territories.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, opinionOptionTags, previewOpinionOption, resolveOpinionOptions } from './opinions.ts';
-import { canIntercept, factionGirlsOf, factionTagFor, sanitizeGirlFaction } from './factions.ts';
+import { canIntercept, defaultFactionRoster, factionCollapsed, factionGirlsOf, factionTagFor, leaderById, leaderTitle, rosterLeader, rosterMembers, sanitizeGirlFaction } from './factions.ts';
+import { factionGirls } from './content/factionGirls.ts';
 import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from './office.ts';
 import { HOSTILITY_PAIRS, applyHostility, clampHostility, hostilityGain, incidentHostility, initialHostility, makeTrack, pairOf } from './hostility.ts';
 import { frontLabel, openFrontIn, planFronts, resolveDueFronts } from './fronts.ts';
@@ -162,6 +165,41 @@ export function witchOutfitFor(girl: Pick<Girl, 'color' | 'portrait' | 'portrait
  * `GirlInput`；返回值一定是完整的 `Girl`，其余模块不必再判空。
  */
 type GirlInput = Omit<Girl, 'factionTag'> & { factionTag?: GirlFaction | string };
+/** 雇佣覆灭势力的首领：一次性星砂。 */
+const LEADER_HIRE_COST = 12000;
+
+/** 校验并规整三方阵容；不合法时返回 null（调用方拒绝动作）。 */
+function sanitizeFactionRoster(input: unknown): Record<FactionId, FactionRoster> | null {
+  if (!input || typeof input !== 'object') return null;
+  const raw = input as Partial<Record<FactionId, { leaderId?: unknown; memberIds?: unknown }>>;
+  const leaders = new Set<string>();
+  const members = new Set<string>();
+  const roster = {} as Record<FactionId, FactionRoster>;
+  let total = 0;
+  for (const faction of FACTION_ORDER) {
+    const entry = raw[faction];
+    const leaderId = typeof entry?.leaderId === 'string' ? entry.leaderId : '';
+    if (!leaderById(leaderId) || leaders.has(leaderId)) return null;
+    leaders.add(leaderId);
+    const ids = Array.isArray(entry?.memberIds) ? entry!.memberIds.filter((id): id is string => typeof id === 'string') : [];
+    const unique = [...new Set(ids)];
+    if (unique.length < 1 || unique.length > 4) return null;
+    for (const id of unique) {
+      if (!factionGirls.some(girl => girl.id === id) || members.has(id)) return null;
+      members.add(id);
+    }
+    total += unique.length;
+    roster[faction] = { leaderId, memberIds: unique };
+  }
+  if (total !== factionGirls.length) return null;
+  return roster;
+}
+
+/** 没被开局选中的候选：契约卡来的留在市场，事务所原班人马直接退场。 */
+function starterKeepInPool(girl: Girl): boolean {
+  return Boolean(girl.custom);
+}
+
 function hydrate(girl: GirlInput): Girl {
   const g = clone(girl) as Girl;
   g.baseMaxHp ??= g.maxHp;
@@ -236,7 +274,13 @@ function makeCandidate(state: GameState, level: number, salt = 0, tag?: GirlFact
   const archetype = pick(archetypes, 4);
   const name = candidateNames[seed % candidateNames.length];
   const id = `g_${seed.toString(16).padStart(8, '0')}`;
-  const stat = (shift: number) => 42 + ((seed >>> shift) % 45) + (level - 1) * 3;
+  const jitter = mulberry32(seed);
+  const ceiling = 90 + (level - 1) * 3;
+  const stat = (shift: number) => {
+    const base = 42 + ((seed >>> shift) % 45) + (level - 1) * 3;
+    const delta = Math.round((jitter() * 2 - 1) * STAT_JITTER);
+    return Math.max(STAT_MIN, Math.min(ceiling, base + delta));
+  };
   const stats = { magic: stat(3), insight: stat(7), agility: stat(11), empathy: stat(15) };
   const color = candidateColors[seed % candidateColors.length];
   const skills = archetype === '治愈' ? ['flower-thorn', 'flower-prescription', 'spring-growth'] : archetype === '控制' ? ['frequency-prick', 'silent-band', 'moon-phase'] : archetype === '守护' ? ['sugar-needle', 'goodnight-candy', 'white-night-frost'] : ['glimmer-spear', 'peach-ward', 'starlight-fall'];
@@ -1616,7 +1660,10 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     { id: 'l-3', time: '第 14 日 · 20:40', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   const state: GameState = {
-    version: 14, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    version: 16, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    prologueSeen: false,
+    factionRoster: defaultFactionRoster(),
+    startersPicked: false,
     girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
@@ -1639,7 +1686,10 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
 /** 全空档案：只有启动资金、一间会客厅和城里的九片辖区。 */
 export function createBlankState(pack: ContentPack = createSeedPack(), seed = `${pack.hash}:${Math.random()}`): GameState {
   const state: GameState = {
-    version: 14, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    version: 16, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    prologueSeen: false,
+    factionRoster: defaultFactionRoster(),
+    startersPicked: false,
     girls: [], candidates: [], missions: [], completed: [],
     rooms: [{ id: 'lounge', name: '会客厅', type: 'lounge', level: 1, capacity: 0, description: '刚租下的会客厅，只有一张桌子、一盏灯和一把多余的椅子。' }],
     logs: [
@@ -1749,7 +1799,7 @@ export function interceptionFor(state: GameState, mission: Mission): Interceptio
   if (!owner) return undefined;
   // 那条街上已经有两拨人在打了，今晚不会再有人来拦我们。
   if (mission.district && openFrontIn(state, mission.district)) return undefined;
-  const roster = factionGirlsOf(owner);
+  const roster = rosterMembers(state, owner).length ? rosterMembers(state, owner) : factionGirlsOf(owner);
   if (!roster.length) return undefined;
   const count = Math.max(1, Math.min(3, 1 + Math.floor(mission.recommendedLevel / 4)));
   const highest = [...roster].sort((a, b) => b.level - a.level)[0];
@@ -1765,7 +1815,9 @@ export function interceptionFor(state: GameState, mission: Mission): Interceptio
 }
 function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
   const interception = mission.interception;
-  const enemies = interception ? factionGirlsOf(interception.faction).filter(girl => interception.girlIds.includes(girl.id)) : [];
+  const factionPool = rosterMembers(state, interception?.faction ?? 'association');
+  const pool = factionPool.length ? factionPool : (interception ? factionGirlsOf(interception.faction) : []);
+  const enemies = interception ? pool.filter(girl => interception.girlIds.includes(girl.id)) : [];
   const battle = simulateBattle({
     mission, girls: squad, day: at.day, minutes: at.minutes,
     woundedEnemies: mission.worsened, monsters: state.customMonsters,
@@ -2467,6 +2519,70 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.logs.unshift({ id: `log-assistant-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl.name}开始担任值班助理，会替你整理议题与排班。` });
       return { state: next, ok: true, message: `${girl.name}成为值班助理。` };
     }
+    case 'seenPrologue': {
+      if (state.prologueSeen) return { state, ok: true, message: '' };
+      const next = clone(state);
+      next.prologueSeen = true;
+      return { state: next, ok: true, message: '' };
+    }
+    case 'setStarters': {
+      const ids = Array.isArray(action.girlIds) ? [...new Set(action.girlIds)] : [];
+      if (ids.length < 4 || ids.length > 6) return { state, ok: false, message: '开局编成至少 4 人、最多 6 人。' };
+      const pool = new Set<string>([
+        ...state.candidates.map(girl => girl.id),
+        ...state.girls.filter(girl => !girl.retired).map(girl => girl.id),
+      ]);
+      if (ids.some(id => !pool.has(id))) return { state, ok: false, message: '有一位少女不在候选里。' };
+      const roster = sanitizeFactionRoster(action.roster);
+      if (!roster) return { state, ok: false, message: '三方阵容不合法：每方 1 位首领、1–4 位随从。' };
+      const drafted = ids.map(id => {
+        const existing = [...state.candidates, ...state.girls].find(girl => girl.id === id);
+        return existing;
+      }).filter((girl): girl is Girl => Boolean(girl));
+      if (drafted.length !== ids.length) return { state, ok: false, message: '有一位少女不在候选里。' };
+      const rosterGirlIds = new Set(FACTION_ORDER.flatMap(faction => roster[faction].memberIds));
+      if (drafted.some(girl => rosterGirlIds.has(girl.id))) return { state, ok: false, message: '已经进入名册的少女不能再进势力阵容。' };
+      const next = clone(state);
+      const starters = drafted.map(girl => hydrate({ ...girl, candidateUntilDay: 0, status: 'idle', remaining: 0, roomId: 'lounge' }));
+      const starterIds = new Set(starters.map(girl => girl.id));
+      // 没被选中的原班人马直接离开事务所，不回市场。
+      next.girls = starters;
+      next.candidates = next.candidates.filter(girl => !starterIds.has(girl.id) && starterKeepInPool(girl));
+      next.factionRoster = roster;
+      next.startersPicked = true;
+      next.logs.unshift({ id: `log-starters-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `开局编成完成：${starters.length} 位契约少女，三方阵容已定。` });
+      return { state: next, ok: true, message: '编成已确认。' };
+    }
+    case 'hireLeader': {
+      const leader = leaderById(action.leaderId);
+      if (!leader) return { state, ok: false, message: '没有这位首领。' };
+      const owner = FACTION_ORDER.find(faction => rosterLeader(state, faction).id === leader.id);
+      if (!owner) return { state, ok: false, message: '她现在已经不在任何一方了。' };
+      if (!factionCollapsed(state, owner)) return { state, ok: false, message: '她还有辖区要守。' };
+      if (state.girls.some(girl => girl.id === leader.id && !girl.retired)) return { state, ok: false, message: '她已经在名册里。' };
+      if (state.gold < LEADER_HIRE_COST) return { state, ok: false, message: `星砂不足（需要 ${LEADER_HIRE_COST}）。` };
+      const next = clone(state);
+      next.gold -= LEADER_HIRE_COST;
+      next.factions[owner].standing = 0;
+      for (const faction of FACTION_ORDER) if (faction !== owner) next.factions[faction].standing = Math.min(100, next.factions[faction].standing + 3);
+      const baseMaxHp = Math.round(96 + leader.stats.empathy * 0.3) + leader.level * 4;
+      next.girls.unshift(hydrate({
+        id: leader.id, name: leader.name, codename: leaderTitle(leader, owner), title: leaderTitle(leader, owner),
+        element: (owner === 'association' ? '星光系' : owner === 'government' ? '糖霜系' : '月影系') as Girl['element'], color: leader.color, portrait: '', portraitSpec: leader.portraitSpec,
+        level: leader.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp,
+        spirit: 80 + leader.level * 2, maxSpirit: 80 + leader.level * 2,
+        fatigue: 0, bond: 40, exp: 0, stats: { ...leader.stats }, baseStats: { ...leader.stats },
+        status: 'idle', roomId: 'lounge', remaining: 0, skill: '', skills: [...leader.skillIds],
+        description: leader.note, cost: 0, scars: [], relationships: {}, archetype: leader.archetype,
+        quote: leader.quote, goal: '找一个不需要再替谁守门的位置。', goalKind: '成长', traits: [], conditions: [],
+        contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
+        appearance: '', personality: '', outfitDescription: '', wardrobe: [], outfitId: 'uniform', expression: 'calm',
+        corruption: 0, equipment: {}, factionTag: leader.origin, leader: true, starter: false,
+      }));
+      next.chronicle.unshift({ id: `chr-hire-${leader.id}-${next.day}`, at: dateLabel(next.day, next.minutes), day: next.day, kind: '登记', title: `${leader.name} 并入事务所`, summary: `${factionInfo[owner].name} 名下已无辖区，${leader.name} 签下了契约。` });
+      next.logs.unshift({ id: `log-hire-${leader.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `${leader.name} 成为事务所的契约者（−${LEADER_HIRE_COST} 星砂）。` });
+      return { state: next, ok: true, message: `${leader.name} 已加入。` };
+    }
     case 'setOfficeProfile': {
       const next = clone(state);
       const profile = sanitizeOfficeProfile(action.profile);
@@ -2855,6 +2971,24 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const lostNote = lostTraits > 0 ? `（${lostTraits} 条特性没能随卡片带来，已跳过）` : '';
       next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。${lostNote}` });
       return { state: next, ok: true, message: `契约卡已导入：${girl.name}进入候选名册。${lostNote}` };
+    }
+    case 'importCards': {
+      let next = state;
+      const added: string[] = [];
+      const skipped: string[] = [];
+      const failed: string[] = [];
+      for (const card of action.cards) {
+        const result = act(next, { type: 'importCard', card });
+        if (result.ok) { next = result.state; added.push(card.girl.name); continue; }
+        if (result.message.includes('已经导入过')) skipped.push(card.girl.name);
+        else failed.push(card.girl.name);
+      }
+      if (!added.length) {
+        return { state, ok: false, message: `没有新的契约卡进名册。${skipped.length ? `跳过重复 ${skipped.length} 张。` : ''}${failed.length ? `${failed.length} 张没能登记。` : ''}` };
+      }
+      const merged = clone(next);
+      merged.logs.unshift({ id: `log-cardbox-${merged.day}-${merged.minutes}-${added.length}`, time: dateLabel(merged.day, merged.minutes), kind: 'base', text: `契约卡库导入 ${added.length} 张：${added.join('、')}。` });
+      return { state: merged, ok: true, message: cardboxReport(added.length, skipped.length, failed.length) };
     }
     case 'createGirl': {
       const next = clone(state); const draft = action.draft;
@@ -3400,7 +3534,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(value.version as number)) return createInitialState();
   try {
     const blankSave = value.blank === true;
     if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
@@ -3434,7 +3568,12 @@ export function loadState(raw: string | null): GameState {
     }
     const state = clone(value) as unknown as GameState;
     const previousVersion = Number(value.version);
-    state.version = 14;
+    state.version = 16;
+    // 老存档不该被开场打断：只有本版之后新建的档才可能没看过。
+    state.prologueSeen = previousVersion >= 15 ? value.prologueSeen !== false : true;
+    // 阵容：老存档直接沿用静态名册，编成保持“已完成”，不再逼老玩家重选。
+    state.factionRoster = sanitizeFactionRoster(state.factionRoster) ?? defaultFactionRoster();
+    state.startersPicked = previousVersion >= 16 ? value.startersPicked === true : true;
     const rawHostility = (state.hostility ?? {}) as Partial<Record<FactionPair, HostilityTrack>>;
     state.hostility = HOSTILITY_PAIRS.reduce((map, pair) => {
       const saved = rawHostility[pair];
@@ -3550,7 +3689,7 @@ export function importState(raw: string): GameState | null {
   try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
-  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(Number(value.version))) return null;
+  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(Number(value.version))) return null;
   if (!Array.isArray(value.girls) || (!value.girls.length && value.blank !== true)) return null;
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;

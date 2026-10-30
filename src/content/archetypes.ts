@@ -24,9 +24,13 @@ const allocations: Record<PlayableArchetype, Record<StatKey, number>> = {
   侦查: { magic: 46, insight: 88, agility: 86, empathy: 40 },
 };
 
-/** Every preset stays inside 40–90 and totals exactly 260. */
-export function statsForArchetype(archetype: PlayableArchetype): Record<StatKey, number> {
-  const stats = { ...allocations[archetype] };
+/** 属性波动幅度：基准 ±10，再平回总数。
+ */
+export const STAT_JITTER = 10;
+
+/** 把一组属性夹到 40–90 并平回总数 260。只改分布，不改预算。 */
+export function settleStats(input: Record<StatKey, number>): Record<StatKey, number> {
+  const stats = { ...input };
   const keys = Object.keys(stats) as StatKey[];
   for (const key of keys) stats[key] = Math.max(STAT_MIN, Math.min(STAT_MAX, Math.round(stats[key])));
   let remainder = STAT_TOTAL - keys.reduce((sum, key) => sum + stats[key], 0);
@@ -39,4 +43,39 @@ export function statsForArchetype(archetype: PlayableArchetype): Record<StatKey,
     remainder += remainder > 0 ? -1 : 1;
   }
   return stats;
+}
+
+/** Every preset stays inside 40–90 and totals exactly 260. */
+export function statsForArchetype(archetype: PlayableArchetype): Record<StatKey, number> {
+  return settleStats(allocations[archetype]);
+}
+
+/**
+ * 在职阶基准上做 ±STAT_JITTER 的均匀波动，再 settleStats 回预算。
+ * `rand` 传 seeded generator（如 `mulberry32(hashText(id))`）可让同一 id 每次一致。
+ */
+export function rollStats(
+  archetype: PlayableArchetype,
+  rand: () => number = Math.random,
+  spread: number = STAT_JITTER,
+): Record<StatKey, number> {
+  const base = allocations[archetype];
+  const jittered = {} as Record<StatKey, number>;
+  for (const key of Object.keys(base) as StatKey[]) {
+    const delta = Math.round((rand() * 2 - 1) * spread);
+    jittered[key] = base[key] + delta;
+  }
+  return settleStats(jittered);
+}
+
+/** 32 位种子伪随机（同一 seed 恒定），用于让波动与市场候选可复现。 */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }

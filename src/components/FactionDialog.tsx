@@ -5,8 +5,10 @@ import { factionInfo } from '../content/items';
 import { hostilityOf, hostilityTier, hostilityTierLabel } from '../hostility';
 import {
   factionDossiers,
-  factionGirlsOf,
-  factionLeader,
+  factionCollapsed,
+  leaderTitle,
+  rosterLeader,
+  rosterMembers,
   factionPurification,
   factionRelationLine,
   girlFactionLabels,
@@ -32,17 +34,20 @@ interface FactionDialogProps {
   state: GameState;
   faction: FactionId;
   onBase: () => void;
+  onHire: (leaderId: string) => void;
   onClose: () => void;
 }
 
 /** 一方势力的完整档案：首领在最上面，其余信息按页签分装。 */
-export function FactionDialog({ state, faction, onBase, onClose }: FactionDialogProps) {
+export function FactionDialog({ state, faction, onBase, onHire, onClose }: FactionDialogProps) {
   const [tab, setTab] = useState<FactionTab>('origin');
   const [openGirl, setOpenGirl] = useState<string>();
   const info = factionInfo[faction];
   const dossier = factionDossiers[faction];
-  const leader = factionLeader(faction);
-  const girls = factionGirlsOf(faction);
+  const leader = rosterLeader(state, faction);
+  const girls = rosterMembers(state, faction);
+  const collapsed = factionCollapsed(state, faction);
+  const hired = state.girls.some(girl => girl.id === leader.id && !girl.retired);
   const standing = state.factions?.[faction]?.standing ?? 0;
   const attitude = factionAttitude(standing);
   const purification = factionPurification(faction).relief;
@@ -73,7 +78,7 @@ export function FactionDialog({ state, faction, onBase, onClose }: FactionDialog
           <span className="faction-leader-seal">{dossier.seal}</span>
         </div>
         <div className="faction-leader-copy">
-          <span className="faction-leader-kicker">{info.name} · {leader.title}</span>
+          <span className="faction-leader-kicker">{info.name} · {leaderTitle(leader, faction)}{leader.origin !== faction ? ` · 原属 ${factionInfo[leader.origin].name}` : ''}</span>
           <h2 id="faction-leader-name">{leader.name}</h2>
           <p className="faction-leader-quote"><Quote size={12} /><span>{leader.quote}</span></p>
           <p className="faction-leader-note">{leader.note}</p>
@@ -237,6 +242,15 @@ export function FactionDialog({ state, faction, onBase, onClose }: FactionDialog
           </div>
         )}
       </div>
+
+      {collapsed && (
+        <div className="faction-collapse" id="faction-collapse">
+          <p><b>名下已无辖区。</b>{leader.name} 仍留在这里，但已经没有街道要她守了。</p>
+          <button id="faction-hire-leader" type="button" className="btn" onClick={() => onHire(leader.id)} disabled={hired}>
+            {hired ? '已并入事务所' : `雇佣 ${leader.name}（12,000 星砂）`}
+          </button>
+        </div>
+      )}
 
       <footer className="faction-foot">
         <button id="faction-go-base" type="button" className="btn ghost" onClick={onBase}><House size={14} />前往会客厅</button>

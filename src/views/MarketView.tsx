@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, Check, Coins, Feather, Flower2, Info, Phone, Plus, RefreshCw, Search, ShoppingBag, Sparkles, Star, Upload } from 'lucide-react';
+import { Archive, ArrowUpRight, Check, Coins, Feather, Flower2, Info, Phone, Plus, RefreshCw, Search, ShoppingBag, Sparkles, Star, Upload } from 'lucide-react';
 import type { FactionId, GameState, Girl } from '../types';
 import { factionInfo, getItem } from '../content/items';
 import { itemPrice, marketPool, marketUpgrade } from '../game';
@@ -28,10 +28,11 @@ export type MarketViewProps = {
   onImportCard: (file: File) => void;
   onAdvancedRecruit: (level: number) => void;
   onCustom: () => void;
+  onCardbox: () => void;
   onBuyItem: (itemId: string, stockId?: string) => void;
 };
 
-export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew, onUpgradeMarket, onAdvancedRecruit, onCustom, onBuyItem, onImportCard }: MarketViewProps) {
+export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew, onUpgradeMarket, onAdvancedRecruit, onCustom, onCardbox, onBuyItem, onImportCard }: MarketViewProps) {
   const [tab, setTab] = useState<Tab>('candidates');
   const [filter, setFilter] = useState<'all' | 'combat' | 'support'>('all');
   const [query, setQuery] = useState('');
@@ -52,7 +53,7 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
     <div className="av-market-bar">
       <div className="av-market-level"><span>市场等级 <b>Lv.{state.marketLevel}</b></span><small>每日候选 {upgrade.size} 位 · 高级招聘上限 Lv.{maxAdvanced}</small></div>
       <button id="av-market-upgrade" type="button" className="av-btn av-btn-small" disabled={upgrade.cost === null || state.gold < upgrade.cost} onClick={onUpgradeMarket}><ArrowUpRight size={13} />{upgrade.cost === null ? '已达最高等级' : `升级市场 · ${upgrade.cost.toLocaleString('zh-CN')} 星砂`}</button>
-      <button id="av-market-custom" type="button" className="av-btn av-btn-small" onClick={onCustom}><Sparkles size={13} />自定义登记</button><label className="av-btn av-btn-small av-import-card" htmlFor="market-card-file"><Upload size={13} />导入卡片</label><input id="market-card-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.currentTarget.files?.[0]; if (file) onImportCard(file); event.currentTarget.value = ''; }} />
+      <button id="av-market-custom" type="button" className="av-btn av-btn-small" onClick={onCustom}><Sparkles size={13} />自定义登记</button><button id="av-market-cardbox" type="button" className="av-btn av-btn-small" onClick={onCardbox}><Archive size={13} />契约卡库</button><label className="av-btn av-btn-small av-import-card" htmlFor="market-card-file"><Upload size={13} />导入卡片</label><input id="market-card-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.currentTarget.files?.[0]; if (file) onImportCard(file); event.currentTarget.value = ''; }} />
     </div>
 
     <div className="av-market-tabs" role="tablist" aria-label="市场分类">

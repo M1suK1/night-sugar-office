@@ -43,6 +43,7 @@ function entryText(entry: LlmLogEntry): string {
     lines.push('', `参数：${Object.entries(entry.request.params).map(([key, value]) => `${key}=${value}`).join('，')}`);
     for (const section of entry.request.sections) lines.push('', `── ${section.label} ──`, section.text);
   }
+  if (entry.response?.text !== undefined) lines.push('', '── 返回内容 ──', entry.response.text || '（空字符串）');
   if (entry.response?.reasoning) lines.push('', '── 思维链 ──', entry.response.reasoning);
   return lines.join('\n');
 }
@@ -167,6 +168,10 @@ export function LlmConsole() {
               {entry.response?.finish && <span>结束原因<b>{entry.response.finish}</b></span>}
               {entry.response?.usage && <span>用量<b>{entry.response.usage.prompt ?? '?'} → {entry.response.usage.completion ?? '?'} tokens</b></span>}
             </div>
+            {entry.response?.text !== undefined && <>
+              <h4><FileText size={12} />返回内容{entry.response?.textTruncated ? '（过长，只保留开头）' : ''}</h4>
+              <pre className="llm-response">{entry.response.text || '（空字符串）'}</pre>
+            </>}
             {entry.request && <>
               <h4><SlidersHorizontal size={12} />本次请求参数</h4>
               <div className="llm-param-grid">

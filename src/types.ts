@@ -74,6 +74,22 @@ export interface FactionLeader {
   color: string;
   quote: string;
   note: string;
+  level: number;
+  stats: Record<StatKey, number>;
+  skillIds: string[];
+  archetype: Archetype;
+  /** 原属势力，只用于档案里的小字标注。 */
+  origin: FactionId;
+  /** 三套头衔，按现属势力取用。 */
+  titles: Record<FactionId, string>;
+  /** 覆灭后被雇佣，每次出勤的势力影响。 */
+  duty: { faction: FactionId; note: string };
+}
+
+/** 某一方现存的首领与随从（可在开局编成里重新分配）。 */
+export interface FactionRoster {
+  leaderId: string;
+  memberIds: string[];
 }
 /** 势力所属少女：静态名册，参与辖区拦截战，不进玩家契约池。 */
 export interface FactionGirl {
@@ -582,6 +598,10 @@ export interface Girl {
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
   candidateUntilDay?: number; custom?: boolean; cardId?: string;
+  /** 由覆灭势力雇佣来的首领。 */
+  leader?: boolean;
+  /** 开局编成时被选中的原班人马。 */
+  starter?: boolean;
   /** 出身（协会/市役所/月蚀庭/无所属）；雇主固定是夜糖事务所，不记在这里。 */
   factionTag: GirlFaction;
 }
@@ -749,7 +769,7 @@ export interface ShiftState { day: number; wave: number }
 /** 九区污染度，0–100。 */
 export type PollutionMap = Record<DistrictId, number>;
 export interface GameState {
-  version: 14; day: number; minutes: number; gold: number; reputation: number;
+  version: 16; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
@@ -794,6 +814,12 @@ export interface GameState {
   warHistory: WarRecord[];
   /** 事务所档案：玩家可改的背景/理念/目标。 */
   office: OfficeProfile;
+  /** 开场三幕是否已经看过；跳过也算看过，否则每次刷新都会再弹。 */
+  prologueSeen: boolean;
+  /** 三方阵容：每方现任首领与随从，开局编成时确定。 */
+  factionRoster: Record<FactionId, FactionRoster>;
+  /** 开局编成是否已完成。 */
+  startersPicked: boolean;
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -807,6 +833,9 @@ export type GameAction =
   | { type: 'rehire'; girlId: string }
   | { type: 'setAssistant'; girlId?: string }
   | { type: 'setOfficeProfile'; profile: OfficeProfile }
+  | { type: 'seenPrologue' }
+  | { type: 'setStarters'; girlIds: string[]; roster: Record<FactionId, FactionRoster> }
+  | { type: 'hireLeader'; leaderId: string }
   | { type: 'joinFront'; frontId: string; side: 'attacker' | 'defender'; girlIds: string[] }
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
@@ -829,6 +858,8 @@ export type GameAction =
   | { type: 'advancedRecruit'; level: number }
   | { type: 'createGirl'; draft: GirlDraft }
   | { type: 'importCard'; card: GirlCard }
+  /** 卡库一次交上来一叠，逐张走 importCard 的登记逻辑。 */
+  | { type: 'importCards'; cards: GirlCard[] }
   | { type: 'setVariant'; girlId: string; key: string; dataUrl: string }
   | { type: 'setVariants'; girlId: string; variants: Record<string, string> }
   | { type: 'deleteVariant'; girlId: string; key: string }

@@ -28,9 +28,26 @@ export interface LlmRequestSnapshot {
 }
 
 export interface LlmResponseSnapshot {
+  /** 模型这次真正返回的正文；解析失败时最需要看的就是它。 */
+  text?: string;
+  /** 超过 RESPONSE_TEXT_LIMIT 时只留开头，避免把 localStorage 撑爆。 */
+  textTruncated?: boolean;
   reasoning?: string;
   finish?: string;
   usage?: { prompt?: number; completion?: number; total?: number };
+}
+
+/** 单条返回正文最多落盘多少字：40 条日志 × 8k 仍在 localStorage 余量内。 */
+const RESPONSE_TEXT_LIMIT = 8000;
+
+/** 统一收口返回正文的裁剪，避免各条链路各写一份。 */
+function responseTextOf(text: string | undefined): { text?: string; textTruncated?: boolean } {
+  if (typeof text !== 'string') return {};
+  const trimmed = text.trim();
+  if (!trimmed) return { text: '' };
+  return trimmed.length > RESPONSE_TEXT_LIMIT
+    ? { text: trimmed.slice(0, RESPONSE_TEXT_LIMIT), textTruncated: true }
+    : { text: trimmed };
 }
 
 export interface LlmLogEntry {
@@ -256,7 +273,7 @@ ${remote ? '你们正在通电话，她退役后住在城南家中；电话那�
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
     message: final.ok ? `与${girl.name}完成一次对话` : final.message,
     detail: final.ok ? undefined : final.message,
-    request, response: { reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
+    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
   });
   return final;
 }
@@ -710,7 +727,7 @@ interface LlmCallMeta {
 function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], labels: string[], config: LlmConfig, params: LlmCallParams | undefined, result: LlmCallResult) {
   if (!meta) return;
   meta.request = requestSnapshot(messages, requestParams(config, params), labels, meta.slots);
-  meta.response = { reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined };
+  meta.response = { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined };
 }
 
 const JSON_RETRY_MESSAGE = '上一次输出在写到 JSON 中途被截断了。这一次只输出完整的 JSON 对象，不要思维链、不要解释、不要 Markdown 代码块。';
@@ -1491,13 +1508,15 @@ export interface GeneratedGirlProfile {
   name: string; codename: string; title: string; element: Element; archetype: Archetype;
   quote: string; goal: string; appearance: string; personality: string; outfitDescription: string;
   focus: StatKey; skillIds: string[]; traits: DraftTrait[];
+  /** 代表色：让 LLM 一并给出，避免十张卡一个粉。 */
+  color?: string;
 }
 
 async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const skillList = girlSkillPool().map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
-{"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
+{"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
 skillIds 只能从以下 ID 中选三个：${skillList}
 traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。`;
   const visualRule = portrait
@@ -1541,6 +1560,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
       quote: str('quote', '请多指教。'), goal: str('goal', '想找到一个可以回去的地方。'),
       appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。'), personality: str('personality', '安静，习惯先观察再开口。'),
       outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), focus, skillIds, traits: draftTraits,
+      color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color.trim()) ? raw.color.trim() : undefined,
     } };
   } catch {
     return { ok: false, message: '起草失败：浏览器无法访问接口，或返回内容不是合法 JSON。' };

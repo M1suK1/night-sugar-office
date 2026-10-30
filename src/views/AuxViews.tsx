@@ -6,6 +6,7 @@ import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { pensionFor } from '../contracts';
+import { PrologueDialog } from '../components/PrologueDialog';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
 import './aux-views.css';
@@ -721,6 +722,7 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
   const retiredGirls = state.girls.filter(g => g.retired);
   const totalPension = retiredGirls.reduce((sum, g) => sum + pensionFor(g), 0);
   const inventoryEntries = items.filter(it => (state.inventory[it.id] ?? 0) > 0);
+  const [prologue, setPrologue] = useState(false);
 
   return (
     <section className="av-view av-records-view" aria-labelledby="av-records-title">
@@ -731,10 +733,15 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
           <p>收支轨迹、城市安定度与周期天灾、三方势力态度与货架配给、契约者灵魂侵蚀与魔女抑制剂监测。</p>
         </div>
         <div className="av-heading-meta">
+          <button id="replay-prologue" type="button" className="av-btn av-btn-small" onClick={() => setPrologue(true)}>
+            <History size={13} />重看开场
+          </button>
           <span className="av-live-dot" />
           <span>记录至第 {state.day} 日 · 市场 Lv.{state.marketLevel}</span>
         </div>
       </header>
+
+      {prologue && <PrologueDialog replay onDone={() => setPrologue(false)} />}
 
       <div className="av-record-summary av-record-summary-v4">
         <div className="av-record-stat">

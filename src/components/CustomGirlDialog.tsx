@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Scissors, Shirt, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react';
 import type { Archetype, DraftTrait, Element, GirlDraft, StatKey, TraitPolarity } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
-import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
+import { STAT_MAX, STAT_MIN, rollStats, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
 import { tierLabels } from '../content/skills';
 import { defaultSkillAccuracy } from '../combat';
 import { filterSkills, girlSkillPool } from '../skills';
@@ -190,6 +190,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       }
       setSkillIds(profile.skillIds); setDraftTraits(profile.traits);
       setStats(statsForArchetype(profile.archetype === '魔物' ? '输出' : profile.archetype));
+      if (profile.color) setColor(profile.color);
       setStep(0); setHasDraft(true); setDrafting(false);
       setMessage('使魔读取了立绘，补全了身份、描述，并按职阶分配了 260 点能力值。请逐项检查，仍可手动微调。');
     } else {
@@ -281,7 +282,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
 
     {step === 1 && <div className="custom-step-body">
       <h2>把 260 点，分给她的可能性。</h2><p className="muted">单项 {STAT_MIN}–{STAT_MAX}。等级固定为 1，之后靠委托成长。</p>
-      <div className="custom-points"><span>剩余点数</span><strong className={remaining < 0 ? 'warn' : ''}>{remaining}</strong><button id="custom-autofill" type="button" className="av-btn av-btn-small" onClick={() => setStats({ magic: 65, insight: 65, agility: 65, empathy: 65 })}>平均分配</button></div>
+      <div className="custom-points"><span>剩余点数</span><strong className={remaining < 0 ? 'warn' : ''}>{remaining}</strong><button id="custom-randomize" type="button" className="av-btn av-btn-small" onClick={() => setStats(rollStats(archetype === '魔物' ? '输出' : archetype))}>随机分配</button><button id="custom-autofill" type="button" className="av-btn av-btn-small" onClick={() => setStats({ magic: 65, insight: 65, agility: 65, empathy: 65 })}>平均分配</button></div>
       <div className="custom-stat-list">{(Object.keys(statLabels) as StatKey[]).map(key => <div key={key} className="custom-stat-row"><span>{statLabels[key]}</span><input aria-label={`${statLabels[key]}数值`} type="range" min={STAT_MIN} max={STAT_MAX} value={stats[key]} onChange={e => setStats(prev => ({ ...prev, [key]: Number(e.target.value) }))} /><b>{stats[key]}</b><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}减一`} onClick={() => adjust(key, -1)}>−</button><button type="button" className="av-btn av-btn-small" aria-label={`${statLabels[key]}加一`} onClick={() => adjust(key, 1)}>+</button></div>)}</div>
       <p className="small-note">选择职阶会自动分配 260 点：输出偏魔力与敏捷，守护偏共情，治愈偏共情与洞察，控制偏洞察与魔力，侦查偏洞察与敏捷。分配后仍可逐点微调。</p>
     </div>}

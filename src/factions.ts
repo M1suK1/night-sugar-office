@@ -5,11 +5,12 @@
  * 首领与所属少女分别来自 `content/factionLeaders.ts` 与 `content/factionGirls.ts`。
  * 档案 UI 与结算都经由访问器读取，不各自复制一份数值。
  */
-import type { FactionGirl, FactionId, FactionLeader, GirlFaction } from './types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction } from './types.ts';
 import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
-import { girlsOfFaction } from './content/factionGirls.ts';
+import { factionGirls, girlsOfFaction } from './content/factionGirls.ts';
 import { factionAttitude } from './economy.ts';
+import { FACTION_ORDER } from './territories.ts';
 
 /** 完成委托时额外的净化量；唯一会被势力改变的污染参数。 */
 export interface FactionPurification {
@@ -121,6 +122,49 @@ export function factionGirlsOf(faction: FactionId): FactionGirl[] {
   return girlsOfFaction(faction);
 }
 
+/** 全部首领（按原属顺序），编成界面用来做待选区。 */
+export const allFactionLeaders: FactionLeader[] = FACTION_ORDER.map(faction => factionLeaders[faction]);
+
+export function leaderById(id: string): FactionLeader | undefined {
+  return allFactionLeaders.find(leader => leader.id === id);
+}
+
+/** 默认阵容：首领回原属，随从沿用静态名册的 3 / 3 / 3。 */
+export function defaultFactionRoster(): Record<FactionId, FactionRoster> {
+  const roster = {} as Record<FactionId, FactionRoster>;
+  for (const faction of FACTION_ORDER) {
+    roster[faction] = {
+      leaderId: factionLeaders[faction].id,
+      memberIds: girlsOfFaction(faction).map(girl => girl.id),
+    };
+  }
+  return roster;
+}
+
+/** 某一方现存的首领；名册缺失时退回原属静态映射。 */
+export function rosterLeader(state: Pick<GameState, 'factionRoster'>, faction: FactionId): FactionLeader {
+  const id = state.factionRoster?.[faction]?.leaderId;
+  return (id && leaderById(id)) || factionLeaders[faction];
+}
+
+/** 某一方现存的随从（按编成结果）。 */
+export function rosterMembers(state: Pick<GameState, 'factionRoster'>, faction: FactionId): FactionGirl[] {
+  const ids = state.factionRoster?.[faction]?.memberIds;
+  if (!ids) return girlsOfFaction(faction);
+  return ids.map(id => factionGirls.find(girl => girl.id === id)).filter((girl): girl is FactionGirl => Boolean(girl));
+}
+
+/** 首领的现属头衔。 */
+export function leaderTitle(leader: FactionLeader, faction: FactionId): string {
+  return leader.titles?.[faction] ?? leader.title;
+}
+
+/** 该势力是否已被打空辖区（首领可被雇佣的前提）。 */
+export function factionCollapsed(state: Pick<GameState, 'territories'>, faction: FactionId): boolean {
+  const owned = state.territories as Record<string, FactionId | undefined>;
+  return Object.values(owned).filter(owner => owner === faction).length === 0;
+}
+
 /** 2–3 行的势力提要，供 LLM prompt 使用，不塞整篇档案。 */
 export function factionBrief(faction: FactionId, standing: number): string {
   const dossier = factionDossiers[faction];
@@ -218,5 +262,5 @@ export function canIntercept(
   if (!owner) return false;
   const standing = state.factions?.[owner]?.standing ?? 0;
   if (factionAttitude(standing).label !== '戒备') return false;
-  return factionGirlsOf(owner).length > 0;
+  return rosterMembers(state as unknown as Pick<GameState, 'factionRoster'>, owner).length > 0;
 }
