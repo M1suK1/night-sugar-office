@@ -60,12 +60,14 @@ export const monsters: MonsterTemplate[] = [
     id: 'hollow-moon', name: '空月', epithet: '没有背面的天体', rank: '王座', element: '星光系', color: '#C9C4FF',
     maxHp: 420, maxSpirit: 200,
     stats: { magic: 96, insight: 92, agility: 50, empathy: 64 },
-    skillIds: ['monster-claw', 'monster-gaze', 'monster-tide'],
+    skillIds: ['boss-hollow-veil', 'boss-tide-of-names', 'boss-sugar-crown', 'boss-mirror-litany'],
     trait: '免疫眩晕；每轮开始时若血量低于一半，魔力提高 8。',
     description: '它不是月亮，只是月亮缺席时留下的洞。所有仰望过它的人，都会短暂地忘记自己为什么抬头。',
     spec: { bodyPlan: 'orb', scale: 1.34, appendages: 3, core: '月', palette: { body: '#1B1830', shade: '#0A0818', rim: '#E4DFFF' }, aura: '余烬', motif: '星' },
     codex: { habit: '悬在旧钟楼上空，缓慢地改变城市的影子长度。', weakness: '洞察足够高的人能看见它背面的裂口。' },
     rules: [{ trigger: 'always', effect: 'immuneStun' }, { trigger: 'roundStart', effect: 'buff', stat: 'magic', amount: 8, belowHpPct: 0.5 }],
+    bossSkillIds: ['boss-hollow-veil', 'boss-tide-of-names', 'boss-sugar-crown', 'boss-mirror-litany'],
+    bossPhaseSkillIds: ['boss-second-moon', 'boss-collapse', 'boss-clock-hands', 'boss-name-erasure'],
   },
 ];
 export const monsterById = new Map(monsters.map(m => [m.id, m]));

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Sparkles, Trash2 } from 'lucide-react';
 import type { Girl, Outfit } from '../types';
 import { rules } from '../balance';
@@ -6,12 +6,14 @@ import { resizeImageFile } from '../image';
 import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
-export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose }: {
+export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose, initialFile }: {
   girl: Girl;
   onSave: (outfit: Outfit, personality: string) => boolean;
   onRemove: () => boolean;
   onDescribe: (portrait: string) => Promise<{ name: string; description: string; personality: string } | null>;
   onClose: () => void;
+  /** 从档案页把图片直接拖进来时，由外部带过来，挂载后自动裁切。 */
+  initialFile?: File;
 }) {
   const [portrait, setPortrait] = useState(girl.witchForm?.portrait ?? '');
   const [name, setName] = useState(girl.witchForm?.name ?? '魔女化 · 夜之形');
@@ -24,6 +26,8 @@ export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose }:
   const fileRef = useRef<HTMLInputElement>(null);
   const preview = portrait || girl.witchForm?.portrait || '';
   const threshold = rules().corruptionThreshold;
+
+  useEffect(() => { if (initialFile) void pick(initialFile); }, [initialFile]);
 
   function outfit(): Outfit {
     return {

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, Incident, StoryPassage, StoryPlan } from './types';
+import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, StoryPassage, StoryPlan } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState, SAVE_KEY } from './game';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
 import type { Page } from './components/Shell';
 import { DispatchMap } from './components/DispatchMap';
+import { FrontDialog } from './components/FrontDialog';
+import { TaskPanel } from './components/TaskPanel';
+import type { TaskEntry } from './tasks';
 import { Roster } from './components/Roster';
 import { Dialog } from './components/Dialog';
 import { MissionDialog, AssignmentPicker } from './components/MissionDialog';
@@ -27,7 +30,8 @@ import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
 import { taskRuntime } from './llm';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncident, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, llmHasKey, loadLlmConfig } from './llm';
+import { incidentPoolNeed } from './incidents.ts';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, llmHasKey, loadLlmConfig } from './llm';
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
@@ -41,6 +45,8 @@ import { WitchFormDialog } from './components/WitchFormDialog';
 import { CommandConsole } from './components/CommandConsole';
 import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
+import { blockingIncidents } from './incidents';
+import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
 import { StoryGraphDialog } from './components/StoryGraphDialog';
@@ -55,9 +61,10 @@ import './styles.css';
 import './combat.css';
 
 type Modal =
-  | { type: 'girl' | 'assign' | 'hire' | 'room' | 'build' | 'wardrobe' | 'expression' | 'witch-form'; id: string }
+  | { type: 'girl' | 'assign' | 'hire' | 'room' | 'build' | 'wardrobe' | 'expression' | 'witch-form'; id: string; portraitFile?: File }
   | { type: 'talk'; id: string; remote?: boolean }
   | { type: 'mission'; id: string; girlId?: string }
+  | { type: 'front'; id: string }
   | { type: 'battle'; id: string }
   | { type: 'battle-note'; id: string }
   | { type: 'event'; id: string }
@@ -104,6 +111,7 @@ export default function App() {
   const [presets, setPresets] = useState<ChatPreset[]>(loadPresets);
   const [binding, setBinding] = useState<PresetBinding>(loadBinding);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [incidentFocus, setIncidentFocus] = useState<string | null>(null);
   const [arcBusy, setArcBusy] = useState<string | null>(null);
   const STARTED_KEY = 'night-sugar-office:started';
   const markStarted = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setStarted(true); };
@@ -156,11 +164,11 @@ export default function App() {
   useEffect(() => {
     if (state.day <= lastIncidentDay.current) { lastIncidentDay.current = state.day; return; }
     lastIncidentDay.current = state.day;
-    if (state.incidents.some(item => item.status === 'pending') || !llmHasKey()) return;
-    void generateIncident(loadLlmConfig(), state, taskRuntime(boundPreset('incident', presets, binding), 'incident')).then(result => {
+    if (!llmHasKey()) return;
+    if (incidentPoolNeed(state) <= 0) return;
+    void generateIncidentBatch(loadLlmConfig(), state, taskRuntime(boundPreset('incident', presets, binding), 'incident')).then(result => {
       if (!result.ok) return;
-      const incident: Incident = { id: `inc-llm-${state.day}-${Date.now()}`, day: state.day, kind: 'faction', source: 'llm', title: result.data.title, body: result.data.body, options: result.data.options.map((option, index) => ({ id: `o${index + 1}`, label: option.label, hint: option.hint, effect: option.effect })), status: 'pending' };
-      const applied = act(state, { type: 'addIncident', incident });
+      const applied = act(state, { type: 'mergeIncidentPool', entries: result.data.entries });
       if (applied.ok) setState(applied.state);
     });
   }, [state.day]);
@@ -340,6 +348,16 @@ export default function App() {
   };
   const openBattleNote = (id: string) => { setNoteError(undefined); setModal({ type: 'battle-note', id }); };
   const navigate = (p: Page) => { setPage(p); setModal(null); window.scrollTo({ top: 0, behavior: 'instant' }); };
+  const openTask = (target: TaskEntry['target']) => {
+    switch (target.modal) {
+      case 'council': navigate('council'); return;
+      case 'base': navigate('base'); return;
+      case 'incident': if (target.id) setIncidentFocus(target.id); return;
+      case 'mission': if (target.id) setModal({ type: 'mission', id: target.id }); return;
+      case 'girl': if (target.id) setModal({ type: 'girl', id: target.id }); return;
+      case 'faction': if (target.id) setModal({ type: 'faction', id: target.id as FactionId }); return;
+    }
+  };
   const girl = (id: string) => setModal({ type: 'girl', id });
   const talk = (id: string, remote = false) => { const g = state.girls.find(g => g.id === id); if (remote) { if (!g?.retired) { notify(`${g?.name ?? '她'}还没有退役，直接去会客厅找她吧。`, false); return; } setModal({ type: 'talk', id, remote: true }); return; } if (g?.retired) { notify(`${g.name}已经退役，可以用远程联络。`, false); setModal({ type: 'talk', id, remote: true }); return; } if (g?.status === 'mission') { notify(`${g.name}正在出勤，等她回到基地再聊聊吧。`, false); return; } if (g?.status === 'healing' || g?.status === 'resting') { notify(`${g.name}正在${g.status === 'healing' ? '治疗' : '休息'}，稍后再聊吧。`, false); return; } if (g?.status === 'expedition') { notify(`${g.name}正在星象台远行，暂时联络不上。`, false); return; } setModal({ type: 'talk', id }); };
   const sendTalk = async (id: string, text: string, remote = false): Promise<boolean> => {
@@ -408,7 +426,7 @@ export default function App() {
           '  clear                             清空终端输出'].join('\n');
       case 'status': case '状态': {
         const open = state.missions.filter(m => m.status === 'open').length;
-        const idle = state.girls.filter(g => !g.retired && g.status === 'idle').length;
+        const idle = state.girls.filter(g => !g.retired && !g.left && g.status === 'idle').length;
         return `第 ${state.day} 日 · ${clockLabel(state.minutes)}（${phaseLabel[shiftPhase(state.minutes)]}，距打烊 ${Math.max(0, minutesToClose(state.minutes))} 分钟）\n星砂 ${state.gold} · 安定度 ${state.reputation}/100 · 待命 ${idle} 人 · 可接委托 ${open} 件 · 已放号 ${state.shift.wave}/3 批`;
       }
       case 'advance': case '推进': case 'adv': {
@@ -480,7 +498,12 @@ export default function App() {
     }
   };
 
-  const pendingIncident = state.incidents.find(incident => incident.status === 'pending');
+  // 必须当场决定的事自动摆到桌上；通报类的先收在一边，点开才看。
+  const pendingIncidents = state.incidents.filter(incident => incident.status === 'pending');
+  const blockingPending = blockingIncidents(state);
+  const shelfIncidents = pendingIncidents.filter(incident => !blockingPending.some(item => item.id === incident.id));
+  const pendingIncident = blockingPending[0]
+    ?? (incidentFocus ? pendingIncidents.find(incident => incident.id === incidentFocus) : undefined);
   const startStory = (girlId: string) => {
     const target = state.girls.find(item => item.id === girlId);
     if (!target?.storyPlan) { notify('先生成或画一张故事蓝图，再按蓝图开场。', false); return; }
@@ -573,6 +596,7 @@ export default function App() {
               const standing = state.factions?.[fid]?.standing ?? 0;
               const att = factionAttitude(standing);
               const taskDone = Boolean(state.factions?.[fid]?.envoyTaskId);
+              const hottest = hostilityOf(state, fid).find(item => item.track.value >= 90);
               return (
                 <button
                   key={fid}
@@ -590,6 +614,7 @@ export default function App() {
                       <small>代表：{info.envoy}</small>
                     </div>
                     <span className="world-faction-attitude">{att.label}</span>
+                    {hottest && <span className="world-faction-war" id={`faction-war-${fid}`}>临战 {hottest.track.value}</span>}
                   </div>
                   <div className="world-faction-meter">
                     <i style={{ width: `${Math.min(100, standing)}%` }} />
@@ -604,8 +629,9 @@ export default function App() {
           </div>
         </section>
 
+        <TaskPanel state={state} onOpen={openTask} onNavigate={() => navigate('base')} />
         <div className="dispatch-layout">
-          <DispatchMap state={state} onMission={id => setModal({ type: 'mission', id })} onDropGirl={(girlId, id) => setModal({ type: 'mission', id, girlId })} />
+          <DispatchMap state={state} onMission={id => setModal({ type: 'mission', id })} onFront={id => setModal({ type: 'front', id })} onDropGirl={(girlId, id) => setModal({ type: 'mission', id, girlId })} />
           <Roster state={state} onGirl={girl} onMarket={() => navigate('market')} />
         </div>
         <div className="night-notes">
@@ -613,6 +639,8 @@ export default function App() {
           <button id="open-night-brief" className="brief-note" onClick={() => setModal({ type: 'codex' })}><span className="note-icon"><Radio size={21} /></span><div><span className="eyebrow">夜间速报 · 城市心跳</span><h3>末班列车，即将离站。</h3><p>{state.missions.find(m => m.id === 'station')?.status === 'open' ? '月台出现异常信号与两只魔物。查看图鉴，再决定编队。' : '最新委托进展已同步到感应地图与魔物图鉴。'}</p></div><ArrowRight size={18} /></button>
         </div>
       </> : page === 'base' ? (
+        <>
+        <TaskPanel state={state} onOpen={openTask} onNavigate={() => navigate('base')} />
         <BaseView
           state={state}
           onRoom={id => setModal({ type: 'room', id })}
@@ -630,6 +658,7 @@ export default function App() {
           onCouncil={() => navigate('council')}
           onOffice={() => setModal({ type: 'office' })}
         />
+        </>
       ) : page === 'worldbook' ? (
         <>
           <PageHeading page="worldbook" />
@@ -661,10 +690,10 @@ export default function App() {
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
     {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form' || modal.type === 'faction' || modal.type === 'office'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
-          onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
+          onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onWitchFile={file => setModal({ type: 'witch-form', id: selectedGirl.id, portraitFile: file })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onDescribeSaved={(outfitId, description) => perform({ type: 'setOutfitDescription', girlId: selectedGirl.id, outfitId, description })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
-      {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
+      {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} initialFile={modal.portraitFile} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'mission' && selectedMission && <MissionDialog key={`${modal.id}-${modal.girlId ?? ''}`} state={state} mission={selectedMission} initialGirlId={modal.girlId} onGirl={girl} onEnemy={id => setModal({ type: 'codex', id })} onBattle={id => setModal({ type: 'battle', id })} onDispatch={(girlIds, missionId) => { if (perform({ type: 'dispatch', girlIds, missionId })) setModal(null); }} />}
       {modal.type === 'talk' && selectedGirl && <Conversation key={`talk-${selectedGirl.id}`} girl={selectedGirl} state={state} remote={modal.remote} modelEnabled={llmHasKey()} onSend={text => sendTalk(selectedGirl.id, text, modal.remote)} />}
       {modal.type === 'assign' && <AssignmentPicker state={state} girlId={modal.id} onSelect={id => setModal({ type: 'mission', id, girlId: modal.id })} />}
@@ -745,7 +774,22 @@ export default function App() {
     </Dialog>}
     <LlmConsole />
     {cmdOpen && <CommandConsole onRun={runCommand} onClose={() => setCmdOpen(false)} />}
-    {pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => perform({ type: 'resolveIncident', incidentId: pendingIncident.id, optionId })} onGirl={girl} />}
+    {!pendingIncident && shelfIncidents.length > 0 && (
+      <div className="incident-tray" id="incident-tray">
+        <span className="incident-tray-label">桌上还压着 {shelfIncidents.length} 件事</span>
+        {shelfIncidents.slice(0, 3).map(incident => (
+          <button key={incident.id} type="button" id={`incident-open-${incident.id}`} className="incident-tray-item" onClick={() => setIncidentFocus(incident.id)}>{incident.title}</button>
+        ))}
+      </div>
+    )}
+    {modal?.type === 'front' && (() => {
+      const front = state.fronts.find(item => item.id === modal.id);
+      if (!front) return null;
+      return <Dialog label="势力之间的战线" onClose={() => setModal(null)} wide>
+        <FrontDialog front={front} state={state} onJoin={(side, girlIds) => { perform({ type: 'joinFront', frontId: front.id, side, girlIds }); }} onClose={() => setModal(null)} />
+      </Dialog>;
+    })()}
+    {pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => { perform({ type: 'resolveIncident', incidentId: pendingIncident.id, ...(optionId ? { optionId } : {}) }); setIncidentFocus(null); }} onGirl={girl} />}
     {modal?.type === 'event' && (() => {
       const target = state.events.find(event => event.id === modal.id);
       if (!target) return null;

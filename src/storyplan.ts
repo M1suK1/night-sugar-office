@@ -8,6 +8,8 @@ const num = (value: unknown, min: number, max: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, Math.round(value))) : undefined;
 
 export const STORY_PLAN_BEATS = 4;
+/** 每位契约少女最多三段故事，前一段讲完才开下一段。 */
+export const STORY_SLOT_MAX = 3;
 
 export function storyPlanTemplate(title = '', premise = ''): StoryPlan {
   return {

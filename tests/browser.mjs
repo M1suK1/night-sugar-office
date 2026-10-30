@@ -26,7 +26,9 @@ async function settleIncidents() {
   for (let i = 0; i < 4; i++) {
     const overlay = page.locator('.incident-overlay');
     if (!(await overlay.count())) return;
-    await page.locator('.incident-option').first().click();
+    const option = page.locator('.incident-option').first();
+    if (await option.count()) await option.click();
+    else await overlay.first().click({ position: { x: 8, y: 8 } }).catch(() => {});
     await page.waitForTimeout(250);
   }
 }
@@ -54,6 +56,46 @@ try {
     expect(broken).toEqual([]); await layout('desktop');
     await page.screenshot({ path: 'artifacts/dispatch-desktop.png', fullPage: true, animations: 'disabled' });
   });
+  await check('首页任务面板：待办计数与条目跳转', async () => {
+    const panel = page.locator('#task-panel');
+    if (!(await panel.count())) return;
+    const count = Number(await page.locator('#task-panel-count').textContent());
+    expect(count).toBeGreaterThan(0);
+    await page.locator('#task-panel-toggle').click();
+    await expect(page.locator('.task-panel-row').first()).toBeVisible();
+    const firstText = await page.locator('#task-panel-item-0').textContent();
+    await page.locator('#task-panel-item-0').click();
+    await page.waitForTimeout(350);
+    await settleIncidents();
+    if (firstText.includes('议会')) {
+      await expect(page.locator('.council-stage').first()).toBeVisible({ timeout: 8000 });
+      await page.locator('#nav-dispatch').click();
+    } else {
+      const opened = (await page.locator('dialog[open]').count()) + (await page.locator('.incident-overlay').count());
+      expect(opened).toBeGreaterThan(0);
+      await close();
+    }
+    await page.locator('#nav-base').click();
+    await expect(page.locator('#task-panel')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/task-panel-base.png', fullPage: false, animations: 'disabled' });
+    await page.locator('#nav-dispatch').click();
+    await expect(page.locator('.map-viewport')).toBeVisible();
+  });
+
+  await check('任务面板：窄屏不撑破布局', async () => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.waitForTimeout(250);
+    if (await page.locator('#task-panel').count()) {
+      await page.locator('#task-panel-toggle').click();
+      await page.waitForTimeout(200);
+      await layout('task-panel-320');
+      await page.screenshot({ path: 'artifacts/task-panel-320.png', fullPage: false, animations: 'disabled' });
+      await page.locator('#task-panel-toggle').click();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.waitForTimeout(250);
+  });
+
   await check('会客厅：独立页面、三栏布局与决议落账', async () => {
     await page.locator('#nav-council').click();
     await expect(page.locator('.council-stage')).toBeVisible();
@@ -499,6 +541,7 @@ try {
     for (let i = 0; i < 3; i++) await page.locator('#advance-time-30').click();
     await page.locator('#battle-skip').click();
     await page.locator('#battle-close').click();
+    await settleIncidents();
     await page.locator('#mission-mirror').click();
     await expect(page.locator('#mission-view-battle')).toBeVisible();
     await page.screenshot({ path: 'artifacts/mission-completed.png', animations: 'disabled' });
@@ -1472,9 +1515,9 @@ try {
     await page.locator('#story-graph-add-choice').click();
     await expect.poll(async () => page.locator('.graph-node').count()).toBe(before + 1);
 
-    // 默认图只保留第一幕到「继续」，不发散成四幕
+    // 默认图只保留第一幕，收尾分叉成两个结局（v20 §6），不发散成四幕
     expect(before).toBeGreaterThanOrEqual(5);
-    expect(before).toBeLessThanOrEqual(8);
+    expect(before).toBeLessThanOrEqual(10);
     // 新节点落在当前视口中央，而不是最左端
     const addedBox = await page.locator('.graph-node.choice').last().boundingBox();
     const viewBox = await page.locator('.story-graph-canvas').boundingBox();
@@ -2013,6 +2056,40 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.locator('#modal-close').click();
   });
 
+  await check('技能池筛选：流派与阶级过滤、Boss 技能不进池子', async () => {
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await page.locator('#custom-entry-blank').click();
+    await page.locator('#custom-name').fill('筛选校验');
+    await page.locator('#custom-next').click();
+    await page.locator('#custom-next').click();
+    await expect(page.locator('#custom-skill-school')).toBeVisible();
+    const allCount = await page.locator('[id^="custom-skill-"]').count();
+    expect(allCount).toBeGreaterThan(40);
+    // 阶级筛选：奥义
+    await page.locator('#custom-skill-tier').selectOption('ultimate');
+    const ultPicks = page.locator('.custom-pick');
+    const ultCountText = await page.locator('.custom-skill-count').textContent();
+    expect(ultCountText).toContain('筛出 10 条');
+    await expect(ultPicks.first()).toBeVisible();
+    // 流派筛选：挑一条真实存在的流派
+    const school = await page.locator('#custom-skill-school option').nth(1).evaluate(option => option.value);
+    await page.locator('#custom-skill-school').selectOption(school);
+    const filtered = await page.locator('.custom-pick').count();
+    expect(filtered).toBeGreaterThan(0);
+    const names = await page.locator('.custom-pick small').allTextContents();
+    expect(names.every(text => text.includes(school))).toBe(true);
+    // Boss 技能永远不在池子里
+    await page.locator('#custom-skill-school').selectOption('全部');
+    await page.locator('#custom-skill-tier').selectOption('all');
+    await expect(page.locator('#custom-skill-boss-hollow-veil')).toHaveCount(0);
+    await page.locator('.custom-pick').first().click();
+    await expect(page.locator('.custom-pick.picked')).toHaveCount(1);
+    await layout('custom skill filter');
+    await page.screenshot({ path: 'artifacts/custom-skill-filter.png', animations: 'disabled' });
+    await page.locator('#modal-close').click();
+  });
+
   await check('事务所档案：编辑背景与目标、任命代表并同步世界书', async () => {
     const before = await stored();
     const yue = before.girls.find(g => g.id === 'yue');
@@ -2109,7 +2186,94 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     expect(after.logs.some(log => log.text.includes('拦截战'))).toBe(true);
   });
 
+  await check('势力档案：两条敌意线带档位与起因，临战时会客厅挂角标', async () => {
+    await close();
+    await page.evaluate(() => {
+      const key = 'night-sugar-office:v1';
+      const raw = JSON.parse(localStorage.getItem(key));
+      raw.hostility = {
+        'association-government': { pair: 'association-government', value: 52, updatedDay: 1, reason: '灯油配额谈了三次，一次都没谈拢' },
+        'association-witch': { pair: 'association-witch', value: 92, updatedDay: 1, reason: '协会烧了她们一本名录' },
+        'government-witch': { pair: 'government-witch', value: 41, updatedDay: 1, reason: '市役所的编号名单上还留着没销的案子' },
+      };
+      localStorage.setItem(key, JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    if (await page.locator('#start-standard').count()) await page.locator('#start-standard').click();
+    await expect(page.locator('.map-viewport')).toBeVisible();
+    await expect(page.locator('#faction-war-witch')).toContainText('临战');
+    await page.locator('#dispatch-faction-witch').click();
+    await expect(page.locator('#faction-hostility-association-witch')).toBeVisible();
+    await expect(page.locator('#faction-hostility-association-witch')).toContainText('临战');
+    await expect(page.locator('#faction-hostility-association-witch')).toContainText('名录');
+    await expect(page.locator('#faction-hostility-government-witch')).toContainText('编号名单');
+    await layout('faction-hostility');
+    await page.screenshot({ path: 'artifacts/faction-hostility.png', animations: 'disabled' });
+    await page.locator('#faction-close').click();
+  });
+
+  await check('战线：地图上有标记，进去能看清两边、选边派人出发', async () => {
+    await close();
+    await page.evaluate(() => {
+      const key = 'night-sugar-office:v1';
+      const raw = JSON.parse(localStorage.getItem(key));
+      raw.fronts = [{
+        id: 'front-spec-1', pair: 'association-witch', day: raw.day, district: 'oldtown',
+        attacker: 'association', defender: 'witch',
+        startsAt: raw.day * 1440 + 20 * 60 + 60, endsAt: raw.day * 1440 + 20 * 60 + 240,
+        attackerPower: 78, defenderPower: 61, status: 'open', reason: '协会烧了她们一本名录',
+      }];
+      raw.hostility['association-witch'] = { pair: 'association-witch', value: 25, updatedDay: raw.day, reason: '打起来了，账先记着' };
+      localStorage.setItem(key, JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    if (await page.locator('#start-standard').count()) await page.locator('#start-standard').click();
+    await expect(page.locator('.map-viewport')).toBeVisible();
+    await expect(page.locator('#map-front-oldtown')).toBeVisible();
+    await page.evaluate(() => document.getElementById('map-front-oldtown')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await expect(page.locator('#front-dialog')).toBeVisible();
+    await expect(page.locator('#front-reason')).toContainText('协会烧了她们一本名录');
+    await expect(page.locator('#front-power-attacker')).toContainText('78');
+    await page.locator('#front-side-attacker').click();
+    const girl = page.locator('#front-girls button').first();
+    await expect(girl).toBeVisible({ timeout: 8000 });
+    const girlId = await girl.evaluate(node => node.id.replace('front-girl-', ''));
+    await girl.click();
+    await page.screenshot({ path: 'artifacts/front-dialog.png', animations: 'disabled' });
+    await page.locator('#front-commit').click();
+    const joined = await stored();
+    expect(joined.fronts[0].side).toBe('attacker');
+    expect(joined.fronts[0].status).toBe('joined');
+    expect(joined.fronts[0].squad).toEqual([girlId]);
+  });
+
+  await check('故事线分成三段，前面没讲完时后面两段锁着', async () => {
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('night-sugar-office:v1');
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      state.storylines = [];
+      localStorage.setItem('night-sugar-office:v1', JSON.stringify(state));
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#roster-girl-yue').click();
+    const slots = page.locator('#dossier-story-slots .story-slot');
+    await expect(slots).toHaveCount(3);
+    await slots.first().scrollIntoViewIfNeeded();
+    await expect(slots.first()).toBeVisible();
+    await expect(slots.first()).toContainText('第 1 段');
+    await expect(slots.nth(1)).toContainText('等前一段讲完');
+    await expect(slots.nth(2)).toContainText('等前一段讲完');
+    await page.screenshot({ path: 'artifacts/story-slots.png', fullPage: false, animations: 'disabled' });
+    await close();
+  });
+
   await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();
 }
+
+
+
+
+

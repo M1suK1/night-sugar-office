@@ -33,7 +33,7 @@ type LogKind = GameState['logs'][number]['kind'];
 
 const number = (value: number) => value.toLocaleString('zh-CN');
 const hm = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息', retired: '已退役', expedition: '星象台远行' };
+const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息', retired: '已退役', expedition: '星象台远行', left: '已离开' };
 const roomIcons = { lounge: Cat, clinic: HeartPulse, dorm: BedDouble, observatory: Telescope };
 const metricNames: Record<Metric, string> = { income: '委托收入', expense: '经营支出', reputation: '城市安定度' };
 const kindNames: Record<LogKind, string> = { dispatch: '派遣', finance: '收支', story: '故事', care: '照护', base: '基地', battle: '战斗', relationship: '关系', memorial: '悼念', council: '议事', expedition: '远行', clinic: '诊所', incident: '事件', territory: '辖区' };

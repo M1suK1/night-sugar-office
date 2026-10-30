@@ -212,6 +212,8 @@ export function canIntercept(
   if (!mission.district) return false;
   if (mission.boss || mission.envoy || mission.storylineId) return false;
   if (mission.interception) return false;
+  // 战线开打的那条街，夜里不会再有闲人上门找麻烦。
+  if ((state as { fronts?: { district: string; status: string }[] }).fronts?.some(front => front.district === mission.district && (front.status === 'open' || front.status === 'joined'))) return false;
   const owner = state.territories?.[mission.district];
   if (!owner) return false;
   const standing = state.factions?.[owner]?.standing ?? 0;

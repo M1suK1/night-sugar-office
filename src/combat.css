@@ -497,6 +497,8 @@
 .wardrobe-tile.locked:hover{transform:none;border-color:#ffffff12;box-shadow:none}
 .wardrobe-lock{position:absolute;top:5px;left:5px;display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid #ffffff22;border-radius:3px;background:#0a0810d9;color:#b9a3ad;font-family:var(--font-data);font-size:6px;letter-spacing:.04em}
 .wardrobe-tile.reserved .wardrobe-preview{background:radial-gradient(ellipse at 50% 35%,#2d1a2d,#0b0810 72%)}
+.wardrobe-tile.is-drop-over{outline:2px dashed #c478b8;outline-offset:-4px;border-color:#c478b8}
+.wardrobe-tile.is-drop-over:hover{transform:none}
 .wardrobe-reserve{position:absolute;top:5px;right:5px;display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid #c478b855;border-radius:3px;background:#1a0f1bdd;color:#d8b0d6;font-family:var(--font-data);font-size:6px;letter-spacing:.04em}
 .wardrobe-manage-row{display:flex;gap:8px;margin-top:9px}
 .wardrobe-manage-row .wardrobe-manage{flex:1;width:auto;margin-top:0;min-width:0}
@@ -892,3 +894,6 @@
   .battle-note-scene-nav > span { display: none; }
   .battle-note-control-actions { gap: 4px; }
 }
+.skill-meta .skill-accuracy{color:#9fb8c9}
+.skill-meta .skill-cost{color:#d9a3a3}
+.tier-boss{border-color:#c56a7a55!important}

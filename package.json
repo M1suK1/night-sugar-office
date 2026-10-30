@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview --host 127.0.0.1",
+    "dev": "node tools/vite.mjs --host 127.0.0.1",
+    "build": "tsc -b && node tools/vite.mjs build",
+    "preview": "node tools/vite.mjs preview --host 127.0.0.1",
     "test": "node --experimental-strip-types --test --test-isolation=none tests/game.test.ts tests/budget.test.ts tests/vertex.test.ts",
     "test:browser": "node tests/browser.mjs"
   },

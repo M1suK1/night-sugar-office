@@ -3,7 +3,9 @@ import { ArrowLeft, ArrowRight, Check, ImagePlus, RefreshCw, Scissors, Shirt, Sp
 import type { Archetype, DraftTrait, Element, GirlDraft, StatKey, TraitPolarity } from '../types';
 import type { GeneratedGirlProfile } from '../llm';
 import { STAT_MAX, STAT_MIN, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
-import { skills, tierLabels } from '../content/skills';
+import { tierLabels } from '../content/skills';
+import { defaultSkillAccuracy } from '../combat';
+import { filterSkills, girlSkillPool } from '../skills';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
 import { factionTagFor, factionTagLabel, girlFactionColors, girlFactionLabels } from '../factions';
@@ -20,6 +22,8 @@ const elements: Element[] = ['星光系', '糖霜系', '月影系', '梦境系',
 const archetypes: Archetype[] = ['输出', '守护', '治愈', '控制', '侦查'];
 const colors = ['#F49ABD', '#B98AD9', '#9CC9D2', '#F2C879', '#A8D8A0', '#E58C8C'];
 const steps = ['身份', '能力', '技能', '特性', '立绘'] as const;
+/** 公共池里的流派标签，用来做筛选下拉。 */
+const skillSchools = [...new Set(girlSkillPool().map(skill => skill.school))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 
 function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: number): string {
   const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 960;
@@ -45,8 +49,11 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [stats, setStats] = useState<Record<StatKey, number>>({ magic: 65, insight: 65, agility: 65, empathy: 65 });
   /** 出身默认按名字推导；玩家一旦手动点过，就固定成他选的那个。 */
   const [manualTag, setManualTag] = useState<GirlFaction | null>(null);
-  const [skillIds, setSkillIds] = useState<string[]>([]); const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());
-  const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
+  const [skillIds, setSkillIds] = useState<string[]>([]);
+  /** 技能池筛选：流派 + 阶级，只影响列表，不影响已选。 */
+  const [skillSchool, setSkillSchool] = useState('全部');
+  const [skillTier, setSkillTier] = useState<'all' | 'basic' | 'signature' | 'ultimate'>('all');
+  const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());  const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
   const [message, setMessage] = useState('');
   const [hint, setHint] = useState('');
@@ -66,6 +73,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const wardrobeRef = useRef<HTMLInputElement>(null);
   const total = Object.values(stats).reduce((sum, value) => sum + value, 0);
   const remaining = 260 - total;
+  const pickerSkills = filterSkills({ school: skillSchool, tier: skillTier });
 
   useEffect(() => {
     if (!source) return;
@@ -279,8 +287,13 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     </div>}
 
     {step === 2 && <div className="custom-step-body">
-      <h2>留下三种施法方式。</h2><p className="muted">从技能池选择 3 个；建议一基础、一本职、一奥义。已选 {skillIds.length}/3。</p>
-      <div className="custom-pick-list">{skills.filter(s => !['monster'].includes(s.school)).map(skill => <button key={skill.id} id={`custom-skill-${skill.id}`} type="button" className={`custom-pick ${skillIds.includes(skill.id) ? 'picked' : ''}`} aria-pressed={skillIds.includes(skill.id)} onClick={() => toggleSkill(skill.id)}><span className={`tier tier-${skill.tier}`}>{tierLabels[skill.tier]}</span><b>{skill.name}</b><small>{skill.power}% · {skill.targets} 体 · {skill.description}</small>{skillIds.includes(skill.id) && <Check size={14} />}</button>)}</div>
+      <h2>留下三种施法方式。</h2><p className="muted">少女与魔物共用同一个技能池，按流派和阶级挑就行；建议一基础、一本职、一奥义。已选 {skillIds.length}/3。</p>
+      <div className="custom-skill-filter">
+        <label className="field"><span>流派</span><select id="custom-skill-school" value={skillSchool} onChange={event => setSkillSchool(event.target.value)}>{['全部', ...skillSchools].map(school => <option key={school} value={school}>{school}</option>)}</select></label>
+        <label className="field"><span>阶级</span><select id="custom-skill-tier" value={skillTier} onChange={event => setSkillTier(event.target.value as 'all' | 'basic' | 'signature' | 'ultimate')}>{(['all', 'basic', 'signature', 'ultimate'] as const).map(tier => <option key={tier} value={tier}>{tier === 'all' ? '全部' : tierLabels[tier]}</option>)}</select></label>
+        <span className="custom-skill-count">筛出 {pickerSkills.length} 条</span>
+      </div>
+      <div className="custom-pick-list">{pickerSkills.map(skill => <button key={skill.id} id={`custom-skill-${skill.id}`} type="button" className={`custom-pick ${skillIds.includes(skill.id) ? 'picked' : ''}`} aria-pressed={skillIds.includes(skill.id)} onClick={() => toggleSkill(skill.id)}><span className={`tier tier-${skill.tier}`}>{tierLabels[skill.tier]}</span><b>{skill.name}</b><small>{skill.school} · {skill.power}% · {skill.targets} 体 · 命中 {skill.accuracy ?? defaultSkillAccuracy(skill.targets)}% · {skill.description}</small>{skillIds.includes(skill.id) && <Check size={14} />}</button>)}</div>
     </div>}
 
     {step === 3 && <div className="custom-step-body">
@@ -352,7 +365,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
       {message && <p className="inline-warning" role="alert">{message}</p>}
     {hasDraft && <div className="custom-regenerate"><span>不满意这一版？只会重写文案与技能选项，保留立绘与你已经分配的属性点。</span><button id="custom-regenerate-all" type="button" className="av-btn av-btn-small" disabled={drafting} onClick={() => runGenerate('all')}><RefreshCw size={12} />重新生成全部</button></div>}
     <div className="custom-footer">
-      <button type="button" className="btn" disabled={step === 0} onClick={() => setStep(s => Math.max(0, s - 1))}><ArrowLeft size={14} />上一步</button>
+      <button id="custom-back" type="button" className="btn" disabled={step === 0} onClick={() => setStep(s => Math.max(0, s - 1))}><ArrowLeft size={14} />上一步</button>
       <span>第 {step + 1} / {steps.length} 步{!canCreate && <em className="custom-hint"> · {createHint}</em>}</span>
       {step < steps.length - 1 ? <button id="custom-next" type="button" className="btn primary" disabled={drafting} onClick={() => { if (step === 0 && !name.trim()) { setMessage('先给她一个名字。'); return; } setMessage(''); setStep(s => s + 1); }}>下一步<ArrowRight size={14} /></button> : <button id="custom-create" type="button" className="btn primary" disabled={drafting} onClick={submit}><Sparkles size={14} />登记并加入名册</button>}
     </div>

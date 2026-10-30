@@ -89,3 +89,9 @@
 .district-pollution-owner { margin: 3px 0 0; font-size: 8px; color: #a08ea0; }
 .district-interception-note { margin: 0; font-size: 8px; line-height: 1.6; color: #e09a95; background: #f09ab80f; border-left: 2px solid #e09a9566; padding: 3px 6px; border-radius: 0 3px 3px 0; }
 .district-pollution-flavor { margin: 0; font-size: 7.5px; line-height: 1.6; color: #736577; font-style: italic; }
+
+/* —— 战线标记 —— */
+.district-front{cursor:pointer;pointer-events:all}
+.district-front .front-chip{fill:#160f1c;stroke:#f3aec966;stroke-width:1}
+.district-front .front-chip-text{fill:#ffd7e6;font-size:11px;text-anchor:middle;letter-spacing:.04em}
+.district-front:hover .front-chip{fill:#221630;stroke:#f3aec9cc}

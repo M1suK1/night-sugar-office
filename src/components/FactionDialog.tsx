@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BookOpen, ChevronDown, CloudFog, Compass, MoonStar, MapPin, Quote, ScrollText, Users, House, X, ClipboardList } from 'lucide-react';
 import type { FactionGirl, FactionId, GameState } from '../types';
 import { factionInfo } from '../content/items';
+import { hostilityOf, hostilityTier, hostilityTierLabel } from '../hostility';
 import {
   factionDossiers,
   factionGirlsOf,
@@ -46,6 +47,13 @@ export function FactionDialog({ state, faction, onBase, onClose }: FactionDialog
   const attitude = factionAttitude(standing);
   const purification = factionPurification(faction).relief;
   const owned = districtOrder.filter(id => state.territories?.[id] === faction);
+  const hostilityLines = hostilityOf(state, faction).map(item => ({
+    pair: item.pair,
+    otherName: factionInfo[item.other].name,
+    value: item.track.value,
+    tier: hostilityTier(item.track.value),
+    reason: item.track.reason,
+  }));
   const averagePollution = owned.length
     ? Math.round(owned.reduce((sum, id) => sum + (state.pollution?.[id] ?? 0), 0) / owned.length)
     : 0;
@@ -79,6 +87,18 @@ export function FactionDialog({ state, faction, onBase, onClose }: FactionDialog
           </div>
         </div>
       </header>
+
+      <div className="faction-hostility" id="faction-hostility">
+        <p className="faction-hostility-head">两条线上的火气：满 100 就会在街上动手</p>
+        {hostilityLines.map(line => (
+          <div className={`faction-hostility-row ${line.tier}`} id={`faction-hostility-${line.pair}`} key={line.pair}>
+            <span className="faction-hostility-pair">{line.otherName}</span>
+            <span className="faction-hostility-meter"><i style={{ width: `${Math.max(3, line.value)}%` }} /></span>
+            <span className="faction-hostility-value">{line.value}<small>/100 · {hostilityTierLabel(line.value)}</small></span>
+            <span className="faction-hostility-reason">{line.reason}</span>
+          </div>
+        ))}
+      </div>
 
       <nav className="faction-tabs" role="tablist" aria-label={`${info.name}档案页签`}>
         {tabs.map(item => {

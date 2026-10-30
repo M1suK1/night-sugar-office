@@ -29,7 +29,7 @@ const BODY_PLANS: MonsterTemplate['spec']['bodyPlan'][] = ['moth', 'feline', 'hu
 const CORES: MonsterTemplate['spec']['core'][] = ['眼', '心', '钟', '糖', '月'];
 const AURAS: MonsterTemplate['spec']['aura'][] = ['静电', '余烬', '花瓣', '故障'];
 const MOTIFS: MonsterTemplate['spec']['motif'][] = ['猫', '糖', '星', '月', '蝶', '钟'];
-const EFFECT_KINDS: SkillEffect['kind'][] = ['dot', 'stun', 'shield', 'buff', 'debuff', 'regen'];
+const EFFECT_KINDS: SkillEffect['kind'][] = ['dot', 'stun', 'shield', 'buff', 'debuff', 'regen', 'drain', 'purify'];
 const EFFECT_STATS: NonNullable<SkillEffect['stat']>[] = [...STAT_KEYS, 'hit', 'initiative'];
 const ITEM_SLOTS: Equipment['slot'][] = ['weapon', 'charm', 'consumable'];
 const ITEM_EFFECTS: NonNullable<Equipment['effect']>[] = ['drug', 'heal', 'purify', 'contractDiscount', 'taxRefund'];
@@ -154,18 +154,29 @@ export function sanitizeSkill(raw: unknown): Skill | undefined {
   const name = text(value.name, 24);
   if (!name) return undefined;
   const effects = Array.isArray(value.effects) ? value.effects.map(sanitizeEffect).filter((e): e is SkillEffect => Boolean(e)).slice(0, 6) : [];
-  return {
+  const selfEffects = Array.isArray(value.selfEffects) ? value.selfEffects.map(sanitizeEffect).filter((e): e is SkillEffect => Boolean(e)).slice(0, 4) : [];
+  const selfCostRaw = value.selfCost && typeof value.selfCost === 'object' ? value.selfCost as Record<string, unknown> : undefined;
+  const selfCost = selfCostRaw && Number(selfCostRaw.pct) > 0
+    ? { resource: oneOf<SkillResource>(selfCostRaw.resource, ['hp', 'spirit'], 'hp'), pct: Math.round(number(selfCostRaw.pct, 10, 1, 60)) }
+    : undefined;
+  const accuracy = value.accuracy === undefined || value.accuracy === null ? undefined : Math.round(number(value.accuracy, 50, 20, 95));
+  const skill: Skill = {
     id, name,
     school: text(value.school, 16) || '自制',
     resource: oneOf<SkillResource>(value.resource, ['hp', 'spirit'], 'hp'),
-    power: number(value.power, 1, 0.1, 3),
-    targets: Math.round(number(value.targets, 1, 1, 4)),
+    // 上限跟 `skillPowerLimit` 对齐：群体技能不会因为自制而突破平衡线。
+    power: number(value.power, 1, 0.1, 2.1),
+    targets: Math.round(number(value.targets, 1, 1, 6)),
     side: oneOf<SkillSide>(value.side, ['enemy', 'ally', 'self'], 'enemy'),
     cooldown: Math.round(number(value.cooldown, 0, 0, 10)),
     tier: oneOf<SkillTier>(value.tier, ['basic', 'signature', 'ultimate'], 'basic'),
     effects,
     description: text(value.description, 400),
   };
+  if (accuracy !== undefined) skill.accuracy = accuracy;
+  if (selfCost) skill.selfCost = selfCost;
+  if (selfEffects.length) skill.selfEffects = selfEffects;
+  return skill;
 }
 
 export function sanitizeItem(raw: unknown, skillPool: Set<string> = new Set(skillById.keys())): Equipment | undefined {

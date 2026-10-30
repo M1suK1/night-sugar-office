@@ -169,3 +169,10 @@
 .custom-girl .cutout-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .custom-girl .cutout-actions .btn { width: 100%; justify-content: center; }
 @media (max-width: 860px) { .custom-girl .cutout-preview { grid-template-columns: 1fr; } .custom-girl .cutout-figure img { height: 150px; } }
+/* 技能池筛选：流派 + 阶级，只影响列表，不影响已选。 */
+.custom-skill-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.custom-skill-filter .field { margin: 0; min-width: 120px; }
+.custom-skill-filter .field span { font-size: 8px; letter-spacing: .1em; color: #8d7c95; }
+.custom-skill-filter select { padding: 7px 10px; border: 1px solid #f3aec91f; background: #0f0d15; color: #dccddf; font: inherit; font-size: 10px; border-radius: 6px; }
+.custom-skill-count { margin-left: auto; font-size: 8.5px; color: #7f7089; }
+@media (max-width: 640px) { .custom-skill-filter .field { flex: 1 1 auto; min-width: 0; } .custom-skill-count { margin-left: 0; width: 100%; } }

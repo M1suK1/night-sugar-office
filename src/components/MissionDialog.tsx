@@ -13,6 +13,7 @@ import { MonsterGlyph } from './MonsterGlyph';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
   if (girl.retired) return { ok: false, reason: '已退役' };
+  if (girl.left) return { ok: false, reason: '已离开' };
   if (girl.status !== 'idle') return { ok: false, reason: statusLabels[girl.status] };
   if (inWithdrawal(girl)) return { ok: false, reason: '断药期' };
   if (girl.hp < 25) return { ok: false, reason: '血量过低' };

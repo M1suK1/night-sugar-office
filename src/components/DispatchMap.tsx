@@ -8,12 +8,13 @@ import { factionColor, factionName } from '../territories';
 import { windowLabel } from '../shift';
 import { cityAveragePollution, clampPollution, pollutionEffect, pollutionLines, pollutionRelief, pollutionTier, pollutionTierColors, pollutionTierLabel, pollutionTierNames, pollutionTierOrder } from '../pollution';
 import { canIntercept, factionPurification } from '../factions';
+import { frontRemaining } from '../fronts';
 import { factionAttitude } from '../economy';
 
 const icons = { candy: Candy, station: TrainFront, mirror: Eclipse, cat: Cat, tower: Mail };
 type Filter = 'all' | 'combat' | 'investigation' | 'urgent' | 'active';
 
-export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState; onMission: (id: string) => void; onDropGirl: (girlId: string, missionId: string) => void }) {
+export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: GameState; onMission: (id: string) => void; onFront: (id: string) => void; onDropGirl: (girlId: string, missionId: string) => void }) {
   const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null), [focus, setFocus] = useState<DistrictId | null>(null);
   const open = state.missions.filter(m => m.status === 'open').length;
   const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
@@ -69,6 +70,14 @@ export function DispatchMap({ state, onMission, onDropGirl }: { state: GameState
               <text className="district-name" x={region.label.x} y={region.label.y} onClick={() => toggleFocus(id)}>{region.name}</text>
               <text className={`district-pollution-label ${tier}`} x={region.label.x} y={region.label.y + 15} onClick={() => toggleFocus(id)}>污染 {level}</text>
               {count > 0 && <g className="district-count" transform={`translate(${region.label.x} ${region.label.y + 29})`}><rect x={-9} y={-9} width={18} height={13} rx={3} /><text x={0} y={1}>{count}</text></g>}
+            </g>;
+          })}
+          {state.fronts.filter(front => front.status === 'open' || front.status === 'joined').map(front => {
+            const region = districts[front.district];
+            const left = frontRemaining(front, { day: state.day, minutes: state.minutes });
+            return <g key={front.id} className="district-front" id={`map-front-${front.district}`} transform={`translate(${region.label.x} ${region.label.y - 26})`} role="button" tabIndex={0} onClick={() => onFront(front.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onFront(front.id); }}>
+              <rect className="front-chip" x={-38} y={-10} width={76} height={20} rx={10} style={{ '--front-a': factionColor[front.attacker], '--front-b': factionColor[front.defender] } as React.CSSProperties} />
+              <text className="front-chip-text" x={0} y={4}>战线 {left}</text>
             </g>;
           })}
         </svg>

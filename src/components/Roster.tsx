@@ -6,7 +6,9 @@ import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { GirlPortrait } from './GirlPortrait';
 
 export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void }) {
-  const idle = state.girls.filter(g => g.status === 'idle' && !g.retired).length;
+  const present = state.girls.filter(g => !g.retired && !g.left);
+  const left = state.girls.filter(g => g.left && !g.dead).slice(0, 6);
+  const idle = present.filter(g => g.status === 'idle').length;
   return (
     <aside className="roster" aria-label="当前经营状态与魔法少女">
       <div className="roster-header">
@@ -14,11 +16,11 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
         <h2>今晚，也请多关照。<Sparkles size={15} /></h2>
         <div className="roster-count">
           <span><i />{idle} 人待命</span>
-          <span>{state.girls.filter(g => !g.dead && !g.retired).length} / {capacity(state)} 席位</span>
+          <span>{present.filter(g => !g.dead).length} / {capacity(state)} 席位</span>
         </div>
       </div>
       <div className="girl-roster">
-        {state.girls.filter(g => !g.retired).map(g => {
+        {present.map(g => {
           const stage = relationshipStage(g.bond);
           const cStage = corruptionStage(g.corruption ?? 0);
           const draggable = g.status === 'idle' && !g.retired && !inWithdrawal(g);
@@ -74,6 +76,17 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
             </article>
           );
         })}
+        {left.length > 0 && (
+          <div className="roster-left" id="roster-left">
+            <p className="roster-left-title">离开的人</p>
+            {left.map(g => (
+              <button type="button" id={`roster-left-${g.id}`} key={g.id} className="roster-left-row" onClick={() => onGirl(g.id)}>
+                <span>{g.name}</span>
+                <small>{g.leftReason === 'pension' ? '契约款没到账' : g.leftReason === 'fatigue' ? '撑不住了' : '心不在这里了'}</small>
+              </button>
+            ))}
+          </div>
+        )}
         <button id="roster-open-market" className="roster-empty-slot" onClick={onMarket}>
           <MoonStar size={18} />
           <div>

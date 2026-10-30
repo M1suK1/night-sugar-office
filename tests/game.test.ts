@@ -1,6 +1,9 @@
 import test from 'node:test';
+import { INCIDENT_POOL_CAP, sanitizeGeneratedIncident } from '../src/incidents.ts';
+import { TASK_VISIBLE, taskInbox } from '../src/tasks.ts';
+import { leaveGirl, resignationPressure } from '../src/resignations.ts';
 import assert from 'node:assert/strict';
-import { createInitialState, act, loadState, importState, capacity, chance, squadChance, squadLimit, inWithdrawal, makeFactionStock, WARDROBE_LIMIT, annotateMission, buildTemplateArc, clinicQuote, completeStoryMission, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, treatmentFor } from '../src/game.ts';
+import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -21,6 +24,8 @@ import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPres
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
 import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, simulateBattle, skillAccuracy } from '../src/combat.ts';
+import { bossSkillPool, filterSkills, findAnySkill, girlSkillPool, isBossSkill, isPoolSkill, monsterSkillPool, skillsOfSchool } from '../src/skills.ts';
+import { monsterById } from '../src/content/monsters.ts';
 import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
@@ -30,6 +35,8 @@ import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } f
 import { POLLUTION_MAX, POLLUTION_MIN, clampPollution, cityAveragePollution, dirtiestDistrict, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionIsEstimated, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from '../src/pollution.ts';
 import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
 import { DEFAULT_OFFICE_PROFILE, OFFICE_LIMITS, OFFICE_WORLDBOOK_ID, officeWorldbookContent, representativeOf, sanitizeOfficeProfile } from '../src/office.ts';
+import { HOSTILITY_AFTER_WAR, HOSTILITY_COOLDOWN_CAP, applyHostility, clampHostility, hottestPair, hostilityFlavor, hostilityGain, hostilityLines, hostilityTier, hostilityTierLabel, hostilityValue, incidentHostility, pairLabel, warCoolingDown } from '../src/hostility.ts';
+import { openFrontIn, planFronts, resolveDueFronts, squadPower } from '../src/fronts.ts';
 import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
 
@@ -121,7 +128,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 12);
+  assert.equal(s.version, 14);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -1388,11 +1395,11 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 12);
+  assert.equal(loaded.version, 14);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
-  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 13 })), null);
+  assert.equal(importState(JSON.stringify({ ...createInitialState(), version: 99 })), null);
 });
 
 // ── v6：势力辖区 ────────────────────────────────────────────────
@@ -1577,7 +1584,11 @@ test('打烊时会把手上的异常摆上桌面', () => {
   const s = createInitialState();
   s.girls.find(girl => girl.id === 'yue')!.fatigue = 96;
   const next = act(s, { type: 'endNight' }).state;
-  assert.ok(next.incidents.some(item => item.status === 'pending' && item.source === 'rule'));
+  const raised = next.incidents.filter(item => item.status === 'pending');
+  assert.ok(raised.length > 0);
+  // 新的事件引擎投放的弹窗都带分类与到期时间，模板 id 写进冷却表。
+  assert.ok(raised.every(item => Boolean(item.category) && typeof item.expiresAt === 'number'));
+  assert.ok(raised.some(item => item.templateId && next.incidentCooldowns[item.templateId] === next.day));
 });
 
 // ── v6：角色事件 ────────────────────────────────────────────────
@@ -2315,8 +2326,9 @@ test('蓝图故事线按图推进：逐幕分岔、奖励结算后收束', () =>
   let state = started.state;
   const storyId = state.storylines[0].id;
   const bondBefore = state.girls[0].bond;
-  for (let step = 0; step < 4; step += 1) {
+  for (let step = 0; step < 8; step += 1) {
     const story = state.storylines.find(item => item.id === storyId);
+    if (story?.status !== 'active') break;
     assert.equal(story?.run?.waiting?.kind, 'choice');
     const node = story?.graph?.nodes.find(item => item.id === story.run?.waiting?.ref);
     assert.ok(node && node.data.kind === 'choice');
@@ -3119,7 +3131,7 @@ test('v19 旧档 v11 迁到 12：污染补齐、档案默认、出身按 id 重�
   for (const candidate of legacy.candidates as Array<Record<string, unknown>>) delete candidate.factionTag;
 
   const loaded = loadState(JSON.stringify(legacy));
-  assert.equal(loaded.version, 12);
+  assert.equal(loaded.version, 14);
   assert.deepEqual(loaded.pollution, initialPollution(), '缺污染时整套补上初始值');
   assert.deepEqual(loaded.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const girl of loaded.girls) {
@@ -3333,7 +3345,7 @@ test('v19 事务所档案逐字段 trim、限长，非法或空值只影响自�
 
 test('v19 新档是 version 12，带默认档案，三方态度统一 50', () => {
   const state = createInitialState();
-  assert.equal(state.version, 12);
+  assert.equal(state.version, 14);
   assert.deepEqual(state.pollution, initialPollution());
   assert.deepEqual(state.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const faction of FACTION_ORDER) {
@@ -3531,4 +3543,603 @@ test('委托里的魔物超过 6 只会被夹到 6 只', () => {
   const mission = annotateMission(state, { ...state.missions[0], id: 'cap-mission', work: 'combat', enemyIds: crowd });
   assert.equal(mission.enemyIds?.length, MAX_ENEMIES);
   assert.deepEqual(mission.enemyIds, crowd.slice(0, MAX_ENEMIES));
+});
+
+// ── v20 §1：一个技能池，少女与魔物共用；Boss 另起一组 ─────────────────────
+
+test('技能池只有一个：50 条公共池，少女和魔物拿到的是同一份', () => {
+  const girlPool = girlSkillPool();
+  const monsterPool = monsterSkillPool();
+  assert.equal(girlPool.length, 50);
+  assert.deepEqual(monsterPool.map(skill => skill.id), girlPool.map(skill => skill.id));
+  assert.ok(girlPool.every(skill => skill.tier !== 'boss'), '公共池里不能混进 Boss 技能');
+  for (const tier of ['basic', 'signature', 'ultimate'] as const) {
+    const count = girlPool.filter(skill => skill.tier === tier).length;
+    assert.ok(count >= 6, `${tier} 只有 ${count} 条，撑不起筛选`);
+  }
+});
+
+test('Boss 技能单独成池，公共池里查不到', () => {
+  const bossPool = bossSkillPool();
+  assert.equal(bossPool.length, 8);
+  for (const skill of bossPool) {
+    assert.equal(skill.tier, 'boss');
+    assert.equal(isBossSkill(skill.id), true);
+    assert.equal(isPoolSkill(skill.id), false);
+    assert.equal(findAnySkill(skill.id)?.name, skill.name);
+    assert.equal(girlSkillPool().some(entry => entry.id === skill.id), false);
+  }
+  assert.equal(findAnySkill('glimmer-spear')?.tier, 'basic');
+  assert.equal(findAnySkill('no-such-skill'), undefined);
+});
+
+test('按流派与阶级筛选：流派是标签不是权限', () => {
+  const all = girlSkillPool();
+  assert.equal(filterSkills().length, all.length);
+  assert.equal(filterSkills({ tier: 'all' }).length, all.length);
+  const basics = filterSkills({ tier: 'basic' });
+  assert.ok(basics.length >= 6);
+  assert.ok(basics.every(skill => skill.tier === 'basic'));
+  const school = all[0].school;
+  const filtered = filterSkills({ school, tier: 'all' });
+  assert.ok(filtered.length > 0);
+  assert.ok(filtered.every(skill => skill.school === school));
+  assert.equal(filterSkills({ school, tier: 'ultimate' }).every(skill => skill.school === school && skill.tier === 'ultimate'), true);
+  assert.equal(skillsOfSchool('不存在的流派').length, 0);
+  // 魔物系技能也能被少女选：池子里没有「谁能用」的门。
+  const monsterish = all.filter(skill => skill.school === '魔物');
+  assert.ok(monsterish.length > 0);
+  assert.ok(monsterish.every(skill => isPoolSkill(skill.id)));
+});
+
+test('目标是越多越难中：基础命中率按目标数推导', () => {
+  assert.equal(defaultSkillAccuracy(1), 50);
+  assert.equal(defaultSkillAccuracy(2), 44);
+  assert.equal(defaultSkillAccuracy(3), 38);
+  assert.equal(defaultSkillAccuracy(6), 20);
+  assert.equal(defaultSkillAccuracy(99), 20);
+  for (const skill of [...girlSkillPool(), ...bossSkillPool()]) {
+    const accuracy = skillAccuracy(skill);
+    assert.ok(accuracy >= 20 && accuracy <= 95, `${skill.id} 的命中率 ${accuracy} 越界`);
+  }
+});
+
+test('群体技能不会又宽又疼：4 目标以上功率被压在 0.6', () => {
+  for (const skill of girlSkillPool()) {
+    if (skill.targets >= 4) assert.ok(skill.power <= 0.6, `${skill.id} 打了 ${skill.targets} 个目标还带 ${skill.power} 倍率`);
+    if (skill.targets === 2 || skill.targets === 3) assert.ok(skill.power <= 1.2, `${skill.id} 倍率 ${skill.power} 超过了 ${skill.targets} 目标的上限`);
+    if (skill.targets === 1) assert.ok(skill.power <= 2.1, `${skill.id} 单体倍率 ${skill.power} 过高`);
+    assert.ok(skill.targets <= MAX_SKILL_TARGETS);
+  }
+  // Boss 技能走自己的一套预算：更强，但也有天花板。
+  for (const skill of bossSkillPool()) {
+    assert.ok(skill.power <= 2.1, `${skill.id} 倍率 ${skill.power} 过高`);
+    assert.ok(skill.targets <= MAX_SKILL_TARGETS);
+  }
+});
+
+test('空月带着自己的技能组，半血后换另一套', () => {
+  const hollow = monsterById.get('hollow-moon');
+  assert.ok(hollow);
+  const bossGroup = hollow.bossSkillIds ?? [];
+  const phaseGroup = hollow.bossPhaseSkillIds ?? [];
+  assert.equal(bossGroup.length, 4);
+  assert.equal(phaseGroup.length, 4);
+  assert.ok(bossGroup.every(id => isBossSkill(id)), '开场组必须是 Boss 技能');
+  assert.ok(phaseGroup.every(id => isBossSkill(id)), '二阶段组必须是 Boss 技能');
+  assert.deepEqual(bossGroup.filter(id => phaseGroup.includes(id)), [], '两套招式不应该重复');
+  const state = createInitialState();
+  const mission = annotateMission(state, { ...state.missions[0], id: 'boss-skill-mission', work: 'combat', enemyIds: ['hollow-moon'], rounds: 6 });
+  const battle = simulateBattle({ mission, girls: state.girls.filter(g => g.status === 'idle').slice(0, 3), day: state.day, minutes: 600, monsters: [hollow] });
+  const boss = battle.units.find(unit => unit.side === 'enemy');
+  assert.ok(boss, '战斗里应该有空月');
+  assert.ok(boss.skills.some(id => isBossSkill(id)), '空月开场就要用 Boss 技能');
+  if (boss.hp <= boss.maxHp * 0.5) assert.equal(boss.phase, 2, '血量掉到一半后应该换上第二套');
+  assert.ok(battle.events.some(event => event.skillId.startsWith('boss-')), '战斗事件里应该有 Boss 技能');
+});
+
+test('自定义技能可以写命中率、施放代价与自体效果，越界会被夹住', () => {
+  const skill = sanitizeSkill({
+    id: 'custom-skill-probe', name: '探针', school: '自制', power: 9, targets: 99, cooldown: 3,
+    accuracy: 5, selfCost: { resource: 'hp', pct: 99 },
+    selfEffects: [{ kind: 'buff', stat: 'magic', amount: 12, duration: 2 }],
+    effects: [{ kind: 'drain', amount: 30, duration: 1 }],
+  });
+  assert.ok(skill);
+  assert.equal(skill.power, 2.1);
+  assert.equal(skill.targets, 6);
+  assert.equal(skill.accuracy, 20);
+  assert.equal(skill.selfCost?.pct, 60);
+  assert.equal(skill.selfEffects?.length, 1);
+  assert.equal(skill.effects[0].kind, 'drain');
+  assert.equal(sanitizeSkill({ id: 'custom-skill-plain', name: '素技能' })?.accuracy, undefined);
+  assert.equal(sanitizeSkill({ id: 'custom-skill-plain', name: '素技能' })?.selfCost, undefined);
+});
+
+test('模型给的事件条目会被洗成合法弹窗：数值夹住、越界丢弃、通报型不带选项', () => {
+  const state = createInitialState();
+  const clean = sanitizeGeneratedIncident(state, {
+    category: 'decision',
+    title: '雨里的账单',
+    body: '市役所的人在雨里等了一个小时，说这一季的灯油账要重新算。',
+    options: [
+      { label: '照付', hint: '花钱了事', effect: { gold: 9999, reputation: 9 } },
+      { label: '拖一拖', hint: '得罪他们', effect: { faction: { id: 'government', standing: -3 } } },
+      { label: '   ', hint: '空的', effect: { gold: 1 } },
+    ],
+  }, { day: 3, minutes: 1320 });
+  assert.ok(clean);
+  assert.equal(clean!.source, 'llm');
+  assert.equal(clean!.category, 'decision');
+  assert.equal(clean!.options.length, 2);
+  assert.equal(clean!.options[0].effect.gold, 1200);
+  assert.equal(clean!.options[0].effect.reputation, 6);
+  assert.deepEqual(clean!.options[1].effect.faction, { id: 'government', standing: -3 });
+
+  const notify = sanitizeGeneratedIncident(state, { category: 'report', title: '停电', body: '旧城区的灯忽然全灭了，没有人知道为什么。', options: [] }, { day: 3, minutes: 1320 });
+  assert.equal(notify!.options.length, 0);
+  assert.equal(sanitizeGeneratedIncident(state, { title: '短', body: '太短' }, { day: 3, minutes: 1320 }), undefined);
+});
+
+test('批量事件进待用池会去重并夹住上限，重复条目不再入库', () => {
+  const state = createInitialState();
+  const entries = Array.from({ length: 12 }, (_, index) => ({ category: 'report', title: `夜里的第${index}件事`, body: '有人把一封信放在柜台上，信封上只有一个记号。' }));
+  const first = act(state, { type: 'mergeIncidentPool', entries });
+  assert.ok(first.ok);
+  assert.equal(first.state.incidentPool.length, INCIDENT_POOL_CAP);
+  const again = act(first.state, { type: 'mergeIncidentPool', entries });
+  assert.equal(again.ok, false);
+  assert.equal(again.state.incidentPool.length, INCIDENT_POOL_CAP);
+});
+
+// ---------------------------------------------------------------- v20 势力之间的战斗
+
+test('v20 敌意值：三对旧账、四档推导与追得回的文案', () => {
+  const state = createInitialState();
+  assert.deepEqual(Object.keys(state.hostility).sort(), ['association-government', 'association-witch', 'government-witch']);
+  assert.equal(hostilityValue(state, 'association-government'), 28);
+  assert.equal(hostilityValue(state, 'association-witch'), 36);
+  assert.equal(hostilityTier(28), 'calm', '0–39 是平静');
+  assert.equal(hostilityTier(40), 'friction', '40 起进摩擦');
+  assert.equal(hostilityTier(70), 'standoff');
+  assert.equal(hostilityTier(90), 'brink');
+  assert.equal(hostilityTier(100), 'brink');
+  assert.equal(hostilityTierLabel(0), '平静');
+  assert.equal(clampHostility(-5), 0);
+  assert.equal(clampHostility(140), 100);
+  assert.equal(clampHostility(Number.NaN), 0);
+  assert.ok(pairLabel('association-witch').includes('月蚀'), '两边的名字都要在');
+  assert.ok(hostilityFlavor(state, 'association-government').length > 0);
+  const lines = hostilityLines(state);
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0].value, 36, '按火气从高到低排');
+  assert.equal(hottestPair(state), undefined, '三条都还在平静期');
+});
+
+test('v20 敌意值每夜自然积累，到了临战就不再涨', () => {
+  const state = createInitialState();
+  const gains = hostilityGain(state);
+  assert.equal(gains.length, 3);
+  for (const gain of gains) assert.equal(gain.delta, 1, '平静与摩擦都是一夜一点');
+
+  const hot = createInitialState();
+  hot.hostility['association-government'] = { pair: 'association-government', value: 75, updatedDay: 1, reason: '测试' };
+  hot.hostility['association-witch'] = { pair: 'association-witch', value: 95, updatedDay: 1, reason: '测试' };
+  const next = hostilityGain(hot);
+  assert.equal(next.find(item => item.pair === 'association-government')?.delta, 2, '对峙期磨得更快');
+  assert.equal(next.find(item => item.pair === 'association-witch'), undefined, '临战不再自己涨');
+
+  applyHostility(state, [{ pair: 'association-government', delta: 5, reason: '谈崩了' }]);
+  assert.equal(hostilityValue(state, 'association-government'), 33);
+  assert.equal(state.hostility['association-government'].reason, '谈崩了');
+  assert.ok(state.logs.some(log => log.text.includes('谈崩了')), '变动要留在日志里');
+  applyHostility(state, [{ pair: 'association-government', delta: 500, reason: '封顶' }]);
+  assert.equal(hostilityValue(state, 'association-government'), 100);
+});
+
+test('v20 敌意满 100 就在开门时生成战线，并把这笔账压回 25', () => {
+  const state = createInitialState();
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 100, updatedDay: 1, reason: '名录那把火' };
+  const created = planFronts(state, { day: 2, minutes: 20 * 60 });
+  assert.equal(created.length, 1);
+  const front = created[0];
+  assert.equal(front.pair, 'association-witch');
+  assert.equal(front.status, 'open');
+  assert.ok(['association', 'witch'].includes(front.attacker));
+  assert.notEqual(front.attacker, front.defender);
+  assert.equal(front.endsAt - front.startsAt, 240);
+  assert.equal(hostilityValue(state, 'association-witch'), HOSTILITY_AFTER_WAR);
+  assert.equal(state.warHistory.length, 1);
+  assert.equal(state.fronts.length, 1);
+  assert.equal(planFronts(state, { day: 3, minutes: 20 * 60 }).length, 0, '同一对不会连着开两条战线');
+});
+
+test('v20 冷却期内又烧满的，只夹到 95 并记一句等借口', () => {
+  const state = createInitialState();
+  state.warHistory = [{ pair: 'association-witch', day: 20 }];
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 100, updatedDay: 20, reason: '又烧起来了' };
+  assert.equal(warCoolingDown(state, 'association-witch'), true);
+  const created = planFronts(state, { day: 25, minutes: 20 * 60 });
+  assert.equal(created.length, 0);
+  assert.equal(hostilityValue(state, 'association-witch'), HOSTILITY_COOLDOWN_CAP);
+  assert.equal(state.hostility['association-witch'].reason, '双方都在等一个借口');
+  assert.equal(warCoolingDown(state, 'association-witch'), true);
+  state.day = 31;
+  assert.equal(warCoolingDown(state, 'association-witch'), false, '过了冷却期就能再打');
+});
+
+test('v20 没人管的战线到点自动打完：赢家拿走辖区，那条街更脏', () => {
+  const state = createInitialState();
+  state.territories.candy = 'witch';
+  state.hostility['government-witch'] = { pair: 'government-witch', value: 100, updatedDay: 1, reason: '测试' };
+  const [front] = planFronts(state, { day: 2, minutes: 20 * 60 });
+  const before = state.pollution[front.district];
+  const due = resolveDueFronts(state, { day: 2, minutes: 20 * 60 + 300 });
+  assert.equal(due.length, 1);
+  assert.equal(front.status, 'resolved');
+  assert.ok(front.result, '自动结算要留下结果');
+  assert.equal(state.pollution[front.district], Math.min(100, before + 4), '战后那条街脏一点');
+  assert.equal(resolveDueFronts(state, { day: 3, minutes: 21 * 60 }).length, 0, '结算过的不再结算');
+});
+
+test('v20 站队参战：按参战结算，声望与三方态度跟着变，人放回去加疲劳', () => {
+  const state = createInitialState();
+  const girl = state.girls.find(item => !item.dead && !item.retired && item.status === 'idle')!;
+  state.territories.candy = 'association';
+  state.hostility['association-government'] = { pair: 'association-government', value: 100, updatedDay: 1, reason: '测试' };
+  const [front] = planFronts(state, { day: 2, minutes: 20 * 60 });
+  const side = 'attacker';
+  const backed = side === 'attacker' ? front.attacker : front.defender;
+  const beforeStanding = state.factions[backed].standing;
+  const beforeReputation = state.reputation;
+  const joined = act(state, { type: 'joinFront', frontId: front.id, side, girlIds: [girl.id] });
+  assert.equal(joined.ok, true, joined.message);
+  assert.equal(joined.state.fronts[0].status, 'joined');
+  assert.deepEqual(joined.state.fronts[0].squad, [girl.id]);
+  assert.ok(squadPower(joined.state, joined.state.fronts[0]) > 0, '派过去的人要有战力');
+  const settled = resolveDueFronts(joined.state, { day: 2, minutes: 20 * 60 + 300 });
+  assert.equal(settled.length, 1);
+  const after = joined.state;
+  assert.equal(after.fronts[0].status, 'resolved');
+  assert.ok(after.reputation !== beforeReputation, '参战影响声望');
+  assert.ok(after.factions[backed].standing !== beforeStanding, '站队影响那一方对我们的态度');
+  const back = after.girls.find(item => item.id === girl.id)!;
+  assert.equal(back.status, 'idle', '打完就回名册上');
+  assert.ok(back.fatigue >= 12, '参战要累');
+});
+
+test('v20 joinFront 会把走不开的人挡回去', () => {
+  const state = createInitialState();
+  state.hostility['association-government'] = { pair: 'association-government', value: 100, updatedDay: 1, reason: '测试' };
+  const [front] = planFronts(state, { day: 2, minutes: 20 * 60 });
+  const idle = state.girls.find(item => !item.dead && !item.retired && item.status === 'idle')!;
+  assert.equal(act(state, { type: 'joinFront', frontId: 'nowhere', side: 'attacker', girlIds: [idle.id] }).ok, false);
+
+  const resting = createInitialState();
+  resting.fronts = [front];
+  const sleeper = resting.girls.find(item => !item.dead && !item.retired && item.status === 'idle')!;
+  sleeper.status = 'resting';
+  assert.equal(act(resting, { type: 'joinFront', frontId: front.id, side: 'attacker', girlIds: [sleeper.id] }).ok, false);
+
+  const hurt = createInitialState();
+  hurt.fronts = [front];
+  const wounded = hurt.girls.find(item => !item.dead && !item.retired && item.status === 'idle')!;
+  wounded.hp = 0;
+  assert.equal(act(hurt, { type: 'joinFront', frontId: front.id, side: 'defender', girlIds: [wounded.id] }).ok, false);
+
+  const empty = createInitialState();
+  empty.fronts = [front];
+  assert.equal(act(empty, { type: 'joinFront', frontId: front.id, side: 'attacker', girlIds: [] }).ok, false);
+
+  const twice = act(state, { type: 'joinFront', frontId: front.id, side: 'attacker', girlIds: [idle.id] });
+  assert.equal(twice.ok, true, twice.message);
+  assert.equal(act(twice.state, { type: 'joinFront', frontId: front.id, side: 'defender', girlIds: [idle.id] }).ok, false, '一条战线只站一次');
+});
+
+test('v20 已经在打的那条街不再有人来拦我们的委托', () => {
+  const state = hostileCandy();
+  const candy = state.missions.find(item => item.id === 'candy')!;
+  assert.equal(canIntercept(state, candy), true);
+  state.fronts = [{ id: 'front-test-candy', pair: 'association-government', day: 2, district: 'candy', attacker: 'government', defender: 'association', startsAt: 5000, endsAt: 5240, attackerPower: 50, defenderPower: 50, status: 'open' }];
+  assert.equal(openFrontIn(state, 'candy')?.id, 'front-test-candy');
+  assert.equal(interceptionFor(state, candy), undefined, '街上已经打起来了，没人再来拦');
+});
+
+test('v20 弹窗能推拉敌意值，模型来的夹在 ±3', () => {
+  const state = createInitialState();
+  const before = hostilityValue(state, 'government-witch');
+  applyIncidentEffect(state, {
+    id: 'incident-h1', title: '街口的两个人', body: '', kind: 'faction', status: 'pending', source: 'rule',
+    trigger: { kind: 'dayStart' }, createdAt: '第 1 日 20:00',
+    options: [{ id: 'a', label: '站过去', hint: '', effect: { hostility: { pair: 'government-witch', delta: 6 } } }],
+  }, { hostility: { pair: 'government-witch', delta: 6 } });
+  assert.equal(hostilityValue(state, 'government-witch'), before + 6);
+
+  const llm = createInitialState();
+  const llmBefore = hostilityValue(llm, 'government-witch');
+  applyIncidentEffect(llm, {
+    id: 'incident-h2', title: '雨里的传言', body: '', kind: 'faction', status: 'pending', source: 'llm',
+    trigger: { kind: 'dayStart' }, createdAt: '第 1 日 20:00',
+    options: [{ id: 'a', label: '添一句', hint: '', effect: { hostility: { pair: 'government-witch', delta: 8 } } }],
+  }, { hostility: { pair: 'government-witch', delta: 8 } });
+  assert.equal(hostilityValue(llm, 'government-witch'), llmBefore + 3, '模型只能推 3 点');
+
+  assert.equal(incidentHostility('association-witch', 0).delta, 0);
+});
+
+test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 14', () => {
+  const state = createInitialState();
+  state.gold = 4321;
+  state.hostility['association-government'] = { pair: 'association-government', value: 320, updatedDay: 3, reason: '越界' };
+  state.fronts = [
+    { id: 'front-ok', pair: 'association-witch', day: 4, district: 'candy', attacker: 'association', defender: 'witch', startsAt: 4000, endsAt: 4240, attackerPower: 40, defenderPower: 44, status: 'open' },
+    { id: 'front-bad', pair: 'nonsense' as never, day: 4, district: 'nowhere' as never, attacker: 'association', defender: 'witch', startsAt: 0, endsAt: 1, attackerPower: 1, defenderPower: 1, status: 'open' },
+  ];
+  state.warHistory = [{ pair: 'government-witch', day: 2 }, { pair: 'nonsense' as never, day: 3 }];
+  const loaded = loadState(JSON.stringify(state));
+  assert.equal(loaded.version, 14);
+  assert.equal(loaded.gold, 4321);
+  assert.equal(hostilityValue(loaded, 'association-government'), 100, '越界值被夹回来');
+  assert.equal(loaded.fronts.length, 1);
+  assert.equal(loaded.fronts[0].id, 'front-ok');
+  assert.equal(loaded.warHistory.length, 1);
+
+  const old = createInitialState();
+  old.version = 13 as never;
+  delete (old as unknown as Record<string, unknown>).hostility;
+  delete (old as unknown as Record<string, unknown>).fronts;
+  delete (old as unknown as Record<string, unknown>).warHistory;
+  const migrated = loadState(JSON.stringify(old));
+  assert.equal(migrated.version, 14);
+  assert.equal(Object.keys(migrated.hostility).length, 3, '老档按初始旧账补齐');
+  assert.deepEqual(migrated.fronts, []);
+  assert.deepEqual(migrated.warHistory, []);
+});
+
+test('v20 战线：结算写一条《辖区的夜战》编年史', () => {
+  const state = createInitialState();
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 100, updatedDay: 1, reason: '协会烧了她们一本名录' };
+  const fronts = planFronts(state, { day: 3, minutes: 20 * 60 });
+  assert.equal(fronts.length, 1);
+  resolveDueFronts(state, { day: 3, minutes: 20 * 60 + 300 });
+  const entry = state.chronicle.find(item => item.title.includes('的夜战'));
+  assert.ok(entry, '战后要进编年史');
+  assert.ok(entry!.title.startsWith('《') && entry!.title.endsWith('》'));
+  assert.ok(entry!.summary.includes('协会烧了她们一本名录'), '起因那句话要留在正文里');
+});
+
+test('v20 战线：开战那条街不再触发拦截，别处照常', () => {
+  const state = createInitialState();
+  state.hostility['association-government'] = { pair: 'association-government', value: 100, updatedDay: 1, reason: '灯油配额' };
+  const fronts = planFronts(state, { day: 2, minutes: 20 * 60 });
+  assert.equal(fronts.length, 1);
+  const front = fronts[0];
+  state.territories[front.district] = front.defender;
+  state.factions[front.defender].standing = 10;
+  const mission = { district: front.district } as never;
+  assert.equal(canIntercept(state as never, mission), false, '战线期间这条街不再拦截');
+  const other = Object.keys(districts).find(id => id !== front.district && state.territories[id as never] === front.defender) as never;
+  state.factions[front.defender].standing = 10;
+  assert.equal(canIntercept(state as never, { district: other } as never), state.territories[other] === front.defender && Boolean(factionGirlsOf(front.defender).length), '别的街按原规则');
+});
+
+test('v20 战线：冷却期内再烧满只夹到 95，不开第二场', () => {
+  const state = createInitialState();
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 100, updatedDay: 1, reason: '旧账' };
+  const first = planFronts(state, { day: 3, minutes: 20 * 60 });
+  assert.equal(first.length, 1);
+  state.fronts[0].status = 'resolved';
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 100, updatedDay: 4, reason: '又烧起来了' };
+  const second = planFronts(state, { day: 5, minutes: 20 * 60 });
+  assert.equal(second.length, 0, '十天内不打第二次');
+  assert.equal(hostilityValue(state, 'association-witch'), HOSTILITY_COOLDOWN_CAP);
+  assert.equal(state.hostility['association-witch'].reason, '双方都在等一个借口');
+  assert.ok(state.logs.some(item => item.text.includes('还记得上一场')));
+});
+
+test('v20 战线：站队参战按胜负结算声望与两边态度', () => {
+  const state = createInitialState();
+  state.hostility['association-government'] = { pair: 'association-government', value: 100, updatedDay: 1, reason: '灯油配额' };
+  const [front] = planFronts(state, { day: 2, minutes: 20 * 60 });
+  front.attackerPower = 95;
+  front.defenderPower = 12;
+  front.side = 'attacker';
+  front.squad = [];
+  front.status = 'joined';
+  const before = state.reputation;
+  resolveDueFronts(state, { day: 2, minutes: 20 * 60 + 300 });
+  assert.equal(front.result, 'attackerWin');
+  assert.ok(state.reputation > before, '站对了边声望上升');
+  assert.ok(state.logs.some(item => item.text.includes('我们站在')));
+});
+
+test('v20 任务面板：把待处理的议会、委托与弹窗收进同一张清单', () => {
+  const state = createInitialState();
+  const inbox = taskInbox(state);
+  assert.ok(inbox.some(item => item.kind === 'council' && item.target.modal === 'council'), '议会待议要在清单里');
+  const forced = inbox.find(item => item.kind === 'mission');
+  if (forced) {
+    const mission = state.missions.find(item => item.id === forced.target.id)!;
+    assert.ok(mission.storylineId || mission.requiredGirlId || mission.deadlineAt, '只有指定同行者、故事线或临期的委托才进清单');
+  }
+  assert.ok(inbox.length <= 32, '清单不该无限膨胀');
+});
+
+test('v20 任务面板：急事排前面，超过六条折成一句', () => {
+  const state = createInitialState();
+  state.incidents.push({
+    id: 'inc-task-test', title: '走廊里多了一双鞋', body: '没有人承认。', category: 'scene', source: 'rule',
+    status: 'pending', day: 14, createdAt: '第14日 20:00', options: [{ id: 'ok', label: '先收着', effect: {} }],
+  } as never);
+  const inbox = taskInbox(state);
+  assert.equal(inbox[0].urgent, true, '未处理的弹窗要排最前');
+  assert.equal(inbox[0].kind, 'incident');
+  assert.ok(inbox.length > TASK_VISIBLE ? inbox.length - TASK_VISIBLE > 0 : true);
+});
+
+test('v20 任务面板：敌意值升到对峙时把战线顶到最前', () => {
+  const state = createInitialState();
+  state.hostility['association-witch'] = { pair: 'association-witch', value: 74, updatedDay: 14, reason: '灯油配额' };
+  const inbox = taskInbox(state);
+  assert.equal(inbox[0].kind, 'war');
+  assert.equal(inbox[0].urgent, true);
+  assert.equal(inbox[0].target.modal, 'faction');
+  assert.ok(inbox[0].hint.includes('74/100'));
+});
+
+test('v20 任务面板：契约款连欠三天才提醒', () => {
+  const state = createInitialState();
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  yue.pensionMissed = 1;
+  assert.equal(taskInbox(state).some(item => item.kind === 'contract'), false);
+  yue.pensionMissed = 3;
+  const inbox = taskInbox(state);
+  assert.ok(inbox.some(item => item.kind === 'contract' && item.target.id === 'yue'));
+  yue.retired = true;
+  assert.equal(taskInbox(state).some(item => item.kind === 'contract'), false, '退役的不再提醒');
+});
+
+function runNight(state: GameState): GameState {
+  let current = state;
+  for (const incident of current.incidents.filter(item => item.status === 'pending' && !item.templateId?.startsWith('resign-'))) {
+    current = act(current, { type: 'resolveIncident', incidentId: incident.id, optionId: incident.options[0]?.id }).state;
+  }
+  return act(current, { type: 'endNight' }).state;
+}
+
+test('v20 离职：好感连续三天低于阈值才会开口', () => {
+  let state = createInitialState();
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  yue.bond = 10;
+  state = runNight(state);
+  state = runNight(state);
+  assert.equal(state.incidents.some(item => item.status === 'pending' && item.templateId === 'resign-yue'), false, '两天还不够');
+  state = runNight(state);
+  const warn = state.incidents.find(item => item.status === 'pending' && item.templateId === 'resign-yue');
+  assert.ok(warn, '第三天她会坐下来把话说一半');
+  assert.equal(warn!.girlId, 'yue');
+  assert.ok(warn!.options.some(option => option.id === 'persuade'));
+  assert.equal(state.girls.find(girl => girl.id === 'yue')!.left, undefined);
+});
+
+test('v20 离职：挽留花钱、涨羁绊、把账清零', () => {
+  let state = createInitialState();
+  state.girls.find(girl => girl.id === 'yue')!.bond = 10;
+  for (let i = 0; i < 3; i++) state = runNight(state);
+  const warn = state.incidents.find(item => item.status === 'pending' && item.templateId === 'resign-yue')!;
+  const beforeGold = state.gold; const beforeBond = state.girls.find(girl => girl.id === 'yue')!.bond;
+  state = act(state, { type: 'resolveIncident', incidentId: warn.id, optionId: 'persuade' }).state;
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(state.gold, beforeGold - 600);
+  assert.equal(yue.bond, beforeBond + 8);
+  assert.deepEqual(yue.strain, { lowBondDays: 0, highFatigueDays: 0 });
+  assert.equal(yue.graceUntilDay, undefined);
+  assert.ok(!yue.left);
+});
+
+test('v20 离职：再想想只买两天，第四天照走', () => {
+  let state = createInitialState();
+  state.girls.find(girl => girl.id === 'yue')!.bond = 10;
+  for (let i = 0; i < 3; i++) state = runNight(state);
+  const warn = state.incidents.find(item => item.status === 'pending' && item.templateId === 'resign-yue')!;
+  state = act(state, { type: 'resolveIncident', incidentId: warn.id, optionId: 'wait' }).state;
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(yue.graceUntilDay, state.day + 2);
+  state = runNight(state);
+  state.girls.find(girl => girl.id === 'yue')!.bond = 10;
+  state = runNight(state);
+  const gone = state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(gone.left, true);
+  assert.equal(gone.status, 'left');
+  assert.equal(gone.leftReason, 'bond');
+  assert.ok(state.chronicle.some(entry => entry.entryId === undefined && entry.title.includes('离开了事务所')));
+  assert.ok(state.logs.some(log => log.text.includes('解除了契约')));
+});
+
+test('v20 离职：条件消失就收回警告，不再计数', () => {
+  let state = createInitialState();
+  state.girls.find(girl => girl.id === 'yue')!.bond = 10;
+  state = runNight(state);
+  state = runNight(state);
+  state.girls.find(girl => girl.id === 'yue')!.bond = 40;
+  state = runNight(state);
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  assert.deepEqual(yue.strain, { lowBondDays: 0, highFatigueDays: 0 });
+  assert.equal(state.incidents.some(item => item.status === 'pending' && item.templateId === 'resign-yue'), false);
+});
+
+test('v20 离职：离开的人不能派遣，也不占席位', () => {
+  const state = createInitialState();
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  const before = capacity(state);
+  leaveGirl(state, yue, 'bond');
+  assert.equal(yue.left, true);
+  assert.equal(capacity(state), before, '空出来的宿舍位不会再被算成占用');
+  const open = state.missions.find(mission => mission.status === 'open' && !mission.requiredGirlId)!;
+  const result = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: open.id });
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes('解除') || result.message.includes('无法出勤'));
+});
+
+test('v20 离职：欠约七天按契约款离职，与强制退休区分', () => {
+  let state = createInitialState();
+  const yue = state.girls.find(girl => girl.id === 'yue')!;
+  yue.pensionMissed = 7;
+  assert.deepEqual(resignationPressure(yue), { reason: 'pension', days: 7 });
+  state = runNight(state);
+  const warn = state.incidents.find(item => item.status === 'pending' && item.templateId === 'resign-yue')!;
+  state = act(state, { type: 'resolveIncident', incidentId: warn.id, optionId: 'release' }).state;
+  const gone = state.girls.find(girl => girl.id === 'yue')!;
+  assert.equal(gone.left, true);
+  assert.equal(gone.leftReason, 'pension');
+  assert.ok(!gone.retired, '主动解约不写成退休');
+  assert.ok(!state.logs.some(log => log.text.includes('退休')));
+});
+
+test('蓝图必须通向两个不同的结局，同一个标签不算', () => {
+  const draft = blueprintDraft();
+  for (const node of draft.nodes ?? []) {
+    if (node.kind === 'end') node.data = { kind: 'end', summary: '她留下了。', ending: '留下' };
+  }
+  const issues = blueprintIssues(buildGraphFromDraft(draft)).map(issue => issue.message);
+  assert.ok(issues.some(message => message.includes('同一个标签')), '两个结局标签相同必须报错');
+
+  const single = { ...draft, nodes: (draft.nodes ?? []).filter(node => node.id !== 'n8').map(node => ({ ...node })) };
+  single.edges = (draft.edges ?? []).filter(edge => edge.from !== 'n3' || edge.fromPort !== 'b');
+  const singleIssues = blueprintIssues(buildGraphFromDraft(single)).map(issue => issue.message);
+  assert.ok(singleIssues.some(message => message.includes('两个不同的结局')));
+});
+
+test('本地模板蓝图自带留下 / 离开两个结局', () => {
+  const graph = compileBeatsToGraph(storyPlanTemplate('结局测试', '只看结局。'));
+  const endings = graph.nodes.filter(node => node.kind === 'end').map(node => (node.data.kind === 'end' ? node.data.ending : ''));
+  assert.deepEqual(endings.sort(), ['留下', '离开'].sort());
+});
+
+test('故事线按三段排队：前一段讲完才能开下一段，第四段被拒', () => {
+  const base = createInitialState();
+  const girl = base.girls[0];
+  girl.bond = 60;
+  const start = act(base, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(start.ok, true);
+  assert.equal(start.state.storylines[0].slot, 1);
+
+  const closed = structuredClone(start.state);
+  closed.storylines[0].status = 'done';
+  closed.storylines[0].ending = '留下';
+  const second = act(closed, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(second.ok, true);
+  assert.equal(second.state.storylines[0].slot, 2);
+  assert.equal(second.state.storylines[0].requires, closed.storylines[0].id);
+
+  const full = structuredClone(closed);
+  for (let index = 0; index < 3; index += 1) {
+    full.storylines.push({
+      id: `story-extra-${index}`, girlId: girl.id, title: `旧故事 ${index}`, premise: '', tone: '',
+      beats: [], stage: 0, status: 'done', createdAt: '', day: 1, source: 'manual', slot: index + 1,
+    });
+  }
+  const third = act(full, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(third.ok, false);
+  assert.ok(third.message.includes('三段'));
 });

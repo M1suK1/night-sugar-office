@@ -9,6 +9,8 @@ import { districts } from './districts.ts';
 import { MAX_ENEMIES } from './combat.ts';
 import { listItems } from './content/items.ts';
 import { findSkill, skills } from './content/skills.ts';
+import { bossSkills } from './content/bossSkills.ts';
+import { findAnySkill, isBossSkill } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
 import { factionBrief, factionTagLabel } from './factions.ts';
@@ -40,7 +42,7 @@ export interface NightCatalog {
   territories: Record<DistrictId, FactionId>;
   girls: { id: string; name: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string }[];
   items: { id: string; name: string; slot: string }[];
-  skills: { id: string; name: string; school: string; side: string }[];
+  skills: { id: string; name: string; school: string; side: string; tier?: string }[];
   monsters: { id: string; name: string; rank: string }[];
   pool: { missions: number; monsters: number; candidates: number };
   /** 城市态势：三方态度与首领主张、最脏的两个辖区、辖区当主。数值仍由本地结算。 */
@@ -553,7 +555,11 @@ function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
   const path = 'monster';
   const body = record(ctx, value, path);
   const skillIds = stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 4);
-  for (const id of skillIds) if (!findSkill(id)) error(ctx, `${path}.skillIds`, `技能「${id}」不在技能目录里`);
+  for (const id of skillIds) {
+    if (!findAnySkill(id)) { error(ctx, `${path}.skillIds`, `技能「${id}」不在技能目录里`); continue; }
+    // Boss 技能只挂在 Boss 身上：这一夜的魔物如果被写成王座/灾厄，允许它带一组。
+    if (isBossSkill(id) && !['王座', '灾厄'].includes(String(body.rank ?? ''))) error(ctx, `${path}.skillIds`, `技能「${id}」是 Boss 专用，普通魔物不能带`);
+  }
   return {
     name: text(ctx, body.name, `${path}.name`, 12),
     epithet: text(ctx, body.epithet, `${path}.epithet`, 20),
@@ -689,7 +695,8 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       ...listItems().map(item => ({ id: item.id, name: item.name, slot: item.slot })),
       ...state.generatedItems.map(item => ({ id: item.id, name: item.name, slot: item.slot })),
     ],
-    skills: skills.map(skill => ({ id: skill.id, name: skill.name, school: skill.school, side: skill.side })),
+    // 一个池子，少女与魔物共用；`boss-` 开头的是 Boss 专属，只有王座/灾厄能带。
+    skills: [...skills, ...bossSkills].map(skill => ({ id: skill.id, name: skill.name, school: skill.school, side: skill.side, tier: skill.tier })),
     monsters: [
       ...state.customMonsters.filter(monster => !state.removedMonsters.includes(monster.id)).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),
       ...monsters.filter(monster => !state.removedMonsters.includes(monster.id)).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),

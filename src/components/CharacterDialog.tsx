@@ -7,12 +7,14 @@ import { activePersonality } from '../personality';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
+import { skillAccuracy } from '../combat';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
 import { expNeeded, progressLabel } from '../progression';
 import { GirlPortrait } from './GirlPortrait';
 import { ClinicPanel } from './ClinicPanel';
 import { getItem, items } from '../content/items';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
+import { fileDropProps } from '../drop';
 
 const dossierTabs = [
   { id: 'overview', label: '状态概览' },
@@ -31,7 +33,7 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onPersonality }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
@@ -50,12 +52,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onEvent: () => void;
   onWitch: () => void;
   onWitchForm: () => void;
+  /** 把图片直接拖到第五格 / 导入按钮上：不弹窗，直接把文件交给魔女化弹窗裁切。 */
+  onWitchFile: (file: File) => void;
   onPersonality: (text: string) => void;
   onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onExportCard: () => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
   const [tab, setTab] = useState('overview');
   const [equipmentDrawer, setEquipmentDrawer] = useState<'weapon' | 'charm' | null>(null);
   const [dragOver, setDragOver] = useState<'weapon' | 'charm' | null>(null);
+  const [overWitch, setOverWitch] = useState(false);
+  const witchDrop = fileDropProps(setOverWitch, files => { const file = files.find(item => item.type.startsWith('image/')); if (file) onWitchFile(file); });
   const [drawerMessage, setDrawerMessage] = useState('');
   const [editingPersonality, setEditingPersonality] = useState(false);
   const [personalityDraft, setPersonalityDraft] = useState('');
@@ -200,6 +206,21 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             </section>
             <section className="story-panel" aria-labelledby="story-title">
               <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : girl.storyPlan?.graph ? `${girl.storyPlan.graph.nodes.length} 节点` : '未开启'}</em></div>
+              <ol className="story-slots" id="dossier-story-slots">
+                {Array.from({ length: 3 }, (_, index) => {
+                  const slot = index + 1;
+                  const done = state.storylines.filter(item => item.girlId === girl.id && item.status === 'done')[index];
+                  const active = storyline && (storyline.slot ?? 1) === slot ? storyline : undefined;
+                  const label = active ? '进行中' : done ? (done.ending ? `结局：${done.ending}` : '已收束') : '未开启';
+                  return (
+                    <li key={slot} className={`story-slot${active ? ' active' : done ? ' done' : ''}`} id={`dossier-story-slot-${slot}`}>
+                      <b>第 {slot} 段</b>
+                      <small>{active ? active.title : done ? done.title : '等前一段讲完'}</small>
+                      <em>{label}</em>
+                    </li>
+                  );
+                })}
+              </ol>
               {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
               {storyline && (beat || graphChoice) ? (
                 <div className="story-beat">
@@ -276,6 +297,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                       <span><Cross size={11} />{resourceLabels[skill.resource]}</span>
                       <span><Users size={11} />{skill.side === 'enemy' ? `敌 ${skill.targets}` : skill.side === 'ally' ? `友 ${skill.targets}` : '自身'}</span>
                       <span><Timer size={11} />冷却 {skill.cooldown} 轮</span>
+                      <span className="skill-accuracy">基础命中 {skillAccuracy(skill)}%</span>
+                      {skill.selfCost && <span className="skill-cost">代价：{skill.selfCost.pct}% {resourceLabels[skill.selfCost.resource]}</span>}
                       {skill.tier === 'ultimate' && <span className="ultimate-note">第 2 轮起可用</span>}
                     </div>
                     {skill.effects.length > 0 && <div className="skill-effects">{skill.effects.map((e, i) => <span key={i}>{effectText(e)}</span>)}</div>}
@@ -315,6 +338,11 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
             </div>
             <div className="growth-col">
+            {girl.left && (
+              <p className="girl-left-badge" id="girl-left-badge">
+                <Flower2 size={12} />已离开 · {girl.leftReason === 'pension' ? '契约款没到账' : girl.leftReason === 'fatigue' ? '撑不住了' : '心不在这里了'}
+              </p>
+            )}
             <div className="modal-section-heading"><h3>契约与退休金</h3><small>到期后需续签</small></div>
             <div className="contract-grid">
               <div><span>契约状态</span><b>{contract}</b><small>{girl.contractEndDay} 日到期 · 已续签 {girl.contractRenewals} 次</small></div>
@@ -350,15 +378,15 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                     </button>
                   ))}
                   {girl.wardrobe.length < 4 && <button id="dossier-wardrobe-import" type="button" className="wardrobe-tile wardrobe-add" onClick={onWardrobe}><span className="wardrobe-preview"><PackageOpen size={18} /></span><span className="wardrobe-copy"><b>导入衣柜</b><small>立绘、JSON 或从其他契约者复制</small></span></button>}
-                  <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''} ${!witchOutfit ? 'reserved' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch}>
+                  <button id="dossier-witch-slot" type="button" className={`wardrobe-tile witch ${girl.witch ? 'picked' : ''} ${!witchOutfit ? 'reserved' : ''} ${overWitch ? 'is-drop-over' : ''}`} aria-pressed={Boolean(girl.witch)} onClick={onWitch} {...witchDrop}>
                     <span className="wardrobe-preview"><GirlPortrait girl={{ ...girl, witch: true, witchForm: witchOutfit, outfitId: 'witchform', portrait: witchOutfit?.portrait ?? girl.portrait }} variant="avatar" /></span>
-                    <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已预留 · 点击切换') : (girl.corruption >= rules().corruptionThreshold ? '已解锁 · 点击导入' : '为魔女化预留 · 点击导入')}</small></span>
+                    <span className="wardrobe-copy"><b>魔女化 · 夜之形<em className="wardrobe-tag">第五格</em></b><small>{witchOutfit ? (girl.witch ? '已切换 · 点击恢复' : '已预留 · 点击切换') : (girl.corruption >= rules().corruptionThreshold ? '已解锁 · 点击或拖入图片' : '为魔女化预留 · 点击或拖入图片')}</small></span>
                     {!witchOutfit && <span className="wardrobe-reserve"><ImagePlus size={11} />待导入</span>}
                   </button>
                 </div>
                 <div className="wardrobe-manage-row">
                   <button id="dossier-wardrobe-manage" type="button" className="llm-reset wardrobe-manage" onClick={onWardrobe}>管理衣柜 · 导入 / 删除</button>
-                  <button id="dossier-witch-import" type="button" className="llm-reset wardrobe-manage witch-import" onClick={onWitchForm}><ImagePlus size={13} />{witchOutfit ? '替换魔女化立绘' : '导入魔女化立绘'}</button>
+                  <button id="dossier-witch-import" type="button" className={`llm-reset wardrobe-manage witch-import ${overWitch ? 'is-drop-over' : ''}`} title="也可以把图片直接拖到这里" onClick={onWitchForm} {...witchDrop}><ImagePlus size={13} />{witchOutfit ? '替换魔女化立绘' : '导入魔女化立绘'}</button>
                 </div>
               </section>
 

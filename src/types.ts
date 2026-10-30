@@ -4,20 +4,60 @@ import type { CommissionWindow } from './shift';
 export type StatKey = 'magic' | 'insight' | 'agility' | 'empathy';
 export type Element = '星光系' | '糖霜系' | '月影系' | '梦境系' | '自然系' | '赤焰系' | '魔物';
 export type Archetype = '输出' | '守护' | '控制' | '治愈' | '侦查' | '魔物';
-export type GirlStatus = 'idle' | 'mission' | 'healing' | 'resting' | 'retired' | 'expedition';
+export type GirlStatus = 'idle' | 'mission' | 'healing' | 'resting' | 'retired' | 'expedition' | 'left';
+
+/** 主动离职的理由：心的位置变了、身体撑不住、或者契约款一直不到位。 */
+export type LeftReason = 'bond' | 'fatigue' | 'pension';
+
+/** 离职压力的连续天数计数器，开门时累加，条件消失就清零。 */
+export interface GirlStrain { lowBondDays: number; highFatigueDays: number; }
 export type WorkKind = 'combat' | 'investigation';
 export type MissionStatus = 'open' | 'active' | 'done' | 'expired';
 export type GoalKind = '战斗' | '调查' | '社交' | '生活' | '成长';
 export type SkillResource = 'hp' | 'spirit';
 export type SkillSide = 'enemy' | 'ally' | 'self';
-export type SkillTier = 'basic' | 'signature' | 'ultimate';
-export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen';
+export type SkillTier = 'basic' | 'signature' | 'ultimate' | 'boss';
+export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen' | 'drain' | 'purify';
 export type TraitPolarity = 'positive' | 'negative' | 'neutral';
 export type Expression = 'calm' | 'smile' | 'surprise' | 'sad' | 'angry' | 'shy';
 export type FactionId = 'witch' | 'association' | 'government';
 /** 少女的出身，不是雇主。事务所收留任何出身的人，所以没有 `office` 这一种。 */
 export type GirlFaction = 'association' | 'government' | 'witch' | 'none';
 /** 事务所的自我介绍；唯一事实来源是 `GameState.office`，世界书条目由它生成。 */
+/** 三方两两之间的一条敌意值。满 100 就一定会开战。 */
+export type FactionPair = 'association-government' | 'association-witch' | 'government-witch';
+export type HostilityTier = 'calm' | 'friction' | 'standoff' | 'brink';
+export interface HostilityTrack {
+  pair: FactionPair;
+  /** 0–100，满 100 触发战线。 */
+  value: number;
+  updatedDay: number;
+  /** 最后一次变动的原因，一句话。 */
+  reason: string;
+}
+/** 开战记录：同一对势力短时间内不会再打。 */
+export interface WarRecord { pair: FactionPair; day: number; }
+/** 势力之间的一场仗。战线在辖区上打，玩家可以选边。 */
+export interface FactionFront {
+  id: string;
+  pair: FactionPair;
+  day: number;
+  district: DistrictId;
+  attacker: FactionId;
+  defender: FactionId;
+  startsAt: number;
+  endsAt: number;
+  attackerPower: number;
+  defenderPower: number;
+  status: 'open' | 'joined' | 'resolved' | 'expired';
+  /** 开打那一刻的起因，结算文案要用它，不能事后被改。 */
+  reason?: string;
+  side?: 'attacker' | 'defender';
+  squad?: string[];
+  result?: 'attackerWin' | 'defenderWin' | 'stalemate';
+  battleId?: string;
+}
+
 export interface OfficeProfile {
   background: string;
   philosophy: string;
@@ -224,6 +264,12 @@ export interface Storyline {
   id: string; girlId: string; title: string; premise: string; tone: string;
   beats: StoryBeat[]; stage: number; status: 'active' | 'done' | 'abandoned';
   createdAt: string; day: number; source: 'llm' | 'template' | 'manual';
+  /** 第几段故事（1 起，最多 3 段）。 */
+  slot?: number;
+  /** 上一段的 id：门禁靠它判断能不能开新的一段。 */
+  requires?: string;
+  /** 实际走到的结局标签，写进编年史。 */
+  ending?: string;
   graph?: StoryGraph;
   run?: StoryRun;
 }
@@ -255,7 +301,7 @@ export type StoryNodeData =
   | { kind: 'event'; title: string; hook: string }
   | { kind: 'reward'; effect: StoryEffect; equipmentId?: string; trait?: { name: string; description: string } }
   | { kind: 'wait'; days?: number; minutes?: number }
-  | { kind: 'end'; summary?: string };
+  | { kind: 'end'; summary?: string; ending?: string };
 
 export interface StoryNode {
   id: string;
@@ -298,17 +344,75 @@ export interface IncidentEffect {
   girl?: { fatigue?: number; spirit?: number; corruption?: number; bond?: number };
   district?: { id: DistrictId; targetPct?: number; rewardPct?: number; untilDay: number };
   territory?: { id: DistrictId; faction: FactionId };
+  /** 两张桌上的事可以推动或冷却两条势力之间的火气（夹在 ±9，模型来的 ±3）。 */
+  hostility?: { pair: FactionPair; delta: number };
   missionId?: string;
 }
 export interface IncidentOption {
   id: string; label: string; hint: string; effect: IncidentEffect;
 }
+/** 弹窗的三种形态：纯通报、要拿主意、一段剧情。 */
+export type IncidentCategory = 'report' | 'decision' | 'scene';
+
+export type IncidentConditionField = 'reputation' | 'gold' | 'faction' | 'pollution' | 'bond' | 'fatigue' | 'day' | 'girlCount';
+
+export interface IncidentCondition {
+  field: IncidentConditionField;
+  op: '<' | '<=' | '>' | '>=' | '==';
+  value: number;
+  faction?: FactionId;
+  district?: DistrictId;
+  girlId?: string;
+}
+
+export type IncidentTrigger =
+  | { kind: 'dayStart' }
+  | { kind: 'wave'; wave: number }
+  | { kind: 'missionDone'; work?: WorkKind; district?: DistrictId }
+  | { kind: 'condition'; all: IncidentCondition[] };
+
+export interface IncidentSceneLine { speakerId?: string; speaker: string; tone?: string; text: string }
+
+export interface IncidentScene {
+  title: string; narration: string;
+  lines: IncidentSceneLine[];
+  /** 看完剧情的收尾效果，可以是空的。 */
+  effect?: IncidentEffect;
+}
+
 export interface Incident {
   id: string; day: number; kind: 'faction' | 'environment' | 'girl';
   source: 'llm' | 'rule' | 'custom'; title: string; body: string;
   faction?: FactionId; girlId?: string; district?: DistrictId;
-  options: IncidentOption[]; status: 'pending' | 'resolved'; storylineId?: string;
+  options: IncidentOption[]; status: 'pending' | 'resolved' | 'expired'; storylineId?: string;
   choiceId?: string; resolvedAt?: string; cardId?: string;
+  category?: IncidentCategory;
+  trigger?: IncidentTrigger;
+  /** 存活时长，缺省 240 分钟。 */
+  ttlMinutes?: number;
+  /** 绝对分钟（day * 1440 + minutes），到了还没处理就是过期。 */
+  expiresAt?: number;
+  expiredBy?: 'time' | 'superseded';
+  scene?: IncidentScene;
+  /** 投放这一条的模板 id，用来算冷却。 */
+  templateId?: string;
+}
+
+/** 内置事件的模板：id + 触发 + 文案 + 选项，投放时快照成 Incident。 */
+export interface IncidentTemplate {
+  id: string;
+  category: IncidentCategory;
+  trigger: IncidentTrigger;
+  title: string;
+  body: string;
+  kind?: Incident['kind'];
+  options: IncidentOption[];
+  scene?: IncidentScene;
+  ttlMinutes?: number;
+  /** 同一条模板多少天内不重复，缺省 7。 */
+  cooldownDays?: number;
+  /** 优先级大的先投放；战争预兆用 10。 */
+  priority?: number;
 }
 
 /** 内容工坊里的弹窗事件卡；投放时快照成 Incident，之后删卡不会破坏存档。 */
@@ -390,6 +494,10 @@ export interface Skill {
   effects: SkillEffect[]; description: string;
   /** 基础命中率（%）：不写就按目标数推导，见 `defaultSkillAccuracy`。 */
   accuracy?: number;
+  /** 施放代价：按上限的百分比扣自己的资源，不会把自己扣死。 */
+  selfCost?: { resource: SkillResource; pct: number } | null;
+  /** 施放成功后挂到自己身上的效果，绕过命中判定。 */
+  selfEffects?: SkillEffect[] | null;
 }
 export interface ActiveEffect extends SkillEffect {
   source: string; remaining: number;
@@ -422,6 +530,10 @@ export interface MonsterTemplate {
   trait: string; description: string; spec: MonsterSpec;
   codex: { habit: string; weakness: string };
   rules?: MonsterRule[];
+  /** Boss 技能组：第一阶段（hp ≥ 50%）用这组，缺省退回 skillIds。 */
+  bossSkillIds?: string[];
+  /** Boss 半血后换上的技能组。 */
+  bossPhaseSkillIds?: string[];
 }
 export interface PortraitSpec {
   palette: { hair: string; hairShade: string; eye: string; cloth: string; clothShade: string; accent: string };
@@ -450,6 +562,10 @@ export interface Girl {
   clinicRest?: boolean;
   contractEndDay: number; contractDays: number; contractRenewals: number;
   retiredReason?: 'contract' | 'injury'; pensionMissed: number;
+  /** 主动离职（与强制退休互斥）。 */
+  left?: boolean; leftReason?: LeftReason; strain?: GirlStrain;
+  /** 「再想想」给的宽限日：到了这一天还在状态里就直接走。 */
+  graceUntilDay?: number;
   appearance: string; personality: string; outfitDescription: string;
   /** 魔女化后的性格记录；普通形态仍保留原性格。 */
   witchPersonality?: string;
@@ -557,6 +673,8 @@ export interface BattleUnit {
   monster?: MonsterTemplate;
   /** 有名字、可成为叙事说话者的角色；敌方魔法少女也会带这个字段。 */
   girlId?: string;
+  /** Boss 阶段：1 是开场那套招式，2 是半血后换上来的那套。 */
+  phase?: number;
   codename?: string;
   expression?: Expression;
   portraitSpec?: PortraitSpec;
@@ -631,7 +749,7 @@ export interface ShiftState { day: number; wave: number }
 /** 九区污染度，0–100。 */
 export type PollutionMap = Record<DistrictId, number>;
 export interface GameState {
-  version: 12; day: number; minutes: number; gold: number; reputation: number;
+  version: 14; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
@@ -654,6 +772,12 @@ export interface GameState {
   /** 最近 10 次易主。 */
   territoryLog: TerritoryShift[];
   incidents: Incident[];
+  /** 叙事者提前写好、还没投放的弹窗。 */
+  incidentPool: Incident[];
+  /** 弹窗编号自增，保证 id 不撞。 */
+  incidentSeq: number;
+  /** 模板 id → 上次投放的 day，用来算冷却。 */
+  incidentCooldowns: Record<string, number>;
   storylines: Storyline[];
   events: CharacterEvent[];
   /** 进行中的诊所治疗。 */
@@ -662,6 +786,12 @@ export interface GameState {
   blank?: boolean;
   /** 九区污染度，0–100；每天自然上升，完成委托下降。 */
   pollution: PollutionMap;
+  /** 三方两两之间的敌意值。 */
+  hostility: Record<FactionPair, HostilityTrack>;
+  /** 正在打或打过的战线。 */
+  fronts: FactionFront[];
+  /** 开战史：同一对 10 天内不再打。 */
+  warHistory: WarRecord[];
   /** 事务所档案：玩家可改的背景/理念/目标。 */
   office: OfficeProfile;
 }
@@ -677,6 +807,7 @@ export type GameAction =
   | { type: 'rehire'; girlId: string }
   | { type: 'setAssistant'; girlId?: string }
   | { type: 'setOfficeProfile'; profile: OfficeProfile }
+  | { type: 'joinFront'; frontId: string; side: 'attacker' | 'defender'; girlIds: string[] }
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
@@ -709,7 +840,9 @@ export type GameAction =
   | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null; activate?: boolean; personality?: string }
   | { type: 'clearWitchForm'; girlId: string }
   | { type: 'addIncident'; incident: Incident }
-  | { type: 'resolveIncident'; incidentId: string; optionId: string }
+  /** 模型生成的一批弹窗，进待用池（由 game 侧洗数据）。 */
+  | { type: 'mergeIncidentPool'; entries: unknown[] }
+  | { type: 'resolveIncident'; incidentId: string; optionId?: string }
   | { type: 'startStoryline'; girlId: string; direction?: string }
   | { type: 'setStoryPlan'; girlId: string; plan: StoryPlan | null }
   | { type: 'addStoryline'; storyline: Storyline }

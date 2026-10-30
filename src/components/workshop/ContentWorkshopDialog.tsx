@@ -16,8 +16,8 @@ import { MonsterGlyph } from '../MonsterGlyph';
 
 const STAT_LABELS: Record<StatKey, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情' };
 const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
-const EFFECT_KINDS: SkillEffect['kind'][] = ['dot', 'stun', 'shield', 'buff', 'debuff', 'regen'];
-const EFFECT_KIND_LABELS: Record<SkillEffect['kind'], string> = { dot: '持续伤害', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复' };
+const EFFECT_KINDS: SkillEffect['kind'][] = ['dot', 'stun', 'shield', 'buff', 'debuff', 'regen', 'drain', 'purify'];
+const EFFECT_KIND_LABELS: Record<SkillEffect['kind'], string> = { dot: '持续伤害', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复', drain: '吸血', purify: '净化' };
 const EFFECT_STATS: NonNullable<SkillEffect['stat']>[] = [...STAT_KEYS, 'hit', 'initiative'];
 const EFFECT_STAT_LABELS: Record<NonNullable<SkillEffect['stat']>, string> = { ...STAT_LABELS, hit: '命中', initiative: '先手' };
 const RULE_TRIGGERS: MonsterRule['trigger'][] = ['roundStart', 'hit', 'always'];

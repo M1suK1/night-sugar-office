@@ -1,5 +1,6 @@
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
-import { effectKindLabels, findSkill, getSkill } from './content/skills.ts';
+import { effectKindLabels, getSkill } from './content/skills.ts';
+import { findAnySkill } from './skills.ts';
 import { findMonster } from './content/monsters.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
 import { factionInfo } from './content/items.ts';
@@ -116,7 +117,7 @@ function alive(units: BattleUnit[], side: 'ally' | 'enemy'): BattleUnit[] {
   return units.filter(u => u.side === side && !u.down && u.hp > 0 && u.spirit > 0);
 }
 function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
-  const known = unit.skills.map(findSkill).filter((skill): skill is Skill => Boolean(skill));
+  const known = unit.skills.map(findAnySkill).filter((skill): skill is Skill => Boolean(skill));
   const usable = known.filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || round >= 2));
   const pool = usable.length ? usable : known.filter(s => s.tier !== 'ultimate');
   const finalPool = pool.length ? pool : [known[0] ?? getSkill(unit.skills[0] ?? 'monster-claw')];
@@ -165,6 +166,43 @@ function addEffect(unit: BattleUnit, effect: Omit<ActiveEffect, 'remaining'> & {
 }
 function rulesOf(unit: BattleUnit): MonsterRule[] {
   return unit.monster?.rules ?? [];
+}
+
+/**
+ * 施放代价：按上限的百分比扣自己的资源，永远给自己留 1 点。
+ * 代价不触发护盾、不计入「承受伤害」，它只是这条技能的入场券。
+ */
+function paySelfCost(unit: BattleUnit, skill: Skill): number {
+  const cost = skill.selfCost;
+  if (!cost || cost.pct <= 0) return 0;
+  const cap = cost.resource === 'hp' ? unit.maxHp : unit.maxSpirit;
+  const amount = Math.max(1, Math.round(cap * cost.pct / 100));
+  if (cost.resource === 'hp') {
+    const real = Math.min(unit.hp - 1, amount);
+    if (real <= 0) return 0;
+    unit.hp -= real;
+    return real;
+  }
+  const real = Math.min(unit.spirit - 1, amount);
+  if (real <= 0) return 0;
+  unit.spirit -= real;
+  return real;
+}
+
+/** 吸血：把这次实际打出的伤害按百分比回给自己。 */
+function drainPct(skill: Skill): number {
+  const pct = skill.effects
+    .filter(effect => effect.kind === 'drain')
+    .reduce((sum, effect) => sum + (effect.amount || 0), 0);
+  return clamp(0, 100, pct);
+}
+
+/** 净化：掀掉目标身上的减益与持续伤害。 */
+function purifyCount(skill: Skill): number {
+  const count = skill.effects
+    .filter(effect => effect.kind === 'purify')
+    .reduce((max, effect) => Math.max(max, effect.amount || 1), 0);
+  return Math.max(0, Math.round(count));
 }
 function damageReduction(unit: BattleUnit): number {
   const pct = rulesOf(unit)
@@ -268,6 +306,14 @@ export function simulateBattle(setup: BattleSetup): BattleState {
     state.round = round;
     for (const unit of units) {
       if (unit.down) continue;
+      // Boss 换组：血量掉到一半时把整套招式换掉，只在换的那一轮播一次。
+      const nextPhase = unit.monster?.bossPhaseSkillIds;
+      if (nextPhase?.length && (unit.phase ?? 1) === 1 && unit.hp <= unit.maxHp * 0.5) {
+        unit.skills = [...nextPhase];
+        unit.phase = 2;
+        unit.cooldown = {};
+        log({ round, actor: unit.name, skillId: 'boss-phase', skillName: '换组', targets: [unit.name], hit: true, note: `${unit.name}换了一套招式` });
+      }
       for (const effect of unit.effects) {
         if (effect.kind === 'dot') {
           const amount = Math.min(unit.hp, effect.amount);
@@ -326,6 +372,10 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       }
       const skill = pickSkill(unit, round, rng);
       unit.cooldown[skill.id] = skill.cooldown;
+      const paid = paySelfCost(unit, skill);
+      if (paid > 0) {
+        log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, resource: skill.selfCost?.resource ?? 'hp', amount: paid, note: `施放代价：自身 ${paid} 点${skill.selfCost?.resource === 'spirit' ? '共情值' : '血量'}` });
+      }
       const targets = pickTargets(unit, skill, units, rng);
       const baseAccuracy = skillAccuracy(skill);
       const effectNotes: string[] = [];
@@ -370,6 +420,15 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             target.down = true;
             unit.kills += 1;
           }
+          const pct = drainPct(skill);
+          if (pct > 0 && dealt > 0) {
+            const stolen = Math.min(unit.maxHp - unit.hp, Math.round(dealt * pct / 100));
+            if (stolen > 0) {
+              unit.hp += stolen;
+              unit.healed += stolen;
+              log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, resource: 'hp', amount: stolen, note: `吸取 ${stolen} 点血量` });
+            }
+          }
         } else {
           const magic = statOf(unit, 'magic');
           const heal = Math.round(magic * skill.power * 0.5);
@@ -378,12 +437,36 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           unit.healed += real;
           if (real > 0) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'hp', amount: real, note: `为 ${target.name} 恢复 ${real} 点血量`, calc: { heal: { magic, power: skill.power, raw: heal, capped: real } } });
         }
+        const purify = purifyCount(skill);
+        if (purify > 0) {
+          const cleaned: string[] = [];
+          for (const effect of skill.side === 'self' ? [unit] : targets) {
+            const before = effect.effects.length;
+            effect.effects = effect.effects.filter(e => e.kind !== 'debuff' && e.kind !== 'dot' && e.kind !== 'stun');
+            if (effect.effects.length < before) cleaned.push(effect.name);
+          }
+          if (cleaned.length) {
+            state.events.push({ round, at: addClock(day, minutes, (round - 1) * ROUND_MINUTES), actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [...new Set(cleaned)], hit: true, note: `净化了 ${[...new Set(cleaned)].join('、')} 身上的负面效果` });
+          }
+        }
         for (const effect of skill.effects) {
+          if (effect.kind === 'drain' || effect.kind === 'purify') continue;
           if (effect.chance && rng() > effect.chance) continue;
           if (effect.kind === 'stun' && rulesOf(target).some(rule => rule.effect === 'immuneStun')) continue;
           if (skill.side === 'enemy' && target.down && effect.kind !== 'dot') continue;
           addEffect(target, { ...effect, source: skill.name, remaining: effect.duration });
           effectNotes.push(effect.label ?? effectKindLabels[effect.kind]);
+        }
+      }
+      if (skill.selfEffects?.length) {
+        const selfNotes: string[] = [];
+        for (const effect of skill.selfEffects) {
+          if (effect.chance && rng() > effect.chance) continue;
+          addEffect(unit, { ...effect, source: skill.name, remaining: effect.duration });
+          selfNotes.push(effect.label ?? effectKindLabels[effect.kind]);
+        }
+        if (selfNotes.length) {
+          state.events.push({ round, at: addClock(day, minutes, (round - 1) * ROUND_MINUTES), actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, note: `自身效果：${[...new Set(selfNotes)].join('、')}` });
         }
       }
       if (effectNotes.length) {

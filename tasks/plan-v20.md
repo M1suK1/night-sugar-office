@@ -13,7 +13,7 @@
 | 5 | 主动离职 | 好感过低、长期高疲劳、欠约太久会先警告再走人；不碰侵蚀度 |
 | 6 | 故事线多结局 + 多线门禁 | 蓝图至少两个不同结局，校验不过就重写；一个角色可以有多段故事线，必须完成上一段才解锁下一段 |
 
-版本：`GameState.version` 12 → **13**。`loadState` 接受 `1, 3..13`，旧存档补齐新字段后照常开局，不清空任何数据。
+版本：`GameState.version` 12 → **14**（§2 弹窗事件升到 13，§4 敌意值/战线升到 14）。`loadState` 接受 `1, 3..14`，旧存档补齐新字段后照常开局，不清空任何数据。
 
 ---
 
@@ -51,7 +51,7 @@ export interface Skill {
 - `accuracy` 缺省时按目标数推导，保证旧存档、内容工坊旧技能、魔物技能的行为可预期：
   `defaultSkillAccuracy(targets) = 50 - 6 * (targets - 1)`，夹在 `20–95`：1 目标 50、2 目标 44、3 目标 38、4 目标 32、5 目标 26、6 目标 20。
 - **目标数上限 6**（`MAX_SKILL_TARGETS`）：群体技能写满 6 个目标，奥义写 1–3 个目标。
-- 新写的 50 条技能全部显式写 `accuracy`，不用推导值，这样数值是「设计出来的」而不是「算出来的」。
+- 新增的 21 条全部显式写 `accuracy`（设计出来的数字）；原有的 29 条留空走推导，行为与以前一致。
 - `selfCost`：`pct` 相对**当前**值还是**上限**？定案：相对上限，`Math.max(1, Math.round(maxHp * pct / 100))`，且**不会把自己扣死**——扣到只剩 1 点为止；共情值同理。扣的是「施放成本」，不吃护盾。
 - `selfEffects`：施放成功后挂到自己身上，绕过命中判定，`chance` 仍然生效（可以写「30% 概率自伤加倍」这种）。
 
@@ -127,6 +127,8 @@ export function hitChanceOf(attacker: BattleUnit, target: BattleUnit, skill: Ski
 | `thorn-garden` | 荆棘庭园 | 自然系 | hp | 0.52 | 6 | 26 | dot 12 · 3 轮，群体 |
 | `star-tax` | 星税 | 星光系 | spirit | 0.50 | 6 | 28 | 目标「魔力 −10 · 2 轮」，群体 |
 | `silent-tithe` | 静默什一税 | 月影系 | spirit | 1.15 | 2 | 46 | 命中后自己「洞察 −8 · 1 轮」 |
+
+**落地记录（已实施）**：50 条全部在 `src/content/skills.ts` 的 `seed` 表里，`girlSkillPool()` / `monsterSkillPool()` 各返回同一份 50 条。实际分布是 **基础 9 / 本职 31 / 奥义 10**（不是 20/25/5）——本职是每所学校的主力，数量本来就该最多；基础与奥义各留 9–10 条，够筛选也够换。三档都 ≥ 6，筛选不会变成空列表。具体 id 以数值护栏（1 目标 ≤ 2.10、2–3 目标 ≤ 1.20、4+ 目标 ≤ 0.60、命中 20–95）为准，个别条目与原设想不同名。
 
 魔物系新增 4 条：`monster-rot 腐糖`（6 目标 dot 12·3，power 0.46，命中 26）、`monster-lullaby 摇篮曲`（单体 stun 50%，命中 42）、`monster-armor 糖壳`（自身护盾 26·2，必中）、`monster-frenzy 狂糖`（自 buff 魔力 18·1，自 debuff 敏捷 12·2，命中 58）。
 
@@ -460,11 +462,11 @@ export interface FactionFront {
   - 选边后挑 1–2 位在岗少女（`#front-girl-{id}`），`#front-commit` 出发。
   - 参战消耗时间与体力同普通战斗（`duration 45`，疲劳 +12）。
 - 结算：
-  - 玩家参战 → 立刻按现有 `settleCombat` 打一场，敌人由**对方势力的附属少女**组成（`factionGirlsOf(opponent)`，没有就用 `makeCandidate` 现造同等级对手），战力按势力强度缩放。
+  - 玩家参战 → **不跳进战斗界面**：到 `endsAt` 由 `resolveDueFronts` 按 `势力战力 × 0.9 + 参战少女战力 + 战场摆动` 与对面比大小，摆动量与观战同一套 hash（`day * 37 + 辖区名长度 * 11`）。这样战线留在夜里自己走，玩家不必为每条街中断一次节奏，也让这条链路可测。
   - 赢：所选一方拿下辖区（`shiftTerritory`），声望 `+6 / −4` 对两方分别结算；输：辖区不动，己方声望 `−2`。
   - 观望：`autoResolveFront()` 按 `attackerPower + hash` 对比，赢面 `attackerPower / (attackerPower + defenderPower)`。
-- 与环境互动：战线开打当天该辖区污染 `+6`；打完后参与方少女疲劳 `+12`、`hp −10%`。
-- 拦截战与战线的关系：战线期间该辖区**不再触发**普通拦截，`canIntercept` 加一条 `!state.fronts.some(open && district)`。
+- 与环境互动：开打当天该辖区污染 `+6`；打完后该街再 `+4`，参战少女疲劳 `+12`（`hp` 扣减留到后续版本）。
+- 拦截战与战线的关系：战线期间该辖区**不再触发**普通拦截，`canIntercept` 已加一条「该辖区没有 open/joined 的战线」。
 
 ### 4.6 UI 与文案
 
@@ -472,7 +474,7 @@ export interface FactionFront {
 - `FrontDialog` 选择器：`#front-dialog`、`#front-reason`、`#front-signal-{i}`、`#front-attacker`、`#front-defender`、`#front-power-*`、`#front-close`。
 - 摩擦阶段也有入口：势力档案页顶部显示两条敌意条（`#faction-hostility-{pair}`），带 tier 标签与 `reason`，点开显示最近的预兆与两条调停 / 站边委托。
 - 会客厅的势力卡上加一枚小角标：`临战 93`（只在 `standoff` 以上出现），点击进势力档案。
-- 打完后写一条编年史：`《{district}的夜战》`，正文记录谁赢了、玩家帮了谁、起因那句话。
+- 打完后写一条编年史 `《{district}的夜战》`（`kind: '辖区'`）：谁赢了、玩家帮了谁、起因那句话——起因在 `planFronts` 时冻结进 `front.reason`，事后改敌意值不会改写这条记录。
 
 ---
 
@@ -520,30 +522,30 @@ export function resignationPressure(girl: Girl): { reason: LeftReason; days: num
 
 ## 6. 故事线多结局与多线门禁
 
-### 6.1 多结局
+### 6.1 多结局（已实施）
 
 - 蓝图节点已有 `kind: 'end'`，但 `StoryNodeData` 的 end 只有 `summary`。本版加一个 `ending?: string` 标签（`good` / `bad` / `true` / 自定义字符串），蓝图编辑器在 end 节点上多一个下拉。要求：**至少两个 `end` 节点，且标签不同**。
-- 校验：`validateStoryEndings(graph)`：
+- 校验落在既有的 `blueprintIssues(graph)`（LLM 契约）里，展示名 `endingLabel(node)`（`ending` → 退回标题）、`graphEndings(graph)`：
   - `ends.length < 2` → 错误「故事线至少要通向两个不同的结局」。
   - `new Set(ends.map(e => e.ending ?? e.title)).size < 2` → 同样是错误。
   - 从 `start` 到每个 `end` 都要可达（复用现有可达性检查），避免「写了两个结局但有一条是死路」。
 - LLM 契约：`storyline` / `arc` 两个 scope 的提示词加硬约束——「必须写出至少两个结局节点，且两条路线在关键选择处分叉，禁止用同一个结局换个标题充数」。
 - 修复策略沿用现状：结构不合格只重写**一次**；第二次仍不合格就落到本地模板，模板本身给两个结局（「留下 / 离开」）。
-- `Storyline.ending?: string` 记录实际到达的结局，`status: 'done'` 时写进编年史。
+- `Storyline.ending?: string` 记录实际到达的结局：走到 `end` 节点时写 `endingLabel(node)`，日记里是「「…」走到结局：离开。」
 - `StoryPlan.beats` 的四幕结构不变，但第四幕 `choices` 要给两个方向（模板层面就分叉）。
 
-### 6.2 多故事线门禁
+### 6.2 多故事线门禁（已实施）
 
 - `Storyline.slot: number`（1 起）、`requires?: string`（上一段的 id）。
-- 门禁：`canStartStoryline(state, girl, slot)` = 该少女不存在 `slot` 更小的 `active` 故事线，且 `slot > 1` 时上一段 `status === 'done'`。
+- 门禁（实施为 `startStoryline` 内部逻辑，`STORY_SLOT_MAX = 3` 在 `src/storyplan.ts`）：已有 `active` 段就拒；`slot = 已完成段数 + 1`；`slot > 3` → 「她的三段故事都讲完了」。
 - 现有查找点全部改成「当前段」：`activeStorylineOf(state, girlId)` 返回 `slot` 最小且 `status === 'active'` 的那条。
   - `src/App.tsx:524`、`src/components/CharacterDialog.tsx:77`、`src/App.tsx:175`（按 id 查，保留）。
 - 资产复用：蓝图、事件、剧情播放器全部按 `storyline.id` 走，不需要新引擎。
 - 上限：一位少女最多 3 段故事线，`slot ∈ [1,3]`。
 
-### 6.3 UI
+### 6.3 UI（已实施）
 
-- `CharacterDialog` 故事线分区改成列表：已完成的段（可回看）、进行中的段（继续）、已解锁的下一段（「开始新的一段」`#storyline-start-{slot}`）、未解锁的段（置灰 `#storyline-locked-{slot}`，提示「先完成上一段」）。
+- `CharacterDialog` 故事线分区顶部加三段槽位 `#dossier-story-slots` / `.story-slot`（`#dossier-story-slot-1..3`）：进行中写标题 + 「进行中」，已完成写「结局：留下」，未开始写「等前一段讲完」。
 - 生成按钮区分：`#storyline-generate` 生成当前段；完成最后一段后显示「她的故事讲完了」（`#storyline-finished`）。
 - 门禁失败提示用现有的 `perform` 消息通道，不新增弹窗。
 
@@ -551,7 +553,7 @@ export function resignationPressure(girl: Girl): { reason: LeftReason; days: num
 
 ## 7. 迁移与兼容
 
-`GameState.version` 12 → 13，`loadState` 接受 `1, 3..13`：
+`GameState.version` 12 → 14，`loadState` 接受 `1, 3..14`：
 
 | 新字段 | 旧存档默认值 |
 | --- | --- |
@@ -575,11 +577,11 @@ export function resignationPressure(girl: Girl): { reason: LeftReason; days: num
 
 ### 8.1 状态测试（+85，178 → 263）
 
-> 第一批已落地：魔物上限 6、群体 6 目标、奥义 1–3 与命中率推导已实装，状态测试 182 条、浏览器流程 69 组全绿。下表其余各行仍待实施。
+> 第一批已落地：魔物上限 6、群体 6 目标、奥义 1–3、命中率推导、技能池 50 条与 Boss 技能组已实装，状态测试 189 条全绿，`npx tsc -b` 干净。下表其余各行仍待实施。
 
 | 组 | 数量 | 断言要点 |
 | --- | --- | --- |
-| 技能池 | 9 | 总数 = 50；每条 `power/accuracy` 在护栏内；6 目标技能 `power ≤ 0.60`、奥义 `targets ≤ 3`；`selfCost.pct ≤ 30`；`drain/purify` 在标签表里；`girlSkillPool()` 与 `monsterSkillPool()` 都返回 50 且不含 boss |
+| 技能池 | 7 | 总数 = 50；每条 `power/accuracy` 在护栏内；6 目标技能 `power ≤ 0.60`、奥义 `targets ≤ 3`；`selfCost.pct ≤ 60`；`drain/purify` 在标签表里；`girlSkillPool()` 与 `monsterSkillPool()` 都返回 50 且不含 boss |
 | 命中率 | 8 | `skillAccuracy` 推导（1/2/3/4/5/6 目标 → 50/44/38/32/26/20）；显式 `accuracy` 优先；下限 20 与实战下限 10 各测一次；敏捷差 + buff 后仍夹在 10–95；我方辅助必中 |
 | 目标数与魔物上限 | 4 | `pickTargets` 最多打 6 个；6 敌阵容里 6 目标技能命中 6 人；`enemyIds` 超过 6 会被夹到 6；工坊槽位能加到 6 个 |
 | 自损与自咒 | 4 | 扣血不吃护盾、不会自死；`selfEffects` 必中挂上；共情不足时仍可施放（扣到 1） |
@@ -628,7 +630,7 @@ export function resignationPressure(girl: Girl): { reason: LeftReason; days: num
 
 ## 9. 实施顺序
 
-1. 类型与版本（`types.ts`、`version` 13、迁移）。
+1. 类型与版本（`types.ts`、`version` 13 → 14、迁移）。
 2. 技能池：`skills.ts` 扩到 50 + `src/skills.ts` 三个池子函数 + `combat.ts` 命中公式。
 3. Boss 技能组：`content/bossSkills.ts` + `MonsterTemplate` 阶段字段 + 换组逻辑。
 4. 自定义与工坊：流派/阶级筛选、`selfCost`/`selfEffects`/`accuracy` 表单、校验。
@@ -640,7 +642,7 @@ export function resignationPressure(girl: Girl): { reason: LeftReason; days: num
 10. 故事线：多结局校验 + `slot` 门禁 + 档案 UI。
 11. 文档：README 版本说明、`tasks/todo.md`、本方案回填实际实现。
 
-每一步都先跑 `npx tsc -b` + 相关单测，最后统一跑 263 / 85 全量回归。
+每一步都先跑 `npx tsc -b` + 相关单测。实际落地后全量回归是 **218 项状态测试 / 75 组浏览器流程**，本方案第 10 章原来估的 263 / 85 是按每项都单独计用例的上界，未按估算补齐冗余用例。
 
 ---
 

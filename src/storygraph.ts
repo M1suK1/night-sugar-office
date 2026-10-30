@@ -43,7 +43,7 @@ export function makeNode(kind: StoryNodeKind, x: number, y: number, id: string):
   const data: StoryNodeData = (() => {
     switch (kind) {
       case 'start': return { kind };
-      case 'end': return { kind, summary: '' };
+      case 'end': return { kind, summary: '', ending: '' };
       case 'scene': return { kind, narration: '', lines: [] };
       case 'choice': return { kind, prompt: '', options: [
         { id: 'a', label: '选项 A', intent: '', effect: { bond: 2 } },
@@ -152,12 +152,29 @@ export function compileBeatsToGraph(plan: StoryPlan): StoryGraph {
     previous = sceneId;
   });
 
-  const endId = nextNode();
+  // 本地模板也给两个结局：她留下来，或者把钥匙放下。
+  const forkId = nextNode();
   nodes.push({
-    id: endId, kind: 'end', x: column * 250, y: 120, title: '结束',
-    data: { kind: 'end', summary: plan.premise },
+    id: forkId, kind: 'choice', x: column * 250, y: 120, title: '最后的选择',
+    data: {
+      kind: 'choice',
+      prompt: '到这里，故事该收尾了。',
+      options: [{ id: 'stay', label: '让她留下来' }, { id: 'leave', label: '放她走' }],
+    },
   });
-  link(previous, endId);
+  link(previous, forkId);
+  const stayId = nextNode();
+  nodes.push({
+    id: stayId, kind: 'end', x: (column + 1) * 250, y: 40, title: '留下',
+    data: { kind: 'end', summary: plan.premise, ending: '留下' },
+  });
+  link(forkId, stayId, 'stay');
+  const leaveId = nextNode();
+  nodes.push({
+    id: leaveId, kind: 'end', x: (column + 1) * 250, y: 200, title: '离开',
+    data: { kind: 'end', summary: `${plan.premise}（她把钥匙留在桌上。）`, ending: '离开' },
+  });
+  link(forkId, leaveId, 'leave');
 
   return { version: 1, nodes, edges, entry: startId };
 }
@@ -174,7 +191,7 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
   const value = (raw ?? {}) as Record<string, unknown>;
   switch (kind) {
     case 'start': return { kind };
-    case 'end': return { kind, summary: str(value.summary, 300) };
+    case 'end': return { kind, summary: str(value.summary, 300), ending: str(value.ending, 24) };
     case 'scene': {
       const lines = Array.isArray(value.lines) ? value.lines.slice(0, 8).map((line) => {
         const item = (line ?? {}) as Record<string, unknown>;
@@ -461,7 +478,11 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
   if (graph.nodes.length > 16) issues.push({ level: 'error', message: '蓝图最多 16 个节点，请把支线收束。' });
   if (graph.edges.length > graph.nodes.length + 8) issues.push({ level: 'error', message: '蓝图连线过多，可能出现了重复分支。' });
   if (starts.length !== 1) issues.push({ level: 'error', message: '蓝图需要且只能有一个开始节点。' });
-  if (ends.length < 1 || ends.length > 3) issues.push({ level: 'error', message: '蓝图需要 1–3 个结束节点。' });
+  if (ends.length < 2 || ends.length > 3) issues.push({ level: 'error', message: '故事线至少要通向两个不同的结局（2–3 个结束节点）。' });
+  const labels = ends.map(endingLabel);
+  if (ends.length >= 2 && new Set(labels).size < 2) {
+    issues.push({ level: 'error', message: '两个结局用了同一个标签，等于只有一个结局；请在结束节点上写不同的 ending。' });
+  }
   if (choices.length < 1 || choices.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个选择节点。' });
   if (missions.length < 1 || missions.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个阶段委托。' });
   if (!scenes.length) issues.push({ level: 'error', message: '蓝图至少需要一个场景节点。' });
@@ -555,6 +576,17 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
     if (!reachesEnd.has(node.id)) issues.push({ level: 'error', message: `节点「${node.title}」没有任何路径通往结束。`, nodeId: node.id });
   }
   return issues;
+}
+
+/** 结束节点的结局标签：优先用 ending，没写就退回节点标题。 */
+export function endingLabel(node: StoryNode): string {
+  if (node.data.kind !== 'end') return '';
+  return (node.data.ending || node.title || '').trim();
+}
+
+/** 蓝图里所有结局标签（未去重），给校验与展示用。 */
+export function graphEndings(graph: StoryGraph): string[] {
+  return graph.nodes.filter(node => node.kind === 'end').map(endingLabel);
 }
 
 export function nodeById(graph: StoryGraph, id: string): StoryNode | undefined {
