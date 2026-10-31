@@ -1,4 +1,5 @@
 import type { MonsterTemplate } from '../types';
+import { extraMonsters } from './monsters-extra.ts';
 
 export const monsters: MonsterTemplate[] = [
   {
@@ -57,7 +58,7 @@ export const monsters: MonsterTemplate[] = [
     rules: [{ trigger: 'hit', effect: 'dot', amount: 6, duration: 1 }],
   },
   {
-    id: 'hollow-moon', name: '空月', epithet: '没有背面的天体', rank: '王座', element: '星光系', color: '#C9C4FF',
+    id: 'hollow-moon', name: '空月', epithet: '没有背面的天体', rank: '王座', element: '星光系', color: '#C9C4FF', storyOnly: true,
     maxHp: 420, maxSpirit: 200,
     stats: { magic: 96, insight: 92, agility: 50, empathy: 64 },
     skillIds: ['boss-hollow-veil', 'boss-tide-of-names', 'boss-sugar-crown', 'boss-mirror-litany'],
@@ -69,6 +70,19 @@ export const monsters: MonsterTemplate[] = [
     bossSkillIds: ['boss-hollow-veil', 'boss-tide-of-names', 'boss-sugar-crown', 'boss-mirror-litany'],
     bossPhaseSkillIds: ['boss-second-moon', 'boss-collapse', 'boss-clock-hands', 'boss-name-erasure'],
   },
+  {
+    id: 'candy-throne', name: '糖霜王座', epithet: '自己给自己加冕的东西', rank: '王座', element: '糖霜系', color: '#F2A0C0',
+    bossOnly: true,
+    maxHp: 2400, maxSpirit: 360,
+    stats: { magic: 96, insight: 88, agility: 72, empathy: 180 },
+    skillIds: ['boss-sugar-crown', 'boss-clock-hands'],
+    trait: '三阶段首领：血量降到 62% 与 30% 时换一套技能，第二阶段会拉两只糖蛾进场。',
+    description: '糖果街的甜味在某个夜里被抽干了。游乐场中央的王座长高了一截，坐上去的东西正在给自己加冕。',
+    spec: { bodyPlan: 'machine', scale: 1.38, appendages: 6, core: '糖', palette: { body: '#5A1F36', shade: '#2B0E1B', rim: '#FFC7DE' }, aura: '花瓣', motif: '糖' },
+    codex: { habit: '把整条街的甜味吸进王座，再一点一点还给自己的冠。', weakness: '王座本身是承重的，打断椅脚比打断它更快。' },
+    rules: [{ trigger: 'roundStart', effect: 'heal', amount: 12 }],
+  },
+  ...extraMonsters,
 ];
 export const monsterById = new Map(monsters.map(m => [m.id, m]));
 /** 严格查询：找不到就返回 undefined，调用方可以把这条引用当作失效内容处理。 */

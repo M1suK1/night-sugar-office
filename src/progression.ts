@@ -1,4 +1,5 @@
 import type { Archetype, Girl, StatKey } from './types';
+import { effectiveGuard } from './economy.ts';
 
 export const MAX_LEVEL = 10;
 
@@ -41,8 +42,9 @@ export function grantExp(girl: Girl, amount: number): boolean {
   girl.stats[secondary] += 1;
   girl.maxHp += 4;
   girl.hp = Math.min(girl.maxHp, girl.hp + 4);
-  girl.maxSpirit += 2;
-  girl.spirit = Math.min(girl.maxSpirit, girl.spirit + 2);
+  // 心防不是独立数值：共情涨了，心防跟着涨。
+  girl.maxSpirit = effectiveGuard(girl);
+  girl.spirit = girl.maxSpirit;
   return true;
 }
 export function progressLabel(girl: Girl): string {

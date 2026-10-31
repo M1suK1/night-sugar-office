@@ -1,5 +1,6 @@
 import type { Equipment, GameState, Girl, StatKey } from './types';
 import { getItem } from './content/items.ts';
+import { guardMax } from './spirit.ts';
 
 export const statOrder: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
@@ -49,9 +50,26 @@ export function effectiveMaxHp(girl: Girl): number {
   const bonus = equipmentOf(girl).reduce((sum, item) => sum + (item.maxHpBonus ?? 0), 0);
   return Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08))) + bonus;
 }
+/** 装备提供的气势百分比加成合计。 */
+export function spiritBonusPctOf(girl: Girl): number {
+  return equipmentOf(girl).reduce((sum, item) => sum + (item.spiritBonusPct ?? 0), 0);
+}
+
+/**
+ * 心防上限 = 面板共情 × 2 + 装备百分比，再减去疤痕带来的上限损失。
+ *
+ * 光看 `girl.maxSpirit` 是不够的：升级、换装、长疤都会立刻改变这个值，
+ * 所以每次要用的时候重算，字段只作为缓存。
+ */
+export function effectiveGuard(girl: Girl): number {
+  const base = guardMax({ stats: { empathy: effectiveStats(girl).empathy } }, spiritBonusPctOf(girl));
+  const scar = girl.scars.reduce((sum, sc) => sum + (sc.effect.kind === 'maxSpirit' ? Math.abs(sc.effect.amount) : 0), 0);
+  return Math.max(10, base - scar);
+}
+
+/** 兼容旧名：共情值现在就是心防条，读的是同一个上限。 */
 export function effectiveMaxSpirit(girl: Girl): number {
-  const bonus = equipmentOf(girl).reduce((sum, item) => sum + (item.spiritBonus ?? 0), 0);
-  return Math.max(30, girl.maxSpirit + bonus);
+  return effectiveGuard(girl);
 }
 
 export const cityStages = [

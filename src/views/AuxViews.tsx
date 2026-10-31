@@ -9,6 +9,7 @@ import { pensionFor } from '../contracts';
 import { PrologueDialog } from '../components/PrologueDialog';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
+import { currentBoss } from '../content/bosses';
 import './aux-views.css';
 
 type BaseViewProps = {
@@ -21,7 +22,7 @@ type BaseViewProps = {
   onRecallExpedition: (id: string) => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onAcceptTask: (faction: FactionId) => void;
-  onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onCare?: (girlId: string, mode: 'resting') => void;
   onAssistant?: (girlId?: string) => void;
   onUseItem?: (girlId: string, itemId: string) => void;
@@ -360,6 +361,7 @@ export function BaseView({
                   girls={active}
                   onGirl={id => onGirl?.(id)}
                   onTreat={(girlId, kink) => onClinic?.(girlId, 'treat', kink)}
+                  onClear={girlId => onClinic?.(girlId, 'clear')}
                 />
               </div>
             )}
@@ -762,7 +764,7 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
         <div className="av-record-stat">
           <span><ShieldCheck size={13} />城市安定度 · {stage.name}</span>
           <strong>{state.reputation}<small> / 100</small></strong>
-          <small>{state.boss ? '天灾「空月」在场（每3小时−1安定）' : `下次周期 Boss：第 ${state.nextBossDay} 日 21:00`}</small>
+          <small>{state.boss ? `天灾「${currentBoss(state)?.name ?? '城市级威胁'}」在场（每3小时−1安定）` : `下次周期 Boss：第 ${state.nextBossDay} 日 21:00`}</small>
         </div>
       </div>
 
@@ -839,7 +841,7 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
       <section className="av-v4-ledger-section" aria-labelledby="av-record-soul-title">
         <div className="av-log-head">
           <h2 id="av-record-soul-title"><Flame size={14} />灵魂宝石侵蚀与契约监理台账<small>契约者 {state.girls.length} 名 · 抑制剂库存 {state.inventory['moon-drug'] ?? 0} 支</small></h2>
-          {state.boss && <span className="av-boss-record-flag"><Siren size={12} />周期 Boss「空月」在场</span>}
+          {state.boss && <span className="av-boss-record-flag"><Siren size={12} />周期 Boss「{currentBoss(state)?.name ?? '城市级威胁'}」在场</span>}
         </div>
         <div className="av-soul-ledger-grid">
           {state.girls.map(g => {

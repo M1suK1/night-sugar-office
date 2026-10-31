@@ -554,6 +554,7 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
 function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
   const path = 'monster';
   const body = record(ctx, value, path);
+  const stats = parseStats(ctx, body.stats, `${path}.stats`, 30, 110, 60);
   const skillIds = stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 4);
   for (const id of skillIds) {
     if (!findAnySkill(id)) { error(ctx, `${path}.skillIds`, `技能「${id}」不在技能目录里`); continue; }
@@ -570,8 +571,9 @@ function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
     habit: text(ctx, body.habit, `${path}.habit`, 160),
     weakness: text(ctx, body.weakness, `${path}.weakness`, 160),
     maxHp: integer(ctx, body.maxHp, `${path}.maxHp`, 60, 240, 120),
-    maxSpirit: integer(ctx, body.maxSpirit, `${path}.maxSpirit`, 40, 140, 80),
-    stats: parseStats(ctx, body.stats, `${path}.stats`, 30, 110, 60),
+    // v25 起心防不再单独给数：它等于共情 × 2，由 stats 推出。
+    maxSpirit: stats.empathy * 2,
+    stats,
     skillIds,
     rules: parseRules(ctx, body.rules, `${path}.rules`),
   };
@@ -634,7 +636,7 @@ function parseCandidate(ctx: Ctx, value: unknown): NightCandidateSpec {
     quote: text(ctx, body.quote, `${path}.quote`, 40),
     goal: text(ctx, body.goal, `${path}.goal`, 120),
     goalKind: choice(ctx, body.goalKind, NIGHT_GOALS, `${path}.goalKind`, '生活'),
-    appearance: text(ctx, body.appearance, `${path}.appearance`, 180),
+    appearance: text(ctx, body.appearance, `${path}.appearance`, 200),
     personality: text(ctx, body.personality, `${path}.personality`, 180),
     outfit: text(ctx, body.outfit, `${path}.outfit`, 180),
   };
@@ -703,7 +705,7 @@ export function buildNightCatalog(state: GameState): NightCatalog {
     ],
     pool: {
       missions: Math.max(0, state.poolLimits.missions - state.missions.filter(mission => mission.status !== 'done').length),
-      monsters: Math.max(0, state.poolLimits.monsters - (state.customMonsters.length + monsters.length - state.removedMonsters.length)),
+      monsters: Math.max(0, state.poolLimits.monsters - state.customMonsters.filter(monster => !monster.id.startsWith('boss-mon-')).length),
       candidates: Math.max(0, state.poolLimits.candidates - state.candidates.length),
     },
     city: {
@@ -785,7 +787,7 @@ ${cityBlock}
 7. opinion.dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
 8. 魔物元素 ${names(NIGHT_ELEMENTS)}，位阶 ${names(NIGHT_RANKS)}；候选者职业 ${names(NIGHT_ARCHETYPES)}，目标类型 ${names(NIGHT_GOALS)}。
 9. 委托难度 ${names(NIGHT_DIFFICULTIES)}，工作类型 ${names(NIGHT_WORKS)}，时限 ${names(NIGHT_WINDOWS)}。
-10. 所有数值必须是整数。数值范围：魔物 maxHp 60–240、maxSpirit 40–140、四维 30–110、rules 最多 2 条；候选者四维 35–95 且总和 200–330、cost 200–900、level 1–5、技能 1–3 个；委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
+10. 所有数值必须是整数。数值范围：魔物 maxHp 60–240、四维 30–110（心防＝共情 × 2，不用单独给 maxSpirit）、rules 最多 2 条；候选者四维 35–95 且总和 200–330、cost 200–900、level 1–5、技能 1–3 个；委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
 11. loot 最多 2 件，每件属性总和 ≤8，最多 1 条 passive；rewardItemRef 可以指向 loot[].ref 或目录里的物品 id。
 12. 颜色、立绘、SVG、坐标、本地 id 由程序生成，不要填写。
 

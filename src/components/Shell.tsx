@@ -3,6 +3,7 @@ import type { FactionId, GameState } from '../types';
 import { clock } from '../game';
 import { cityStage, factionAttitude } from '../economy';
 import { factionInfo } from '../content/items';
+import { currentBoss } from '../content/bosses';
 
 export type Page = 'dispatch' | 'base' | 'market' | 'records' | 'council' | 'worldbook';
 const pages = [{ id: 'dispatch', label: '派遣', Icon: Map }, { id: 'base', label: '基地', Icon: House }, { id: 'council', label: '议会', Icon: Landmark }, { id: 'market', label: '市场', Icon: Gem }, { id: 'records', label: '记录', Icon: ScrollText }] as const;
@@ -55,12 +56,19 @@ export function Topbar({ state, onNotifications, onCommand, saved }: { state: Ga
       </div>
     </div>
     <div className="top-resources">
-      {state.boss && (
-        <div className="boss-banner" role="status" title="城市级威胁：空月降临。城市安定度正在下降。">
-          <Siren size={15} />
-          <span><small>城市级威胁</small><b>空月降临</b></span>
-        </div>
-      )}
+      {state.boss && (() => {
+        const boss = currentBoss(state);
+        const maxHp = state.boss.maxHp ?? boss?.maxHp ?? 0;
+        const hp = state.boss.hp ?? maxHp;
+        const pct = maxHp > 0 ? Math.round((hp / maxHp) * 100) : 0;
+        return (
+          <div className="boss-banner" role="status" id="boss-pressure" title={`城市级威胁：${boss?.name ?? '城市级威胁'}。城市安定度一直在下降。`}>
+            <Siren size={15} />
+            <span><small>城市级威胁</small><b>{boss?.name ?? '城市级威胁'}</b></span>
+            <em>血量 {hp} / {maxHp}（{pct}%）· 每日全城 +{boss?.pollutionPressure ?? 0} 污染</em>
+          </div>
+        );
+      })()}
       <div className="resource">
         <Sparkles size={17} />
         <span><small>星砂储备</small><b>{state.gold.toLocaleString('zh-CN')}</b></span>

@@ -1,5 +1,6 @@
 import { applyResignationChoice, applyResignations, tickStrain } from './resignations.ts';
-import type { ActionResult, BattleNote, FactionGirl, FactionLeader, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack } from './types';
+import type {
+  BossTemplate, ActionResult, BattleNote, FactionGirl, FactionLeader, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack, EquipmentTier } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { cardboxReport } from './cardbox.ts';
@@ -9,15 +10,19 @@ import { defaultWitchPersonality } from './personality.ts';
 import { endingLabel, ensureGraph, graphBeats, validateGraph } from './storygraph.ts';
 import { getSkill } from './content/skills.ts';
 import { registerItem } from './content/items.ts';
+import { tierFromPrice, tierOf } from './items.ts';
+import { BOSS_MONSTER_PREFIX, bosses, bossTemplateOf, currentBoss, pickBoss, spawnBossMonster } from './content/bosses.ts';
+import { ELITE_IDS } from './content/eliteBuffs.ts';
 import { customIncidentCards, customMissionTemplates } from './content/library.ts';
-import { simulateBattle, spiritMax, outcomeLabel, ROUND_MINUTES, MAX_ENEMIES } from './combat.ts';
+import { simulateBattle, outcomeLabel, ROUND_MINUTES, MAX_ENEMIES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
 import { battleExp, grantExp, investigationExp } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
 import { factionInfo, getItem, items } from './content/items.ts';
 import { monsters } from './content/monsters.ts';
+import { extraMissions } from './content/missions-extra.ts';
 import { STAT_JITTER, STAT_MIN, mulberry32 } from './content/archetypes.ts';
-import { advancedCost, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf, factionPrice, marketSize, marketUpgradeCost } from './economy.ts';
+import { advancedCost, corruptionStage, effectiveGuard, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf, factionPrice, marketSize, marketUpgradeCost } from './economy.ts';
 import { applyPct, districtAt, districts, type DistrictId } from './districts.ts';
 import { loadBalance, rules } from './balance.ts';
 import { SHIFT_START, SHIFT_END, WAVE_AT, WAVE_SIZES, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt, LONG_MIN_DAYS, LONG_MAX_DAYS, type CommissionWindow } from './shift.ts';
@@ -29,7 +34,7 @@ import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from './office.ts';
 import { HOSTILITY_PAIRS, applyHostility, clampHostility, hostilityGain, incidentHostility, initialHostility, makeTrack, pairOf } from './hostility.ts';
 import { frontLabel, openFrontIn, planFronts, resolveDueFronts } from './fronts.ts';
 import { INCIDENT_PENDING_LIMIT, blockingIncidents, dueIncidents, expireIncidents, incidentPending, markIncidentCooldown, topUpFromFallback, mergeIncidentPool } from './incidents.ts';
-import { clampPollution, districtName, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from './pollution.ts';
+import { clampPollution, difficultyWeights, districtName, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionFloor, pollutionForecast, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, purifyTo, repairPollution } from './pollution.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
@@ -318,8 +323,9 @@ function hydrate(girl: GirlInput): Girl {
   g.importedVariants = sanitizeExpressionVariants(g.importedVariants);
   g.maxHp = Math.max(40, effectiveMaxHp(g));
   g.hp = Math.min(g.hp, g.maxHp);
-  g.maxSpirit = Math.max(30, g.maxSpirit ?? spiritMax(g));
-  g.spirit = Math.min(g.spirit ?? g.maxSpirit, effectiveMaxSpirit(g));
+  // 心防不再是独立字段：它等于面板共情 × 2，读档时按当前属性重算。
+  g.maxSpirit = effectiveGuard(g);
+  g.spirit = g.spirit > 0 ? Math.min(g.spirit, g.maxSpirit) : g.maxSpirit;
   g.skill = getSkill(g.skills[g.skills.length - 1] ?? 'glimmer-spear').name;
   return g;
 }
@@ -359,7 +365,7 @@ function makeCandidate(state: GameState, level: number, salt = 0, tag?: GirlFact
   const baseMaxHp = Math.round(96 + stats.empathy * 0.3) + level * 4;
   return hydrate({
     id, name, codename: `${element.slice(0, 2)}协奏`, title: '刚刚递交契约的魔法少女', element, color, portrait: '',
-    level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80 + level * 2, maxSpirit: 80 + level * 2,
+    level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '', skills, description: '她的档案还很薄，只有一页训练记录和一张没有署名的推荐信。', cost: 1800 + level * 400 + Math.round((stats.magic + stats.insight + stats.agility + stats.empathy) * 4),
     scars: [], relationships: {}, archetype, quote: '请多指教。我会努力不拖后腿的。',
@@ -424,19 +430,78 @@ function pushCandidate(state: GameState, tag: GirlFaction, slots: number): void 
   state.candidates.push(girl);
 }
 
-export function makeFactionStock(faction: FactionId, day: number): MarketStockEntry[] {
-  const pool = items.filter(item => item.faction === faction);
+/** 商店的阶级权重：市场等级越高，高阶级越常出现。 */
+const STOCK_TIER_WEIGHT: Record<number, number[]> = {
+  1: [55, 30, 12, 3, 0],
+  2: [40, 32, 20, 7, 1],
+  3: [28, 30, 24, 14, 4],
+  4: [18, 26, 28, 20, 8],
+  5: [10, 20, 30, 28, 12],
+};
+
+export interface StockOptions {
+  /** 该势力当前声望：门槛不够的装备不摆出来。 */
+  standing?: number;
+  /** 市场等级：决定阶级权重。 */
+  marketLevel?: number;
+}
+
+function stockWeights(marketLevel: number): number[] {
+  const level = Math.max(1, Math.min(5, Math.round(marketLevel)));
+  return STOCK_TIER_WEIGHT[level] ?? STOCK_TIER_WEIGHT[5];
+}
+
+/** 不带保底的抽取：三件互不重复，按阶级加权。 */
+function stockPicks(faction: FactionId, day: number, standing: number, marketLevel: number): Equipment[] {
+  const pool = items.filter(item => item.faction === faction && item.standingReq <= standing);
   if (!pool.length) return [];
-  const picked: typeof pool = [];
+  const weights = stockWeights(marketLevel);
+  const picked: Equipment[] = [];
   for (let index = 0; index < 3; index++) {
-    const roll = hashText(`${faction}:${day}:${index}`);
-    const duplicate = index > 0 && roll % 100 < 32;
-    picked.push(duplicate ? picked[index - 1] : pool[roll % pool.length]);
+    // 先抽阶级，再从这一档里抽具体的一件；抽空了就往低阶退。
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const roll = hashText(`${faction}:${day}:${index}:${attempt}`);
+      const tiers: EquipmentTier[] = [1, 2, 3, 4, 5];
+      const usable = tiers.filter(tier => weights[tier - 1] > 0 && pool.some(item => tierOf(item) === tier && !picked.includes(item)));
+      if (!usable.length) break;
+      const total = usable.reduce((sum, tier) => sum + weights[tier - 1], 0);
+      let target = roll % total;
+      let chosenTier: EquipmentTier = usable[usable.length - 1];
+      for (const tier of usable) {
+        if (target < weights[tier - 1]) { chosenTier = tier; break; }
+        target -= weights[tier - 1];
+      }
+      const bag = pool.filter(item => tierOf(item) === chosenTier && !picked.includes(item));
+      if (!bag.length) continue;
+      picked.push(bag[hashText(`${faction}:${day}:${index}:${attempt}:item`) % bag.length]);
+      break;
+    }
+  }
+  return picked;
+}
+
+/** 连续五个商店日没出四阶以上时，今天第一件强制四阶。 */
+function topTierStreakBroken(faction: FactionId, day: number, standing: number, marketLevel: number): boolean {
+  if (day <= 5) return false;
+  for (let back = 1; back <= 5; back++) {
+    if (stockPicks(faction, day - back, standing, marketLevel).some(item => tierOf(item) >= 4)) return false;
+  }
+  return true;
+}
+
+export function makeFactionStock(faction: FactionId, day: number, options: StockOptions = {}): MarketStockEntry[] {
+  const standing = options.standing ?? 100;
+  const marketLevel = options.marketLevel ?? 1;
+  const picked = stockPicks(faction, day, standing, marketLevel);
+  if (!picked.length) return [];
+  if (marketLevel >= 3 && topTierStreakBroken(faction, day, standing, marketLevel)) {
+    const bag = items.filter(item => item.faction === faction && item.standingReq <= standing && tierOf(item) >= 4);
+    if (bag.length) picked[0] = bag[hashText(`${faction}:${day}:top`) % bag.length];
   }
   return picked.map((item, index) => ({ id: `stock-${faction}-${day}-${index}`, itemId: item.id, faction, sold: false }));
 }
-export function makeMarketStock(day: number): MarketStockEntry[] {
-  return (Object.keys(factionInfo) as FactionId[]).flatMap(faction => makeFactionStock(faction, day));
+export function makeMarketStock(day: number, options: StockOptions = {}): MarketStockEntry[] {
+  return (Object.keys(factionInfo) as FactionId[]).flatMap(faction => makeFactionStock(faction, day, options));
 }
 
 function addCorruption(state: GameState, girl: Girl, amount: number): void {
@@ -477,6 +542,9 @@ function drugTick(state: GameState, girl: Girl): void {
   }
 }
 
+/** 记忆清除：只清一条精神疤痕，不动等级。 */
+export const MEMORY_CLEAR_COST = 1200;
+
 const factionTaskTitle: Record<FactionId, string> = { witch: '月蚀庭的夜间取样', association: '星灯协会的失联信号', government: '市役所的封锁线缺口' };
 const factionEnemies: Record<FactionId, string[]> = { witch: ['mirror-nun', 'echo-cat'], association: ['sugar-moth', 'night-tram'], government: ['candy-king', 'echo-cat'] };
 const factionReward: Record<FactionId, number> = { witch: 900, association: 760, government: 820 };
@@ -492,12 +560,15 @@ function factionTask(state: GameState, faction: FactionId): Mission {
   });
 }
 
-function makeBossMission(state: GameState): Mission {
+/** 按 Boss 模板造一份常驻委托。血量不走 `enemyHpOverride`，而由 `state.boss.hp` 每场接续。 */
+function makeBossMission(state: GameState, boss: BossTemplate): Mission {
+  const monsterId = spawnBossMonster(state, boss);
   return annotateMission(state, {
-    id: `boss-${state.day}`, title: '空月降临', category: '城市级威胁', description: '钟楼上方的空月开始下坠。三个街区同时听见了没有来源的钟声。',
-    x: 50, y: 18, difficulty: '绝望', duration: 90, reward: 8000, requirement: 'magic', target: 95, window: 'long',
-    color: '#C9C4FF', status: 'open', squad: [], work: 'combat', enemyIds: ['hollow-moon', 'sugar-moth', 'echo-cat'],
-    rounds: 6, attempts: 0, recommendedLevel: 8, boss: true,
+    id: `boss-${boss.id}-${state.day}`, title: boss.name, category: '城市级威胁',
+    description: boss.blurb,
+    x: 50, y: 18, difficulty: '绝望', duration: boss.duration, reward: boss.reward, requirement: 'magic', target: 95, window: 'long',
+    color: boss.color, status: 'open', squad: [], work: 'combat', enemyIds: [monsterId],
+    rounds: Math.max(3, Math.round(boss.duration / ROUND_MINUTES)), attempts: 0, recommendedLevel: boss.recommendedLevel, boss: true,
   });
 }
 
@@ -536,22 +607,33 @@ function missionSnapshot(state: GameState, district: DistrictId, target: number,
   };
 }
 
+/**
+ * Boss 不撤离：`deadline` 字段留着给旧存档读，但不再参与判定。
+ * 它在场就一直扣声望，直到被清掉——这是「拖延要付账」的唯一来源。
+ */
 function bossTick(state: GameState, elapsed: number): void {
   if (!state.boss) return;
-  const now = state.day * 1440 + state.minutes;
-  if (now >= state.boss.deadline) {
-    state.reputation = Math.max(0, state.reputation - 6);
-    state.boss.defeated = true;
-    state.boss = null;
-    state.missions = state.missions.filter(m => m.id !== `boss-${state.bossCycle}`);
-    state.logs.unshift({ id: `log-boss-timeout-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'battle', text: '空月自行离开了城市上空。没有人感到轻松，安定度仍然下降了。' });
-    return;
-  }
   state.boss.lastTick += elapsed;
   while (state.boss.lastTick >= 180) {
     state.boss.lastTick -= 180;
     state.reputation = Math.max(0, state.reputation - 1);
   }
+}
+
+/**
+ * 击败 Boss：这一轮结束。
+ *
+ * 三件事一起做——九区污染清零、循环起点挪到今天、下一次登场排在 `defeatGapDays` 之后。
+ * 污染地板是跟着 `cycleStartDay` 走的，所以清零之后城市会从干净开始重新爬。
+ */
+function defeatBoss(state: GameState, day: number): void {
+  const boss = currentBoss(state) ?? pickBoss(state);
+  state.boss = null;
+  state.bossCycle += 1;
+  state.cycleStartDay = day;
+  state.nextBossDay = day + (boss.defeatGapDays ?? 10);
+  for (const district of Object.keys(state.pollution) as DistrictId[]) state.pollution[district] = 0;
+  state.logs.unshift({ id: `log-boss-defeat-${day}`, time: dateLabel(day, state.minutes), kind: 'battle', text: `${boss.name}倒了。整座城的糖味散了，九个街区的污染一起归零。` });
 }
 
 const conditionCatalog = [  { name: '夜惊', kind: 'debuff' as const, description: '连续几晚在同一个时刻惊醒，白天会下意识避开钟声。', stat: 'insight' as StatKey, amount: -3 },
@@ -676,7 +758,8 @@ function archive(state: GameState, kind: ChronicleEntry['kind'], title: string, 
 }
 // ---------------------------------------------------------------- 辖区与委托时段
 
-const baseCommissionPool = createSeedPack().missions.filter(m => !m.boss);
+// 委托模板池：seed-pack 的 7 条 + v24 补的 9 条 = 战斗 10 + 调查 6。
+const baseCommissionPool = [...createSeedPack().missions.filter(m => !m.boss), ...extraMissions];
 
 /** 把自制委托模板转成可进入轮转池的委托快照；坐标与时限由 makeCommission 再算。 */
 function missionSeed(template: MissionTemplate): Mission {
@@ -752,7 +835,89 @@ export function districtPin(districtId: DistrictId, salt: string): { x: number; 
   return { x: Math.round(baseX * 10) / 10, y: Math.round(baseY * 10) / 10 };
 }
 
+/** 随机抽取用的魔物池：剧情专属与 Boss 本体不进池，工坊删掉的也不算。 */
+function spawnableMonsters(state: GameState): MonsterTemplate[] {
+  const removed = new Set(state.removedMonsters ?? []);
+  const all = [...monsters, ...(state.customMonsters ?? [])];
+  const seen = new Set<string>();
+  return all.filter(monster => {
+    if (!monster || !monster.id) return false;
+    if (seen.has(monster.id)) return false;
+    if (monster.storyOnly || monster.bossOnly) return false;
+    if (monster.id.startsWith(BOSS_MONSTER_PREFIX)) return false;
+    if (removed.has(monster.id)) return false;
+    seen.add(monster.id);
+    return true;
+  });
+}
+
+/** 精英概率：低危 0，中危 8/15/25，高危 35/50/60（按污染 0 / ≥50 / ≥80）。 */
+export function eliteChance(difficulty: string, pollution: number): number {
+  const tier = pollution >= 80 ? 2 : pollution >= 50 ? 1 : 0;
+  if (difficulty === '中危') return [8, 15, 25][tier];
+  if (difficulty === '高危') return [35, 50, 60][tier];
+  if (difficulty === '绝望') return 100;
+  return 0;
+}
+
+export interface SpawnedEnemies { ids: string[]; buffs: (string | null)[]; }
+
+/**
+ * 按难度与污染抽敌人。
+ *
+ * 全部走 `hashText(missionId + …)`：同一单在同一天刷新出的结果稳定，测试可以钉死，
+ * 玩家重开也不会刷出另一批怪。
+ */
+export function rollEnemies(state: GameState, opts: { count: number; difficulty: string; pollution: number; missionId: string }): SpawnedEnemies {
+  const pool = spawnableMonsters(state);
+  if (!pool.length) return { ids: [], buffs: [] };
+  const count = Math.max(1, Math.min(MAX_ENEMIES, opts.count));
+  const ids: string[] = [];
+  const buffs: (string | null)[] = [];
+  for (let index = 0; index < count; index++) {
+    const seed = hashText(`${opts.missionId}:enemy:${index}:${opts.difficulty}`);
+    // 同一单里尽量避免重复：先按 seed 取，撞了就往后挪一格。
+    let pick = pool[seed % pool.length];
+    for (let attempt = 0; attempt < pool.length && ids.includes(pick.id); attempt++) {
+      pick = pool[(seed + attempt + 1) % pool.length];
+    }
+    ids.push(pick.id);
+    buffs.push(null);
+  }
+  // 每次最多一只精英：Boss 战不挂（阶段添怪已经是普通怪，再叠容易爆）。
+  const chance = eliteChance(opts.difficulty, opts.pollution);
+  if (chance > 0 && hashText(`${opts.missionId}:buff-roll`) % 100 < chance) {
+    const slot = hashText(`${opts.missionId}:buff-slot`) % ids.length;
+    buffs[slot] = ELITE_IDS[hashText(`${opts.missionId}:buff-pick`) % ELITE_IDS.length];
+  }
+  return { ids, buffs };
+}
+
+/** 污染度决定难度档：辖区越脏，高危与绝望越多。 */
+type DifficultyTier = '低危' | '中危' | '高危' | '绝望';
+function pickDifficulty(state: GameState, district: DistrictId, missionId: string): DifficultyTier {
+  const level = clampPollution(state.pollution?.[district] ?? 0);
+  const weights: Record<DifficultyTier, number> = difficultyWeights(level);
+  const order: DifficultyTier[] = ['低危', '中危', '高危', '绝望'];
+  let roll = hashText(`${missionId}:difficulty`) % 100;
+  for (const tier of order) {
+    roll -= weights[tier];
+    if (roll < 0) return tier;
+  }
+  return '低危';
+}
+
+/** 抽到的难度反向缩放模板：低危更短更便宜，绝望更长更贵、目标更高。 */
+const DIFFICULTY_SCALE: Record<DifficultyTier, { duration: number; reward: number; target: number; enemies: number[] }> = {
+  低危: { duration: 0.85, reward: 0.75, target: 0.90, enemies: [2] },
+  中危: { duration: 1.00, reward: 1.00, target: 1.00, enemies: [2, 3] },
+  高危: { duration: 1.25, reward: 1.40, target: 1.10, enemies: [3] },
+  绝望: { duration: 1.50, reward: 1.90, target: 1.20, enemies: [3, 4] },
+};
+const TARGET_CEILING = 96;
+
 /** 按辖区环境生成一份夜间委托。 */
+
 function makeCommission(state: GameState, wave: number, slot: number): Mission {
   const pool = commissionPool();
   const template = pool[hashText(`${state.day}:${wave}:${slot}:${districts[districtOrderFor(state.day, wave, slot)].id}`) % pool.length];
@@ -764,13 +929,33 @@ function makeCommission(state: GameState, wave: number, slot: number): Mission {
   const longDays = window === 'long'
     ? LONG_MIN_DAYS + (hashText(`long:${state.day}:${wave}:${slot}`) % (LONG_MAX_DAYS - LONG_MIN_DAYS + 1))
     : undefined;
-  const snapshot = missionSnapshot(state, regionId, template.target, template.reward);
-  const target = snapshot.target + (longDays ? (longDays - 2) * 2 : 0);
+  const id = `c-${state.day}-${wave}-${slot}-${template.id}`;
+  // v24：难度由这一片辖区自己的污染度抽，再反向缩放模板。
+  // 模板里写的 `difficulty` 只是基线，工坊预览与故事线套用才会用到它。
+  const difficulty = template.storylineId ? template.difficulty as DifficultyTier : pickDifficulty(state, regionId, id);
+  const scale = DIFFICULTY_SCALE[difficulty] ?? DIFFICULTY_SCALE['中危'];
+  const baseTarget = Math.round(template.target * scale.target);
+  const baseReward = Math.round(template.reward * scale.reward);
+  const snapshot = missionSnapshot(state, regionId, baseTarget, baseReward);
+  const target = Math.min(TARGET_CEILING, snapshot.target + (longDays ? (longDays - 2) * 2 : 0));
   const urgentBonus = window === 'urgent' ? 1.3 : 0.9 + 0.22 * (longDays ?? 2);
   const reward = Math.round(snapshot.reward * urgentBonus);
+  // 战斗委托的具体敌人也在这里抽：模板只写了要几只。
+  const count = template.work === 'combat'
+    ? ((template.enemyIds?.length ?? 0) > 0 && template.storylineId ? (template.enemyIds ?? []).length : (template.enemyCount ?? scale.enemies[hashText(`${id}:count`) % scale.enemies.length] ?? 2))
+    : 0;
+  const spawned = template.work === 'combat' ? rollEnemies(state, { count, difficulty, pollution: snapshot.pollutionAtSpawn ?? 0, missionId: id }) : { ids: [], buffs: [] };
+  const enemyIds = template.storylineId ? template.enemyIds : spawned.ids;
   return {
     ...clone(template),
-    id: `c-${state.day}-${wave}-${slot}-${template.id}`,
+    id,
+    difficulty,
+    scaledFrom: template.storylineId ? undefined : template.difficulty,
+    enemyIds,
+    enemyBuffs: enemyIds?.length ? spawned.buffs : undefined,
+    enemyCount: undefined,
+    duration: Math.round(template.duration * scale.duration),
+    recommendedLevel: template.storylineId ? template.recommendedLevel : Math.max(1, Math.min(8, (template.recommendedLevel ?? 3) + (difficulty === '绝望' ? 2 : difficulty === '高危' ? 1 : difficulty === '低危' ? -1 : 0))),
     district: regionId,
     window,
     wave,
@@ -793,7 +978,6 @@ function makeCommission(state: GameState, wave: number, slot: number): Mission {
     rounds: template.rounds ?? Math.max(2, Math.floor(template.duration / ROUND_MINUTES)),
     generated: false,
     sourcePack: 'shift',
-    recommendedLevel: template.recommendedLevel ?? 3,
   };
 }
 
@@ -918,7 +1102,14 @@ function closeShift(state: GameState): number {
     .sort((a, b) => (b.deadlineAt ?? 0) - (a.deadlineAt ?? 0))
     .slice(0, 8);
   const kept = new Set(longLeft.map(mission => mission.id));
-  state.missions = state.missions.filter(mission => mission.status === 'done' || mission.status === 'active' || kept.has(mission.id) || Boolean(mission.storylineId));
+  // Boss 委托没有接取时限，不能当普通短委托在打烊时清掉。
+  state.missions = state.missions.filter(mission => mission.status === 'done' || mission.status === 'active' || kept.has(mission.id) || Boolean(mission.storylineId) || Boolean(mission.boss));
+  // 打完的委托只留最近 30 条：`state.completed` 才是全量账本，事件池不该越滚越长。
+  const done = state.missions.filter(mission => mission.status === 'done');
+  if (done.length > 30) {
+    const drop = new Set(done.slice(0, done.length - 30).map(mission => mission.id));
+    state.missions = state.missions.filter(mission => !drop.has(mission.id));
+  }
   return before - state.missions.length;
 }
 
@@ -1340,13 +1531,13 @@ function ensureStoryCompanion(state: GameState, story: Storyline, beat: StoryBea
   state.candidates.unshift(hydrate({
     id, name: c.name.slice(0, 12), codename: c.codename.slice(0, 10) || '羁绊协奏', title: '被故事带进事务所的少女',
     element: c.element, color: c.color ?? '#e6a8c8', portrait: '', level: 6,
-    hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 88, maxSpirit: 88,
+    hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 12, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '', skills: ['glimmer-spear', 'peach-ward', 'starlight-fall'], description: c.appearance.slice(0, 160),
     cost: 2400, scars: [], relationships: {}, archetype: c.archetype, quote: c.quote ?? '……我跟着她来的。',
     goal: '弄清自己为什么会出现在这条故事里。', goalKind: '成长', traits: [], conditions: [],
     contractEndDay: 24, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
-    appearance: c.appearance.slice(0, 160), personality: c.personality.slice(0, 160),
+    appearance: c.appearance.slice(0, 200), personality: c.personality.slice(0, 160),
     outfitDescription: c.outfitDescription.slice(0, 160),
     wardrobe: [], outfitId: 'uniform', expression: 'calm', corruption: 0, equipment: {},
     candidateUntilDay: state.day + 6,
@@ -1732,7 +1923,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     { id: 'l-3', time: '第 14 日 · 20:40', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   const state: GameState = {
-    version: 16, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    version: 18, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     prologueSeen: false,
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
@@ -1742,7 +1933,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
@@ -1760,7 +1951,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
 /** 全空档案：只有启动资金、一间会客厅和城里的九片辖区。 */
 export function createBlankState(pack: ContentPack = createSeedPack(), seed = `${pack.hash}:${Math.random()}`): GameState {
   const state: GameState = {
-    version: 16, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    version: 18, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     prologueSeen: false,
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
@@ -1775,7 +1966,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     samples: sampleDays(), messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: 16, customSkills: [], customMonsters: [], generatedItems: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
@@ -1813,7 +2004,7 @@ function applyScar(state: GameState, girl: Girl, scar: Scar): void {
     const key = effect.stat as StatKey;
     girl.stats[key] = Math.max(20, girl.stats[key] + effect.amount);
   }
-  if (effect.kind === 'maxSpirit') girl.maxSpirit = Math.max(30, girl.maxSpirit + effect.amount);
+  if (effect.kind === 'maxSpirit') girl.maxSpirit = effectiveGuard(girl);
   state.logs.unshift({ id: `log-scar-${scar.id}`, time: dateLabel(state.day, state.minutes), kind: 'memorial', text: `${girl.name}留下了第 ${girl.scars.length} 道疤痕「${scar.name}」。${scar.condition}。` });
 }
 function recordBattle(state: GameState, battle: BattleState): void {
@@ -1896,9 +2087,11 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
   const enemies = interception ? pool.filter(girl => interception.girlIds.includes(girl.id)) : [];
   const battle = simulateBattle({
     mission, girls: squad, day: at.day, minutes: at.minutes,
-    woundedEnemies: mission.worsened, monsters: state.customMonsters,
+    // Boss 是消耗战：血量接着上一场剩的，所以「带伤 -20%」对它不生效。
+    woundedEnemies: mission.boss ? false : mission.worsened, monsters: state.customMonsters,
     battleKind: interception ? 'interception' : 'commission',
     enemyGirls: interception ? enemies : undefined,
+    enemyHpOverride: mission.boss && state.boss ? [state.boss.hp ?? state.boss.maxHp ?? 0] : undefined,
   });
   mission.attempts += 1;
   mission.lastOutcome = battle.outcome;
@@ -1918,8 +2111,8 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
       state.reputation = Math.max(0, Math.min(100, state.reputation + (mission.faction === 'witch' ? -2 : mission.faction === 'association' ? 2 : 1)));
       if (mission.faction === 'witch') applyWitchBounty(state);
     }
-    if (mission.boss && state.boss) { state.boss = null; state.bossCycle += 1; }
-    state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗胜利：${mission.title}。魔物已被清除，事件移出委托池。${mission.boss ? '空月退去，城市恢复呼吸。' : ''}`, delta: rewards.gold });
+    if (mission.boss && state.boss) defeatBoss(state, at.day);
+    state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗胜利：${mission.title}。魔物已被清除，事件移出委托池。${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
   } else if (battle.outcome === 'defeat') {
     state.reputation = Math.max(0, state.reputation - 3);
     if (mission.faction) state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
@@ -1942,11 +2135,16 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     mission.girlId = undefined;
     state.logs.unshift({ id: `log-repel-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome)}：${mission.title}。获得 ${rewards.gold} 星砂，魔物带伤退去（下次血量 -20%）。`, delta: rewards.gold });
   }
+  // 打完了就把 Boss 剩下的血记下来：下一场从这儿开打，失败也不白跑。
+  if (mission.boss && state.boss) {
+    const bossUnit = battle.units.find(u => u.side === 'enemy' && u.uid.startsWith('enemy-0-'));
+    if (bossUnit) state.boss.hp = Math.max(0, Math.round(bossUnit.hp));
+  }
   for (const unit of battle.units.filter(u => u.side === 'ally')) {
     const girl = findGirl(state, unit.uid.replace('ally-', ''));
     if (!girl) continue;
     girl.hp = Math.max(1, unit.hp);
-    girl.spirit = Math.max(0, unit.spirit);
+    girl.spirit = effectiveGuard(girl);
     if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
       grantExp(girl, battleExp(mission.recommendedLevel));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
@@ -1983,6 +2181,12 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     }
   }
   applySettleEnvironment(state, mission, squad.filter(girl => !girl.dead));
+  // 疤痕会削共情，心防得跟着重算，战后再统一回满。
+  for (const girl of squad) {
+    if (girl.dead) continue;
+    girl.maxSpirit = effectiveGuard(girl);
+    girl.spirit = girl.maxSpirit;
+  }
   // 拦截战不净化污染、也不换辖区：这不是完成委托，只是把那张单子打作废。
   if (!interception) {
     applyPollutionRelief(state, mission, battle.outcome === 'victory' ? 'win' : 'loss');
@@ -2063,11 +2267,13 @@ function applySettleEnvironment(state: GameState, mission: Mission, squad: Girl[
  */
 function applyPollutionRelief(state: GameState, mission: Mission, result: 'win' | 'loss'): number {
   const district = mission.district;
-  if (!district) return 0;
+  // Boss 打完是整城清零（见 defeatBoss），这里再擦一下会把它重新顶回地板。
+  if (!district || mission.boss) return 0;
   const before = clampPollution(state.pollution?.[district] ?? 0);
   const snapshot = pollutionSnapshotOf(state, mission);
   const relief = result === 'win' ? pollutionRelief(snapshot) : -pollutionPenalty(snapshot);
-  const after = clampPollution(before - relief);
+  // 擦不到地板以下：地板涨到 27 的那天，再怎么净化也只能拖慢一点点。
+  const after = relief > 0 ? purifyTo(state, before, relief) : clampPollution(before - relief);
   state.pollution[district] = after;
   const ownerName = factionName[snapshot.owner] ?? snapshot.owner;
   state.logs.unshift({
@@ -2236,9 +2442,13 @@ function processDay(state: GameState): void {
   // 污染只自然上涨，任何势力都不加也不减；三方只影响「完成委托后净化多少」。
   // 只在跨档时写日志，避免每天九条噪声。
   if (state.pollution) {
+    // v24 的污染是一条循环：地板随时间抬高 → 自然上升 → Boss 在场时全城一起被压。
+    // 顺序不能换：先抬地板，昨天擦干净的地方才会重新脏起来。
+    const floor = pollutionFloor(state);
+    const pressure = state.boss ? bossTemplateOf(state, state.boss.template)?.pollutionPressure ?? 0 : 0;
     for (const id of Object.keys(state.pollution) as DistrictId[]) {
-      const level = clampPollution(state.pollution[id]);
-      const next = clampPollution(level + pollutionDailyRise(level));
+      const level = clampPollution(Math.max(state.pollution[id], floor));
+      const next = clampPollution(clampPollution(level + pollutionDailyRise(level)) + pressure);
       state.pollution[id] = next;
       if (pollutionTier(next) !== pollutionTier(level)) {
         state.logs.unshift({
@@ -2251,7 +2461,8 @@ function processDay(state: GameState): void {
   for (const faction of Object.keys(state.factions) as FactionId[]) {
     if (state.factions[faction].stockDay < state.day) {
       state.factions[faction].stockDay = state.day;
-      state.marketStock = state.marketStock.filter(entry => entry.faction !== faction).concat(makeFactionStock(faction, state.day));
+      state.marketStock = state.marketStock.filter(entry => entry.faction !== faction)
+        .concat(makeFactionStock(faction, state.day, { standing: state.factions[faction].standing, marketLevel: state.marketLevel }));
     }
     if (state.factions[faction].envoyDay < state.day) {
       state.factions[faction].envoyDay = state.day;
@@ -2261,11 +2472,12 @@ function processDay(state: GameState): void {
   if (state.marketDay < state.day) refreshMarket(state);
   if (state.day >= state.nextBossDay && !state.boss) {
     state.bossCycle += 1;
-    const mission = makeBossMission(state);
+    const boss = pickBoss(state);
+    const mission = makeBossMission(state, boss);
     state.missions.unshift(mission);
-    state.boss = { id: `boss-${state.bossCycle}`, appearedDay: state.day, lastTick: 0, deadline: state.day * 1440 + 48 * 60, missionId: mission.id };
-    state.nextBossDay = state.day + 3;
-    state.logs.unshift({ id: `log-boss-${state.bossCycle}`, time: dateLabel(state.day, state.minutes), kind: 'battle', text: '空月出现在钟楼上空。城市进入最高警戒，委托池新增城市级威胁。' });
+    // `nextBossDay` 只在击败时按 `defeatGapDays` 写，这里不写——它要一直挂着。
+    state.boss = { id: `boss-${state.bossCycle}`, appearedDay: state.day, lastTick: 0, deadline: state.day * 1440, missionId: mission.id, template: boss.id, maxHp: boss.maxHp, hp: boss.maxHp };
+    state.logs.unshift({ id: `log-boss-${state.bossCycle}`, time: dateLabel(state.day, state.minutes), kind: 'battle', text: `${boss.name}坐上了游乐场中央那把椅子。城市进入最高警戒，委托池新增城市级威胁。` });
   }
   // 敌意值满 100 就在这一天变成两条街上的战线；没人管的话到点自己打完。
   planFronts(state, { day: state.day, minutes: state.minutes });
@@ -2668,7 +2880,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         id: leader.id, name: leader.name, codename: leaderTitle(leader, owner), title: leaderTitle(leader, owner),
         element: (owner === 'association' ? '星光系' : owner === 'government' ? '糖霜系' : '月影系') as Girl['element'], color: leader.color, portrait: '', portraitSpec: leader.portraitSpec,
         level: leader.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp,
-        spirit: 80 + leader.level * 2, maxSpirit: 80 + leader.level * 2,
+        spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 40, exp: 0, stats: { ...leader.stats }, baseStats: { ...leader.stats },
         status: 'idle', roomId: 'lounge', remaining: 0, skill: '', skills: [...leader.skillIds],
         description: leader.note, cost: 0, scars: [], relationships: {}, archetype: leader.archetype,
@@ -2780,11 +2992,31 @@ export function act(state: GameState, action: GameAction): ActionResult {
         girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
         girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
         girl.hp = girl.maxHp;
-        girl.maxSpirit = Math.max(30, girl.maxSpirit - (oldLevel - 1) * 2);
+        girl.maxSpirit = effectiveGuard(girl);
         girl.spirit = girl.maxSpirit;
         girl.status = 'idle'; girl.remaining = 0; girl.conditions = [];
         next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级与能力回到起点，疤痕仍在。`, delta: -4000 });
         return { state: next, ok: true, message: `${girl.name}的能力已重塑至 1 级。` };
+      }
+      if (action.mode === 'clear') {
+        if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆清除。' };
+        const mental = girl.scars.filter(scar => scar.kind === 'mental');
+        if (!mental.length) return { state, ok: false, message: `${girl.name}没有可清除的精神疤痕。` };
+        if (next.gold < MEMORY_CLEAR_COST) return { state, ok: false, message: `记忆清除需要 ${MEMORY_CLEAR_COST.toLocaleString('en-US')} 星砂。` };
+        const target = mental.find(scar => scar.id === action.clearScarId) ?? mental[0];
+        next.gold -= MEMORY_CLEAR_COST; book(next, next.day, -MEMORY_CLEAR_COST);
+        girl.scars = girl.scars.filter(scar => scar.id !== target.id);
+        // 疤痕少了，上限跟着回来：血量按剩余疤痕重算，心防按当前共情重算。
+        girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
+        girl.hp = Math.min(girl.hp, girl.maxHp);
+        girl.maxSpirit = effectiveGuard(girl);
+        girl.spirit = girl.maxSpirit;
+        next.logs.unshift({
+          id: `log-clear-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'clinic',
+          text: `${girl.name}做了一次记忆清除。「${target.name}」被折好收进档案袋，等级与能力没有动。`,
+          delta: -MEMORY_CLEAR_COST,
+        });
+        return { state: next, ok: true, message: `${girl.name}的精神疤痕「${target.name}」已被清除。` };
       }
       if (action.mode === 'clone') {
         if (girl.cloneOf || girl.generation) return { state, ok: false, message: '复制体不能再次被复制。' };
@@ -2796,7 +3028,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
         const copy: Girl = {
           ...clone(girl), id: `g_${seed}`, name: `${girl.name}·复制体`, codename: `${girl.codename} II`, level: 1, exp: 0,
           stats: { ...girl.baseStats }, hp: girl.baseMaxHp, maxHp: girl.baseMaxHp, baseMaxHp: girl.baseMaxHp,
-          spirit: Math.max(30, girl.maxSpirit - (girl.level - 1) * 2), maxSpirit: Math.max(30, girl.maxSpirit - (girl.level - 1) * 2),
+          spirit: 0, maxSpirit: 0,
           fatigue: 0, bond: 20, status: 'idle', roomId: 'lounge', remaining: 0, scars: [], conditions: [],
           relationships: {}, retired: false, dead: false, retiredReason: undefined, cloneOf: girl.id, generation: (girl.generation ?? 0) + 1,
           contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, missionId: undefined,
@@ -3048,7 +3280,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const girl = hydrate({
         id, name: g.name, codename: g.codename, title: g.title, element: g.element, color: g.color,
         factionTag: cardOrigin,
-        portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
+        portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: 1800 + g.level * 220,
         scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
@@ -3121,7 +3353,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
       }
       const girl = hydrate({
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
-        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 80, maxSpirit: 80,
+        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: 1800 + Math.max(0, sum - 260) * 40 + extra,
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
@@ -3551,7 +3783,10 @@ export function canAcceptGeneratedContent(state: GameState): { ok: boolean; mess
   const open = state.missions.filter(m => m.status !== 'done').length;
   if (open + 2 > state.poolLimits.missions) return { ok: false, message: '事件池至少需要两个空位，先移除事件再生成。' };
   if (state.candidates.length >= state.poolLimits.candidates) return { ok: false, message: '市场池已满，先移除一位候选者再生成。' };
-  if (state.customMonsters.length + monsters.length - state.removedMonsters.length >= state.poolLimits.monsters) return { ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
+  // 上限管的是这一档里自己长出来的魔物；内置那 21 只是内容库，不该占玩家的池子。
+  // Boss 副本是系统自己合成的，不占玩家的魔物池名额。
+  const owned = state.customMonsters.filter(monster => !monster.id.startsWith(BOSS_MONSTER_PREFIX));
+  if (owned.length >= state.poolLimits.monsters) return { ok: false, message: '魔物池已满，先移除一只魔物再生成。' };
   return { ok: true, message: '' };
 }
 
@@ -3589,7 +3824,7 @@ function migrate(raw: Record<string, unknown>): GameState | null {
     const oldGirls = Array.isArray(raw.girls) ? raw.girls as Girl[] : [];
     const girls = oldGirls.length ? oldGirls.map(g => {
       const seed = pack.girls.find(s => s.id === g.id);
-      return hydrate({ ...(seed ?? base.girls[0]), ...g, skills: seed?.skills ?? defaultSkills(g.id), scars: [], relationships: seed?.relationships ?? {}, baseMaxHp: g.maxHp, spirit: seed?.spirit ?? 80, maxSpirit: seed?.maxSpirit ?? 80, exp: 0 });
+      return hydrate({ ...(seed ?? base.girls[0]), ...g, skills: seed?.skills ?? defaultSkills(g.id), scars: [], relationships: seed?.relationships ?? {}, baseMaxHp: g.maxHp, spirit: seed?.spirit ?? 0, maxSpirit: seed?.maxSpirit ?? 0, exp: 0 });
     }) : base.girls;
     const missions = base.missions.map(m => {
       const old = (raw.missions as Mission[] | undefined)?.find(x => x.id === m.id);
@@ -3632,7 +3867,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(value.version as number)) return createInitialState();
   try {
     const blankSave = value.blank === true;
     if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
@@ -3666,7 +3901,7 @@ export function loadState(raw: string | null): GameState {
     }
     const state = clone(value) as unknown as GameState;
     const previousVersion = Number(value.version);
-    state.version = 16;
+    state.version = 18;
     // 老存档不该被开场打断：只有本版之后新建的档才可能没看过。
     state.prologueSeen = previousVersion >= 15 ? value.prologueSeen !== false : true;
     // 阵容：老存档直接沿用静态名册，编成保持“已完成”，不再逼老玩家重选。
@@ -3744,6 +3979,8 @@ export function loadState(raw: string | null): GameState {
         if (girl.status === 'healing' || girl.status === 'resting') { girl.status = 'idle'; girl.remaining = 0; }
       }
     }
+    if (previousVersion < 17) migrateGuardFields(state);
+    if (previousVersion < 18) migrateTierFields(state);
     state.blank = value.blank === true;
     state.memorial ??= []; state.battles = Array.isArray(state.battles) ? state.battles.slice(0, 20) : [];
     const battleIds = new Set(state.battles.map(battle => battle.id));
@@ -3784,7 +4021,9 @@ export function loadState(raw: string | null): GameState {
       return typeof candidate.id === 'string' && Boolean(item) && item!.faction === candidate.faction && typeof candidate.sold === 'boolean';
     }).slice(0, 24);
     for (const faction of Object.keys(state.factions) as FactionId[]) {
-      if (!state.marketStock.some(entry => entry.faction === faction)) state.marketStock = state.marketStock.concat(makeFactionStock(faction, state.day));
+      if (!state.marketStock.some(entry => entry.faction === faction)) {
+        state.marketStock = state.marketStock.concat(makeFactionStock(faction, state.day, { standing: state.factions[faction].standing, marketLevel: state.marketLevel }));
+      }
     }
     state.marketStock = state.marketStock.filter((entry, index, list) => list.findIndex(other => other.id === entry.id) === index);
     state.marketLevel = Math.max(1, Math.min(4, Number(state.marketLevel) || 1));
@@ -3801,13 +4040,61 @@ export function loadState(raw: string | null): GameState {
   } catch { return createInitialState(); }
 }
 
+/**
+ * v25 迁移：共情值从「第二条血条」变成「心防」。
+ *
+ * 旧存档里 `maxSpirit` / `spiritBonus` / `spiritBonusPct` 三种写法都有，
+ * 统一折成「共情 × 2 + 百分比」：绝对值按 ×1.5 折算，然后一律清空。
+ */
+function migrateGuardFields(state: GameState): void {
+  const equipment = [...items, ...(state.generatedItems ?? [])];
+  for (const item of equipment) {
+    if (!item) continue;
+    if (typeof item.spiritBonus === 'number' && item.spiritBonus > 0) {
+      item.spiritBonusPct = Math.max(item.spiritBonusPct ?? 0, Math.round(item.spiritBonus * 1.5));
+    }
+    delete item.spiritBonus;
+    if (item.spiritBonusPct !== undefined) item.spiritBonusPct = Math.max(0, Math.min(60, Math.round(item.spiritBonusPct)));
+  }
+  for (const girl of state.girls) {
+    girl.maxSpirit = effectiveGuard(girl);
+    // 旧值 82–100 在新口径下没有意义，读档一律视为满值。
+    girl.spirit = girl.maxSpirit;
+  }
+}
+
+/**
+ * v24：装备补阶级、Boss 补模板与血量、污染循环补起始日。
+ * 一律只补字段，不重写既有委托与既有 Boss 委托。
+ */
+function migrateTierFields(state: GameState): void {
+  const equipment = [...items, ...(state.generatedItems ?? [])];
+  for (const item of equipment) {
+    if (!item) continue;
+    if (item.tier === undefined) item.tier = tierFromPrice(item.price);
+  }
+  // 老档没有循环起点：从今天算起，地板从 3 开始涨，而不是一进来就顶到 30。
+  state.cycleStartDay = state.cycleStartDay ?? state.day;
+  state.customBosses = Array.isArray(state.customBosses) ? state.customBosses : [];
+  state.generatedItems = Array.isArray(state.generatedItems) ? state.generatedItems : [];
+  if (state.boss) {
+    state.boss.template = state.boss.template ?? 'boss-candy-throne';
+    state.boss.maxHp = state.boss.maxHp ?? bossTemplateOf(state, state.boss.template)?.maxHp ?? 2400;
+    state.boss.hp = state.boss.hp ?? state.boss.maxHp;
+  }
+  for (const mission of state.missions) {
+    if (!mission.boss) continue;
+    if (!mission.enemyBuffs) mission.enemyBuffs = (mission.enemyIds ?? []).map(() => null);
+  }
+}
+
 /** Strict import used by the save importer: malformed files must not silently reset progress. */
 export function importState(raw: string): GameState | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
-  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(Number(value.version))) return null;
+  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(Number(value.version))) return null;
   if (!Array.isArray(value.girls) || (!value.girls.length && value.blank !== true)) return null;
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;

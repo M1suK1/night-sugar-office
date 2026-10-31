@@ -36,7 +36,7 @@ function gearSummary(item: Equipment) {
 export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
-  onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  onClinic: (mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
   onExpressionVariants: () => void;
@@ -161,7 +161,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         <div id="dossier-tab-content" className="dossier-tab-body" role="tabpanel" aria-labelledby={`dossier-tab-${tab}`}>
           {tab === 'overview' && <>
             <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {effectiveMaxHp(girl)}</small></b></div><i><b style={{ width: `${girl.hp / effectiveMaxHp(girl) * 100}%` }} /></i></div>
-            <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>共情值</span><b>{girl.spirit}<small> / {effectiveMaxSpirit(girl)}</small></b></div><i><b style={{ width: `${girl.spirit / effectiveMaxSpirit(girl) * 100}%` }} /></i></div>
+            <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>心防</span><b id="girl-guard-value">{girl.spirit}<small> / {effectiveMaxSpirit(girl)}</small></b></div><i><b style={{ width: `${girl.spirit / effectiveMaxSpirit(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter fatigue"><div><BatteryMedium size={15} /><span>疲劳值</span><b>{girl.fatigue}<small> / 100</small></b></div><i><b style={{ width: `${girl.fatigue}%` }} /></i></div>
             <div className={`corruption-panel corruption-inline stage-${corruptionTier}`}>
               <div className="corruption-head"><span><Syringe size={14} />侵蚀度<em>{corruptionLabel}</em></span><b>{girl.corruption}<small> / 100</small></b></div>
@@ -359,6 +359,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <div className="modal-section-heading"><h3>月光诊所</h3><small>按缺失血量收费，按小时恢复；治疗期间不能派遣</small></div>
               <ClinicPanel state={state} girls={[girl]} onTreat={(_girlId, kink) => onClinic('treat', kink)} />
               <div className="clinic-grid">
+                <button id="clinic-clear" className="clinic-action" disabled={state.gold < 1200 || girl.status === 'mission' || girl.status === 'expedition' || !girl.scars.some(s => s.kind === 'mental')} onClick={() => onClinic('clear')}><Sparkles size={16} /><b>记忆清除</b><small>1,200 星砂 · 只清一条精神疤痕，不动等级</small></button>
                 <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性重置</small></button>
                 <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
               </div>

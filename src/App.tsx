@@ -63,7 +63,8 @@ import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDial
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
 import { districtOrder, districts, effectLines } from './districts';
 import { representativeOf } from './office';
-import { syncOfficeWorldbook } from './worldbook';
+import { syncBuiltinWorldbook, syncOfficeWorldbook } from './worldbook';
+import { downloadFile, readLocalFile, shortPath, writeLocalFile } from './localfiles';
 import './styles.css';
 import './combat.css';
 
@@ -277,7 +278,13 @@ export default function App() {
    * 之后玩家改档案或换代表才整条重写。读档时旧条目里残留的「月蚀教团」也在这里一并迁移。
    */
   useEffect(() => {
-    if (!officeSynced.current) { officeSynced.current = true; syncOfficeWorldbook(state.office, representativeOf(state), { onlyIfMissing: true }); return; }
+    if (!officeSynced.current) {
+      officeSynced.current = true;
+      // 常驻词条（空月、心防…）是这一版才有的说明书，老档不会自己长出来，启动时补齐。
+      syncBuiltinWorldbook();
+      syncOfficeWorldbook(state.office, representativeOf(state), { onlyIfMissing: true });
+      return;
+    }
     syncOfficeWorldbook(state.office, representativeOf(state));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.office, state.assistantId]);
@@ -432,12 +439,14 @@ export default function App() {
     }
     return perform({ type: 'talk', girlId: id, text, remote }, true);
   };
-  const exportCard = (girl: Parameters<typeof buildGirlCard>[0]) => {
+  const exportCard = async (girl: Parameters<typeof buildGirlCard>[0]) => {
     const card = buildGirlCard(girl, state);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(card, null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = girlCardFileName(card); document.body.appendChild(anchor); anchor.click(); anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(`契约卡「${girl.name}」已导出，可在新游戏中重新导入。`);
+    const name = girlCardFileName(card);
+    const text = JSON.stringify(card, null, 2);
+    const saved = await writeLocalFile('card', name, text);
+    if (saved) { notify(`契约卡「${girl.name}」已存进 ${shortPath(saved)}。`); return; }
+    downloadFile(name, text);
+    notify(`契约卡「${girl.name}」已导出到下载目录。`);
   };
   const importCard = async (file: File) => {
     if (file.size > 4_000_000) { notify('卡片文件超过 4MB，无法导入。', false); return; }
@@ -445,20 +454,25 @@ export default function App() {
     if (!parsed.ok) { notify(`导入失败：${parsed.message}`, false); return; }
     perform({ type: 'importCard', card: parsed.card });
   };
-  const exportSave = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `夜糖事务所-第${state.day}日存档.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const exportSave = async () => {
+    const name = `夜糖事务所-第${state.day}日存档.json`;
+    const text = JSON.stringify(state, null, 2);
+    const saved = await writeLocalFile('save', name, text);
+    if (saved) { notify(`当前存档已存进 ${shortPath(saved)}。`); return; }
+    downloadFile(name, text);
     notify('当前存档已导出到下载目录。');
   };
   const importSave = async (file: File) => {
     if (file.size > 6_000_000) { notify('存档文件超过 6MB，无法导入。', false); return; }
     const next = importState(await file.text());
+    if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
+    setModal(null);
+    setPendingSave(next);
+  };
+  const loadLocalSave = async (name: string) => {
+    const text = await readLocalFile('save', name);
+    if (!text) { notify(`读不到 ${name}，可能已经被移走了。`, false); return; }
+    const next = importState(text);
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
     setPendingSave(next);
@@ -816,7 +830,7 @@ export default function App() {
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
-      {modal.type === 'slots' && <SaveSlotsDialog onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} />}
+      {modal.type === 'slots' && <SaveSlotsDialog onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} />}
       {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) setModal(null); }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
       {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
@@ -877,7 +891,7 @@ export default function App() {
           }}
           onCommit={next => {
             setLibrary(next);
-            setState(current => ({ ...current, marketStock: withCustomStock(current.marketStock) }));
+            setState(current => ({ ...current, marketStock: withCustomStock(current.marketStock), customBosses: next.bosses }));
           }}
         />
       )}
@@ -901,7 +915,8 @@ export default function App() {
         <FrontDialog front={front} state={state} onJoin={(side, girlIds) => { perform({ type: 'joinFront', frontId: front.id, side, girlIds }); }} onClose={() => setModal(null)} />
       </Dialog>;
     })()}
-    {pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => { perform({ type: 'resolveIncident', incidentId: pendingIncident.id, ...(optionId ? { optionId } : {}) }); setIncidentFocus(null); }} onGirl={girl} />}
+    {/* 弹窗事件排队：对话框或开场演出还开着时先不弹，避免盖掉玩家正在做的事。 */}
+    {!modal && state.prologueSeen && pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => { perform({ type: 'resolveIncident', incidentId: pendingIncident.id, ...(optionId ? { optionId } : {}) }); setIncidentFocus(null); }} onGirl={girl} />}
     {modal?.type === 'event' && (() => {
       const target = state.events.find(event => event.id === modal.id);
       if (!target) return null;

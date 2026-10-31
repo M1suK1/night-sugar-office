@@ -764,3 +764,14 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
   .slot-actions .btn { flex: 1 1 auto; justify-content: center; }
   .slot-head { flex-wrap: wrap; gap: 6px; }
 }
+/* 项目目录里的存档 */
+.slot-local { margin: 10px 0 12px; padding: 11px 13px; border-radius: 11px; border: 1px dashed #ffffff16; background: #100e15; }
+.slot-local-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.slot-local-head span { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #cfc6d6; }
+.slot-local-head small { font-size: 10.5px; color: #7d7589; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.slot-local p { margin: 7px 0 0; font-size: 11.5px; }
+.slot-local-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; max-height: 132px; overflow: auto; }
+.slot-local-list li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #a79eb1; }
+.slot-local-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-local-meta { font-size: 10.5px; color: #746c80; }
+.slot-local-list .llm-reset { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }

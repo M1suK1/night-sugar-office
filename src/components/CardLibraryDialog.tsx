@@ -5,6 +5,7 @@ import {
 } from '../cardbox.ts';
 import type { CardBoxEntry } from '../cardbox.ts';
 import { girlFactionColors } from '../factions.ts';
+import { localPaths, shortPath } from '../localfiles.ts';
 import type { GirlCard } from '../types.ts';
 
 type Failure = { name: string; message: string };
@@ -29,9 +30,19 @@ export function CardLibraryDialog({ onImport, notify }: {
   const [busy, setBusy] = useState('');
   const [dir, setDir] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [defaultDir, setDefaultDir] = useState('');
   const folderRef = useRef<HTMLInputElement>(null);
   const shown = useMemo(() => cardboxFilter(entries, query), [entries, query]);
   const pickedSet = new Set(picked);
+
+  /** 本地服务报了默认目录就填上：契约卡默认存在项目的 data/cards 里。 */
+  useEffect(() => {
+    void localPaths().then(paths => {
+      if (!paths) return;
+      setDefaultDir(paths.cards);
+      setDir(current => current || paths.cards);
+    });
+  }, []);
 
   const toggle = (hash: string) => setPicked(list => list.includes(hash) ? list.filter(item => item !== hash) : [...list, hash]);
 
@@ -67,7 +78,7 @@ export function CardLibraryDialog({ onImport, notify }: {
 
   /** 走本地服务读路径：只有 npm run dev / start.cmd 起来的站点才有这个接口。 */
   const scanDir = async () => {
-    const target = dir.trim();
+    const target = dir.trim() || defaultDir;
     if (!target) { notify('先填一个目录，例如 G:\\cards 或 ~/cards。', false); return; }
     setScanning(true);
     try {
@@ -125,7 +136,7 @@ export function CardLibraryDialog({ onImport, notify }: {
           id="cardbox-dir"
           value={dir}
           spellCheck={false}
-          placeholder="填一个目录，例如 G:\cards 或 ~/cards"
+          placeholder={defaultDir ? `默认 ${shortPath(defaultDir)}` : '填一个目录，例如 G:\\cards 或 ~/cards'}
           onChange={event => setDir(event.currentTarget.value)}
           onKeyDown={event => { if (event.key === 'Enter') void scanDir(); }}
         />
@@ -147,7 +158,7 @@ export function CardLibraryDialog({ onImport, notify }: {
         onChange={event => { const files = [...(event.currentTarget.files ?? [])]; event.currentTarget.value = ''; void intake(files); }}
       />
     </div>
-    <p className="cardbox-tip"><Info size={11} />填路径只在 <code>npm run dev</code> / <code>start.cmd</code> 下有效；部署成静态站点时用「选择文件夹」，读的是同一个目录。</p>
+    <p className="cardbox-tip"><Info size={11} />导出的契约卡默认落在这里（{defaultDir ? <code>{shortPath(defaultDir)}</code> : <code>data/cards</code>}），「扫描并导入」读的就是它。只有 <code>npm run dev</code> / <code>start.cmd</code> 起的站点有本地接口；静态部署时用「选择文件夹」。</p>
 
     <div className="cardbox-tools">
       <label className="cardbox-search">

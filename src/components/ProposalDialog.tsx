@@ -43,7 +43,7 @@ export function ProposalDialog({ state, proposal, busy, onAccept, onRegenerate, 
         <header><span>01</span><div><b>今夜的魔物</b><small>{monster.rank} · {monster.element}</small></div></header>
         <h3>{monster.name}<em>{monster.epithet}</em></h3>
         <p>{monster.description}</p>
-        <div className="proposal-facts"><span>生命<b>{monster.maxHp}</b></span><span>精神力<b>{monster.maxSpirit}</b></span><span>技能<b>{monster.skillIds.join('、')}</b></span></div>
+        <div className="proposal-facts"><span>生命<b>{monster.maxHp}</b></span><span>心防<b>{monster.stats.empathy * 2}</b></span><span>技能<b>{monster.skillIds.join('、')}</b></span></div>
         <StatLine stats={monster.stats} />
         <p className="proposal-note">习性：{monster.habit} 弱点：{monster.weakness}</p>
         {monster.rules.length > 0 && <p className="proposal-note">规则：{monster.rules.map(rule => `${triggerLabels[rule.trigger]}/${ruleLabels[rule.effect]}${rule.amount !== undefined ? ` ${rule.amount}` : ''}`).join('；')}</p>}

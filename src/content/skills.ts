@@ -88,6 +88,8 @@ const seed: Seed[] = [
   ['cut-loss', '止损', '通用', 'hp', 0.46, 6, 'enemy', 3, 'signature', [], '割掉已经烂掉的部分，剩下的才守得住。', { accuracy: 26, selfCost: { resource: 'hp', pct: 8 } }],
   ['hold-the-line', '守住门口', '通用', 'spirit', 0, 2, 'ally', 3, 'signature', [{ kind: 'shield', amount: 20, duration: 2 }], '门后面是还睡着的人，所以这道门不能丢。'],
   ['night-prayer', '夜祷回响', '通用', 'spirit', 0.85, 2, 'ally', 3, 'signature', [{ kind: 'regen', amount: 9, duration: 2 }], '指环内侧的祷词被念出来时，伤口会先于记忆合拢。'],
+  ['star-vigil', '守夜灯', '通用', 'spirit', 0, 3, 'ally', 4, 'signature', [{ kind: 'shield', amount: 30, duration: 2 }, { kind: 'regen', amount: 6, duration: 2 }], '灯举起来的时候，站在光里的三个人都不许走失。'],
+  ['verdict-seal', '一纸裁决', '通用', 'hp', 1.15, 1, 'enemy', 4, 'ultimate', [{ kind: 'debuff', stat: 'hit', amount: 14, duration: 2 }], '把名字念完，把纸按下去；这一夜它就当作没有发生过。', { accuracy: 72 }],
 ];
 
 export const skills: Skill[] = seed.map(([id, name, school, resource, power, targets, side, cooldown, tier, effects, description, extra]) => {

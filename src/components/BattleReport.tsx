@@ -18,9 +18,15 @@ function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean
         {unit.down && <span className="down-stamp">无法行动</span>}
       </div>
       <div className="battle-unit-info">
-        <div className="battle-unit-name"><b>{unit.name}</b>{unit.side === 'enemy' && <small>{monster?.rank}</small>}</div>
+        <div className="battle-unit-name">
+          <b>{unit.name}</b>{unit.side === 'enemy' && <small>{monster?.rank}</small>}
+          {!unit.spiritBroken && unit.spirit > 0 && <em className="guard-tag">护持</em>}
+        </div>
         <div className="battle-bar hp"><i><b style={{ width: `${Math.max(0, unit.hp / unit.maxHp * 100)}%` }} /></i><span>{Math.max(0, unit.hp)}<small>/{unit.maxHp}</small></span></div>
-        <div className="battle-bar spirit"><i><b style={{ width: `${Math.max(0, unit.spirit / unit.maxSpirit * 100)}%` }} /></i><span>{Math.max(0, unit.spirit)}<small>/{unit.maxSpirit}</small></span></div>
+        <div className={`battle-bar guard ${unit.spiritBroken ? 'broken' : ''}`} id={`guard-bar-${unit.uid}`}>
+          <i><b style={{ width: `${Math.max(0, unit.spirit / Math.max(1, unit.maxSpirit) * 100)}%` }} /></i>
+          <span>{unit.spiritBroken ? '心防已破' : `心防 ${Math.max(0, unit.spirit)}`}<small>/{unit.maxSpirit}</small></span>
+        </div>
         {unit.effects.length > 0 && <div className="unit-effects">{unit.effects.filter(e => e.kind !== 'shield' || e.amount > 0).map((e, i) => {
           const Icon = effectIcons[e.kind] ?? Sparkles;
           const label = e.label ?? effectLabels[e.kind];
@@ -64,7 +70,8 @@ function EventRow({ event, units }: { event: BattleEvent; units: BattleUnit[] })
       <ArrowRight size={11} />
       <span className="event-skill">{event.skillName}</span>
       <span className="event-target">{event.targets.map(nameOf).join('、')}</span>
-      {event.amount !== undefined && <em className={event.resource === 'spirit' ? 'spirit' : ''}>{event.resource === 'spirit' ? '共情' : '血量'} {event.note?.includes('恢复') ? '+' : '−'}{event.amount}</em>}
+      {event.amount !== undefined && <em className={event.resource === 'spirit' ? 'spirit' : ''}>{event.resource === 'spirit' ? '心防' : '血量'} {event.note?.includes('恢复') ? '+' : '−'}{event.amount}</em>}
+      {event.note?.includes('共情被打穿') && <span className="event-break">心防破碎</span>}
       <small>{event.note}</small>
       {formula && <span className="event-formula">{formula}</span>}
     </li>

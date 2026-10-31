@@ -1,10 +1,43 @@
 import { chromium, expect } from '@playwright/test';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const baseURL = process.env.PROTOTYPE_URL ?? 'http://127.0.0.1:5173';
 fs.mkdirSync('artifacts', { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, deviceScaleFactor: 1 });
+// 导出现在有两个落点：有本地文件通道时直接写进项目 data/，没有时退回浏览器下载。
+const localDirs = { save: 'data/saves', card: 'data/cards' };
+let localApi = false;
+async function detectLocalApi() {
+  localApi = await page.evaluate(async () => {
+    try {
+      const data = JSON.parse(await (await fetch('/api/paths')).text());
+      return Boolean(data?.ok && data.saves && data.cards);
+    } catch { return false; }
+  });
+}
+/** 点导出按钮，返回真正落盘的那份文件。两种落点都覆盖。 */
+async function exportToFile(selector, kind) {
+  if (!localApi) {
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator(selector).click()]);
+    return { name: download.suggestedFilename(), path: await download.path() };
+  }
+  const dir = localDirs[kind];
+  fs.mkdirSync(dir, { recursive: true });
+  // 同名文件会被覆盖，所以按修改时间找，不能按文件名差集找。
+  const started = Date.now();
+  await page.locator(selector).click();
+  for (let round = 0; round < 80; round += 1) {
+    const fresh = fs.readdirSync(dir)
+      .map(name => ({ name, stat: fs.statSync(path.join(dir, name)) }))
+      .filter(row => row.stat.isFile() && row.stat.mtimeMs >= started - 20)
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+    if (fresh.length) return { name: fresh[0].name, path: path.join(dir, fresh[0].name) };
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`导出没有落到 ${dir} 里`);
+}
 // 开场三层是模态的：除了专门测它的那条流程，其余流程统一点掉，免得挡住后续点击。
 await page.addInitScript(() => {
   const tick = () => {
@@ -137,6 +170,7 @@ async function layout(label) {
 }
 try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
+  await detectLocalApi();
   await resetAll(); await page.reload({ waitUntil: 'networkidle' }); await page.evaluate(async () => document.fonts.ready);
   await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '1'));
   await page.locator('#start-standard').click();
@@ -311,7 +345,7 @@ try {
   });
   await check('图鉴与纪念墙始终可从侧栏进入', async () => {
     await page.locator('#open-codex').click();
-    await expect(page.locator('.codex-list button')).toHaveCount(6);
+    await expect(page.locator('.codex-list button')).toHaveCount(22);
     await page.locator('#codex-hollow-moon').click();
     await expect(page.locator('.codex-detail')).toContainText('空月');
     await page.screenshot({ path: 'artifacts/codex-desktop.png', fullPage: true, animations: 'disabled' });
@@ -397,9 +431,8 @@ try {
     expect((await stored()).girls.find(g => g.id === 'yue').status).toBe('resting');
     await close();
     await page.locator('#open-settings').click();
-    const download = page.waitForEvent('download');
-    await page.locator('#settings-export-save').click();
-    expect((await download).suggestedFilename()).toContain('存档.json');
+    const exported = await exportToFile('#settings-export-save', 'save');
+    expect(exported.name).toContain('存档.json');
     await close();
     await page.locator('#open-notifications').click(); await expect(page.locator('.notification-list')).toBeVisible(); await close();
     const before = await stored(); await page.reload({ waitUntil: 'networkidle' });
@@ -586,11 +619,12 @@ try {
       const raw = await readSave();
       const yue = raw.girls.find(g => g.id === 'yue');
       yue.witch = true; yue.corruption = 80; yue.withdrawalDays = 5; yue.drugUntilDay = 13; yue.status = 'idle';
-      raw.boss = { id: 'boss-test', appearedDay: raw.day, lastTick: 0, deadline: raw.day * 1440 + 1200, missionId: 'boss-test' };
+      raw.boss = { id: 'boss-test', appearedDay: raw.day, lastTick: 0, deadline: raw.day * 1440 + 1200, missionId: 'boss-test', template: 'boss-candy-throne', maxHp: 2400, hp: 2400 };
       await writeSave(raw);
     }
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.locator('.boss-banner')).toContainText('空月降临');
+    await expect(page.locator('.boss-banner')).toContainText('糖霜王座');
+    await expect(page.locator('.boss-banner')).toContainText('每日全城');
     await expect(page.locator('.girl-roster-card:has(#roster-girl-yue)')).toContainText('断药');
     await page.locator('#mission-station').click();
     await expect(page.locator('#assign-yue')).toBeDisabled();
@@ -869,9 +903,9 @@ try {
     await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#roster-girl-yue').click();
-    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#girl-export-card').click()]);
-    const cardPath = await download.path();
-    expect(download.suggestedFilename()).toContain('契约卡-月见桃');
+    const exportedCard = await exportToFile('#girl-export-card', 'card');
+    const cardPath = exportedCard.path;
+    expect(exportedCard.name).toContain('契约卡-月见桃');
     const card = JSON.parse(fs.readFileSync(cardPath, 'utf8'));
     expect(card.format).toBe('night-sugar/girl-card');
     expect(card.girl.name).toBe('月见桃');
@@ -1044,8 +1078,8 @@ try {
     await page.locator('#advance-time-30').click();
     const before = await stored();
     await page.locator('#open-settings').click();
-    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export-save').click()]);
-    const savePath = await download.path();
+    const exportedSave = await exportToFile('#settings-export-save', 'save');
+    const savePath = exportedSave.path;
     const exported = JSON.parse(fs.readFileSync(savePath, 'utf8'));
     expect(exported.day).toBe(before.day);
     expect(exported.girls.length).toBe(before.girls.length);
@@ -1530,8 +1564,8 @@ try {
     await page.screenshot({ path: 'artifacts/worldbook-entries.png', fullPage: true, animations: 'disabled' });
     await page.locator('#worldbook-new').click();
     // v21 给内置词条加了「空月」，比 v20 多一条。
-    await expect(page.locator('.wb-item')).toHaveCount(17);
-    await expect.poll(async () => JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(17);
+    await expect(page.locator('.wb-item')).toHaveCount(18);
+    await expect.poll(async () => JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:worldbook') ?? '[]')).length).toBe(18);
     await page.locator('#worldbook-tab-balance').click();
     await page.locator('#balance-clinicBase').fill('150');
     await expect.poll(async () => JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:balance') ?? '{}')).clinicBase).toBe(150);
@@ -1631,7 +1665,12 @@ try {
     await page.locator('#workshop-mission-requirement').selectOption('empathy');
     await expect(page.locator('#workshop-mission-enemy-0')).toBeVisible();
     await page.locator('#workshop-mission-enemy-filter-0').selectOption('游荡');
-    await expect(page.locator('#workshop-mission-enemy-0 option')).toHaveCount(2);
+    // v24 把游荡层的魔物扩到了七只：这里只验证筛选确实收窄（含占位项仍少于全量）。
+    const roaming = await page.locator('#workshop-mission-enemy-0 option').allTextContents();
+    expect(roaming.length).toBeGreaterThan(2);
+    await page.locator('#workshop-mission-enemy-filter-0').selectOption('');
+    const all = await page.locator('#workshop-mission-enemy-0 option').allTextContents();
+    expect(roaming.length).toBeLessThan(all.length);
     await page.locator('#workshop-mission-enemy-filter-0').selectOption('');
     await page.locator('#workshop-mission-enemy-0').selectOption('night-tram');
     await page.locator('#workshop-add-mission-enemy').click();
@@ -1680,6 +1719,8 @@ try {
     await page.screenshot({ path: 'artifacts/workshop-incident.png', fullPage: true, animations: 'disabled' });
     await page.locator('#incident-option-opt-1').click();
     await expect(page.locator('.incident-overlay')).toHaveCount(0);
+    // 存档是防抖 + IndexedDB 异步写：先等到「已处理」落盘，再刷新，否则重新载入的还是待处理状态。
+    await expect.poll(async () => (await stored()).incidents.filter(item => item.cardId === incidentId && item.status === 'pending').length, { timeout: 8000 }).toBe(0);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('#open-workshop').click();
     await page.locator('#workshop-tab-skill').click();
@@ -2384,7 +2425,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.locator('#custom-skill-tier').selectOption('ultimate');
     const ultPicks = page.locator('.custom-pick');
     const ultCountText = await page.locator('.custom-skill-count').textContent();
-    expect(ultCountText).toContain('筛出 10 条');
+    expect(ultCountText).toContain('筛出 11 条');
     await expect(ultPicks.first()).toBeVisible();
     // 流派筛选：挑一条真实存在的流派
     const school = await page.locator('#custom-skill-school option').nth(1).evaluate(option => option.value);
@@ -2665,6 +2706,235 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     expect(kept.height).toBe(1024);
     expect(Buffer.from(kept.payload, 'base64').length).toBe(bytes.length);
     await close();
+  });
+
+  await check('心防：战报里有心防条，日志写明护持与打穿', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#mission-mirror').click();
+    await page.locator('#assign-yue').click(); await page.locator('#assign-tang').click(); await page.locator('#assign-ling').click();
+    await page.locator('#dispatch-confirm').click();
+    for (let i = 0; i < 3; i++) await page.locator('#advance-time-30').click();
+    await expect(page.locator('#battle-tab-replay')).toBeVisible();
+    await expect(page.locator('.battle-bar.guard').first()).toBeVisible();
+    await expect(page.locator('.battle-unit .guard-tag').first()).toBeVisible();
+    await expect(page.locator('.battle-log')).toContainText('心防');
+    await page.locator('#battle-skip').click();
+    await expect(page.locator('#battle-report-table')).toBeVisible();
+    await page.locator('#battle-close').click();
+    await expect(page.locator('#nav-dispatch')).toBeVisible();
+  });
+
+  await check('档案：心防＝共情 × 2，玩法说明放在世界书而不是界面', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    const emp = (await stored()).girls.find(g => g.id === 'yue').stats.empathy;
+    await page.locator('#roster-girl-yue').click();
+    await expect(page.locator('#girl-guard-value')).toContainText(`/ ${emp * 2}`);
+    // 界面上不再写规则，只有读数。
+    await expect(page.locator('#girl-guard-hint')).toHaveCount(0);
+    await expect(page.locator('.dossier-meter.spirit')).not.toContainText('减免');
+    await page.locator('#dossier-tab-growth').click();
+    await expect(page.locator('#clinic-clear')).toBeVisible();
+    await expect(page.locator('#clinic-clear')).toContainText('记忆清除');
+    // 没有精神疤痕时按钮是灰的。
+    await expect(page.locator('#clinic-clear')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    // 规则挂在世界书的「心防」常驻词条里，界面不再重复讲一遍。
+    await page.locator('#open-worldbook').click();
+    await expect(page.locator('.worldbook-view')).toBeVisible();
+    await expect(page.locator('#worldbook-entry-guard')).toBeVisible();
+    await page.locator('#worldbook-entry-guard').click();
+    await expect(page.locator('#worldbook-content')).toHaveValue(/心防/);
+    await expect(page.locator('#worldbook-content')).toHaveValue(/踉跄/);
+    await page.locator('#nav-base').click();
+  });
+
+  await check('工坊：装备心防加成用百分比，魔物心防只读', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-workshop').click();
+    await expect(page.locator('.workshop-shell')).toBeVisible();
+    await page.locator('#workshop-tab-item').click();
+    await page.locator('#workshop-new').click();
+    await page.locator('#workshop-item-spirit-pct').fill('80');
+    await page.locator('#workshop-save').click();
+    const saved = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
+    expect(saved.items[0].spiritBonusPct).toBe(60);
+    expect(saved.items[0].spiritBonus).toBeUndefined();
+    await page.locator('#workshop-tab-monster').click();
+    await page.locator('#workshop-new').click();
+    await expect(page.locator('#workshop-monster-guard')).toBeDisabled();
+    await page.locator('#workshop-close').click();
+  });
+
+  await check('v24 商店：声望 80 才看得见五阶，货架带阶级标', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    const base = await stored();
+    base.gold = 60000; base.marketLevel = 4;
+    for (const key of Object.keys(base.factions)) base.factions[key].standing = 80;
+    base.factions.witch.stockDay = base.day - 1;
+    await writeSave(base);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-tab-supplies').click();
+    await expect(page.locator('#av-supply-tier-witch')).toContainText('五阶');
+    await expect(page.locator('.av-supply-card .av-tier').first()).toBeVisible();
+    // 三件货、每件都有阶级标；拉低声望后五阶不再出现在货架上。
+    await expect(page.locator('.av-supply-card')).toHaveCount(9);
+    const tiers = await page.locator('.av-supply-card .av-tier').allTextContents();
+    expect(tiers.length).toBe(9);
+    await layout('market-supplies-tier');
+    await close();
+    const lowered = await stored();
+    lowered.factions.witch.standing = 79;
+    lowered.factions.witch.stockDay = lowered.day - 1;
+    await writeSave(lowered);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-tab-supplies').click();
+    await expect(page.locator('#av-supply-tier-witch')).toContainText('四阶');
+    const witchTiers = await page.locator('.av-supply-group').filter({ has: page.locator('#av-supply-tier-witch') }).locator('.av-tier').allTextContents();
+    expect(witchTiers.includes('五阶')).toBe(false);
+    await close();
+  });
+
+  await check('v24 工坊：新建 Boss、保存、重开仍在', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#open-workshop').click();
+    await expect(page.locator('.workshop-shell')).toBeVisible();
+    await page.locator('#workshop-tab-boss').click();
+    await page.locator('#workshop-new').click();
+    await expect(page.locator('#workshop-boss-name')).toBeVisible();
+    await page.locator('#workshop-boss-name').fill('夜巡的替身');
+    await page.locator('#workshop-boss-hp').fill('1500');
+    await page.locator('#workshop-boss-first-day').fill('12');
+    await page.locator('#workshop-save').click();
+    await page.waitForTimeout(200);
+    const saved = JSON.parse(await page.evaluate(async () => localStorage.getItem('night-sugar:content:v1')));
+    expect(saved.bosses.length).toBe(1);
+    expect(saved.bosses[0].name).toBe('夜巡的替身');
+    expect(saved.bosses[0].maxHp).toBe(1500);
+    // 关掉再开，条目还在列表里。
+    await page.locator('#workshop-close').click();
+    await page.locator('#open-workshop').click();
+    await page.locator('#workshop-tab-boss').click();
+    await expect(page.locator('.workshop-list')).toContainText('夜巡的替身');
+    await page.locator('#workshop-close').click();
+  });
+
+  await check('v24 图鉴：精英特征分段可切换，六条都有正文与对策', async () => {
+    await page.locator('#open-codex').click();
+    await expect(page.locator('#codex-tab-elite')).toBeVisible();
+    await page.locator('#codex-tab-elite').click();
+    await expect(page.locator('.codex-list button')).toHaveCount(6);
+    for (const id of ['elite-overload', 'elite-mirror', 'elite-sweet', 'elite-night', 'elite-swarm', 'elite-plague']) {
+      await page.locator(`#codex-elite-${id}`).click();
+      await expect(page.locator('.codex-detail')).toContainText('对策');
+    }
+    await page.screenshot({ path: 'artifacts/codex-elite.png', fullPage: true, animations: 'disabled' });
+    await page.locator('#codex-tab-monster').click();
+    await expect(page.locator('.codex-list button')).toHaveCount(22);
+    await close();
+  });
+
+  await check('v24 委托：精英魔物带角标且基础血量更高', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    const base = await stored();
+    const target = base.missions.find(m => m.status === 'open' && m.work === 'combat');
+    expect(Boolean(target)).toBe(true);
+    target.enemyIds = ['echo-cat', 'sugar-moth'];
+    target.enemyBuffs = ['elite-overload', null];
+    await writeSave(base);
+    await page.reload({ waitUntil: 'networkidle' });
+    await openMission(target.id);
+    await expect(page.locator('#enemy-elite-echo-cat')).toContainText('精英');
+    const eliteHp = Number((await page.locator('#enemy-hp-echo-cat').textContent()).match(/\d+/)[0]);
+    const plainHp = Number((await page.locator('#enemy-hp-sugar-moth').textContent()).match(/\d+/)[0]);
+    expect(eliteHp).toBeGreaterThan(plainHp);
+    await page.screenshot({ path: 'artifacts/mission-elite.png', fullPage: true, animations: 'disabled' });
+    await close();
+  });
+
+  await check('v24 Boss：第 10 天登场、压迫条显示剩余血量，打完血量继承', async () => {
+    await resetAll(); await page.reload({ waitUntil: 'networkidle' });
+    const base = await stored();
+    base.day = 10; base.nextBossDay = 10; base.boss = null; base.cycleStartDay = 10;
+    base.missions = []; base.incidents = []; base.events = [];
+    for (const key of Object.keys(base.pollution)) base.pollution[key] = 12;
+    await writeSave(base);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#end-night').click();
+    await expect(page.locator('#end-night-confirm')).toBeVisible();
+    await page.locator('#end-night-confirm').click();
+    await settleIncidents();
+    await expect(page.locator('#boss-pressure')).toBeVisible();
+    await expect(page.locator('#boss-pressure')).toContainText('每日全城');
+    const spawned = await stored();
+    expect(spawned.boss?.template).toBe('boss-candy-throne');
+    expect(spawned.boss?.hp).toBe(2400);
+    const bossMission = spawned.missions.find(m => m.boss);
+    expect(Boolean(bossMission)).toBe(true);
+    await openMission(bossMission.id);
+    await expect(page.locator('.enemy-card')).toHaveCount(1);
+    await close();
+    // 打一场，血量往下掉并写回 state.boss.hp。
+    await openMission(bossMission.id);
+    for (const id of ['yue', 'tang', 'ling', 'shu']) {
+      const seat = page.locator(`#assign-${id}`);
+      if (await seat.count() && !(await seat.isDisabled())) await seat.click();
+    }
+    const go = page.locator('#dispatch-confirm');
+    if (await go.count() && !(await go.isDisabled())) await go.click();
+    for (let i = 0; i < 8; i += 1) {
+      // 打完一场会跳出战斗剧场，先关掉再继续推进。
+      if (await page.locator('#battle-close').count()) {
+        await expect(page.locator('#battle-report-table')).toBeVisible({ timeout: 15000 }).catch(() => {});
+        await page.locator('#battle-close').click();
+      }
+      const advance = page.locator('#advance-time-30');
+      if (!(await advance.count())) break;
+      await advance.click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(150);
+    }
+    await close();
+    const after = await stored();
+    if (after.boss) expect(after.boss.hp).toBeLessThan(2400);
+    await expect(page.locator('#boss-pressure')).toContainText('血量');
+  });
+
+  await check('本地路径：导出直接落进项目的 data/，卡库与存档位默认指向同一处', async () => {
+    if (!localApi) { console.log('SKIP 本地文件通道（当前是静态服务）'); return; }
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#advance-time-30').click();
+    const day = (await stored()).day;
+    // 存档：导出 → 目录里出现 → 存档位列表能看见 → 读回来
+    await page.locator('#open-settings').click();
+    const saveFile = await exportToFile('#settings-export-save', 'save');
+    expect(path.resolve(saveFile.path).startsWith(path.resolve('data', 'saves'))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(saveFile.path, 'utf8')).day).toBe(day);
+    await close();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-save-slots').click();
+    await expect(page.locator('#slot-local')).toBeVisible();
+    await expect(page.locator('#slot-local')).toContainText('data/saves');
+    await expect(page.locator('.slot-local-list')).toContainText(saveFile.name);
+    // 契约卡：导出 → 目录里出现 → 卡库默认扫这一格就能收进来
+    await close();
+    await page.locator('#nav-dispatch').click();
+    await page.locator('#roster-girl-yue').click();
+    const cardFile = await exportToFile('#girl-export-card', 'card');
+    expect(path.resolve(cardFile.path).startsWith(path.resolve('data', 'cards'))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(cardFile.path, 'utf8')).format).toBe('night-sugar/girl-card');
+    await close();
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-cardbox').click();
+    await expect(page.locator('#cardbox-dir')).toHaveValue(/data[\\/]cards$/);
+    await page.locator('#cardbox-dir-scan').click();
+    await expect(page.locator('#cardbox-list')).toContainText('月见桃');
+    await expect(page.locator('#cardbox-list .cardbox-row').first()).toBeVisible();
+    await close();
+    fs.rmSync(cardFile.path, { force: true });
+    fs.rmSync(saveFile.path, { force: true });
   });
 
   await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });

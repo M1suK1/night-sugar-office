@@ -16,7 +16,8 @@
 .boss-banner span{display:flex;flex-direction:column;line-height:1.25}
 .boss-banner small{font-size:7px;letter-spacing:.16em;color:#8f89ad}
 .boss-banner b{font-size:10px;font-weight:600;letter-spacing:.08em}
-@media(max-width:800px){.boss-banner small{display:none}.boss-banner b{font-size:9px}}
+.boss-banner em{font-style:normal;font-size:8px;letter-spacing:.06em;color:#a49ec4;white-space:nowrap}
+@media(max-width:800px){.boss-banner small,.boss-banner em{display:none}.boss-banner b{font-size:9px}}
 
 /* === Madoka × MGRP Sweet-Cruel Dark Contract Aesthetic & World Faction Strip === */
 :root {

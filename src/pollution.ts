@@ -213,3 +213,31 @@ export function pollutionLines(effect: PollutionEffect): string[] {
   if (effect.corruptionFlat) lines.push(`侵蚀 +${effect.corruptionFlat}`);
   return lines;
 }
+
+/** 本轮第几天：Boss 被击败当天把 `cycleStartDay` 重置，于是下一次从 1 开始。 */
+export function cycleDay(state: GameState): number {
+  return Math.max(1, state.day - (state.cycleStartDay ?? 1) + 1);
+}
+
+/**
+ * 污染地板：净化的下限，随时间抬高，第十天到 30。
+ *
+ * 地板是这轮循环的压迫感来源——擦干净的地方睡一觉又脏回来，越靠后越擦不动。
+ */
+export function pollutionFloor(state: GameState): number {
+  return Math.min(30, cycleDay(state) * 3);
+}
+
+/** 完成委托后的实际值：擦不到地板以下。 */
+export function purifyTo(state: GameState, level: number, relief: number): number {
+  return clampPollution(Math.max(pollutionFloor(state), level - relief));
+}
+
+/** 按辖区自身污染度给难度权重，四档整数权重合计 100。 */
+export function difficultyWeights(pollution: number): Record<'低危' | '中危' | '高危' | '绝望', number> {
+  if (pollution >= 80) return { 低危: 5, 中危: 25, 高危: 45, 绝望: 25 };
+  if (pollution >= 60) return { 低危: 15, 中危: 35, 高危: 35, 绝望: 15 };
+  if (pollution >= 40) return { 低危: 30, 中危: 40, 高危: 22, 绝望: 8 };
+  if (pollution >= 20) return { 低危: 50, 中危: 38, 高危: 12, 绝望: 0 };
+  return { 低危: 70, 中危: 28, 高危: 2, 绝望: 0 };
+}

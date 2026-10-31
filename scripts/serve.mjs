@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { handleLocalApi } from './local-files.mjs';
 
 const root = path.resolve('dist');
 const port = Number(process.env.PORT ?? 5173);
@@ -18,7 +19,7 @@ const types = {
 };
 
 http.createServer((req, res) => {
-  if ((req.url ?? '').startsWith('/api/cards')) { void handleCardsApi(req, res); return; }
+  if ((req.url ?? '').startsWith('/api/')) { void handleLocalApi(req, res); return; }
   const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
   let file = path.join(root, url === '/' ? 'index.html' : url);
   if (!file.startsWith(root)) { res.writeHead(403).end('forbidden'); return; }

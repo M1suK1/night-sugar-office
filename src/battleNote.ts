@@ -70,7 +70,7 @@ export function totalBattleRounds(battle: BattleState): number {
 
 function eventLine(event: BattleState['events'][number], withRound = true): string {
   const target = event.targets.length ? ` → ${event.targets.join('、')}` : '';
-  const amount = event.amount ? `，${event.resource === 'spirit' ? '共情' : '血量'} ${event.amount}` : '';
+  const amount = event.amount ? `，${event.resource === 'spirit' ? '心防' : '血量'} ${event.amount}` : '';
   const note = event.note ? `（${event.note}）` : '';
   return `${withRound ? `第 ${event.round} 回合，` : ''}${event.actor} 使用「${event.skillName}」${target}${event.hit ? '' : '，落空'}${amount}${note}`;
 }

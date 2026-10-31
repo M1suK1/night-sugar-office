@@ -10,6 +10,7 @@ import { canIntercept } from '../factions';
 import { factionName } from '../territories';
 import { clampPollution, pollutionEffect, pollutionIsEstimated, pollutionLines, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierColors, pollutionTierLabel } from '../pollution';
 import { MonsterGlyph } from './MonsterGlyph';
+import { applyEliteBuff, eliteBuffById } from '../content/eliteBuffs';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
   if (girl.retired) return { ok: false, reason: '已退役' };
@@ -115,14 +116,16 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <section className="enemy-lineup" aria-label="本次委托的魔物">
           <div className="modal-section-heading"><h3>魔物反应</h3><small>点击查看图鉴</small></div>
           <div className="enemy-row">
-            {(mission.enemyIds ?? []).map(id => {
-              const monster = state.customMonsters.find(m => m.id === id) ?? findMonster(id);
-              if (!monster) return null;
+            {(mission.enemyIds ?? []).map((id, index) => {
+              const base = state.customMonsters.find(m => m.id === id) ?? findMonster(id);
+              if (!base) return null;
+              const buff = eliteBuffById(mission.enemyBuffs?.[index] ?? null);
+              const monster = buff ? applyEliteBuff(base, buff) : base;
               return (
-                <button id={`enemy-${id}`} key={id} className="enemy-card" onClick={() => onEnemy(id)} style={{ '--enemy-color': monster.color } as React.CSSProperties}>
+                <button id={`enemy-${id}`} key={`${id}-${index}`} className={`enemy-card ${buff ? 'elite' : ''}`} onClick={() => onEnemy(id)} style={{ '--enemy-color': monster.color } as React.CSSProperties}>
                   <MonsterGlyph monster={monster} size={62} />
-                  <span><b>{monster.name}</b><small>{monster.rank} · {monster.epithet}</small></span>
-                  <em>{monster.maxHp}<small>基础血量</small></em>
+                  <span><b>{monster.name}</b><small>{buff ? <em id={`enemy-elite-${id}`}>精英 · {buff.name}</em> : <>{monster.rank} · {monster.epithet}</>}</small></span>
+                  <em id={`enemy-hp-${id}`}>{monster.maxHp}<small>{buff ? '基础血量 ×' + buff.hpMul.toFixed(2) : '基础血量'}</small></em>
                   <ChevronRight size={14} />
                 </button>
               );

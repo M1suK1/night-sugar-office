@@ -919,7 +919,7 @@ function parseStoryCompanion(raw: unknown): StoryCompanion | undefined {
     codename: (typeof body.codename === 'string' ? body.codename.trim().slice(0, 10) : '') || '羁绊协奏',
     element,
     archetype: typeof body.archetype === 'string' ? (body.archetype.trim().slice(0, 4) as StoryCompanion['archetype']) : undefined,
-    appearance: (typeof body.appearance === 'string' ? body.appearance.trim() : '她没有说自己从哪里来。').slice(0, 160),
+    appearance: (typeof body.appearance === 'string' ? body.appearance.trim() : '她没有说自己从哪里来。').slice(0, 200),
     personality: (typeof body.personality === 'string' ? body.personality.trim() : '安静，只在提到那个人时多说两句。').slice(0, 160),
     outfitDescription: (typeof body.outfitDescription === 'string' ? body.outfitDescription.trim() : '和事务所制服不太一样的旧外套。').slice(0, 160),
     color: typeof body.color === 'string' && /^#[0-9a-f]{6}$/i.test(body.color) ? body.color : undefined,
@@ -1584,7 +1584,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('起草失败：', outcome) };
   try {
     const raw = outcome.raw;
-    const str = (key: string, fallback: string) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, 160) : fallback;
+    const str = (key: string, fallback: string, limit = 160) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, limit) : fallback;
     const knownSkills = girlSkillPool();
     const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && knownSkills.some(s => s.id === id)) : [];
     const skillIds = [...new Set(pickedSkills)].slice(0, 3);
@@ -1606,7 +1606,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
       name: str('name', '未命名'), codename: str('codename', '未命名契约'), title: str('title', '刚被城市记住的人'),
       element: element === ('魔物' as Element) ? '星光系' : element, archetype: archetype === ('魔物' as Archetype) ? '治愈' : archetype,
       quote: str('quote', '请多指教。'), goal: str('goal', '想找到一个可以回去的地方。'),
-      appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。'), personality: str('personality', '安静，习惯先观察再开口。'),
+      appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。', 200), personality: str('personality', '安静，习惯先观察再开口。'),
       outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), focus, skillIds, traits: draftTraits,
       color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color.trim()) ? raw.color.trim() : undefined,
     } };

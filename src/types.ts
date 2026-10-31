@@ -137,18 +137,77 @@ export interface Outfit {
   /** 自定义礼装：立绘沿用本人的 `girl.portrait`。 */
   custom?: boolean;
 }
+/** 装备阶级：1 最低、5 最高，越高越少，换更高的声望门槛。 */
+export type EquipmentTier = 1 | 2 | 3 | 4 | 5;
+
 export interface Equipment {
   id: string; name: string; faction: FactionId; slot: 'weapon' | 'charm' | 'consumable';
   price: number; standingReq: number; description: string;
+  /** 阶级；旧数据、内容包与 LLM 装备可能没有，读入时由 `tierOf()` 按价格推断。 */
+  tier?: EquipmentTier;
   stats?: Partial<Record<StatKey, number>>;
   passive?: string; skillId?: string; corruptionPerBattle?: number;
-  maxHpBonus?: number; spiritBonus?: number; damageBonus?: number; initiativeBonus?: number;
+  maxHpBonus?: number; /** 旧字段：绝对心防加成，读入时折算成百分比后不再使用。 */ spiritBonus?: number;
+  /** 心防上限的百分比加成（0–60）。 */ spiritBonusPct?: number;
+  damageBonus?: number; initiativeBonus?: number;
   effect?: 'drug' | 'heal' | 'purify' | 'contractDiscount' | 'taxRefund';
   amount?: number;
 }
+/** 精英化：不改魔物模板，按这套倍率与被动现场套一层。 */
+export interface EliteBuff {
+  id: string; name: string; blurb: string; color: string;
+  /** 图鉴对策：玩家该怎么打它。 */
+  counter: string;
+  /** 血量倍率，1.4–1.9。 */
+  hpMul: number;
+  /** 四项属性倍率，1.05–1.30。 */
+  statMul: number;
+  /** 共情单独再乘一次：精英的压迫感主要来自这里。 */
+  empathyMul: number;
+  /** 额外挂上的被动技能（必须已在技能表里）。 */
+  skillIds: string[];
+  /** 额外挂上的魔物规则。 */
+  rules?: MonsterRule[];
+}
+
+/** Boss 的一个阶段：血量掉到 `atHpPct` 以下就换这套技能。 */
+export interface BossPhase {
+  /** 进入该阶段的血量比例（0–1），第一阶段固定 1。 */
+  atHpPct: number;
+  skillIds: string[];
+  /** 阶段开场把这几只普通魔物拉进场。 */
+  addIds?: string[];
+  /** 阶段台词，写进战斗日志。 */
+  line: string;
+}
+
+export interface BossTemplate {
+  id: string; name: string; title: string; blurb: string;
+  /** 主体魔物的模板 id。 */
+  monsterId: string;
+  maxHp: number;
+  /** 心防由 `stats.empathy` 推出（见 v25），这里不再单独写。 */
+  stats: Partial<Record<StatKey, number>>;
+  phases: BossPhase[];
+  reward: number;
+  duration: number;
+  recommendedLevel: number;
+  color: string;
+  /** 首只登场日；之后每 `defeatGapDays` 天来一次。 */
+  firstDay: number;
+  defeatGapDays: number;
+  /** Boss 在场时，每天给九区各加的污染。 */
+  pollutionPressure: number;
+}
+
 export interface BossState {
   id: string; appearedDay: number; lastTick: number; deadline: number;
   missionId: string; defeated?: boolean;
+  /** 是哪只 Boss；旧存档缺省补首只的 id。 */
+  template?: string;
+  /** 这一轮里它还剩多少血：每场战斗后写回，下次接着打。 */
+  hp?: number;
+  maxHp?: number;
 }
 export interface DraftTrait {
   name: string;
@@ -554,15 +613,23 @@ export interface MonsterRule {
 }
 export interface MonsterTemplate {
   id: string; name: string; epithet: string; rank: '碎屑' | '游荡' | '灾厄' | '王座';
-  element: Element; color: string; maxHp: number; maxSpirit: number;
+  element: Element; color: string; maxHp: number;
+  /** v25 起由 `stats.empathy × 2` 算出，战斗只读共情；字段保留兼容旧存档与新内容包。 */
+  maxSpirit: number;
   stats: Record<StatKey, number>; skillIds: string[];
   trait: string; description: string; spec: MonsterSpec;
   codex: { habit: string; weakness: string };
   rules?: MonsterRule[];
+  /** 剧情专属：只在被显式引用时出场，不进随机抽取。 */
+  storyOnly?: boolean;
+  /** Boss 本体：只由 Boss 战引用，不进随机抽取。 */
+  bossOnly?: boolean;
   /** Boss 技能组：第一阶段（hp ≥ 50%）用这组，缺省退回 skillIds。 */
   bossSkillIds?: string[];
   /** Boss 半血后换上的技能组。 */
   bossPhaseSkillIds?: string[];
+  /** 完整的多阶段技能组（Boss 副本专用，战斗日志读阶段台词）。 */
+  bossPhases?: BossPhase[];
 }
 export interface PortraitSpec {
   palette: { hair: string; hairShade: string; eye: string; cloth: string; clothShade: string; accent: string };
@@ -665,6 +732,14 @@ export interface Mission {
   ownerAtSpawn?: FactionId;
   /** 结算时被辖区当主的所属少女拦截。 */
   interception?: Interception;
+  /** 与 `enemyIds` 下标对齐的精英 buff；null 表示这只不是精英。 */
+  enemyBuffs?: (string | null)[];
+  /** 与 `enemyIds` 下标对齐的血量覆盖（Boss 消耗战续血）。 */
+  enemyHpOverride?: number[];
+  /** 难度由辖区污染度抽出来时，记下模板原本的档位，方便工坊与战报回看。 */
+  scaledFrom?: string;
+  /** 战斗模板只写要几只敌人，具体是哪些由 `rollEnemies` 按辖区与难度抽。 */
+  enemyCount?: number;
 }
 /** 辖区拦截战：辖区当主态度为「戒备」时，普通委托会被自己的少女截下。 */
 export interface Interception {
@@ -715,6 +790,8 @@ export interface BattleUnit {
   codename?: string;
   expression?: Expression;
   portraitSpec?: PortraitSpec;
+  /** 心防已被打穿：本场不再恢复，共情伤害转成血量伤害。 */
+  spiritBroken?: boolean;
 }
 export interface BattleCalc {
   hit?: { base: number; agility: number; targetAgility: number; bonus: number; chance: number; roll: number };
@@ -730,6 +807,8 @@ export interface BattleState {
   startedAt: { day: number; minutes: number };
   round: number; rounds: number; units: BattleUnit[]; initiative: string[];
   events: BattleEvent[]; outcome?: 'victory' | 'repelled' | 'defeat' | 'draw';
+  /** 判负的原因：`stunned` 是全队被打得踉跄，`wounded` 是血量归零。疤痕取法不同。 */
+  defeatReason?: 'stunned' | 'wounded';
   frames?: { round: number; units: BattleUnit[]; initiative: string[] }[];
   rewards?: { gold: number; exp: number; bond: number };
   scars?: Scar[]; fatal?: string[]; createdAt: string;
@@ -786,7 +865,7 @@ export interface ShiftState { day: number; wave: number }
 /** 九区污染度，0–100。 */
 export type PollutionMap = Record<DistrictId, number>;
 export interface GameState {
-  version: 16; day: number; minutes: number; gold: number; reputation: number;
+  version: 18; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
@@ -797,8 +876,12 @@ export interface GameState {
   poolLimits: { missions: number; monsters: number; candidates: number }; removedMonsters: string[];
   marketLevel: number; marketDay: number; advancedDay?: number;
   boss: BossState | null; bossCycle: number; nextBossDay: number;
+  /** 本轮循环的起始日：Boss 被击败当天重置，污染地板按 day − cycleStartDay 算。 */
+  cycleStartDay: number;
   customSkills: Skill[];
   customMonsters: MonsterTemplate[];
+  /** 内容工坊自建的 Boss 模板。 */
+  customBosses: BossTemplate[];
   /** 故事引擎一次性生成并持久化的装备；读档时重新登记进物品表。 */
   generatedItems: Equipment[];
   chronicle: ChronicleEntry[];
@@ -868,7 +951,7 @@ export type GameAction =
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
-  | { type: 'clinic'; girlId: string; mode: 'treat' | 'wipe' | 'clone'; kink?: boolean }
+  | { type: 'clinic'; girlId: string; mode: 'treat' | 'wipe' | 'clone' | 'clear'; kink?: boolean; clearScarId?: string }
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }

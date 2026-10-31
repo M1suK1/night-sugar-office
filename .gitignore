@@ -7,3 +7,6 @@ playwright-report/
 artifacts/
 *.tsbuildinfo
 .tmp/
+# 本地文件通道的默认落点：目录要留在仓库里，玩家自己导出的存档与卡不进版本库
+data/saves/*.json
+data/cards/*.json

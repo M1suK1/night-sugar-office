@@ -69,7 +69,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                 </div>
                 <div className="tooltip-footer">
                   <span>{stageLabels[stage]} · 羁绊 {g.bond}</span>
-                  <span>共情值 {g.spirit}/{effectiveMaxSpirit(g)} · 侵蚀 {g.corruption ?? 0}%</span>
+                  <span>心防 {g.spirit}/{effectiveMaxSpirit(g)} · 侵蚀 {g.corruption ?? 0}%</span>
                 </div>
                 <small>{g.retired ? '已转任文职，不再参与派遣' : inWithdrawal(g) ? `断药第 ${g.withdrawalDays} 日，无法派遣，请尽快使用抑制剂` : g.status === 'idle' ? '拖动至地图任务点派遣 · 点击查看档案' : `当前${statusLabels[g.status]}，剩余 ${g.remaining} 分钟`}</small>
               </div>

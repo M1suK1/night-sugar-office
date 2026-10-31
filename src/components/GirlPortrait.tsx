@@ -30,16 +30,23 @@ const expressionEyes: Record<Expression, { open: number; tilt: number; mouth: st
   shy: { open: 0.55, tilt: -1, mouth: 'M-8 2 Q0 7 8 2' },
 };
 
-/** 取景只在显示层做：存的是原图，4:5 由容器 + object-fit 裁出来。 */
-function cropStyle(crop?: { zoom: number; x: number; y: number }) {
-  if (!crop) return undefined;
-  const zoom = Math.max(1, Math.min(4, crop.zoom || 1));
-  const y = Math.max(-100, Math.min(100, crop.y || 0));
-  const x = Math.max(-100, Math.min(100, crop.x || 0));
-  return { objectPosition: `${50 - x / 2}% ${50 - y / 2}%`, transform: zoom === 1 ? undefined : `scale(${zoom})` } as const;
+/**
+ * 取景只在显示层做：存的是原图，容器用 `object-fit: cover` 裁。
+ *
+ * `anchor` 决定裁到哪一段：竖版卡片取中段略偏下（+6 偏移，避免切头顶）；
+ * 市场候选卡那种 2.5:1 的横幅只露出一条，必须取脸所在的靠上区域，
+ * 否则一条横幅裁在胸口上，画面上只剩衣料。
+ */
+function cropStyle(crop: { zoom: number; x: number; y: number } | undefined, anchor: 'center' | 'face') {
+  const zoom = Math.max(1, Math.min(4, crop?.zoom ?? 1));
+  const y = Math.max(-100, Math.min(100, crop?.y ?? 0));
+  const x = Math.max(-100, Math.min(100, crop?.x ?? 0));
+  const biasY = anchor === 'face' ? -45 : 6;
+  const posY = Math.max(0, Math.min(100, 50 - y / 2 + biasY));
+  return { objectPosition: `${50 - x / 2}% ${posY}%`, transform: zoom === 1 ? undefined : `scale(${zoom})` } as const;
 }
 
-export function GirlPortrait({ girl, variant = 'card', className = '', bare = false }: { girl: PortraitSubject; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean }) {
+export function GirlPortrait({ girl, variant = 'card', className = '', bare = false, anchor = 'center' }: { girl: PortraitSubject; variant?: 'card' | 'full' | 'avatar'; className?: string; bare?: boolean; anchor?: 'center' | 'face' }) {
   const id = useId().replace(/:/g, '');
   const activeOutfitId = currentExpressionOutfitId(girl);
   const wardrobe = expressionOutfits(girl).find(o => o.id === activeOutfitId);
@@ -68,7 +75,7 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
         <img
           src={shownPortrait}
           alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`}
-          style={cropStyle(activeVariant ? undefined : girl.portraitCrop)}
+          style={cropStyle(activeVariant ? undefined : girl.portraitCrop, anchor)}
         />
       </span>
     );

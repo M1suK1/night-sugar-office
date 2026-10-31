@@ -53,7 +53,7 @@ function hydrateGirl(girl: SeedGirl, index: number): Girl {
 const seedGirlData: SeedGirl[] = [
   {
     id: 'yue', name: '月见桃', codename: '绯色回响', title: '把夜晚染成桃色的魔法少女', element: '星光系', color: '#F49ABD', portrait: '/art/yue.svg',
-    level: 6, hp: 120, maxHp: 120, baseMaxHp: 120, spirit: 100, maxSpirit: 100, fatigue: 40, bond: 62, exp: 0,
+    level: 6, hp: 120, maxHp: 120, baseMaxHp: 120, spirit: 0, maxSpirit: 0, fatigue: 40, bond: 62, exp: 0,
     stats: base(88, 74, 62, 80), status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '星环坠落', skills: ['glimmer-spear', 'peach-ward', 'starlight-fall'], cost: 2800,
     description: '事务所里最擅长把「没关系」说得像真的的人。她的星光很轻，落到人身上却刚好够暖。',
@@ -61,7 +61,7 @@ const seedGirlData: SeedGirl[] = [
   },
   {
     id: 'tang', name: '砂糖', codename: '白夜糖霜', title: '用糖纸包住噩梦的魔法少女', element: '糖霜系', color: '#F7C9DC', portrait: '/art/tang.svg',
-    level: 5, hp: 96, maxHp: 96, baseMaxHp: 96, spirit: 88, maxSpirit: 88, fatigue: 58, bond: 48, exp: 0,
+    level: 5, hp: 96, maxHp: 96, baseMaxHp: 96, spirit: 0, maxSpirit: 0, fatigue: 58, bond: 48, exp: 0,
     stats: base(58, 70, 60, 94), status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '白夜糖霜', skills: ['sugar-needle', 'goodnight-candy', 'white-night-frost'], cost: 2400,
     description: '总是随身带着一罐水果糖。她记得每个人的口味，却总说自己不爱吃甜的。',
@@ -69,7 +69,7 @@ const seedGirlData: SeedGirl[] = [
   },
   {
     id: 'ling', name: '零青', codename: '静默频率', title: '收听城市杂音的魔法少女', element: '月影系', color: '#8FB6C9', portrait: '/art/ling.svg',
-    level: 5, hp: 104, maxHp: 104, baseMaxHp: 104, spirit: 94, maxSpirit: 94, fatigue: 44, bond: 35, exp: 0,
+    level: 5, hp: 104, maxHp: 104, baseMaxHp: 104, spirit: 0, maxSpirit: 0, fatigue: 44, bond: 35, exp: 0,
     stats: base(72, 92, 80, 66), status: 'idle', roomId: 'observatory', remaining: 0,
     skill: '静默全频', skills: ['frequency-prick', 'silent-band', 'moon-phase'], cost: 2600,
     description: '她能听见城市里所有不该被听见的声音。摘下耳机时，反而显得有点不知所措。',
@@ -77,7 +77,7 @@ const seedGirlData: SeedGirl[] = [
   },
   {
     id: 'wu', name: '雾眠', codename: '梦境收集者', title: '在梦与猫之间巡游的魔法少女', element: '梦境系', color: '#C7A7E8', portrait: '/art/wu.svg',
-    level: 3, hp: 100, maxHp: 100, baseMaxHp: 100, spirit: 96, maxSpirit: 96, fatigue: 20, bond: 56, exp: 0,
+    level: 3, hp: 100, maxHp: 100, baseMaxHp: 100, spirit: 0, maxSpirit: 0, fatigue: 20, bond: 56, exp: 0,
     stats: base(66, 84, 74, 78), status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '深梦坠落', skills: ['dream-touch', 'sheep-nebula', 'deep-dream-fall'], cost: 2200,
     description: '白天几乎都在打盹，却对每一只流浪猫的名字了如指掌。她说梦是猫走过后留下的脚印。',
@@ -85,7 +85,7 @@ const seedGirlData: SeedGirl[] = [
   },
   {
     id: 'zhi', name: '栀子', codename: '春日药笺', title: '在废墟缝隙里种药的魔法少女', element: '自然系', color: '#B9D8A8', portrait: '/art/zhi.svg',
-    level: 4, hp: 110, maxHp: 110, baseMaxHp: 110, spirit: 90, maxSpirit: 90, fatigue: 30, bond: 40, exp: 0,
+    level: 4, hp: 110, maxHp: 110, baseMaxHp: 110, spirit: 0, maxSpirit: 0, fatigue: 30, bond: 40, exp: 0,
     stats: base(74, 68, 62, 90), status: 'idle', roomId: 'clinic', remaining: 0,
     skill: '春日蔓生', skills: ['flower-thorn', 'flower-prescription', 'spring-growth'], cost: 2400,
     description: '诊所的架子上有三十七种晒干的花。她相信每一种伤口，都能等到自己的春天。',
@@ -93,7 +93,7 @@ const seedGirlData: SeedGirl[] = [
   },
   {
     id: 'lu', name: '鹿铃', codename: '赤焰节拍', title: '把战斗当成演出的魔法少女', element: '赤焰系', color: '#D98A94', portrait: '/art/lu.svg',
-    level: 6, hp: 132, maxHp: 132, baseMaxHp: 132, spirit: 72, maxSpirit: 72, fatigue: 36, bond: 32, exp: 0,
+    level: 6, hp: 132, maxHp: 132, baseMaxHp: 132, spirit: 0, maxSpirit: 0, fatigue: 36, bond: 32, exp: 0,
     stats: base(94, 58, 93, 66), status: 'idle', roomId: 'lounge', remaining: 0,
     skill: '赤焰安可', skills: ['drumbeat', 'finale-firework', 'crimson-encore'], cost: 3200,
     description: '地下乐队的鼓手，夜晚街区的守护者。越是危急的时刻，她的心跳就越稳。',

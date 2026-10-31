@@ -47,7 +47,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
   const [generating, setGenerating] = useState(false);
   const openMissions = state.missions.filter(m => m.status !== 'done' && m.status !== 'expired');
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
-  const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || monsterPool.length + state.customMonsters.length >= state.poolLimits.monsters;
+  const full = openMissions.length >= state.poolLimits.missions || state.candidates.length >= state.poolLimits.candidates || state.customMonsters.filter(m => !m.id.startsWith('boss-mon-')).length >= state.poolLimits.monsters;
   // 改字段只写目标那份槽位；切默认接口只翻 provider。两份凭证互不覆盖。
   const update = (patch: Partial<LlmConfig>) => {
     const { provider: wantProvider, ...fields } = patch;
@@ -223,7 +223,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
     </div>}
     {tab === 'pools' && <div className="pool-settings">
       <p className="pool-intro">内容池满后，故事引擎会停止补充对应内容。你可以随时手动移除，为新的相遇腾出位置。</p>
-      {([{ id: 'missions', label: '事件池', count: openMissions.length, desc: '地图上尚未结束的委托与事件。' }, { id: 'monsters', label: '魔物池', count: monsterPool.length, desc: '可被事件引用的魔物模板。' }, { id: 'candidates', label: '市场池', count: state.candidates.length, desc: '市场中尚未签约的候选契约者。' }] as const).map(pool => <section className="pool-block" key={pool.id}>
+      {([{ id: 'missions', label: '事件池', count: openMissions.length, desc: '地图上尚未结束的委托与事件。' }, { id: 'monsters', label: '魔物池', count: state.customMonsters.filter(m => !m.id.startsWith('boss-mon-')).length, desc: '这一档里自己长出来的魔物；内置魔物不进这个池子。' }, { id: 'candidates', label: '市场池', count: state.candidates.length, desc: '市场中尚未签约的候选契约者。' }] as const).map(pool => <section className="pool-block" key={pool.id}>
         <header><div><b>{pool.label}</b><span>{pool.count} / {state.poolLimits[pool.id]}</span></div><label><span>上限</span><input id={`settings-limit-${pool.id}`} type="number" min={1} max={40} value={state.poolLimits[pool.id]} onChange={e => onPoolLimit(pool.id, Number(e.target.value))}/></label></header>
         <p>{pool.desc}</p>
         <div className="pool-bar"><i style={{ width: `${Math.min(100, pool.count / state.poolLimits[pool.id] * 100)}%` }}/></div>

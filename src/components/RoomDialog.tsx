@@ -11,7 +11,7 @@ type Props = {
   state: GameState; id: string; onGirl: (id: string) => void; onTalk: (id: string) => void; onBuild: () => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onStartExpedition: (ids: string[]) => void; onRecall: (id: string) => void;
-  onClinic: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  onClinic: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onRest: (girlId: string) => void;
   onAcceptTask?: (faction: FactionId) => void;
 };
@@ -141,7 +141,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
       <div className="room-function">
         <h3>今夜，先把伤口放下</h3>
         <p>按缺失的血量收费，按小时慢慢恢复。治疗期间她不能出勤，也不会恢复疲劳——疲劳归宿舍。</p>
-        <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} />
+        <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} onClear={girlId => onClinic(girlId, 'clear')} />
       </div>
     )}
 

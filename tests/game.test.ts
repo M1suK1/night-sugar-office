@@ -28,14 +28,14 @@ import { effectText, skills, getSkill, findSkill } from '../src/content/skills.t
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
-import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, simulateBattle, skillAccuracy } from '../src/combat.ts';
+import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, makeScar, simulateBattle, skillAccuracy } from '../src/combat.ts';
 import { bossSkillPool, filterSkills, findAnySkill, girlSkillPool, isBossSkill, isPoolSkill, monsterSkillPool, skillsOfSchool } from '../src/skills.ts';
 import { monsterById } from '../src/content/monsters.ts';
 import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
-import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT } from '../src/content/library.ts';
+import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT, LIBRARY_SCHEMA } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
 import { blueprintIssues, buildGraphFromDraft, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph, type StoryGraphDraft } from '../src/storygraph.ts';
-import { WORLDBOOK_KEY, builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, loadWorldbook, officeWorldbookEntry, sanitizeWorldbookEntry, saveWorldbook, syncOfficeWorldbook, worldbookContext } from '../src/worldbook.ts';
+import { WORLDBOOK_KEY, builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, loadWorldbook, officeWorldbookEntry, sanitizeWorldbookEntry, saveWorldbook, syncBuiltinWorldbook, syncOfficeWorldbook, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
 import { POLLUTION_MAX, POLLUTION_MIN, clampPollution, cityAveragePollution, dirtiestDistrict, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionIsEstimated, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from '../src/pollution.ts';
 import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
@@ -45,6 +45,11 @@ import { openFrontIn, planFronts, resolveDueFronts, squadPower } from '../src/fr
 import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
 import { __resetKvForTests, __setKvWriteFaultForTests, kvSet } from '../src/store.ts';
+import { BROKEN_SPIRIT_MUL, BROKEN_TAKEN_MUL, GUARD_HP_MUL, GUARD_PER_EMPATHY, brokenSpiritDamage, guardHpMul, guardMax, guardState, guardStateLabel } from '../src/spirit.ts';
+import { MEMORY_CLEAR_COST } from '../src/game.ts';
+import { effectiveGuard } from '../src/economy.ts';
+import { emptyItem } from '../src/content/library.ts';
+import { items } from '../src/content/items.ts';
 import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, saveCardBox } from '../src/cardbox.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
@@ -135,7 +140,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 16);
+  assert.equal(s.version, 18);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -553,6 +558,9 @@ test('市场升级与高级招募消耗资金和安定度，并扩充候选', ()
 });
 test('势力装备可从仓库穿戴，并计入有效属性', () => {
   const s = createInitialState(); s.gold = 10000; s.factions.witch.standing = 60;
+  // 货架按阶级加权抽取，测试直接把它摆上去，免得依赖当天运气。
+  s.marketStock = s.marketStock.filter(entry => entry.itemId !== 'moon-weapon')
+    .concat({ id: 'stock-test-weapon', itemId: 'moon-weapon', faction: 'witch', sold: false });
   const bought = act(s, { type: 'buyItem', itemId: 'moon-weapon' });
   assert.equal(bought.ok, true);
   assert.equal(bought.state.inventory['moon-weapon'], 1);
@@ -575,8 +583,8 @@ test('势力货架每日三个货位、每格限购一次并跨日刷新', () =>
   const again = act(bought.state, { type: 'buyItem', stockId: first.id });
   assert.equal(again.ok, false);
   assert.match(again.message, /售出|售罄/);
-  const duplicated = Array.from({ length: 120 }, (_, index) => makeFactionStock('witch', 14 + index)).find(list => new Set(list.map(entry => entry.itemId)).size < 3);
-  assert.ok(duplicated, '货架应允许同一天出现重复物品');
+  const unique = Array.from({ length: 40 }, (_, index) => makeFactionStock('witch', 14 + index, { marketLevel: 3, standing: 80 }));
+  assert.ok(unique.every(list => new Set(list.map(entry => entry.itemId)).size === list.length), '同一货架上的三件不重复');
   const refreshed = act(bought.state, { type: 'endNight' }).state;
   assert.equal(refreshed.day, 15);
   const nextWitch = refreshed.marketStock.filter(entry => entry.faction === 'witch');
@@ -1402,7 +1410,7 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 16);
+  assert.equal(loaded.version, 18);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
@@ -1751,10 +1759,10 @@ test('自定义的「… 副本」不会被任务默认预设改名', () => {
   assert.equal(event.name, '私人事件');
   assert.notEqual(story.id, event.id);
 });
-test('世界书内置 16 条，默认只启用 8 条常驻词条', () => {
-  assert.equal(builtinWorldbook().length, 16);
+test('世界书内置 17 条，默认只启用 9 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 17);
   const defaults = defaultWorldbook();
-  assert.equal(defaults.filter(entry => entry.enabled).length, 8);
+  assert.equal(defaults.filter(entry => entry.enabled).length, 9);
   assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
   assert.ok(defaults.some(entry => entry.id === 'clinic'));
   assert.ok(defaults.some(entry => entry.id === 'office-profile'));
@@ -1774,6 +1782,27 @@ test('世界书按关键词命中，常驻优先进入且超预算会跳过', ()
   assert.equal(tight.hits.length, 0);
   assert.equal(tight.dropped, 2);
 });
+
+test('v25 玩法说明写在世界书的常驻词条「心防」里，老档启动时自动补齐', () => withMemoryStorage(() => {
+  // 新档就有：心防是常驻词条，讲清护持、打穿与败法。
+  const fresh = builtinWorldbook();
+  const guard = fresh.find(entry => entry.id === 'guard');
+  assert.ok(guard, '内置词条里应该有「心防」');
+  assert.equal(guard.constant, true);
+  assert.equal(guard.name, '心防');
+  assert.ok(guard.content.includes('心防'));
+  assert.ok(guard.content.includes('踉跄'));
+  assert.ok(guard.content.includes('精神疤痕'));
+
+  // 老档：玩家自己的世界书里没有这条，启动时补进去，已有条目不动。
+  saveWorldbook([{ id: 'mine', name: '我的词条', keys: ['治疗'], content: '治疗按小时恢复。', enabled: true, constant: false, priority: 5, order: 0 }]);
+  assert.equal(syncBuiltinWorldbook(), true);
+  const merged = loadWorldbook();
+  assert.ok(merged.some(entry => entry.id === 'guard'), '应该补上心防');
+  assert.ok(merged.some(entry => entry.id === 'mine'), '玩家自己的词条要留着');
+  // 再跑一次不该重复补。
+  assert.equal(syncBuiltinWorldbook(), false);
+}));
 
 test('世界书与 SillyTavern 导出格式往返，并夹取非法字段', () => {
   const source = { entries: { 0: { uid: 0, key: ['夜班', '值班'], comment: '夜班规则', content: '六小时。', constant: true, disable: false, order: 3, priority: 7 } } };
@@ -2668,7 +2697,7 @@ test('内容包能完整导出读回，非法 JSON 与版本会被拒绝', () =>
   assert.equal(library.missions[0].enemyIds[0], 'custom-monster-pack01');
   const pack = exportContentPack(library);
   assert.equal(pack.format, CONTENT_PACK_FORMAT);
-  assert.equal(pack.version, 1);
+  assert.equal(pack.version, LIBRARY_SCHEMA);
   assert.equal(pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length, 5);
   const read = readContentPack(JSON.stringify(pack));
   assert.equal(read.ok, true);
@@ -3029,6 +3058,8 @@ test('v19 污染每天只按等级自然上升，三方当主涨幅相同，跨�
 
   const rises = FACTION_ORDER.map((faction: FactionId) => {
     const state = v19State();
+    // v24 起了污染地板，这一天先在循环起点上，才只剩自然上升。
+    state.cycleStartDay = state.day;
     state.pollution.plaza = 19;
     state.territories.plaza = faction;
     return endNightOnce(state).pollution.plaza;
@@ -3036,11 +3067,13 @@ test('v19 污染每天只按等级自然上升，三方当主涨幅相同，跨�
   assert.deepEqual(rises, [20, 20, 20], '谁当主都不影响自然涨幅');
 
   const crossed = v19State();
+  crossed.cycleStartDay = crossed.day;
   crossed.pollution.plaza = 19;
   const crossedDay = endNightOnce(crossed);
   assert.ok(crossedDay.logs.some(log => log.id.startsWith('log-pollution-plaza')), '跨档要留一条日志');
 
   const quiet = v19State();
+  quiet.cycleStartDay = quiet.day;
   quiet.pollution.candy = 6;
   const quietDay = endNightOnce(quiet);
   assert.ok(!quietDay.logs.some(log => log.id.startsWith('log-pollution-candy')), '同档内不写日志');
@@ -3138,7 +3171,7 @@ test('v19 旧档 v11 迁到 12：污染补齐、档案默认、出身按 id 重�
   for (const candidate of legacy.candidates as Array<Record<string, unknown>>) delete candidate.factionTag;
 
   const loaded = loadState(JSON.stringify(legacy));
-  assert.equal(loaded.version, 16);
+  assert.equal(loaded.version, 18);
   assert.deepEqual(loaded.pollution, initialPollution(), '缺污染时整套补上初始值');
   assert.deepEqual(loaded.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const girl of loaded.girls) {
@@ -3351,9 +3384,9 @@ test('v19 事务所档案逐字段 trim、限长，非法或空值只影响自�
   assert.equal(capped.goal.length, OFFICE_LIMITS.goal);
 });
 
-test('v19 新档是 version 16，带默认档案，三方态度统一 50', () => {
+test('v19 新档是 version 18，带默认档案，三方态度统一 50', () => {
   const state = createInitialState();
-  assert.equal(state.version, 16);
+  assert.equal(state.version, 18);
   assert.deepEqual(state.pollution, initialPollution());
   assert.deepEqual(state.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const faction of FACTION_ORDER) {
@@ -3555,10 +3588,10 @@ test('委托里的魔物超过 6 只会被夹到 6 只', () => {
 
 // ── v20 §1：一个技能池，少女与魔物共用；Boss 另起一组 ─────────────────────
 
-test('技能池只有一个：50 条公共池，少女和魔物拿到的是同一份', () => {
+test('技能池只有一个：52 条公共池，少女和魔物拿到的是同一份', () => {
   const girlPool = girlSkillPool();
   const monsterPool = monsterSkillPool();
-  assert.equal(girlPool.length, 50);
+  assert.equal(girlPool.length, 52);
   assert.deepEqual(monsterPool.map(skill => skill.id), girlPool.map(skill => skill.id));
   assert.ok(girlPool.every(skill => skill.tier !== 'boss'), '公共池里不能混进 Boss 技能');
   for (const tier of ['basic', 'signature', 'ultimate'] as const) {
@@ -3885,7 +3918,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 15', () => 
   ];
   state.warHistory = [{ pair: 'government-witch', day: 2 }, { pair: 'nonsense' as never, day: 3 }];
   const loaded = loadState(JSON.stringify(state));
-  assert.equal(loaded.version, 16);
+  assert.equal(loaded.version, 18);
   assert.equal(loaded.gold, 4321);
   assert.equal(hostilityValue(loaded, 'association-government'), 100, '越界值被夹回来');
   assert.equal(loaded.fronts.length, 1);
@@ -3898,7 +3931,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 15', () => 
   delete (old as unknown as Record<string, unknown>).fronts;
   delete (old as unknown as Record<string, unknown>).warHistory;
   const migrated = loadState(JSON.stringify(old));
-  assert.equal(migrated.version, 16);
+  assert.equal(migrated.version, 18);
   assert.equal(Object.keys(migrated.hostility).length, 3, '老档按初始旧账补齐');
   assert.deepEqual(migrated.fronts, []);
   assert.deepEqual(migrated.warHistory, []);
@@ -4188,7 +4221,7 @@ test('v15 读档保留 prologueSeen，v14 旧档按已看过处理', () => {
   legacy.version = 14;
   const migrated = loadState(JSON.stringify(legacy));
   assert.ok(migrated);
-  assert.equal(migrated.version, 16);
+  assert.equal(migrated.version, 18);
   assert.equal(migrated.prologueSeen, true, '旧档不该被开场打断');
 });
 
@@ -4446,7 +4479,7 @@ test('v21 编成：自定义名册随存档往返，读档后仍认得出是谁'
 // ── v21 §4 开局编成 ──────────────────────────────
 test('v21 新档带默认三方阵容：首领回原属，随从 3/3/3', () => {
   const state = createInitialState();
-  assert.equal(state.version, 16);
+  assert.equal(state.version, 18);
   assert.equal(state.startersPicked, false);
   for (const faction of FACTION_ORDER) {
     const entry = state.factionRoster[faction];
@@ -4693,4 +4726,133 @@ test('v21 编成：已经在名册里的人不能再占三方位置', () => {
   });
   assert.equal(next.ok, false);
   assert.equal(next.state.girls.length, state.girls.length, '被拒绝时不该改状态');
+});
+
+// ── v25：共情值改成「心防」 ─────────────────────────────
+test('v25 心防上限＝面板共情 × 2，装备按百分比加成', () => {
+  assert.equal(GUARD_PER_EMPATHY, 2);
+  assert.equal(guardMax({ stats: { empathy: 60 } }), 120);
+  assert.equal(guardMax({ stats: { empathy: 60 } }, 15), 138);
+  assert.equal(guardMax({ stats: { empathy: 0 } }), 1);
+});
+
+test('v25 初始少女的心防由共情算出，不再是 80 + 等级 × 2', () => {
+  const s = createInitialState();
+  for (const girl of s.girls) {
+    assert.equal(girl.maxSpirit, guardMax({ stats: { empathy: effectiveStats(girl).empathy } }));
+    assert.equal(girl.spirit, girl.maxSpirit);
+  }
+});
+
+test('v25 护持减伤、破防后回满：常数与访问器', () => {
+  assert.equal(GUARD_HP_MUL, 0.7);
+  assert.equal(BROKEN_SPIRIT_MUL, 0.7);
+  assert.equal(BROKEN_TAKEN_MUL, 1.4);
+  assert.equal(guardHpMul({ spirit: 30 }), 0.7);
+  assert.equal(guardHpMul({ spirit: 0, spiritBroken: true }), 1);
+  assert.equal(brokenSpiritDamage(100), 70);
+  assert.equal(guardState({ spirit: 0, spiritBroken: true }), 'broken');
+  assert.match(guardStateLabel({ spirit: 12 }), /护持/);
+});
+
+test('v25 装备用百分比加成心防，旧的绝对值字段读入即折算', () => {
+  assert.equal(getItem('black-sugar')!.spiritBonusPct, 10);
+  assert.equal(getItem('association-badge')!.spiritBonusPct, 15);
+  for (const item of items) assert.equal(item.spiritBonus, undefined);
+  const clamped = sanitizeItem({ ...emptyItem(), spiritBonusPct: 999 });
+  assert.equal(clamped.spiritBonusPct, 60);
+  assert.equal(sanitizeItem({ ...emptyItem(), spiritBonus: 20 }).spiritBonus, undefined);
+});
+
+test('v25 战报里能看见护持减伤与心防被打穿', () => {
+  const s = createInitialState();
+  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'mirror' }).state;
+  const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
+  const battle = result.battles[0];
+  const notes = battle.events.map(e => e.note ?? '');
+  assert.ok(notes.some(note => note.includes('护持 −30%')), '应该有护持减伤的记录');
+  assert.ok(notes.some(note => note.includes('心防被打穿')), '应该有心防被打穿的记录');
+  assert.ok(battle.events.some(e => e.resource === 'spirit'));
+  // 心防条只在被打，不会被补回来。
+  assert.ok(!battle.events.some(e => e.resource === 'spirit' && (e.amount ?? 0) > 0 && (e.note ?? '').includes('恢复')));
+});
+
+test('v25 破防会眩晕一回合，但不会因此倒下', () => {
+  const s = createInitialState();
+  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'mirror' }).state;
+  const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
+  const battle = result.battles[0];
+  const stunned = battle.events.filter(e => e.skillId === 'stunned');
+  assert.ok(stunned.length > 0, '有人被眩晕');
+  const broken = battle.units.filter(u => u.spiritBroken);
+  assert.ok(broken.length > 0, '有人心防破了');
+  for (const unit of broken) assert.equal(unit.spirit, 0);
+});
+
+test('v25 战后心防回满，读档时也按共情重算', () => {
+  const s = createInitialState();
+  const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'mirror' }).state;
+  const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
+  for (const girl of result.girls) assert.equal(girl.spirit, effectiveGuard(girl));
+  const reloaded = loadState(JSON.stringify(result));
+  for (const girl of reloaded.girls) assert.equal(girl.maxSpirit, effectiveGuard(girl));
+});
+
+test('v25 v16 旧档迁移：绝对值折算成百分比，心防改写为共情 × 2', () => {
+  const legacy = JSON.parse(JSON.stringify(createInitialState()));
+  legacy.version = 16;
+  legacy.generatedItems = [{ ...getItem('association-badge')!, id: 'lm_item_legacy', name: '旧护符', spiritBonus: 20, spiritBonusPct: undefined }];
+  legacy.girls[0].maxSpirit = 84;
+  legacy.girls[0].spirit = 30;
+  const migrated = loadState(JSON.stringify(legacy));
+  assert.equal(migrated.version, 18);
+  assert.equal(migrated.generatedItems[0].spiritBonus, undefined);
+  assert.equal(migrated.generatedItems[0].spiritBonusPct, 30);
+  assert.equal(migrated.girls[0].maxSpirit, effectiveGuard(migrated.girls[0]));
+  assert.equal(migrated.girls[0].spirit, migrated.girls[0].maxSpirit);
+});
+
+test('v25 魔物的心防同样按共情算，不再读 maxSpirit', () => {
+  const monster = getMonster('mirror-nun')!;
+  const battle = simulateBattle({
+    mission: { id: 'probe-guard', name: '探针', enemyIds: ['mirror-nun'], rounds: 1, duration: 60, x: 50, y: 50 } as Mission,
+    girls: [createInitialState().girls[0]], day: 1, minutes: 0,
+  });
+  const enemy = battle.units.find(u => u.side === 'enemy')!;
+  assert.equal(enemy.maxSpirit, guardMax({ stats: monster.stats }));
+});
+
+test('v25 记忆清除：只清一条精神疤痕，不动等级，扣 1200 星砂', () => {
+  const s = createInitialState();
+  const girl = s.girls[0];
+  girl.scars = [
+    { id: 'scar-a', name: '旧伤', condition: '下雨天会疼', effect: { kind: 'stat', stat: 'agility', amount: -1 }, maxHpLoss: 0, gainedAt: '第 1 日', kind: 'body' },
+    { id: 'scar-b', name: '走神', condition: '听到钟声会愣住', effect: { kind: 'stat', stat: 'insight', amount: -1 }, maxHpLoss: 0, gainedAt: '第 2 日', kind: 'mental' },
+  ] as Scar[];
+  const before = s.gold;
+  const next = act(s, { type: 'clinic', girlId: girl.id, mode: 'clear', clearScarId: 'scar-b' }).state;
+  const after = next.girls.find(g => g.id === girl.id)!;
+  assert.equal(next.gold, before - MEMORY_CLEAR_COST);
+  assert.deepEqual(after.scars.map(scar => scar.id), ['scar-a']);
+  assert.equal(after.level, girl.level);
+  assert.ok(next.logs.some(log => log.text.includes('记忆清除')));
+});
+
+test('v25 没有精神疤痕时记忆清除被拒绝', () => {
+  const s = createInitialState();
+  s.girls[0].scars = [];
+  const result = act(s, { type: 'clinic', girlId: s.girls[0].id, mode: 'clear' });
+  assert.equal(result.ok, false);
+  assert.equal(result.state.gold, s.gold);
+});
+
+test('v25 精神型失败只留下精神疤痕', () => {
+  const s = createInitialState();
+  const battle = { ...JSON.parse(JSON.stringify(s)), } as unknown as GameState;
+  void battle;
+  const girl = s.girls[1];
+  const before = girl.scars.length;
+  const scar = makeScar(girl, { id: 'm', name: '深夜巡查', x: 50, y: 50 } as Mission, () => 0.01, '第 1 日 · 02:00', false, true);
+  assert.equal(girl.scars.length, before);
+  assert.equal(scar.kind, 'mental');
 });

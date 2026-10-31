@@ -21,7 +21,7 @@ export interface WorldbookEntry {
 }
 
 export const WORLDBOOK_KEY = 'night-sugar:worldbook';
-export const WORLDBOOK_BUDGET = 1600;
+export const WORLDBOOK_BUDGET = 1900;
 /** 事务所档案变化时广播，世界书页收到后重新读取，不必等页面重挂。 */
 export const WORLDBOOK_EVENT = 'night-sugar:worldbook';
 
@@ -58,7 +58,8 @@ export function builtinWorldbook(): WorldbookEntry[] {
     entry('moon', '空月', '【终焉】空月不是天体，是所有魔法少女的祈愿与绝望叠起来的那一轮月亮。它盈满的那一刻，也正是它开始亏的那一刻——缺下去的那一块不是影子，是它张开的嘴：它饥饿地吞掉一切魔法来源，从最弱的那颗星开始。\n\n【对抗史】三方曾经真的一起打过它。星灯协会交出过名录上最好的名字，市役所把整队量产编号填进钟楼的裂缝，月蚀庭烧掉了自己一半的配方。每一次都只把它按回去一会儿，代价一次次叠高，高到没有人敢再算总账。\n\n【现在的办法】三方不再谈胜利，只谈延期。按份额献祭魔法少女——协会出登记者，市役所出编号，月蚀庭出未受洗的孩子——用她们的愿望把它哄睡。封印有期限，到期就会松动，松动到撑不住的时候，钟楼上方的月亮就少一块。\n\n【写法提醒】空月不说话，也不谈判，没有代理人。别把它写成会讲条件的反派；提到它时写月相、饥饿、账本和名字，不要写它的台词。', { constant: true, priority: 96, order: 0 }),
     officeWorldbookEntry(),
     entry('wound', '生命与受伤', '血量上限由体质与等级决定，当前血量低于上限时行动会变慢。血量低于 25 的契约者不能派遣；战斗中倒下会留下疤痕，第五道疤痕意味着退役或死亡。疤痕不会自动消失，只能通过时间与照顾慢慢适应。', { constant: true, priority: 95, order: 1 }),
-    entry('bond', '共情与羁绊', '共情值是契约者的精神耐久，出勤、受伤与深夜谈话都会消耗它。共情见底时她会拒绝深入的话题，但不会立刻离开。羁绊是关系的刻度，20 点可以开始一条个人故事线，60 点以后她会主动谈起自己的过去。', { keys: ['共情', '羁绊', '关系', '亲近', '好感'], priority: 80, order: 2 }),
+    entry('bond', '共情与羁绊', '共情是契约者的精神刻度：它撑起心防的厚度，也决定她愿意把话说多深。羁绊是关系的刻度，20 点可以开始一条个人故事线，60 点以后她会主动谈起自己的过去。', { keys: ['共情', '羁绊', '关系', '亲近', '好感'], priority: 80, order: 2 }),
+    entry('guard', '心防', '心防是契约者用共情撑起来的一层东西，看不见，但每一发落在她身上的东西都会先碰到它。共情越高，心防越厚；礼装能再加一点，疤痕与劳累会削掉一点。\n\n【完好时】打在她身上的伤被削去三成，人还站得住，还能回话。\n\n【被打穿】碎的那一下她会踉跄一拍，整整一回合动不了。这一夜之内它不会自己长回来；护持散掉之后，每一击都比先前更实。\n\n【第二天】天亮以后心防重新长满——除非那道伤留成了精神疤痕。\n\n【败法】整队都踉跄或倒下，才算这一夜输了。这种败法留下的多半是精神疤痕，诊所可以做一次记忆清除把它抹掉，等级与肉体都不受影响。', { constant: true, keys: ['心防', '护持', '打穿', '踉跄'], priority: 84, order: 2 }),
     entry('corruption', '侵蚀与魔女化', '每次使用魔法都会累积侵蚀。侵蚀越高，立绘与语气越接近魔女；越过阈值后可以显形魔女化礼装，属性提高，但共情消耗加快。侵蚀不可逆，只能靠休息与陪伴放慢。', { constant: true, keys: ['侵蚀', '魔女', '魔女化', '异变'], priority: 90, order: 3 }),
     entry('gold', '星砂与安定度', '星砂是事务所的货币，用来签约、扩建、治疗与采购。安定度是城市对事务所的信任，影响候选者质量、势力态度与委托报酬；太低时会出现拒单与盘查。两者都不该凭空出现或消失。', { constant: true, priority: 85, order: 5 }),
     entry('factions', '三方势力', '星灯协会是官方登记机构，讲程序、要报告，名录上每一条名字都要有人负责；市役所管着城市的日常与夜禁，最在意不出事，手里握着成队的量产编号；月蚀庭不问出身，只问价钱，相信魔法少女是通往另一侧的桥，出手阔绰、条件危险。三方各占九块辖区中的若干块，辖区归属会影响委托的目标与报酬。三方过去曾一起对抗空月，如今只谈延期与份额。', { constant: true, priority: 85, order: 6 }),
@@ -172,6 +173,38 @@ export function syncOfficeWorldbook(
       window.dispatchEvent(new CustomEvent(WORLDBOOK_EVENT));
     } catch {
       /* 隐私模式下 dispatch 也可能抛错，写盘已成功就不影响使用 */
+    }
+  }
+  return ok;
+}
+
+/**
+ * 常驻词条是「游戏的说明书」，玩家改过世界书之后老档不会自动获得新写的条目，
+ * 所以每次启动都把缺失的常驻词条补进去；已有同名条目一律不动。
+ */
+export function syncBuiltinWorldbook(): boolean {
+  let entries: WorldbookEntry[];
+  try {
+    const raw = localStorage.getItem(WORLDBOOK_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as unknown;
+    const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { entries?: unknown[] }).entries) ? (parsed as { entries: unknown[] }).entries : null;
+    if (!list) return false;
+    entries = list.map((item, index) => sanitizeWorldbookEntry(item, index)).filter((item): item is WorldbookEntry => Boolean(item));
+    if (!entries.length) return false;
+  } catch {
+    return false;
+  }
+  const exist = new Set(entries.map(item => item.id));
+  const missing = builtinWorldbook().filter(item => item.constant && !exist.has(item.id));
+  if (!missing.length) return false;
+  const merged = [...entries, ...missing].sort((a, b) => b.priority - a.priority || a.order - b.order);
+  const ok = saveWorldbook(merged);
+  if (ok && typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent(WORLDBOOK_EVENT));
+    } catch {
+      /* 隐私模式下 dispatch 可能抛错，写盘已成功就不影响使用 */
     }
   }
   return ok;

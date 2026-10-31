@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Copy, Download, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
-import type { Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
+import type { BossTemplate, Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
 import { items as itemRegistry, factionInfo } from '../../content/items';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
 import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
+import { bosses as bossRegistry } from '../../content/bosses';
+import { TIER_LABEL, TIER_ORDER, tierOf } from '../../items';
 import { MAX_ENEMIES } from '../../combat';
 import {
-  applyLibrary, contentUsage, emptyCombatMission, emptyIncidentCard, emptyInvestigationMission, emptyItem, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
+  applyLibrary, contentUsage, emptyBoss, emptyCombatMission, emptyIncidentCard, emptyInvestigationMission, emptyItem, emptyMonster, emptySkill, exportContentPack, libraryCounts, mergeContentPack, readContentPack, ruleText, saveLibrary,
   type ContentLibrary, type ImportStrategy, type WorkshopKind,
 } from '../../content/library';
 import { MonsterGlyph } from '../MonsterGlyph';
@@ -40,8 +42,8 @@ const INCIDENT_KINDS: IncidentCard['kind'][] = ['faction', 'environment', 'girl'
 const INCIDENT_KIND_LABELS: Record<IncidentCard['kind'], string> = { faction: '三方势力', environment: '环境变化', girl: '契约者状态' };
 const INCIDENT_TRIGGERS: IncidentCard['trigger'][] = ['manual', 'pool'];
 const INCIDENT_TRIGGER_LABELS: Record<IncidentCard['trigger'], string> = { manual: '手动投放', pool: '随机池（后续接入）' };
-const KIND_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备与消耗品', monster: '魔物', incident: '弹窗事件' };
-const KIND_NEW_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备', monster: '魔物', incident: '弹窗' };
+const KIND_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备与消耗品', monster: '魔物', incident: '弹窗事件', boss: 'Boss' };
+const KIND_NEW_LABELS: Record<WorkshopKind, string> = { mission: '委托', skill: '技能', item: '装备', monster: '魔物', incident: '弹窗', boss: 'Boss' };
 
 interface PickerOption { value: string; label: string; note?: string; group?: string }
 
@@ -157,6 +159,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     monster: library.monsters[0]?.id ?? monsterRegistry[0]?.id ?? '',
     mission: (library.missions.find(entry => entry.work === 'investigation') ?? library.missions[0] ?? missionTemplates().find(entry => entry.work === 'investigation') ?? missionTemplates()[0])?.id ?? '',
     incident: library.incidents[0]?.id ?? '',
+    boss: library.bosses[0]?.id ?? bossRegistry[0]?.id ?? '',
   });
   const [tab, setTab] = useState<'form' | 'preview'>('form');
   const [strategy, setStrategy] = useState<ImportStrategy>('rename');
@@ -173,12 +176,15 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     [draft.missions],
   );
   const allIncidents = draft.incidents;
+  const allBosses = useMemo(() => [...bossRegistry.filter(entry => !isCustom(entry.id)), ...draft.bosses], [draft.bosses]);
   const list: { id: string; name: string; note: string }[] = kind === 'skill'
     ? allSkills.map(entry => ({ id: entry.id, name: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}` }))
     : kind === 'item'
       ? allItems.map(entry => ({ id: entry.id, name: entry.name, note: `${factionInfo[entry.faction].name} · ${entry.slot}` }))
       : kind === 'monster'
         ? allMonsters.map(entry => ({ id: entry.id, name: entry.name, note: `${entry.rank} · ${entry.element}` }))
+        : kind === 'boss'
+          ? allBosses.map(entry => ({ id: entry.id, name: entry.name, note: `血量 ${entry.maxHp} · ${entry.phases.length} 阶段 · 第 ${entry.firstDay} 天` }))
         : kind === 'incident'
           ? allIncidents.map(entry => ({ id: entry.id, name: entry.title, note: `${INCIDENT_KIND_LABELS[entry.kind]} · ${entry.options.length} 个选项` }))
           : allMissions.filter(entry => entry.work === missionWork).map(entry => ({ id: entry.id, name: entry.title, note: `${entry.difficulty} · ${MISSION_WORK_LABELS[entry.work]} · ${entry.duration} 分` }));
@@ -188,8 +194,9 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
   const monster = allMonsters.find(entry => entry.id === currentId) ?? allMonsters[0];
   const mission = allMissions.find(entry => entry.id === currentId) ?? allMissions[0];
   const incident = allIncidents.find(entry => entry.id === currentId) ?? allIncidents[0];
-  const current = kind === 'skill' ? skill : kind === 'item' ? item : kind === 'monster' ? monster : kind === 'incident' ? incident : mission;
-  const currentName = kind === 'mission' ? mission?.title : kind === 'incident' ? incident?.title : (current as Skill | Equipment | MonsterTemplate | undefined)?.name;
+  const boss = allBosses.find(entry => entry.id === currentId) ?? allBosses[0];
+  const current = kind === 'skill' ? skill : kind === 'item' ? item : kind === 'monster' ? monster : kind === 'boss' ? boss : kind === 'incident' ? incident : mission;
+  const currentName = kind === 'mission' ? mission?.title : kind === 'incident' ? incident?.title : (current as Skill | Equipment | MonsterTemplate | BossTemplate | undefined)?.name;
   const editable = Boolean(current && isCustom(current.id));
 
   useEffect(() => {
@@ -232,6 +239,14 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     if (!mission || !isCustom(mission.id)) return;
     setDraft(prev => ({ ...prev, missions: prev.missions.map(entry => entry.id === mission.id ? { ...entry, ...patch } : entry) }));
   };
+  const patchBoss = (patch: Partial<BossTemplate>) => {
+    if (!boss || !isCustom(boss.id)) return;
+    setDraft(prev => ({ ...prev, bosses: prev.bosses.map(entry => entry.id === boss.id ? { ...entry, ...patch } : entry) }));
+  };
+  const patchBossPhase = (index: number, patch: Partial<BossTemplate['phases'][number]>) => {
+    if (!boss) return;
+    patchBoss({ phases: boss.phases.map((entry, at) => at === index ? { ...entry, ...patch } : entry) });
+  };
   const patchIncident = (patch: Partial<IncidentCard>) => {
     if (!incident || !isCustom(incident.id)) return;
     setDraft(prev => ({ ...prev, incidents: prev.incidents.map(entry => entry.id === incident.id ? { ...entry, ...patch } : entry) }));
@@ -273,6 +288,10 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
       const next = emptyIncidentCard();
       setDraft(prev => ({ ...prev, incidents: [...prev.incidents, next] }));
       select(next.id);
+    } else if (kind === 'boss') {
+      const next = emptyBoss();
+      setDraft(prev => ({ ...prev, bosses: [...prev.bosses, next] }));
+      select(next.id);
     } else {
       const next = missionWork === 'combat' ? emptyCombatMission() : emptyInvestigationMission();
       setDraft(prev => ({ ...prev, missions: [...prev.missions, next] }));
@@ -299,6 +318,10 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
       const next: MissionTemplate = { ...mission, id: `custom-mission-${Date.now().toString(36)}`, title: `${mission.title} 副本`, enemyIds: [...mission.enemyIds] };
       setDraft(prev => ({ ...prev, missions: [...prev.missions, next] }));
       select(next.id);
+    } else if (kind === 'boss' && boss) {
+      const next: BossTemplate = { ...boss, id: `custom-boss-${Date.now().toString(36)}`, name: `${boss.name} 副本`, stats: { ...boss.stats }, phases: boss.phases.map(phase => ({ ...phase, skillIds: [...phase.skillIds], addIds: phase.addIds ? [...phase.addIds] : undefined })) };
+      setDraft(prev => ({ ...prev, bosses: [...prev.bosses, next] }));
+      select(next.id);
     } else if (kind === 'incident' && incident) {
       const next: IncidentCard = {
         ...incident, id: `custom-incident-${Date.now().toString(36)}`, title: `${incident.title} 副本`,
@@ -322,6 +345,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     if (kind === 'monster') setDraft(prev => ({ ...prev, monsters: prev.monsters.filter(entry => entry.id !== current.id) }));
     if (kind === 'mission') setDraft(prev => ({ ...prev, missions: prev.missions.filter(entry => entry.id !== current.id) }));
     if (kind === 'incident') setDraft(prev => ({ ...prev, incidents: prev.incidents.filter(entry => entry.id !== current.id) }));
+    if (kind === 'boss') setDraft(prev => ({ ...prev, bosses: prev.bosses.filter(entry => entry.id !== current.id) }));
     onNotify('已从草稿中移除，保存后生效。');
   };
 
@@ -493,10 +517,10 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
               <em>{allMissions.filter(entry => entry.work === work).length}</em>
             </button>
           ))}
-          {(['incident', 'skill', 'item', 'monster'] as WorkshopKind[]).map(entry => (
+          {(['incident', 'skill', 'item', 'monster', 'boss'] as WorkshopKind[]).map(entry => (
             <button key={entry} id={`workshop-tab-${entry}`} role="tab" aria-selected={kind === entry} className={kind === entry ? 'active' : ''} onClick={() => switchKind(entry)}>
               {KIND_LABELS[entry]}
-              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : allIncidents.length}</em>
+              <em>{entry === 'skill' ? allSkills.length : entry === 'item' ? allItems.length : entry === 'monster' ? allMonsters.length : entry === 'boss' ? allBosses.length : allIncidents.length}</em>
             </button>
           ))}
         </div>
@@ -562,10 +586,23 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                     <div>
                       <header><strong>{monster.name}</strong><em>{monster.rank} · {monster.element}</em></header>
                       <p>{monster.epithet}</p>
-                      <p className="workshop-muted">{monster.trait || '尚未填写特性描述。'} HP {monster.maxHp} / 共情 {monster.maxSpirit}</p>
+                      <p className="workshop-muted">{monster.trait || '尚未填写特性描述。'} HP {monster.maxHp} / 心防 {monster.stats.empathy * 2}</p>
                       <ul>{(monster.rules ?? []).map((rule, index) => <li key={index}>{ruleText(rule)}</li>)}</ul>
                       <p className="workshop-muted">技能：{monster.skillIds.map(id => skillRegistry.find(entry => entry.id === id)?.name ?? id).join('、')}</p>
                     </div>
+                  </article>
+                )}
+                {kind === 'boss' && boss && (
+                  <article className="workshop-card">
+                    <header><ShieldCheck size={16} /><strong>{boss.name}</strong><em>{boss.title} · 血量 {boss.maxHp}</em></header>
+                    <p>{boss.blurb || '还没有写说明。'}</p>
+                    <ul>
+                      <li>主体：{allMonsters.find(entry => entry.id === boss.monsterId)?.name ?? boss.monsterId}</li>
+                      {boss.phases.map((phase, index) => (
+                        <li key={index}>第 {index + 1} 阶段 · 血量 ≤ {Math.round(phase.atHpPct * 100)}% · {phase.skillIds.map(id => skillRegistry.find(entry => entry.id === id)?.name ?? id).join('、')}{phase.addIds?.length ? ` · 召来 ${phase.addIds.map(id => allMonsters.find(entry => entry.id === id)?.name ?? id).join('、')}` : ''}</li>
+                      ))}
+                      <li>第 {boss.firstDay} 天登场 · 击败后 {boss.defeatGapDays} 天再来 · 每天全城污染 +{boss.pollutionPressure}</li>
+                    </ul>
                   </article>
                 )}
                 {kind === 'incident' && incident && (
@@ -655,6 +692,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>名称</span><input id="workshop-name" value={item.name} disabled={!editable} onChange={event => patchItem({ name: event.target.value })} /></label>
                   <label className="field"><span>阵营</span><select id="workshop-faction" value={item.faction} disabled={!editable} onChange={event => patchItem({ faction: event.target.value as Equipment['faction'] })}>{Object.entries(factionInfo).map(([value, info]) => <option key={value} value={value}>{info.name}</option>)}</select></label>
                   <label className="field"><span>槽位</span><select id="workshop-slot" value={item.slot} disabled={!editable} onChange={event => patchItem({ slot: event.target.value as Equipment['slot'] })}><option value="weapon">武器</option><option value="charm">护符</option><option value="consumable">消耗品</option></select></label>
+                  <label className="field"><span>阶级</span><select id="workshop-item-tier" value={tierOf(item)} disabled={!editable} onChange={event => patchItem({ tier: Number(event.target.value) as Equipment['tier'] })}>{TIER_ORDER.map(value => <option key={value} value={value}>{TIER_LABEL[value]}</option>)}</select></label>
                   <label className="field"><span>价格</span><input id="workshop-price" type="number" value={item.price} disabled={!editable} onChange={event => patchItem({ price: Math.max(0, num(event.target.value)) })} /></label>
                   <label className="field"><span>声望要求</span><input id="workshop-standing" type="number" value={item.standingReq} disabled={!editable} onChange={event => patchItem({ standingReq: Math.max(0, num(event.target.value)) })} /></label>
                   <label className="field"><span>附带技能</span><select id="workshop-skill" value={item.skillId ?? ''} disabled={!editable} onChange={event => patchItem({ skillId: event.target.value || undefined })}><option value="">无</option>{skillRegistry.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
@@ -662,7 +700,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>消耗品效果</span><select id="workshop-consumable" value={item.effect ?? ''} disabled={!editable} onChange={event => patchItem({ effect: (event.target.value || undefined) as Equipment['effect'] })}><option value="">无</option>{CONSUMABLES.map(value => <option key={value} value={value}>{CONSUMABLE_LABELS[value]}</option>)}</select></label>
                   <label className="field"><span>效果数值</span><input id="workshop-amount" type="number" value={item.amount ?? 0} disabled={!editable} onChange={event => patchItem({ amount: num(event.target.value) })} /></label>
                   <label className="field"><span>额外生命</span><input id="workshop-maxhp" type="number" value={item.maxHpBonus ?? 0} disabled={!editable} onChange={event => patchItem({ maxHpBonus: num(event.target.value) })} /></label>
-                  <label className="field"><span>额外共情</span><input id="workshop-spirit" type="number" value={item.spiritBonus ?? 0} disabled={!editable} onChange={event => patchItem({ spiritBonus: num(event.target.value) })} /></label>
+                  <label className="field"><span>心防加成 %</span><input id="workshop-item-spirit-pct" type="number" value={item.spiritBonusPct ?? 0} disabled={!editable} onChange={event => patchItem({ spiritBonusPct: Math.max(0, Math.min(60, num(event.target.value))) })} /></label>
                   <label className="field"><span>每战侵蚀</span><input id="workshop-corruption" type="number" value={item.corruptionPerBattle ?? 0} disabled={!editable} onChange={event => patchItem({ corruptionPerBattle: num(event.target.value) })} /></label>
                   <label className="field"><span>伤害加成 %</span><input id="workshop-damage-bonus" type="number" value={item.damageBonus ?? 0} disabled={!editable} onChange={event => patchItem({ damageBonus: num(event.target.value) })} /></label>
                   <label className="field"><span>先手加成</span><input id="workshop-initiative-bonus" type="number" value={item.initiativeBonus ?? 0} disabled={!editable} onChange={event => patchItem({ initiativeBonus: num(event.target.value) })} /></label>
@@ -684,7 +722,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>阶级</span><select id="workshop-rank" value={monster.rank} disabled={!editable} onChange={event => patchMonster({ rank: event.target.value as MonsterTemplate['rank'] })}>{rankOrder.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
                   <label className="field"><span>属性</span><select id="workshop-element" value={monster.element} disabled={!editable} onChange={event => patchMonster({ element: event.target.value as MonsterTemplate['element'] })}>{ELEMENTS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
                   <label className="field"><span>生命</span><input id="workshop-hp" type="number" value={monster.maxHp} disabled={!editable} onChange={event => patchMonster({ maxHp: Math.max(10, num(event.target.value, 120)) })} /></label>
-                  <label className="field"><span>共情值</span><input id="workshop-spirit" type="number" value={monster.maxSpirit} disabled={!editable} onChange={event => patchMonster({ maxSpirit: Math.max(0, num(event.target.value)) })} /></label>
+                  <label className="field"><span>心防</span><input id="workshop-monster-guard" type="number" value={monster.stats.empathy * 2} disabled onChange={() => undefined} title="心防由共情值决定（共情 × 2），不再单独填写" /></label>
                   <label className="field"><span>主色</span><input id="workshop-color" type="color" value={monster.color} disabled={!editable} onChange={event => patchMonster({ color: event.target.value })} /></label>
                 </div>
                 <div className="workshop-stats">
@@ -797,6 +835,51 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   </div>
                 </section>}
                 <p className="workshop-muted">保存后进入夜间委托轮转池；也可以点右上「投放测试」立刻在当前夜晚生成一份。</p>
+              </div>
+            )}
+
+            {current && tab === 'form' && kind === 'boss' && boss && (
+              <div className="workshop-form">
+                <div className="workshop-grid">
+                  <label className="field"><span>名称</span><input id="workshop-boss-name" value={boss.name} disabled={!editable} onChange={event => patchBoss({ name: event.target.value })} /></label>
+                  <label className="field"><span>头衔</span><input id="workshop-boss-title" value={boss.title} disabled={!editable} onChange={event => patchBoss({ title: event.target.value })} /></label>
+                  <label className="field"><span>主体魔物</span><select id="workshop-boss-monster" value={boss.monsterId} disabled={!editable} onChange={event => patchBoss({ monsterId: event.target.value })}>{allMonsters.filter(entry => !entry.id.startsWith('boss-mon-')).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                  <label className="field"><span>血量</span><input id="workshop-boss-hp" type="number" value={boss.maxHp} disabled={!editable} onChange={event => patchBoss({ maxHp: Math.max(200, num(event.target.value, 1200)) })} /></label>
+                  <label className="field"><span>报酬</span><input id="workshop-boss-reward" type="number" value={boss.reward} disabled={!editable} onChange={event => patchBoss({ reward: Math.max(100, num(event.target.value, 3000)) })} /></label>
+                  <label className="field"><span>登场日</span><input id="workshop-boss-first-day" type="number" value={boss.firstDay} disabled={!editable} onChange={event => patchBoss({ firstDay: Math.max(1, num(event.target.value, 10)) })} /></label>
+                  <label className="field"><span>击败后隔天</span><input id="workshop-boss-gap" type="number" value={boss.defeatGapDays} disabled={!editable} onChange={event => patchBoss({ defeatGapDays: Math.max(1, num(event.target.value, 10)) })} /></label>
+                  <label className="field"><span>每日污染压迫</span><input id="workshop-boss-pressure" type="number" value={boss.pollutionPressure} disabled={!editable} onChange={event => patchBoss({ pollutionPressure: Math.max(0, Math.min(10, num(event.target.value, 3))) })} /></label>
+                  <label className="field"><span>时长</span><input id="workshop-boss-duration" type="number" value={boss.duration} disabled={!editable} onChange={event => patchBoss({ duration: Math.max(30, num(event.target.value, 90)) })} /></label>
+                  <label className="field"><span>推荐等级</span><input id="workshop-boss-level" type="number" value={boss.recommendedLevel} disabled={!editable} onChange={event => patchBoss({ recommendedLevel: Math.max(1, Math.min(10, num(event.target.value, 6))) })} /></label>
+                  <label className="field"><span>主色</span><input id="workshop-boss-color" type="color" value={boss.color} disabled={!editable} onChange={event => patchBoss({ color: event.target.value })} /></label>
+                </div>
+                <div className="workshop-stats">
+                  {STAT_KEYS.map(key => (
+                    <label className="field" key={key}><span>{STAT_LABELS[key]}</span><input id={`workshop-boss-stat-${key}`} type="number" value={boss.stats[key]} disabled={!editable} onChange={event => patchBoss({ stats: { ...boss.stats, [key]: num(event.target.value, boss.stats[key]) } })} /></label>
+                  ))}
+                </div>
+                <label className="field"><span>说明</span><textarea id="workshop-boss-blurb" rows={3} value={boss.blurb} disabled={!editable} onChange={event => patchBoss({ blurb: event.target.value })} /></label>
+                {boss.phases.map((phase, index) => (
+                  <section className="workshop-section" key={index}>
+                    <header><h4>第 {index + 1} 阶段</h4><small>血量 ≤ {Math.round(phase.atHpPct * 100)}%</small></header>
+                    <div className="workshop-grid">
+                      <label className="field"><span>触发血量 %</span><input id={`workshop-boss-phase-${index + 1}`} type="number" value={Math.round(phase.atHpPct * 100)} disabled={!editable} onChange={event => patchBossPhase(index, { atHpPct: Math.max(1, Math.min(100, num(event.target.value, 100))) / 100 })} /></label>
+                      <label className="field"><span>台词</span><input id={`workshop-boss-phase-${index + 1}-line`} value={phase.line} disabled={!editable} onChange={event => patchBossPhase(index, { line: event.target.value })} /></label>
+                    </div>
+                    <div className="workshop-picker">
+                      {phase.skillIds.map((skillId, at) => (
+                        <div className="workshop-row" key={`${index}-${at}`}>
+                          <select id={`workshop-boss-phase-${index + 1}-skill-${at}`} value={skillId} disabled={!editable} onChange={event => patchBossPhase(index, { skillIds: phase.skillIds.map((id, pos) => pos === at ? event.target.value : id) })}>
+                            {skillRegistry.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+                          </select>
+                          <button id={`workshop-boss-phase-${index + 1}-skill-remove-${at}`} className="icon-btn" disabled={!editable || phase.skillIds.length <= 1} aria-label="移除技能" onClick={() => patchBossPhase(index, { skillIds: phase.skillIds.filter((_, pos) => pos !== at) })}><Trash2 size={12} /></button>
+                        </div>
+                      ))}
+                      <button id={`workshop-boss-phase-${index + 1}-skill-add`} type="button" className="ghost-btn workshop-picker-add" disabled={!editable || phase.skillIds.length >= 3} onClick={() => patchBossPhase(index, { skillIds: [...phase.skillIds, skillRegistry[0].id] })}><Plus size={13} /> 添加技能</button>
+                    </div>
+                  </section>
+                ))}
+                <p className="workshop-muted">阶段血量必须严格递减，第一阶段固定 100%。心防由共情推出（共情 × 2），不用单独填。</p>
               </div>
             )}
 

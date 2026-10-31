@@ -1,13 +1,14 @@
-import type { Element, Equipment, FactionId, GameState, IncidentCard, IncidentCardEffect, IncidentEffect, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
+import type { BossTemplate, Element, Equipment, FactionId, GameState, IncidentCard, IncidentCardEffect, IncidentEffect, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
 import { districts } from '../districts.ts';
 import { skillById, skills } from './skills.ts';
+import { bossSkillById } from './bossSkills.ts';
 import { itemById, items } from './items.ts';
 import { monsterById, monsters } from './monsters.ts';
 import { findEffectPreset } from './effectPresets.ts';
 
 export const LIBRARY_KEY = 'night-sugar:content:v1';
 export const CUSTOM_PREFIX = 'custom-';
-export const LIBRARY_SCHEMA = 1;
+export const LIBRARY_SCHEMA = 2;
 export const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
 export interface ContentLibrary {
@@ -18,9 +19,11 @@ export interface ContentLibrary {
   monsters: MonsterTemplate[];
   missions: MissionTemplate[];
   incidents: IncidentCard[];
+  /** 工坊自建的 Boss 模板。 */
+  bosses: BossTemplate[];
 }
 
-export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [], missions: [], incidents: [] });
+export const emptyLibrary = (): ContentLibrary => ({ schemaVersion: LIBRARY_SCHEMA, updatedAt: new Date().toISOString(), skills: [], items: [], monsters: [], missions: [], incidents: [], bosses: [] });
 
 const FACTION_IDS: FactionId[] = ['witch', 'association', 'government'];
 const ELEMENTS: Element[] = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'];
@@ -55,7 +58,7 @@ const customId = (value: unknown, kind: string) => {
 };
 const color = (value: unknown, fallback: string) => (/^#[0-9a-fA-F]{6}$/.test(String(value)) ? String(value) : fallback);
 
-export function newContentId(kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident'): string {
+export function newContentId(kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident' | 'boss'): string {
   const stamp = Date.now().toString(36);
   const salt = Math.floor(Math.random() * 46656).toString(36).padStart(3, '0');
   return `${CUSTOM_PREFIX}${kind}-${stamp}${salt}`;
@@ -86,6 +89,17 @@ export function emptyMonster(): MonsterTemplate {
       palette: { body: '#34283f', shade: '#191221', rim: '#d9c2f2' }, aura: '故障', motif: '星',
     },
     codex: { habit: '', weakness: '' },
+  };
+}
+
+export function emptyBoss(): BossTemplate {
+  return {
+    id: newContentId('boss'), name: '未命名王座', title: '尚未加冕',
+    blurb: '', monsterId: monsters[0]?.id ?? 'echo-cat',
+    maxHp: 1200, stats: { magic: 80, insight: 80, agility: 60, empathy: 60 },
+    phases: [{ atHpPct: 1, skillIds: ['boss-sugar-crown'], line: '' }],
+    reward: 3000, duration: 90, recommendedLevel: 6, color: '#F2A0C0',
+    firstDay: 10, defeatGapDays: 10, pollutionPressure: 3,
   };
 }
 
@@ -206,7 +220,8 @@ export function sanitizeItem(raw: unknown, skillPool: Set<string> = new Set(skil
   if (typeof value.skillId === 'string' && skillPool.has(value.skillId)) item.skillId = value.skillId;
   if (value.corruptionPerBattle !== undefined) item.corruptionPerBattle = Math.round(number(value.corruptionPerBattle, 0, -20, 20));
   if (value.maxHpBonus !== undefined) item.maxHpBonus = Math.round(number(value.maxHpBonus, 0, 0, 300));
-  if (value.spiritBonus !== undefined) item.spiritBonus = Math.round(number(value.spiritBonus, 0, 0, 200));
+  delete item.spiritBonus;
+  if (value.spiritBonusPct !== undefined) item.spiritBonusPct = Math.round(number(value.spiritBonusPct, 0, 0, 60));
   if (value.damageBonus !== undefined) item.damageBonus = Math.round(number(value.damageBonus, 0, 0, 100));
   if (value.initiativeBonus !== undefined) item.initiativeBonus = Math.round(number(value.initiativeBonus, 0, 0, 100));
   if (value.effect !== undefined) item.effect = oneOf(value.effect, ITEM_EFFECTS, 'heal');
@@ -398,6 +413,54 @@ export function sanitizeIncidentCard(raw: unknown): IncidentCard | undefined {
   };
 }
 
+/** Boss 模板：阶段必须严格递减、第一段为 1，技能与添怪都要存在。 */
+export function sanitizeBoss(raw: unknown, monsterPool: Set<string>, skillPool: Set<string>): BossTemplate | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as Record<string, unknown>;
+  const id = customId(value.id, 'boss');
+  if (!id) return undefined;
+  const name = text(value.name, 16);
+  if (!name) return undefined;
+  const monsterId = typeof value.monsterId === 'string' ? value.monsterId.trim() : '';
+  // 不许拿 Boss 副本当主体，否则一层套一层。
+  if (!monsterId || !monsterPool.has(monsterId) || monsterId.startsWith('boss-mon-')) return undefined;
+  const rawPhases = Array.isArray(value.phases) ? value.phases : [];
+  const phases: BossTemplate['phases'] = [];
+  let previous = 1.01;
+  for (const entry of rawPhases.slice(0, 3)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const phase = entry as Record<string, unknown>;
+    const atHpPct = clamp(0.01, 1, Number(phase.atHpPct ?? 1));
+    if (!(atHpPct < previous)) return undefined;
+    previous = atHpPct;
+    const skillIds = (Array.isArray(phase.skillIds) ? phase.skillIds : [])
+      .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
+      .filter(skill => skill && skillPool.has(skill));
+    if (!skillIds.length) return undefined;
+    const addIds = (Array.isArray(phase.addIds) ? phase.addIds : [])
+      .map(monster => (typeof monster === 'string' ? monster.trim() : ''))
+      .filter(monster => monster && monsterPool.has(monster) && !monster.startsWith('boss-mon-'));
+    phases.push({ atHpPct, skillIds, addIds: addIds.length ? addIds : undefined, line: text(phase.line, 60) });
+  }
+  if (!phases.length || phases[0].atHpPct !== 1) return undefined;
+  const stat = (key: StatKey) => Math.round(number((value.stats as Record<string, unknown> | undefined)?.[key], 70, 1, 220));
+  return {
+    id, name, title: text(value.title, 16) || '无人加冕',
+    blurb: text(value.blurb, 200),
+    monsterId,
+    maxHp: Math.round(number(value.maxHp, 1200, 200, 20000)),
+    stats: { magic: stat('magic'), insight: stat('insight'), agility: stat('agility'), empathy: stat('empathy') },
+    phases,
+    reward: Math.round(number(value.reward, 3000, 100, 40000)),
+    duration: Math.round(number(value.duration, 90, 30, 240)),
+    recommendedLevel: Math.round(number(value.recommendedLevel, 6, 1, 10)),
+    color: color(value.color, '#F2A0C0'),
+    firstDay: Math.round(number(value.firstDay, 10, 1, 60)),
+    defeatGapDays: Math.round(number(value.defeatGapDays, 10, 1, 60)),
+    pollutionPressure: Math.round(number(value.pollutionPressure, 3, 0, 10)),
+  };
+}
+
 export function sanitizeLibrary(raw: unknown): ContentLibrary {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const dedupe = <T extends { id: string }>(list: (T | undefined)[]): T[] => {
@@ -409,11 +472,13 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
     });
   };
   const cleanSkills = dedupe(Array.isArray(value.skills) ? value.skills.map(sanitizeSkill) : []);
-  const skillPool = new Set([...skillById.keys(), ...cleanSkills.map(skill => skill.id)]);
+  // Boss 技能单独一张表，但 Boss 模板要引用它们，所以合法 id 池得并入。
+  const skillPool = new Set([...skillById.keys(), ...bossSkillById.keys(), ...cleanSkills.map(skill => skill.id)]);
   const cleanItems = dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []);
   const itemPool = new Set([...itemById.keys(), ...cleanItems.map(item => item.id)]);
   const cleanMonsters = dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, skillPool)) : []);
   const monsterPool = new Set([...monsterById.keys(), ...cleanMonsters.map(monster => monster.id)]);
+  const cleanBosses = dedupe(Array.isArray(value.bosses) ? value.bosses.map(entry => sanitizeBoss(entry, monsterPool, skillPool)) : []);
   return {
     schemaVersion: LIBRARY_SCHEMA,
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
@@ -422,6 +487,7 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
     monsters: cleanMonsters,
     missions: dedupe(Array.isArray(value.missions) ? value.missions.map(entry => sanitizeMission(entry, monsterPool, itemPool)) : []),
     incidents: dedupe(Array.isArray(value.incidents) ? value.incidents.map(sanitizeIncidentCard) : []),
+    bosses: cleanBosses,
   };
 }
 
@@ -436,6 +502,7 @@ export interface ContentPackFile {
   monsters: MonsterTemplate[];
   missions: MissionTemplate[];
   incidents: IncidentCard[];
+  bosses: BossTemplate[];
 }
 
 /** 导出当前内容库；格式固定，便于人工检查和跨设备分享。 */
@@ -450,6 +517,7 @@ export function exportContentPack(library: ContentLibrary): ContentPackFile {
     monsters: clean.monsters,
     missions: clean.missions,
     incidents: clean.incidents,
+    bosses: clean.bosses,
   };
 }
 
@@ -469,12 +537,12 @@ export function readContentPack(raw: string): ContentPackReadResult {
   if (value.format !== CONTENT_PACK_FORMAT) return { ok: false, errors: ['不是夜糖事务所的内容包（format 不匹配）。'], invalid: 0 };
   const version = typeof value.version === 'number' ? value.version : 0;
   if (!Number.isInteger(version) || version < 1 || version > LIBRARY_SCHEMA) {
-    return { ok: false, errors: [`内容包版本 ${String(value.version ?? '未知')} 不受支持（当前支持 1）。`], invalid: 0 };
+    return { ok: false, errors: [`内容包版本 ${String(value.version ?? '未知')} 不受支持（当前支持 2）。`], invalid: 0 };
   }
   const pack = sanitizeLibrary(value);
-  const rawCount = ['skills', 'items', 'monsters', 'missions', 'incidents']
+  const rawCount = ['skills', 'items', 'monsters', 'missions', 'incidents', 'bosses']
     .reduce((sum, key) => sum + (Array.isArray(value[key]) ? (value[key] as unknown[]).length : 0), 0);
-  const cleanCount = pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length;
+  const cleanCount = pack.skills.length + pack.items.length + pack.monsters.length + pack.missions.length + pack.incidents.length + pack.bosses.length;
   return { ok: true, pack, errors: [], invalid: Math.max(0, rawCount - cleanCount) };
 }
 
@@ -489,7 +557,7 @@ export interface ContentMergeResult {
   conflicts: number;
 }
 
-type ItemKind = 'skills' | 'items' | 'monsters' | 'missions' | 'incidents';
+type ItemKind = 'skills' | 'items' | 'monsters' | 'missions' | 'incidents' | 'bosses';
 type Planned<T> = { action: 'add' | 'replace'; originalId: string; entry: T };
 
 /** 把内容包合并进当前库；冲突可跳过、覆盖或另存为新 id（并重映射跨条目引用）。 */
@@ -499,9 +567,9 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
   const skillRename = new Map<string, string>();
   const itemRename = new Map<string, string>();
   const monsterRename = new Map<string, string>();
-  const nextId = (kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident') => newContentId(kind);
+  const nextId = (kind: 'skill' | 'item' | 'monster' | 'mission' | 'incident' | 'boss') => newContentId(kind);
 
-  const plan = <T extends { id: string }>(kind: ItemKind, list: T[], singular: 'skill' | 'item' | 'monster' | 'mission' | 'incident', rename: Map<string, string> | undefined) => {
+  const plan = <T extends { id: string }>(kind: ItemKind, list: T[], singular: 'skill' | 'item' | 'monster' | 'mission' | 'incident' | 'boss', rename: Map<string, string> | undefined) => {
     const existing = new Set(base[kind].map(entry => entry.id));
     const entries: Planned<T>[] = [];
     let conflicts = 0, skipped = 0, replaced = 0, renamed = 0;
@@ -534,6 +602,15 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
     rewardEquipmentId: entry.rewardEquipmentId ? itemRename.get(entry.rewardEquipmentId) ?? entry.rewardEquipmentId : undefined,
   })), 'mission', undefined);
   const incidentPlan = plan('incidents', pack.incidents, 'incident', undefined);
+  const bossPlan = plan('bosses', pack.bosses.map(entry => ({
+    ...entry,
+    monsterId: monsterRename.get(entry.monsterId) ?? entry.monsterId,
+    phases: entry.phases.map(phase => ({
+      ...phase,
+      skillIds: phase.skillIds.map(id => skillRename.get(id) ?? id),
+      addIds: phase.addIds ? phase.addIds.map(id => monsterRename.get(id) ?? id) : undefined,
+    })),
+  })), 'boss', undefined);
 
   const apply = <T extends { id: string }>(kind: ItemKind, entries: Planned<T>[]): T[] => {
     const replacements = new Map(entries.filter(entry => entry.action === 'replace').map(entry => [entry.originalId, entry.entry]));
@@ -551,16 +628,18 @@ export function mergeContentPack(current: ContentLibrary, incoming: ContentLibra
       monsters: apply('monsters', monsterPlan.entries),
       missions: apply('missions', missionPlan.entries),
       incidents: apply('incidents', incidentPlan.entries),
+      bosses: apply('bosses', bossPlan.entries),
     }),
     added: skillPlan.entries.filter(entry => entry.action === 'add').length
       + itemPlan.entries.filter(entry => entry.action === 'add').length
       + monsterPlan.entries.filter(entry => entry.action === 'add').length
       + missionPlan.entries.filter(entry => entry.action === 'add').length
-      + incidentPlan.entries.filter(entry => entry.action === 'add').length,
-    replaced: skillPlan.replaced + itemPlan.replaced + monsterPlan.replaced + missionPlan.replaced + incidentPlan.replaced,
-    skipped: skillPlan.skipped + itemPlan.skipped + monsterPlan.skipped + missionPlan.skipped + incidentPlan.skipped,
-    renamed: skillPlan.renamed + itemPlan.renamed + monsterPlan.renamed,
-    conflicts: skillPlan.conflicts + itemPlan.conflicts + monsterPlan.conflicts + missionPlan.conflicts + incidentPlan.conflicts,
+      + incidentPlan.entries.filter(entry => entry.action === 'add').length
+      + bossPlan.entries.filter(entry => entry.action === 'add').length,
+    replaced: skillPlan.replaced + itemPlan.replaced + monsterPlan.replaced + missionPlan.replaced + incidentPlan.replaced + bossPlan.replaced,
+    skipped: skillPlan.skipped + itemPlan.skipped + monsterPlan.skipped + missionPlan.skipped + incidentPlan.skipped + bossPlan.skipped,
+    renamed: skillPlan.renamed + itemPlan.renamed + monsterPlan.renamed + bossPlan.renamed,
+    conflicts: skillPlan.conflicts + itemPlan.conflicts + monsterPlan.conflicts + missionPlan.conflicts + incidentPlan.conflicts + bossPlan.conflicts,
   };
 }
 
@@ -590,6 +669,7 @@ function purgeCustom<T extends { id: string }>(list: T[], map: Map<string, T>): 
 
 let currentMissions: MissionTemplate[] = [];
 let currentIncidents: IncidentCard[] = [];
+let currentBosses: BossTemplate[] = [];
 
 /** 把内容库同步进运行期注册表；重复调用会替换同名自制条目。 */
 export function applyLibrary(library: ContentLibrary): void {
@@ -602,6 +682,7 @@ export function applyLibrary(library: ContentLibrary): void {
   for (const monster of clean.monsters) { monsters.push(monster); monsterById.set(monster.id, monster); }
   currentMissions = [...clean.missions];
   currentIncidents = [...clean.incidents];
+  currentBosses = [...clean.bosses];
 }
 
 /** 当前注册的自制委托模板；game.ts 的轮转池会追加它们。 */
@@ -612,6 +693,11 @@ export function customMissionTemplates(): MissionTemplate[] {
 /** 当前注册的自制弹窗事件卡；工坊与蓝图导入会读取它们。 */
 export function customIncidentCards(): IncidentCard[] {
   return [...currentIncidents];
+}
+
+/** 当前注册的自制 Boss；Boss 池会把它排在最后，同 id 以工坊为准。 */
+export function customBossTemplates(): BossTemplate[] {
+  return [...currentBosses];
 }
 
 export function initContentLibrary(): ContentLibrary {
@@ -632,7 +718,7 @@ export function withCustomStock(stock: MarketStockEntry[]): MarketStockEntry[] {
   return kept;
 }
 
-export type WorkshopKind = 'skill' | 'item' | 'monster' | 'mission' | 'incident';
+export type WorkshopKind = 'skill' | 'item' | 'monster' | 'mission' | 'incident' | 'boss';
 
 /** 删除前检查当前存档里的引用，避免把正在使用的技能/装备/魔物删掉。 */
 export function contentUsage(state: GameState, kind: WorkshopKind, id: string): string[] {
@@ -653,6 +739,9 @@ export function contentUsage(state: GameState, kind: WorkshopKind, id: string): 
   }
   if (kind === 'mission') {
     if (state.missions.some(mission => mission.templateId === id)) used.push('当前夜晚的委托');
+  }
+  if (kind === 'boss') {
+    if (state.boss?.template === id) used.push('游乐园中央那把椅子');
   }
   if (kind === 'incident') {
     if (state.incidents.some(incident => incident.cardId === id)) used.push('当前弹窗记录');
@@ -676,5 +765,5 @@ export function ruleText(rule: MonsterRule): string {
 }
 
 export function libraryCounts(library: ContentLibrary): string {
-  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length} · 委托 ${library.missions.length} · 弹窗 ${library.incidents.length}`;
+  return `技能 ${library.skills.length} · 装备 ${library.items.length} · 魔物 ${library.monsters.length} · 委托 ${library.missions.length} · 弹窗 ${library.incidents.length} · Boss ${library.bosses.length}`;
 }

@@ -3,6 +3,7 @@ import { Archive, ArrowUpRight, Check, Coins, Feather, Flower2, Info, Phone, Plu
 import type { FactionId, GameState, Girl } from '../types';
 import { factionInfo, getItem } from '../content/items';
 import { itemPrice, marketPool, marketUpgrade } from '../game';
+import { TIER_COLOR, TIER_LABEL, TIER_ORDER, TIER_STANDING, tierLabel, tierOf } from '../items';
 import { factionTagColor, factionTagLabel } from '../factions';
 import { pensionArrears, pensionFor } from '../contracts';
 import { findSkill } from '../content/skills';
@@ -72,7 +73,8 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
 
     {tab === 'supplies' && <div id="av-market-panel-supplies" role="tabpanel" aria-labelledby="av-market-tab-supplies" className="av-supplies">
       <div className="av-supply-refresh"><span><RefreshCw size={12} />每日 00:00 刷新 · 每个货位限购一次</span><small>售罄不补货，明日重新进货</small></div>
-      {(Object.keys(factionInfo) as FactionId[]).map(faction => { const info = factionInfo[faction]; const stock = state.marketStock.filter(entry => entry.faction === faction); return <section key={faction} className="av-supply-group" style={{ '--faction': info.color } as React.CSSProperties}><header><span className="av-supply-seal">{info.short}</span><div><small>{info.title}</small><h2>{info.name}</h2></div><span className="av-supply-standing">声望 <b>{state.factions[faction].standing}</b></span></header><div className="av-supply-grid">{stock.map(entry => { const item = getItem(entry.itemId); if (!item) return null; const price = itemPrice(state, item); const canBuy = !entry.sold && state.factions[faction].standing >= item.standingReq && state.gold >= price; return <article key={entry.id} className={`av-supply-card ${entry.sold ? 'sold' : ''}`}><div className="av-supply-title"><ShoppingBag size={13} /><b>{item.name}</b><span>{item.slot === 'consumable' ? '消耗品' : item.slot === 'weapon' ? '法器' : '护符'}</span></div><p>{item.passive ?? item.description}</p><div className="av-supply-buy"><span>{price.toLocaleString('zh-CN')} <small>星砂</small>{!entry.sold && <em className="av-supply-limit">限购 1</em>}</span><button id={`av-supply-buy-${entry.id}`} type="button" className="av-btn av-btn-small" disabled={!canBuy} onClick={() => onBuyItem(item.id, entry.id)}>{entry.sold ? <><Check size={12} />已售罄</> : state.factions[faction].standing < item.standingReq ? `声望 ${item.standingReq}` : <><Plus size={12} />购入</>}</button></div></article>; })}</div></section>; })}
+      <p className="av-section-caption"><Info size={11} /> 阶级越高越少见。声望不够的高阶物资不会摆上货架，只在下方的势力名旁边标出你目前能看到的最高阶。</p>
+      {(Object.keys(factionInfo) as FactionId[]).map(faction => { const info = factionInfo[faction]; const stock = state.marketStock.filter(entry => entry.faction === faction); return <section key={faction} className="av-supply-group" style={{ '--faction': info.color } as React.CSSProperties}><header><span className="av-supply-seal">{info.short}</span><div><small>{info.title}</small><h2>{info.name}</h2></div><span className="av-supply-standing">声望 <b>{state.factions[faction].standing}</b><small id={`av-supply-tier-${faction}`}>可见至 {unlockedTierLabel(state.factions[faction].standing)}</small></span></header><div className="av-supply-grid">{stock.map(entry => { const item = getItem(entry.itemId); if (!item) return null; const price = itemPrice(state, item); const canBuy = !entry.sold && state.factions[faction].standing >= item.standingReq && state.gold >= price; return <article key={entry.id} className={`av-supply-card ${entry.sold ? 'sold' : ''}`}><div className="av-supply-title"><ShoppingBag size={13} /><b>{item.name}</b><span className={`av-tier tier-${tierOf(item)}`} style={{ '--tier': TIER_COLOR[tierOf(item)] } as React.CSSProperties}>{tierLabel(item)}</span><span>{item.slot === 'consumable' ? '消耗品' : item.slot === 'weapon' ? '法器' : '护符'}</span></div><p>{item.passive ?? item.description}</p><div className="av-supply-buy"><span>{price.toLocaleString('zh-CN')} <small>星砂</small>{!entry.sold && <em className="av-supply-limit">限购 1</em>}</span><button id={`av-supply-buy-${entry.id}`} type="button" className="av-btn av-btn-small" disabled={!canBuy} onClick={() => onBuyItem(item.id, entry.id)}>{entry.sold ? <><Check size={12} />已售罄</> : state.factions[faction].standing < item.standingReq ? `声望 ${item.standingReq}` : <><Plus size={12} />购入</>}</button></div></article>; })}</div></section>; })}
       <p className="av-section-caption"><Info size={11} /> 物资进入仓库后，可在成员档案的“外观与装备”页装配；消耗品也可在那里使用。</p>
     </div>}
 
@@ -84,13 +86,18 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
   </section>;
 }
 
+function unlockedTierLabel(standing: number): string {
+  const reachable = TIER_ORDER.filter(tier => TIER_STANDING[tier] <= standing);
+  return TIER_LABEL[reachable.length ? reachable[reachable.length - 1] : 1];
+}
+
 function Chevron() { return <ArrowUpRight size={12} />; }
 
 function CandidateCard({ girl, state, onHire, onGirl }: { girl: Girl; state: GameState; onHire: (id: string) => void; onGirl: (id: string) => void }) {
   const hired = state.girls.some(member => member.id === girl.id);
   const stats: [string, number][] = [['魔力', girl.stats.magic], ['洞察', girl.stats.insight], ['敏捷', girl.stats.agility], ['共情', girl.stats.empathy]];
   return <article className="av-candidate" aria-labelledby={`av-candidate-name-${girl.id}`}>
-    <button id={`av-market-preview-${girl.id}`} type="button" className="av-candidate-preview" onClick={() => onGirl(girl.id)} aria-label={`查看${girl.name}的完整档案`}><GirlPortrait girl={girl} /><span className="av-candidate-rank">{girl.element}</span><span className="av-candidate-inspect">查看档案<ArrowUpRight size={12} /></span></button>
+    <button id={`av-market-preview-${girl.id}`} type="button" className="av-candidate-preview" onClick={() => onGirl(girl.id)} aria-label={`查看${girl.name}的完整档案`}><GirlPortrait girl={girl} anchor="face" /><span className="av-candidate-rank">{girl.element}</span><span className="av-candidate-inspect">查看档案<ArrowUpRight size={12} /></span></button>
     <div className="av-candidate-body"><div className="av-candidate-title"><h2 id={`av-candidate-name-${girl.id}`}>{girl.name}</h2><span className="av-tag">等级 {girl.level}</span></div><p className="av-candidate-role">{girl.codename} · {girl.title}</p><p className="av-candidate-quote">{girl.description}</p>
       <div className="av-candidate-origin" id={`av-candidate-origin-${girl.id}`} style={{ '--tag-color': factionTagColor(girl.factionTag) } as React.CSSProperties}><Feather size={10} />出身 · {factionTagLabel(girl.factionTag)}</div>
       <div className="av-candidate-skills">{girl.skills.map(findSkill).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).slice(0, 3).map(skill => <span className="av-tag" key={skill.id}><Sparkles size={10} />{skill.name}</span>)}</div>

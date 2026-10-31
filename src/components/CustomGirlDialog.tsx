@@ -33,7 +33,9 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
   let sh = sw / ratio;
   const maxX = image.naturalWidth - sw, maxY = image.naturalHeight - sh;
   const sx = Math.max(0, Math.min(maxX, (image.naturalWidth - sw) / 2 + (x / 100) * (sw / 2)));
-  const sy = Math.max(0, Math.min(maxY, (image.naturalHeight - sh) / 2 + (y / 100) * (sh / 2)));
+  // 与 GirlPortrait 同向：+y 表示露出更多上方、人像整体往下；再加 +12 的全局取景偏移。
+  const biasY = Math.max(-100, Math.min(100, y + 12));
+  const sy = Math.max(0, Math.min(maxY, (image.naturalHeight - sh) / 2 - (biasY / 100) * (sh / 2)));
   ctx.drawImage(image, sx, sy, sw, sh, 0, 0, 768, 960);
   return canvas.toDataURL('image/webp', 0.78);
 }
@@ -332,7 +334,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
             <label>容差<input aria-label="去背景容差" type="range" min={12} max={90} value={tolerance} onChange={e => changeTolerance(Number(e.target.value))} /></label>
             {cutNote && <small className="muted">{cutNote}</small>}
           </div>}
-          <label>{fieldHead('外貌描述', 'appearance')}<textarea className={`av-input${shimmer('appearance')}`} rows={2} value={appearance} onChange={e => editText('appearance', setAppearance, e.target.value)} maxLength={80} /></label>
+          <label>{fieldHead('外貌描述', 'appearance')}<textarea className={`av-input${shimmer('appearance')}`} rows={3} value={appearance} onChange={e => editText('appearance', setAppearance, e.target.value)} maxLength={200} /></label>
           <label>{fieldHead('性格描述', 'personality')}<textarea className={`av-input${shimmer('personality')}`} rows={2} value={personality} onChange={e => editText('personality', setPersonality, e.target.value)} maxLength={80} /></label>
           <label>{fieldHead('服装描述', 'outfitDescription')}<textarea className={`av-input${shimmer('outfitDescription')}`} rows={2} value={outfitDescription} onChange={e => editText('outfitDescription', setOutfitDescription, e.target.value)} maxLength={80} /></label>
         </div>

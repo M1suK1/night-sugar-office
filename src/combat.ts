@@ -2,7 +2,9 @@ import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, G
 import { effectKindLabels, getSkill } from './content/skills.ts';
 import { findAnySkill } from './skills.ts';
 import { findMonster } from './content/monsters.ts';
+import { applyEliteBuff, eliteBuffById } from './content/eliteBuffs.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
+import { BROKEN_TAKEN_MUL, GUARD_STUN_ROUNDS, brokenSpiritDamage, guardHpMul, guardMax, isGuarded } from './spirit.ts';
 import { factionInfo } from './content/items.ts';
 import { districtAt, districts } from './districts.ts';
 import { SHIFT_START } from './shift.ts';
@@ -55,10 +57,6 @@ export function addClock(day: number, minutes: number, add: number): { day: numb
   const nextDay = Math.floor((to - SHIFT_START) / 1440);
   return { day: nextDay, minutes: to - nextDay * 1440 };
 }
-export function spiritMax(girl: Girl): number {
-  const scarPenalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'maxSpirit' ? Math.abs(s.effect.amount) : 0), 0);
-  return clamp(40, 160, Math.round(60 + girl.stats.empathy * 0.6 - girl.fatigue * 0.2) - scarPenalty);
-}
 
 function statOf(unit: BattleUnit, key: StatKey): number {
   let value = unit.stats[key] ?? 0;
@@ -91,30 +89,46 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     initiativeBonus: gear.reduce((sum, item) => sum + (item.initiativeBonus ?? 0), 0),
   };
 }
-function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0, powerPct = 0): BattleUnit {
-  const monster = pool.find(m => m.id === id) ?? findMonster(id);
+function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0, powerPct = 0, buffId?: string | null, hpOverride?: number): BattleUnit {
+  const plain = pool.find(m => m.id === id) ?? findMonster(id);
+  // 精英不是新的魔物，只是一层 buff 套在同一只怪身上。
+  const elite = eliteBuffById(buffId);
+  const monster = plain && elite ? applyEliteBuff(plain, elite) : plain;
   const scale = (wounded ? 0.8 : 1) * Math.max(0.4, 1 + hpPct / 100);
   const power = Math.max(0.4, 1 + powerPct / 100);
   if (!monster) {
     // 内容被删掉或存档引用了不存在的魔物：显示为残影，而不是冒充第一只魔物。
     return {
       uid: `enemy-${index}-missing`, side: 'enemy', name: `未知魔物（${id}）`, portrait: id, color: '#6f6678',
-      hp: 1, maxHp: 1, spirit: 1, maxSpirit: 1,
+      hp: 1, maxHp: 1, spirit: 20, maxSpirit: 20,
       stats: { magic: 10, insight: 10, agility: 10, empathy: 10 }, skills: ['monster-claw'],
       cooldown: {}, effects: [], down: false, insightRoll: 0, scarHit: 0,
       dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
     };
   }
   const maxHp = Math.round(monster.maxHp * scale);
+  // Boss 消耗战：上一位玩家打剩下多少血，这一场就从多少血开始。
+  const startHp = hpOverride === undefined ? maxHp : clamp(1, maxHp, Math.round(hpOverride));
+  const stats = { magic: Math.round(monster.stats.magic * power), insight: Math.round(monster.stats.insight * power), agility: Math.round(monster.stats.agility * power), empathy: Math.round(monster.stats.empathy * power) };
+  // 魔物的心防不再手写：它等于自己的共情 × 2，和血量各自独立。
+  const guard = guardMax({ stats });
   return {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
-    hp: maxHp, maxHp, spirit: Math.round(monster.maxSpirit * scale), maxSpirit: Math.round(monster.maxSpirit * scale),
-    stats: { magic: Math.round(monster.stats.magic * power), insight: Math.round(monster.stats.insight * power), agility: Math.round(monster.stats.agility * power), empathy: Math.round(monster.stats.empathy * power) }, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false,
+    hp: startHp, maxHp, spirit: guard, maxSpirit: guard, stats, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false, phase: 1,
     insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0, monster,
   };
 }
 function alive(units: BattleUnit[], side: 'ally' | 'enemy'): BattleUnit[] {
-  return units.filter(u => u.side === side && !u.down && u.hp > 0 && u.spirit > 0);
+  // 心防被打穿只会让她踉跄，不会让她退场：退场条件回到血量。
+  return units.filter(u => u.side === side && !u.down && u.hp > 0);
+}
+
+/** 共情耗尽：加一回合眩晕、卸掉减伤，但人还站着。 */
+function breakGuard(unit: BattleUnit): void {
+  if (unit.spiritBroken) return;
+  unit.spirit = 0;
+  unit.spiritBroken = true;
+  addEffect(unit, { kind: 'stun', amount: 1, duration: GUARD_STUN_ROUNDS, source: '心防耗尽' });
 }
 function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
   const known = unit.skills.map(findAnySkill).filter((skill): skill is Skill => Boolean(skill));
@@ -183,6 +197,13 @@ function paySelfCost(unit: BattleUnit, skill: Skill): number {
     unit.hp -= real;
     return real;
   }
+  // 心防已经破了就没有共情可付：这条技能的代价改由血量垫付，不至于白白空放。
+  if (unit.spiritBroken) {
+    const real = Math.min(unit.hp - 1, Math.round(unit.maxHp * cost.pct / 100));
+    if (real <= 0) return 0;
+    unit.hp -= real;
+    return real;
+  }
   const real = Math.min(unit.spirit - 1, amount);
   if (real <= 0) return 0;
   unit.spirit -= real;
@@ -222,8 +243,10 @@ export const scarCatalog: Omit<Scar, 'id' | 'gainedAt' | 'missionId' | 'maxHpLos
   { name: '视力受损', kind: 'physical', condition: '右眼视野缺损', description: '她把站位固定成左侧朝敌。说是习惯，其实是看不见右边。', effect: { kind: 'hit', amount: -9 } },
   { name: '耳鸣', kind: 'physical', condition: '高频听力永久下降', description: '安静的时候最响。她学会了看别人的口型。', effect: { kind: 'stat', stat: 'insight', amount: -6 } },
 ];
-export function makeScar(girl: Girl, mission: Mission, rng: () => number, at: string, fatal: boolean): Scar {
-  const base = scarCatalog[Math.floor(rng() * scarCatalog.length)];
+export function makeScar(girl: Girl, mission: Mission, rng: () => number, at: string, fatal: boolean, mentalOnly = false): Scar {
+  // 被共情击穿而输掉的那一夜留下的是精神疤痕；被打伤留下的才是全表随机。
+  const pool = mentalOnly ? scarCatalog.filter(scar => scar.kind === 'mental') : scarCatalog;
+  const base = pool[Math.floor(rng() * pool.length)];
   return {
     id: `scar-${girl.id}-${Date.now().toString(36)}-${Math.floor(rng() * 9999).toString(36)}`,
     name: base.name, kind: base.kind, condition: base.condition, description: base.description,
@@ -242,6 +265,8 @@ export interface BattleSetup {
   /** 拦截战：敌方是辖区当主的所属少女，而不是委托里的魔物。 */
   battleKind?: 'commission' | 'interception';
   enemyGirls?: FactionGirl[];
+  /** 与 `mission.enemyIds` 对齐的血量覆盖（Boss 消耗战）。 */
+  enemyHpOverride?: number[];
 }
 
 /**
@@ -255,7 +280,7 @@ export interface BattleSetup {
 function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: number): BattleUnit {
   const scale = clamp(0.9, 1.1, 1 + (recommendedLevel - girl.level) * 0.05);
   const maxHp = Math.round((60 + girl.level * 14) * scale);
-  const maxSpirit = Math.round((40 + girl.level * 6) * scale);
+  const maxSpirit = guardMax({ stats: girl.stats });
   return {
     uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: girl.portrait, color: girl.color,
     girlId: girl.id, codename: girl.codename, portraitSpec: girl.portraitSpec,
@@ -277,7 +302,11 @@ export function simulateBattle(setup: BattleSetup): BattleState {
     ...girls.map(unitFromGirl),
     ...(interception
       ? (setup.enemyGirls ?? []).map((girl, index) => unitFromEnemyGirl(girl, index, mission.recommendedLevel))
-      : (mission.enemyIds ?? []).map((id, index) => unitFromMonster(id, index, setup.woundedEnemies ?? false, setup.monsters ?? [], env.enemyHpPct ?? 0, env.enemyPowerPct ?? 0))),
+      : (mission.enemyIds ?? []).map((id, index) => unitFromMonster(
+        id, index, setup.woundedEnemies ?? false, setup.monsters ?? [], env.enemyHpPct ?? 0, env.enemyPowerPct ?? 0,
+        mission.enemyBuffs?.[index] ?? null,
+        (setup.enemyHpOverride ?? mission.enemyHpOverride)?.[index],
+      ))),
   ];
   const startedAt = { day, minutes };
   // 拦截战的战报标题要写明是谁拦的，正文仍保留原委托名，玩家才知道哪张单子被作废。
@@ -295,24 +324,54 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       units: units.map(u => ({ ...u, stats: { ...u.stats }, skills: [...u.skills], cooldown: { ...u.cooldown }, effects: u.effects.map(e => ({ ...e })) })),
     });
   };
-  const outcomeNow = (): BattleState['outcome'] | undefined => {
+  const outOfAction = (u: BattleUnit) =>
+    u.down || u.hp <= 0 || u.effects.some(e => e.kind === 'stun' && e.remaining > 0);
+  const outcomeNow = (roundEnd = false): BattleState['outcome'] | undefined => {
     if (!alive(units, 'enemy').length) return 'victory';
     if (!alive(units, 'ally').length) return 'defeat';
+    // 「全队眩晕」判负只在轮末检查，并且本轮刚被打穿的人豁免一次：
+    // 一次群体精神冲击把三个人同时打穿，不应该当场结束战斗。
+    if (!roundEnd) return undefined;
+    const allies = units.filter(u => u.side === 'ally');
+    const judged = allies.filter(u => !brokenThisRound.has(u.uid));
+    if (judged.length && judged.every(outOfAction)) return 'defeat';
     return undefined;
   };
   let empathyPrev = new Set<string>();
   let empathyThisRound = new Set<string>();
+  const brokenThisRound = new Set<string>();
   for (let round = 1; round <= rounds; round++) {
     state.round = round;
     for (const unit of units) {
       if (unit.down) continue;
-      // Boss 换组：血量掉到一半时把整套招式换掉，只在换的那一轮播一次。
-      const nextPhase = unit.monster?.bossPhaseSkillIds;
-      if (nextPhase?.length && (unit.phase ?? 1) === 1 && unit.hp <= unit.maxHp * 0.5) {
-        unit.skills = [...nextPhase];
-        unit.phase = 2;
-        unit.cooldown = {};
-        log({ round, actor: unit.name, skillId: 'boss-phase', skillName: '换组', targets: [unit.name], hit: true, note: `${unit.name}换了一套招式` });
+      // Boss 换组：血量按绝对比例掉到某个阶段线就整套换招式，每换一次播一次。
+      const phases = unit.monster?.bossPhases;
+      if (phases?.length) {
+        const pct = unit.hp / Math.max(1, unit.maxHp);
+        let index = 0;
+        for (let i = 0; i < phases.length; i++) if (pct <= phases[i].atHpPct) index = i;
+        const phase = index + 1;
+        if (phase > (unit.phase ?? 1)) {
+          const target = phases[index];
+          unit.skills = [...target.skillIds];
+          unit.cooldown = {};
+          unit.phase = phase;
+          log({ round, actor: unit.name, skillId: 'boss-phase', skillName: `第 ${phase} 阶段`, targets: [unit.name], hit: true, note: target.line ?? `${unit.name}换了一套招式` });
+          for (const addId of target.addIds ?? []) {
+            if (units.filter(u => u.side === 'enemy' && !u.down).length >= MAX_ENEMIES) break;
+            const add = unitFromMonster(addId, units.filter(u => u.side === 'enemy').length, false, setup.monsters ?? []);
+            units.push(add);
+            log({ round, actor: unit.name, skillId: 'boss-add', skillName: '增援', targets: [add.name], hit: true, note: `${add.name}被唤了出来` });
+          }
+        }
+      } else {
+        const nextPhase = unit.monster?.bossPhaseSkillIds;
+        if (nextPhase?.length && (unit.phase ?? 1) === 1 && unit.hp <= unit.maxHp * 0.5) {
+          unit.skills = [...nextPhase];
+          unit.phase = 2;
+          unit.cooldown = {};
+          log({ round, actor: unit.name, skillId: 'boss-phase', skillName: '换组', targets: [unit.name], hit: true, note: `${unit.name}换了一套招式` });
+        }
       }
       for (const effect of unit.effects) {
         if (effect.kind === 'dot') {
@@ -351,7 +410,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       }
       for (const effect of unit.effects) if (effect.kind !== 'stun') effect.remaining -= 1;
       unit.effects = unit.effects.filter(e => e.kind === 'stun' || e.remaining > 0);
-      if (unit.hp <= 0 || unit.spirit <= 0) unit.down = true;
+      if (unit.hp <= 0) unit.down = true;
     }
     const living = units.filter(u => !u.down);
     for (const unit of living) {
@@ -374,7 +433,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       unit.cooldown[skill.id] = skill.cooldown;
       const paid = paySelfCost(unit, skill);
       if (paid > 0) {
-        log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, resource: skill.selfCost?.resource ?? 'hp', amount: paid, note: `施放代价：自身 ${paid} 点${skill.selfCost?.resource === 'spirit' ? '共情值' : '血量'}` });
+        log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, resource: skill.selfCost?.resource ?? 'hp', amount: paid, note: `施放代价：自身 ${paid} 点${skill.selfCost?.resource === 'spirit' ? '心防' : '血量'}` });
       }
       const targets = pickTargets(unit, skill, units, rng);
       const baseAccuracy = skillAccuracy(skill);
@@ -400,23 +459,48 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
           const gear = 1 + Math.max(-50, Math.min(200, unit.damageBonus ?? 0)) / 100;
           const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain * gear));
-          const shield = skill.resource === 'spirit' ? 0 : Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), raw);
-          const dealt = skill.resource === 'spirit' ? Math.min(target.spirit, raw) : Math.min(target.hp, absorb(target, raw));
-          if (skill.resource === 'spirit') {
+          let dealt = 0;
+          let shield = 0;
+          let resource: 'hp' | 'spirit' = skill.resource;
+          let note = '';
+          if (skill.resource === 'spirit' && isGuarded(target)) {
+            // 心防在：共情技只削心防，不碰血量，也不吃护盾。
+            dealt = Math.min(target.spirit, raw);
             target.spirit -= dealt;
             empathyThisRound.add(target.uid);
-          } else {
+            note = `${target.name}的心防 ${dealt}`;
+            if (target.spirit <= 0) {
+              breakGuard(target);
+              brokenThisRound.add(target.uid);
+              log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'spirit', amount: dealt, note: `${target.name}的心防被打穿，踉跄了一拍`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield: 0, dealt } } });
+            }
+          } else if (skill.resource === 'spirit') {
+            // 心防已破：共情伤害按 70% 折算成血量伤害，走护盾与减伤。
+            const converted = Math.max(1, Math.round(brokenSpiritDamage(raw) * (target.spiritBroken ? BROKEN_TAKEN_MUL : 1)));
+            shield = Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), converted);
+            dealt = Math.min(target.hp, absorb(target, converted));
             target.hp -= dealt;
             target.taken += dealt;
             unit.dealt += dealt;
+            resource = 'hp';
+            note = `${target.name}的心防已破，血量 ${dealt}`;
+          } else {
+            // 血量伤害：心防在时打七折。
+            const scaled = Math.max(1, Math.round(raw * guardHpMul(target) * (target.spiritBroken ? BROKEN_TAKEN_MUL : 1)));
+            shield = Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), scaled);
+            dealt = Math.min(target.hp, absorb(target, scaled));
+            target.hp -= dealt;
+            target.taken += dealt;
+            unit.dealt += dealt;
+            note = `${target.name}的血量 ${dealt}${isGuarded(target) ? '（护持 −30%）' : ''}`;
           }
-          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: skill.resource, amount: dealt, note: `${target.name}的${skill.resource === 'hp' ? '血量' : '共情值'} ${dealt}`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt } } });
+          if (note) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource, amount: dealt, note, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt } } });
           for (const rule of rulesOf(target)) {
             if (rule.trigger !== 'hit') continue;
             if (rule.effect === 'debuffAttacker') addEffect(unit, { kind: 'debuff', stat: rule.stat ?? 'hit', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
             if (rule.effect === 'dot') addEffect(unit, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
           }
-          if (target.hp <= 0 || target.spirit <= 0) {
+          if (target.hp <= 0) {
             target.down = true;
             unit.kills += 1;
           }
@@ -472,13 +556,23 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       if (effectNotes.length) {
         state.events.push({ round, at: addClock(day, minutes, (round - 1) * ROUND_MINUTES), actor: unit.name, skillId: skill.id, skillName: skill.name, targets: targets.map(t => t.name), hit: true, note: `附加效果：${[...new Set(effectNotes)].join('、')}` });
       }
-      for (const u of units) if (!u.down && (u.hp <= 0 || u.spirit <= 0)) u.down = true;
+      for (const u of units) if (!u.down && u.hp <= 0) u.down = true;
       const early = outcomeNow();
       if (early) {
         state.outcome = early;
+        if (early === 'defeat') state.defeatReason = 'wounded';
         break;
       }
     }
+    // 轮末才检查「全队被打得无法行动」，然后清掉豁免名单：下一轮重新算。
+    if (!state.outcome) {
+      const late = outcomeNow(true);
+      if (late) {
+        state.outcome = late;
+        if (late === 'defeat') state.defeatReason = 'stunned';
+      }
+    }
+    brokenThisRound.clear();
     empathyPrev = empathyThisRound;
     empathyThisRound = new Set<string>();
     snapshot();
@@ -495,7 +589,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
     state.scars = [];
     for (const girl of girls) {
       const fatal = girl.scars.length + 1 >= 5;
-      const scar = makeScar(girl, mission, rng, at, fatal);
+      const scar = makeScar(girl, mission, rng, at, fatal, state.defeatReason === 'stunned');
       state.scars.push(scar);
       if (fatal) (state.fatal ??= []).push(girl.id);
     }
