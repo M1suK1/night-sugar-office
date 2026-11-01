@@ -33,7 +33,8 @@ import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWitchFormProfile, llmHasKey, loadLlmConfig } from './llm';
+import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
+import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './research';
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
@@ -61,7 +62,7 @@ import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
-import { cardboxCards, loadCardBox } from './cardbox';
+import { cardboxCards, loadCardBox, saveCardBox } from './cardbox';
 import { StarterDialog } from './components/StarterDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
@@ -119,6 +120,8 @@ export default function App() {
   // 初始先给一份空档占位，真正的进度在挂载后从 IndexedDB 读出来。
   const [state, setState] = useState<GameState>(() => loadState(null));
   const [booted, setBooted] = useState(false);
+  /** 存档真的读完了才算数：否则「编成守卫」会拿默认空档把刚存好的进度踢回编成。 */
+  const [loaded, setLoaded] = useState(false);
   const [page, setPage] = useState<Page>('dispatch');
   const [modal, setModal] = useState<Modal | null>(null);
   const [library, setLibrary] = useState<ContentLibrary>(loadLibrary);
@@ -186,6 +189,7 @@ export default function App() {
         if (sessionStorage.getItem(STARTED_KEY) === '1' && !boot.state.startersPicked && !boot.state.blank) setPhase('roster');
       } catch { /* 没有存储时按标题页处理。 */ }
       setBooted(true);
+      setLoaded(true);
     })();
     return () => { alive = false; };
   }, []);
@@ -200,10 +204,10 @@ export default function App() {
 
   // 开场守卫：进了正片但名册还没定（重置、读老档、导入未编成的存档），先回编成。
   useEffect(() => {
-    if (phase !== 'play' || !booted) return;
+    if (phase !== 'play' || !booted || !loaded) return;
     if (state.startersPicked || state.blank) return;
     setPhase('roster');
-  }, [phase, booted, state.startersPicked, state.blank]);
+  }, [phase, booted, loaded, state.startersPicked, state.blank]);
 
   // 自动存档：每个状态变更立即排队写入（写入串行化，IDB 事务不能并发冲同一键）。
   // 不做防抖——刷新页面丢掉最后一步的代价，比多写几 kB 大得多。
@@ -252,11 +256,12 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
   useEffect(() => {
     if (!autoGenerate) { lastGeneratedDay.current = state.day; return; }
+    if (!loaded) return;
     if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
     lastGeneratedDay.current = state.day;
     if (generatingRef.current || !llmHasKey()) return;
     void generateContent('auto');
-  }, [state.day, autoGenerate]);
+  }, [state.day, autoGenerate, loaded]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
     if (state.day <= lastIncidentDay.current) { lastIncidentDay.current = state.day; return; }
@@ -399,7 +404,7 @@ export default function App() {
         return { ok: false, message: applied.message };
       }
       setState(applied.state);
-      notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的魔物、委托与议会提案已经入场；候选者改由契约卡库补货。');
+      notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的委托与议题已经入场；候选者改由契约卡库补货。');
       return { ok: true, message: applied.message };
     } finally {
       generatingRef.current = false;
@@ -418,8 +423,17 @@ export default function App() {
     setModal(null);
     notify(pendingProposal.warnings.length ? `提案已采纳；其中 ${pendingProposal.warnings.length} 处数值由本地规则裁剪。` : '提案已采纳，今晚的新内容已经入场。');
   };
-  const draftGirlProfile = async (portrait?: string, hint?: string) => {
-    const result = await generateGirlProfile(loadLlmConfig(), portrait, hint, taskRuntime(boundPreset('profile', presets, binding), 'profile'));
+  const draftGirlProfile = async (portrait?: string, hint?: string, query?: string) => {
+    const config = loadLlmConfig();
+    // 联网考据只服务同人角色起草：先查资料，再把摘要作为参考注入；查不到就照常起草。
+    let research: GirlResearch | undefined;
+    const asked = normalizeResearchQuery(query ?? '');
+    if (loadResearchPrefs().enabled && asked) {
+      const found = await researchCharacter(config, asked);
+      if (found.ok) research = found.data;
+      else notify(`联网考据没有成功：${found.message} 先按现有资料起草。`, false);
+    }
+    const result = await generateGirlProfile(config, portrait, hint, taskRuntime(boundPreset('profile', presets, binding), 'profile'), research);
     return result.ok ? { ok: true, message: '', profile: result.data } : { ok: false, message: result.message };
   };
   const perform = (action: GameAction, quiet = false) => {
@@ -429,6 +443,36 @@ export default function App() {
     if (result.ok && result.battle) setModal({ type: 'battle', id: result.battle.id });
     return result.ok;
   };
+
+  // 灯下私语：模型读战报，生成成功才写入未读与角标；失败只丢队列，不造假消息。
+  const whisperRunning = useRef(false);
+  useEffect(() => {
+    if (!loaded || phase !== 'play' || whisperRunning.current) return;
+    const job = state.whisperQueue?.[0];
+    if (!job) return;
+    if (!llmHasKey()) {
+      perform({ type: 'dropWhisper', jobId: job.id, reason: '尚未配置叙事者' }, true);
+      return;
+    }
+    whisperRunning.current = true;
+    void (async () => {
+      try {
+        const config = loadLlmConfig();
+        const result = await generateWhisper(config, state, job, taskRuntime(boundPreset('whisper', presets, binding), 'whisper'));
+        // 用函数式更新落地：等模型时玩家可能已经推进过时间。
+        setState(prev => {
+          const applied = act(prev, result.ok
+            ? { type: 'addWhisper', jobId: job.id, lines: result.lines }
+            : { type: 'dropWhisper', jobId: job.id, reason: result.message });
+          return applied.ok ? applied.state : prev;
+        });
+        if (result.ok) notify('她发来了一条灯下私语。');
+      } finally {
+        whisperRunning.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, phase, state.whisperQueue, presets, binding]);
   const writeBattleNote = async (battle: BattleState) => {
     if (noteBusy) return;
     setNoteBusy(true);
@@ -462,22 +506,38 @@ export default function App() {
     }
   };
   const girl = (id: string) => setModal({ type: 'girl', id });
-  const talk = (id: string, remote = false) => { const g = state.girls.find(g => g.id === id); if (remote) { if (!g?.retired) { notify(`${g?.name ?? '她'}还没有退役，直接去会客厅找她吧。`, false); return; } setModal({ type: 'talk', id, remote: true }); return; } if (g?.retired) { notify(`${g.name}已经退役，可以用远程联络。`, false); setModal({ type: 'talk', id, remote: true }); return; } if (g?.status === 'mission') { notify(`${g.name}正在出勤，等她回到基地再聊聊吧。`, false); return; } if (g?.status === 'healing' || g?.status === 'resting') { notify(`${g.name}正在${g.status === 'healing' ? '治疗' : '休息'}，稍后再聊吧。`, false); return; } if (g?.status === 'expedition') { notify(`${g.name}正在星象台远行，暂时联络不上。`, false); return; } setModal({ type: 'talk', id }); };
+  const talk = (id: string, remote = false) => {
+    if (state.whisperUnread?.[id]) perform({ type: 'markWhispersRead', girlId: id }, true);
+    const g = state.girls.find(g => g.id === id); if (remote) { if (!g?.retired) { notify(`${g?.name ?? '她'}还没有退役，直接去会客厅找她吧。`, false); return; } setModal({ type: 'talk', id, remote: true }); return; } if (g?.retired) { notify(`${g.name}已经退役，可以用远程联络。`, false); setModal({ type: 'talk', id, remote: true }); return; } if (g?.status === 'mission') { notify(`${g.name}正在出勤，等她回到基地再聊聊吧。`, false); return; } if (g?.status === 'healing' || g?.status === 'resting') { notify(`${g.name}正在${g.status === 'healing' ? '治疗' : '休息'}，稍后再聊吧。`, false); return; } if (g?.status === 'expedition') { notify(`${g.name}正在星象台远行，暂时联络不上。`, false); return; } setModal({ type: 'talk', id }); };
   const sendTalk = async (id: string, text: string, remote = false): Promise<boolean> => {
     const target = state.girls.find(g => g.id === id) ?? state.candidates.find(g => g.id === id);
     if (!target) return false;
     const config = loadLlmConfig();
     if (config.apiKey.trim()) {
       const result = await generateDialogue(config, { girl: target, state, text, remote }, taskRuntime(boundPreset('chat', presets, binding), 'chat'));
-      if (result.ok) return perform({ type: 'talk', girlId: id, text, remote, reply: result.text }, true);
+      if (result.ok) return perform({ type: 'talk', girlId: id, text, remote, reply: { lines: result.lines } }, true);
       notify(`叙事者没有回应：${result.message} 已切回本地剧情。`, false);
     }
     return perform({ type: 'talk', girlId: id, text, remote }, true);
   };
-  const exportCard = async (girl: Parameters<typeof buildGirlCard>[0]) => {
-    const card = buildGirlCard(girl, state);
+  const exportCard = async (girlId: string) => {
+    // 从最新状态取人：刚换完表情/衣柜就点导出时，不能用上一次渲染的旧对象。
+    const latest = latestState.current ?? state;
+    const girl = [...latest.girls, ...latest.candidates].find(entry => entry.id === girlId);
+    if (!girl) { notify('找不到这位契约者，无法导出。', false); return; }
+    const card = buildGirlCard(girl, latest);
     const name = girlCardFileName(card);
     const text = JSON.stringify(card, null, 2);
+    // 卡库里如果已经有这张卡，顺手把 raw 换成刚导出的版本：否则从卡库再导入还是旧立绘。
+    try {
+      const box = await loadCardBox();
+      const at = box.findIndex(entry => entry.fileName === name || entry.hash === girl.cardId);
+      if (at >= 0) {
+        const next = [...box];
+        next[at] = { ...next[at], raw: text, name: girl.name, level: girl.level, element: girl.element, factionTag: girl.factionTag ?? 'none', addedAt: Date.now() };
+        await saveCardBox(next);
+      }
+    } catch { /* 卡库写不进去不影响文件导出。 */ }
     const saved = await writeLocalFile('card', name, text);
     if (saved) { notify(`契约卡「${girl.name}」已存进 ${shortPath(saved)}。`); return; }
     downloadFile(name, text);
@@ -573,16 +633,17 @@ export default function App() {
     }
   };
   useEffect(() => {
-    if (phase !== 'play' || !booted) return;
+    // 等存档读完再补首夜：否则会拿默认名册去写提案，模型写出来的全是内置角色。
+    if (phase !== 'play' || !booted || !loaded) return;
     // 只补「首夜」：补过（openingFilledAt ≠ 0）就交给每日自动补充，不再插手。
     if (state.openingFilledAt !== 0) return;
     void fillOpening();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, booted, state.openingFilledAt]);
+  }, [phase, booted, loaded, state.openingFilledAt]);
 
-  // 市场补货：候选只能从卡库来；缺几个补几个，没卡可用就空着。
-  const [marketTick, setMarketTick] = useState(0);
+  // 市场补货：每天只补一次，买走候选不会当场刷新窗口；售罄空位留到次日。
   const marketEmptyDay = useRef(0);
+  const marketRefillDay = useRef(0);
   const refilling = useRef(false);
   const refillMarketFromCards = async () => {
     if (refilling.current) return;
@@ -606,11 +667,13 @@ export default function App() {
     }
   };
   useEffect(() => {
-    if (phase !== 'play' || !booted) return;
+    if (phase !== 'play' || !booted || !loaded) return;
+    if (marketRefillDay.current === state.day) return;
+    marketRefillDay.current = state.day;
     if (marketCardGap(state) <= 0) return;
     void refillMarketFromCards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, booted, state.day, state.candidates.length, marketTick]);
+  }, [phase, booted, loaded, state.day]);
 
   const runCommand = async (line: string): Promise<string> => {
     const raw = line.trim();
@@ -966,7 +1029,7 @@ export default function App() {
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">{toast && <div className={`game-toast ${toast.ok ? '' : 'warning'}`} key={toast.id}>{toast.ok ? <Check size={18} /> : <Info size={18} />}<p>{toast.message}</p><button id="dismiss-toast" onClick={() => setToast(null)} aria-label="关闭提示"><X size={15} /></button></div>}</div>
     {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && modal.type !== 'starter' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form' || modal.type === 'faction' || modal.type === 'office' || modal.type === 'cardbox'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
-          onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onWitchFile={file => setModal({ type: 'witch-form', id: selectedGirl.id, portraitFile: file })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl)} />}
+          onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onWitchFile={file => setModal({ type: 'witch-form', id: selectedGirl.id, portraitFile: file })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl.id)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onDescribeSaved={(outfitId, description) => perform({ type: 'setOutfitDescription', girlId: selectedGirl.id, outfitId, description })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} initialFile={modal.portraitFile} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
@@ -983,7 +1046,7 @@ export default function App() {
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'slots' && <SaveSlotsDialog boot={modal.boot} onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} onContinue={modal.boot && hadSave ? () => { setModal(null); enterPlay(); } : undefined} day={hadSave ? state.day : undefined} girls={hadSave ? state.girls.length : undefined} startersPicked={state.startersPicked} />}
-      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) { setModal(null); setMarketTick(tick => tick + 1); } }} />}
+      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) setModal(null); }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
       {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}

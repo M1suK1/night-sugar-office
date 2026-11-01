@@ -151,7 +151,14 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
     }
     sent.push({ url: String(url), payload: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>, auth: headers.Authorization });
     return new Response(JSON.stringify({
-      candidates: [{ content: { parts: [{ text: '想好了。' }, { text: '先冷静。', thought: true }] }, finishReason: 'MAX_TOKENS' }],
+      candidates: [{
+        content: { parts: [{ text: '想好了。' }, { text: '先冷静。', thought: true }] },
+        finishReason: 'MAX_TOKENS',
+        groundingMetadata: {
+          webSearchQueries: ['博丽灵梦 设定'],
+          groundingChunks: [{ web: { uri: 'https://example.com/reimu', title: '博丽灵梦 - 示例百科' } }],
+        },
+      }],
       usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 34, totalTokenCount: 46 },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
@@ -164,7 +171,7 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
         { role: 'user', content: [{ type: 'text', text: '看这张图' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] },
         { role: 'assistant', content: '嗯。' },
       ],
-      { temperature: 0.4, maxTokens: 256, topP: 0.9 },
+      { temperature: 0.4, maxTokens: 256, topP: 0.9, presencePenalty: 0.4, frequencyPenalty: 0.2, tools: [{ googleSearch: {} }] },
     );
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -172,6 +179,10 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
       assert.equal(result.reasoning, '先冷静。');
       assert.equal(result.finish, 'length');
       assert.deepEqual(result.usage, { prompt: 12, completion: 34, total: 46 });
+      assert.deepEqual(result.grounding, {
+        queries: ['博丽灵梦 设定'],
+        sources: [{ title: '博丽灵梦 - 示例百科', uri: 'https://example.com/reimu' }],
+      });
     }
     assert.equal(sent.length, 1);
     assert.match(sent[0].url, /asia-east1-aiplatform\.googleapis\.com\/v1\/projects\/night-sugar-test\/locations\/asia-east1\/publishers\/google\/models\/gemini-2\.5-pro:generateContent$/);
@@ -180,6 +191,7 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
       systemInstruction: { parts: { text: string }[] };
       contents: { role: string; parts: Record<string, unknown>[] }[];
       generationConfig: Record<string, number>;
+      tools?: unknown[];
     };
     assert.equal(payload.systemInstruction.parts[0].text, '你是守夜人。');
     assert.deepEqual(payload.contents.map(item => item.role), ['user', 'model']);
@@ -187,6 +199,10 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
     assert.equal(payload.generationConfig.maxOutputTokens, 256);
     assert.equal(payload.generationConfig.temperature, 0.4);
     assert.equal(payload.generationConfig.topP, 0.9);
+    // Vertex 不认 OpenAI 的 penalty：传了也不能出现在请求体里（否则部分模型 400 "Penalty is not enabled"）。
+    assert.equal('presencePenalty' in payload.generationConfig, false);
+    assert.equal('frequencyPenalty' in payload.generationConfig, false);
+    assert.deepEqual(payload.tools, [{ googleSearch: {} }]);
   } finally {
     globalThis.fetch = original;
     clearVertexToken();

@@ -277,7 +277,8 @@
   border-radius: 999px;
   padding: 2px 6px 2px 3px;
 }
-.av-map-person {
+.av-map-person { position: relative;
+
   border: 0;
   background: none;
   padding: 2px 4px;
@@ -389,6 +390,44 @@
   border-radius: 5px;
   background: rgba(20, 16, 28, 0.9);
   border: 1px solid rgba(247, 242, 245, 0.09);
+}
+.av-envoy-rich {
+  align-items: flex-start;
+  padding: 14px 16px;
+  gap: 12px;
+}
+.av-envoy-rich .av-envoy-seal { margin-top: 2px; }
+.av-envoy-rich .av-envoy-copy { flex: 1 1 auto; min-width: 0; }
+.av-envoy-rich .av-envoy-copy strong { font-size: 13px; }
+.av-envoy-rich .av-envoy-copy strong small { font-size: 10px; }
+.av-envoy-rich .av-envoy-copy p { font-size: 11px; line-height: 1.6; }
+.av-envoy-task {
+  display: grid;
+  gap: 3px;
+  margin-top: 7px;
+  padding: 9px 11px;
+  border-left: 2px solid var(--faction, #f3aec9);
+  border-radius: 4px;
+  background: #ffffff08;
+  font-size: 11px;
+  color: #cfc6d6;
+}
+.av-envoy-task b { font-size: 12.5px; color: #f4eef8; }
+.av-envoy-task span { display: block; }
+.av-envoy-reward { color: #f3aec9; }
+.av-envoy-rich > .av-btn { flex: none; margin-top: 4px; }
+.av-opinion-author-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #f3aec955;
+  color: #f3aec9;
+  font-size: 9.5px;
+  font-style: normal;
+}
+@media (max-width: 720px) {
+  .av-envoy-rich { flex-wrap: wrap; }
+  .av-envoy-rich > .av-btn { width: 100%; justify-content: center; }
 }
 .av-module-person strong,
 .av-envoy-copy strong {

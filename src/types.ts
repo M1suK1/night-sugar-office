@@ -263,14 +263,20 @@ export type OpinionChange =
   | { kind: 'item'; itemId: string; amount: number }
   | { kind: 'girl'; girlId: string; field: 'bond' | 'fatigue' | 'corruption' | 'hp'; amount: number }
   /** 推进时钟的分钟数；正数表示跳过/消耗这段时间。 */
-  | { kind: 'minutes'; amount: number };
+  | { kind: 'minutes'; amount: number }
+  /** 两方之间的敌意值；负数缓和，正数激化。 */
+  | { kind: 'hostility'; pair: FactionPair; amount: number };
 
 /** 议会决议的结构性结果；与数值变化分开，便于界面明确展示不可逆后果。 */
 export type OpinionOutcome =
   | { kind: 'territory'; district: DistrictId; faction: FactionId }
   | { kind: 'mission'; template: MissionTemplate }
   | { kind: 'join'; level: number }
-  | { kind: 'leave'; girlId: string };
+  | { kind: 'leave'; girlId: string }
+  /** 停战：结束该对势力未完成的战线，并在 days 天内不再开这条线。 */
+  | { kind: 'truce'; pair: FactionPair; days: number }
+  /** 立即开战：不等敌意满 100，直接生成一条战线。 */
+  | { kind: 'war'; pair: FactionPair };
 
 /** 议会开场对白的一段；表情供后续立绘变化使用。 */
 export interface OpinionDialogueLine {
@@ -290,7 +296,11 @@ export interface OpinionOption {
 }
 export interface Opinion {
   id: string; day: number; authorId: string; topic: '经费' | '排班' | '设施' | '同伴' | '城市' | '私人心愿';
-  title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired';
+  /** 提出者类型：默认 girl；代表提案用 leader。 */
+  authorKind?: 'girl' | 'leader';
+  /** 代表提案所属势力。 */
+  authorFaction?: FactionId;
+  title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired' | 'shelved';
   options: OpinionOption[]; assistantNote?: string; storylineId?: string;
   /** 提出者的逐段对白；旧议题没有时按主题生成默认对白。 */
   dialogue?: OpinionDialogueLine[];
@@ -686,6 +696,8 @@ export interface Girl {
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
   candidateUntilDay?: number; custom?: boolean; cardId?: string;
+  /** 导入时卡片视觉内容的签名；用来判断「同一张卡是否有新版本」。 */
+  cardRevision?: string;
   /** 由覆灭势力雇佣来的首领。 */
   leader?: boolean;
   /** 开局编成时被选中的原班人马。 */
@@ -702,6 +714,8 @@ export interface Mission {
   color: string; status: MissionStatus; girlId?: string; squad: string[];
   work: WorkKind; enemyIds?: string[]; rounds?: number; attempts: number; worsened?: boolean;
   lastOutcome?: 'victory' | 'repelled' | 'defeat' | 'draw'; generated?: boolean; sourcePack?: string;
+  /** 完成时的业务日；地图只显示当天完成的委托，换日后旧委托仍留在记录里。 */
+  completedDay?: number;
   recommendedLevel: number; faction?: FactionId; envoy?: boolean; boss?: boolean;
   /** 所属辖区；缺省时由坐标反推。 */
   district?: DistrictId;
@@ -745,6 +759,21 @@ export interface Mission {
   /** 战斗模板只写要几只敌人，具体是哪些由 `rollEnemies` 按辖区与难度抽。 */
   enemyCount?: number;
 }
+/** 每次委托结算留下的一条参与记录；旧存档可从 battles 补战斗部分。 */
+export interface MissionRun {
+  id: string;
+  missionId: string;
+  title: string;
+  work: WorkKind;
+  category: string;
+  district?: DistrictId;
+  day: number;
+  minutes: number;
+  girlIds: string[];
+  outcome: 'victory' | 'defeat' | 'repelled' | 'draw' | 'success' | 'failure';
+  reward: number;
+  battleId?: string;
+}
 /** 辖区拦截战：辖区当主态度为「戒备」时，普通委托会被自己的少女截下。 */
 export interface Interception {
   faction: FactionId;
@@ -777,7 +806,39 @@ export interface MissionTemplate {
 export interface Room { id: string; name: string; type: 'lounge' | 'clinic' | 'dorm' | 'observatory'; level: number; capacity: number; description: string }
 export interface Log { id: string; time: string; kind: 'dispatch' | 'finance' | 'care' | 'story' | 'base' | 'battle' | 'relationship' | 'memorial' | 'council' | 'expedition' | 'clinic' | 'incident' | 'territory'; text: string; delta?: number }
 export interface Sample { day: number; income: number; expense: number; reputation: number }
-export interface Message { role: 'girl' | 'player' | 'system'; text: string }
+/** 一次生成里她连续发来的其中一条：台词、动作与表情分开存。 */
+export interface DialogueLine {
+  text: string;
+  action?: string;
+  expression: Expression;
+}
+export interface DialogueReply {
+  lines: DialogueLine[];
+}
+export interface Message {
+  role: 'girl' | 'player' | 'system'; text: string;
+  /** 灯下私语的生成时间；旧消息没有这一项。 */
+  at?: string;
+  /** 她主动发来的消息（区别于玩家发起的对话）。 */
+  whisper?: boolean;
+  /** 与台词分开的动作/神态；显示在气泡下方，灰色斜体。 */
+  action?: string;
+  /** 这条消息对应的立绘表情；旧消息没有，回落到角色卡表情。 */
+  expression?: Expression;
+  /** 同一轮生成的多条消息共享；用于气泡分组与“连发”间距。 */
+  burstId?: string;
+}
+
+/** 待模型生成的主动消息：结算时入队，生成成功后才写入未读。 */
+export interface WhisperJob {
+  id: string;
+  girlId: string;
+  missionId: string;
+  day: number;
+  outcome: 'victory' | 'defeat' | 'success' | 'failure';
+  battleId?: string;
+  createdAt: number;
+}
 
 export interface BattleUnit {
   uid: string; side: 'ally' | 'enemy'; name: string; portrait: string; color: string;
@@ -826,6 +887,8 @@ export interface BattleNoteLine {
   expression: Expression;
   text: string;
   mode?: 'speech' | 'thought';
+  /** 连续札记：这句台词插入到第几段旁白之后；0 表示第一段之前。 */
+  after?: number;
 }
 export interface BattleNoteScene {
   id: string;
@@ -837,6 +900,8 @@ export interface BattleNoteScene {
 }
 export interface BattleNote {
   battleId: string;
+  /** 新版：一次写完的连续叙事；旧札记没有该字段。 */
+  format?: 'continuous';
   title: string;
   hook: string;
   summary: string;
@@ -877,8 +942,20 @@ export interface GameState {
   pensionDebt: number;
   factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
   marketStock: MarketStockEntry[];
-  poolLimits: { missions: number; monsters: number; candidates: number }; removedMonsters: string[];
+  poolLimits: { missions: number; monsters: number; candidates: number; combatMissions?: number; investigationMissions?: number }; removedMonsters: string[];
   marketLevel: number; marketDay: number; advancedDay?: number;
+  /** 灯下私语：待生成队列与未读计数。 */
+  whisperQueue?: WhisperJob[];
+  whisperUnread?: Record<string, number>;
+  lastWhisperDay?: Record<string, number>;
+  /** 委托参与记录；旧存档没有时从 battles 派生战斗部分。 */
+  missionRuns?: MissionRun[];
+  /** 停战冷却：pair → 到期日。 */
+  truceUntil?: Partial<Record<FactionPair, number>>;
+  /** 今天真正挂在市场窗口里的候选 id；售出的窗口仍留在数组里，次日重新开窗。 */
+  marketWindow?: string[];
+  /** 今天已经签走、但仍要显示为售罄空位的窗口 id；换日清空。 */
+  marketSold?: string[];
   boss: BossState | null; bossCycle: number; nextBossDay: number;
   /** 本轮循环的起始日：Boss 被击败当天重置，污染地板按 day − cycleStartDay 算。 */
   cycleStartDay: number;
@@ -937,7 +1014,10 @@ export type GameAction =
   | { type: 'advance'; minutes: number }
   | { type: 'hire'; girlId: string }
   | { type: 'build'; roomId?: string }
-  | { type: 'talk'; girlId: string; text: string; remote?: boolean; reply?: string }
+  | { type: 'talk'; girlId: string; text: string; remote?: boolean; reply?: string | DialogueReply }
+  | { type: 'addWhisper'; jobId: string; text?: string; lines?: DialogueLine[] }
+  | { type: 'dropWhisper'; jobId: string; reason?: string }
+  | { type: 'markWhispersRead'; girlId: string }
   | { type: 'retire'; girlId: string }
   | { type: 'renewContract'; girlId: string }
   | { type: 'rehire'; girlId: string }
@@ -970,7 +1050,7 @@ export type GameAction =
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }
-  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl?: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission; items?: Equipment[] }
+  | { type: 'addGeneratedContent'; monster?: MonsterTemplate; girl?: Girl; mission: Mission; opinion?: Opinion; opinions?: Opinion[]; envoyMission?: Mission; items?: Equipment[] }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }

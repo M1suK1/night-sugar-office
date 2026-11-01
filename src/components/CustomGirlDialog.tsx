@@ -43,7 +43,7 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
 const EMPTY_TRAIT = (): DraftTrait => ({ name: '', description: '', polarity: 'neutral' });
 const emptyDraftTraits = () => [EMPTY_TRAIT(), EMPTY_TRAIT(), EMPTY_TRAIT()];
 
-export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string, hint?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
+export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string, hint?: string, research?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(''); const [codename, setCodename] = useState('未命名契约'); const [title, setTitle] = useState('新登记的魔法少女');
   const [element, setElement] = useState<Element>('星光系'); const [archetype, setArchetype] = useState<Archetype>('输出'); const [color, setColor] = useState(colors[0]);
@@ -59,6 +59,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
   const [message, setMessage] = useState('');
   const [hint, setHint] = useState('');
+  /** 同人角色的出处 / 名字：只在开启联网考据时用来查资料。 */
+  const [research, setResearch] = useState('');
   const [cutting, setCutting] = useState(false);
   const [tolerance, setTolerance] = useState(36);
   const [cutNote, setCutNote] = useState('');
@@ -180,7 +182,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     setDrafting(true); setMessage('');
     setPending(new Set(keys));
     if (targets === 'all') setFilled(new Set());
-    const result = await onGenerate(preview || undefined, hint.trim() || undefined);
+    const result = await onGenerate(preview || undefined, hint.trim() || undefined, research.trim() || undefined);
     if (!result.ok || !result.profile) {
       setDrafting(false); setPending(new Set()); setMessage(result.message); return;
     }
@@ -252,7 +254,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
         <button id="custom-entry-import" type="button" className={`custom-gate-card ${overPortrait ? 'is-drop-over' : ''}`} onClick={() => fileRef.current?.click()} {...fileDropProps(setOverPortrait, files => { if (files[0]) void pickFile(files[0]); })}><ImagePlus size={22} /><b>只导入立绘</b><small>PNG / JPEG / WebP，4:5 实时裁剪；也可以直接拖进来。</small></button>
         <button id="custom-entry-blank" type="button" className="custom-gate-card" onClick={() => setEntry('wizard')}><Wand2 size={22} /><b>从空白开始</b><small>直接进入五步向导，260 点由你分配。</small></button>
       </div>
-      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><label className="custom-gate-hint">给叙事者的一句话要求（可选）<input id="custom-portrait-hint" className="av-input" maxLength={80} placeholder="例：银白发，披风边缘像融化的糖，笑得很轻" value={hint} onChange={e => setHint(e.target.value)} /></label><div className="custom-gate-actions"><button id="custom-gate-cutout" type="button" className="btn" disabled={cutting} onClick={() => void cutBackground()}><Scissors size={14} />{cutting ? '正在去背景' : '去背景'}</button><button id="custom-draft" type="button" className="btn primary" disabled={drafting || Boolean(cut)} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
+      {preview && <div className="custom-gate-draft"><img src={preview} alt="已导入的立绘预览" /><div><b>立绘已经就位</b><p>让使魔读取立绘，补全身份、目标、台词与外观；属性和职阶会一起给出，仍可逐项修改。</p><label className="custom-gate-hint">给叙事者的一句话要求（可选）<input id="custom-portrait-hint" className="av-input" maxLength={80} placeholder="例：银白发，披风边缘像融化的糖，笑得很轻" value={hint} onChange={e => setHint(e.target.value)} /></label>
+        <label className="custom-gate-hint">同人角色 / 出处（可选，开启联网考据后使用）<input id="custom-portrait-research" className="av-input" maxLength={120} placeholder="例：东方Project 博丽灵梦 / 原神 雷电将军" value={research} onChange={e => setResearch(e.target.value)} /></label><div className="custom-gate-actions"><button id="custom-gate-cutout" type="button" className="btn" disabled={cutting} onClick={() => void cutBackground()}><Scissors size={14} />{cutting ? '正在去背景' : '去背景'}</button><button id="custom-draft" type="button" className="btn primary" disabled={drafting || Boolean(cut)} onClick={() => { setEntry('wizard'); runGenerate('all'); }}><Sparkles size={14} />{drafting ? '正在补全' : '让使魔补全'}</button><button id="custom-gate-manual" type="button" className="btn" onClick={() => setEntry('wizard')}>继续手动填写</button></div></div></div>}
       {cut && <CutoutPreview before={cut.before} after={cut.after} removed={cut.removed} tolerance={tolerance} busy={cutting} onApply={applyCut} onDiscard={discardCut} onRetry={() => void cutBackground()} />}
       {cutNote && <p className="custom-cut-note">{cutNote}</p>}
       {message && <p className="inline-warning" role="alert">{message}</p>}
@@ -262,6 +265,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     {step === 0 && <div className="custom-step-body">
       <h2>先写下她的名字。</h2><p className="muted">契约登记不收费，但每个名字都会留在事务所的账本上。</p>
       <div className="custom-grid"><label>{fieldHead('名字', 'name')}<input id="custom-name" className={`av-input${shimmer('name')}`} value={name} onChange={e => editText('name', setName, e.target.value)} maxLength={12} placeholder="例如：夜见 灯" /></label><label>{fieldHead('称号', 'codename')}<input id="custom-codename" className={`av-input${shimmer('codename')}`} value={codename} onChange={e => editText('codename', setCodename, e.target.value)} maxLength={16} /></label></div>
+      <label>同人角色 / 出处（可选）<input id="custom-research" className="av-input" maxLength={120} placeholder="填了会在起草前联网考据（设置 → 故事引擎里打开）" value={research} onChange={e => setResearch(e.target.value)} /></label>
       <label>{fieldHead('一句话介绍', 'title')}<input id="custom-title" className={`av-input${shimmer('title')}`} value={title} onChange={e => editText('title', setTitle, e.target.value)} maxLength={30} /></label>
       <div className="custom-grid"><label>{fieldHead('元素', 'element')}<select id="custom-element" className={`av-select${shimmer('element')}`} value={element} onChange={e => { setElement(e.target.value as Element); editText('element', () => undefined, ''); }}>{elements.filter(e => e !== '魔物').map(e => <option key={e}>{e}</option>)}</select></label><label>{fieldHead('职阶', 'archetype')}<select id="custom-archetype" className={`av-select${shimmer('archetype')}`} value={archetype} onChange={e => { chooseArchetype(e.target.value as PlayableArchetype); editText('archetype', () => undefined, ''); }}>{archetypes.filter(a => a !== '魔物').map(a => <option key={a}>{a}</option>)}</select></label></div>
       <label>代表色<div className="custom-colors">{colors.map(c => <button key={c} type="button" id={`custom-color-${c.slice(1)}`} aria-label={`代表色 ${c}`} aria-pressed={color === c} style={{ background: c }} onClick={() => setColor(c)} />)}</div></label>

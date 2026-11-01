@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Archive, ArrowUpRight, Check, Coins, Feather, Flower2, Info, Phone, Plus, RefreshCw, Search, ShoppingBag, Sparkles, Star, Upload } from 'lucide-react';
 import type { FactionId, GameState, Girl } from '../types';
 import { factionInfo, getItem } from '../content/items';
-import { itemPrice, marketPool, marketUpgrade } from '../game';
+import { itemPrice, marketPool, marketSlots, marketUpgrade } from '../game';
 import { TIER_COLOR, TIER_LABEL, TIER_ORDER, TIER_STANDING, tierLabel, tierOf } from '../items';
 import { factionTagColor, factionTagLabel } from '../factions';
 import { pensionArrears, pensionFor } from '../contracts';
@@ -39,20 +39,24 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
   const [query, setQuery] = useState('');
   const [advancedLevel, setAdvancedLevel] = useState(1);
   const pool = marketPool(state);
+  const slots = marketSlots(state);
+  const visible = slots.flatMap(slot => slot.girl ? [slot.girl] : []);
+  const soldCount = slots.filter(slot => slot.sold).length;
   const retired = state.girls.filter(girl => girl.retired);
   const active = state.girls.filter(girl => !girl.retired && !girl.dead);
   const upgrade = marketUpgrade(state);
-  const candidates = pool.filter(girl => {
+  const matches = (girl: Girl) => {
     const support = girl.stats.empathy >= girl.stats.magic;
     const matchesRole = filter === 'all' || (filter === 'support' ? support : !support);
     return matchesRole && `${girl.name}${girl.codename}${girl.title}${girl.element}${girl.description}`.includes(query.trim());
-  });
+  };
+  const candidates = visible.filter(matches);
   const maxAdvanced = Math.min(6, state.marketLevel + 2);
   return <section className="av-view av-market-view" aria-labelledby="av-market-title">
     <header className="av-heading"><div><p className="av-eyebrow"><Star size={12} />星愿契约 · 人才市场</p><h1 id="av-market-title">寻找下一束微光</h1><p>每一份契约，都是两段命运的相遇。</p></div><div className="av-heading-meta"><Coins size={14} /><span>可用星砂</span><strong>{state.gold.toLocaleString('zh-CN')}</strong></div></header>
 
     <div className="av-market-bar">
-      <div className="av-market-level"><span>市场等级 <b>Lv.{state.marketLevel}</b></span><small>候选由契约卡库补货 · 高级招聘上限 Lv.{maxAdvanced}</small></div>
+      <div className="av-market-level"><span>市场等级 <b>Lv.{state.marketLevel}</b></span><small>每日挂牌 {slots.length} 位 · 已签约 {soldCount} 位 · 池中 {pool.length} 位 · 高级招聘上限 Lv.{maxAdvanced}</small></div>
       <button id="av-market-upgrade" type="button" className="av-btn av-btn-small" disabled={upgrade.cost === null || state.gold < upgrade.cost} onClick={onUpgradeMarket}><ArrowUpRight size={13} />{upgrade.cost === null ? '已达最高等级' : `升级市场 · ${upgrade.cost.toLocaleString('zh-CN')} 星砂`}</button>
       <button id="av-market-custom" type="button" className="av-btn av-btn-small" onClick={onCustom}><Sparkles size={13} />自定义登记</button><button id="av-market-cardbox" type="button" className="av-btn av-btn-small" onClick={onCardbox}><Archive size={13} />契约卡库</button><label className="av-btn av-btn-small av-import-card" htmlFor="market-card-file"><Upload size={13} />导入卡片</label><input id="market-card-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.currentTarget.files?.[0]; if (file) onImportCard(file); event.currentTarget.value = ''; }} />
     </div>
@@ -62,14 +66,20 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
     </div>
 
     {tab === 'candidates' && <div id="av-market-panel-candidates" role="tabpanel" aria-labelledby="av-market-tab-candidates">
-      <div className="av-toolbar"><div className="av-filters" aria-label="候选成员类型">{([['all', '全部'], ['combat', '作战'], ['support', '支援']] as const).map(([value, label]) => <button id={`av-market-filter-${value}`} type="button" className="av-filter" aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>{label}</button>)}<span className="av-filter-count">{candidates.length} 位候选成员</span></div><label className="av-search" htmlFor="av-market-search"><Search size={14} /><input id="av-market-search" className="av-input" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="寻找姓名、称号或元素" aria-label="搜索候选魔法少女" /></label></div>
+      <div className="av-toolbar"><div className="av-filters" aria-label="候选成员类型">{([['all', '全部'], ['combat', '作战'], ['support', '支援']] as const).map(([value, label]) => <button id={`av-market-filter-${value}`} type="button" className="av-filter" aria-pressed={filter === value} key={value} onClick={() => setFilter(value)}>{label}</button>)}<span className="av-filter-count">{candidates.length} 位今日可签 · 已签约 {soldCount} 位</span></div><label className="av-search" htmlFor="av-market-search"><Search size={14} /><input id="av-market-search" className="av-input" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="寻找姓名、称号或元素" aria-label="搜索候选魔法少女" /></label></div>
+      {soldCount > 0 && <p className="av-section-caption" id="market-sold-note">今天有 {soldCount} 位已经签约，窗口保留售罄空位；明日 00:00 重新挂牌，今天不会补人。</p>}
+      {pool.length > visible.length && <p className="av-section-caption" id="market-window-note">今天只挂牌 {slots.length} 位；池子里还有 {pool.length - visible.length} 位候选，换日轮换，升级市场会多开窗口。</p>}
       <div className="av-advanced"><div><strong>高级招聘</strong><small>指定 1–6 级候选；等级越高，消耗星砂与城市安定度越多。每日 1 次。</small></div><label htmlFor="av-market-advanced-level" className="av-visually-hidden">高级招聘等级</label><select id="av-market-advanced-level" className="av-select" value={advancedLevel} onChange={event => setAdvancedLevel(Number(event.target.value))}>{Array.from({ length: maxAdvanced }, (_, index) => index + 1).map(level => <option key={level} value={level}>Lv.{level} · {1000 + level * 400} 星砂</option>)}</select><button id="av-market-advanced" type="button" className="av-btn av-btn-small" onClick={() => onAdvancedRecruit(advancedLevel)}>发布招募<Plus size={12} /></button></div>
-      {candidates.length ? <div className="av-candidate-grid">{candidates.map(girl => <CandidateCard key={girl.id} girl={girl} state={state} onHire={onHire} onGirl={onGirl} />)}</div> : state.candidates.length === 0 ? <div className="av-empty" id="market-card-hint">
+      {slots.length ? (candidates.length || soldCount ? <div className="av-candidate-grid">{slots.map(slot => {
+        if (slot.sold) return <SoldCandidateCard key={slot.id} />;
+        if (!slot.girl || !matches(slot.girl)) return null;
+        return <CandidateCard key={slot.girl.id} girl={slot.girl} state={state} onHire={onHire} onGirl={onGirl} />;
+      })}</div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>没有符合条件的候选者。<br />试试更换类型，或使用其他关键词。</p></div>) : pool.length === 0 ? <div className="av-empty" id="market-card-hint">
         <Archive size={26} strokeWidth={1} />
         <p>卡库里的卡都用完了。</p>
         <small>去契约卡库加几张新卡，市场会自己补货。</small>
         <button id="market-open-cardbox" type="button" className="av-btn av-btn-small" onClick={onCardbox}><Archive size={13} />打开契约卡库</button>
-      </div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>没有符合条件的候选者。<br />试试更换类型，或使用其他关键词。</p></div>}
+      </div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>今天的挂牌已经结束。</p><small>明日 00:00 会重新开窗。</small></div>}
     </div>}
 
     {tab === 'contracts' && <div id="av-market-panel-contracts" role="tabpanel" aria-labelledby="av-market-tab-contracts" className="av-contract-list">
@@ -97,6 +107,19 @@ function unlockedTierLabel(standing: number): string {
 }
 
 function Chevron() { return <ArrowUpRight size={12} />; }
+
+function SoldCandidateCard() {
+  return <article className="av-candidate av-candidate-sold" aria-label="今日已签约，明日重新挂牌">
+    <div className="av-candidate-preview av-sold-preview"><Check size={26} /><span>今日已签约</span></div>
+    <div className="av-candidate-body">
+      <div className="av-candidate-title"><h2>席位已空</h2><span className="av-tag">SOLD OUT</span></div>
+      <p className="av-candidate-role">MARKET // CLOSED</p>
+      <p className="av-candidate-quote">这个窗口今晚不再补人。明日 00:00 重新挂牌。</p>
+      <div className="av-sold-meta"><span>下一次挂牌<b>明日 00:00</b></span><span>今日补位<b>无</b></span></div>
+      <div className="av-candidate-hire"><button type="button" className="av-btn av-btn-small" disabled><Check size={12} />已售罄</button></div>
+    </div>
+  </article>;
+}
 
 function CandidateCard({ girl, state, onHire, onGirl }: { girl: Girl; state: GameState; onHire: (id: string) => void; onGirl: (id: string) => void }) {
   const hired = state.girls.some(member => member.id === girl.id);

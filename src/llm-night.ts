@@ -7,9 +7,12 @@ import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
 import { MAX_ENEMIES } from './combat.ts';
-import { listItems } from './content/items.ts';
+import { factionInfo, listItems } from './content/items.ts';
 import { findSkill, skills } from './content/skills.ts';
 import { bossSkills } from './content/bossSkills.ts';
+import { factionRepresentativeOf, type FactionRepresentative } from './factions.ts';
+import { HOSTILITY_PAIRS, pairLabel } from './hostility.ts';
+import { FACTION_ORDER } from './territories.ts';
 import { findAnySkill, isBossSkill } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
@@ -40,7 +43,8 @@ export interface NightCatalog {
   reputation: number;
   factions: Record<FactionId, number>;
   territories: Record<DistrictId, FactionId>;
-  girls: { id: string; name: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string }[];
+  representatives: { id: string; name: string; title: string; faction: FactionId; level: number }[];
+  girls: { id: string; name: string; title?: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string; personality?: string; appearance?: string; quote?: string }[];
   items: { id: string; name: string; slot: string }[];
   skills: { id: string; name: string; school: string; side: string; tier?: string }[];
   monsters: { id: string; name: string; rank: string }[];
@@ -79,7 +83,8 @@ export interface NightMissionSpec {
 }
 
 export interface NightOpinionSpec {
-  authorId: string; topic: Opinion['topic']; faction: FactionId; district?: DistrictId;
+  authorId: string; authorKind?: 'girl' | 'leader'; authorFaction?: FactionId;
+  topic: Opinion['topic']; faction: FactionId; district?: DistrictId;
   title: string; text: string; request: string;
   dialogue: OpinionDialogueLine[];
   options: OpinionOption[];
@@ -95,10 +100,13 @@ export interface NightLootSpec {
 
 export interface NightProposalV2 {
   version: 2;
-  monster: NightMonsterSpec;
+  /** 旧提案字段；v32 起每日提案不再产出魔物，只为兼容旧日志保留。 */
+  monster?: NightMonsterSpec;
   candidate?: NightCandidateSpec;
   mission: NightMissionSpec;
-  opinion: NightOpinionSpec;
+  /** 旧单条议席字段；新输出使用 opinions。 */
+  opinion?: NightOpinionSpec;
+  opinions?: NightOpinionSpec[];
   envoy: NightEnvoySpec;
   loot: NightLootSpec[];
 }
@@ -115,6 +123,7 @@ type Ctx = {
   errors: string[];
   warnings: string[];
   activeGirls: Girl[];
+  representatives: FactionRepresentative[];
   itemIds: Set<string>;
   lootRefs: Set<string>;
 };
@@ -356,7 +365,7 @@ function parseMission(ctx: Ctx, value: unknown, path: string): NightMissionSpec 
 function parseChange(ctx: Ctx, value: unknown, path: string): OpinionChange | undefined {
   const body = record(ctx, value, path);
   const kind = body.kind;
-  if (kind === 'gold') return { kind, amount: integer(ctx, body.amount, `${path}.amount`, -1500, 1500, 0) };
+  if (kind === 'gold') return { kind, amount: integer(ctx, body.amount, `${path}.amount`, -9000, 1500, 0) };
   if (kind === 'reputation') return { kind, amount: integer(ctx, body.amount, `${path}.amount`, -10, 10, 0) };
   if (kind === 'faction') {
     return {
@@ -373,10 +382,17 @@ function parseChange(ctx: Ctx, value: unknown, path: string): OpinionChange | un
     };
   }
   if (kind === 'minutes') return { kind, amount: integer(ctx, body.amount, `${path}.amount`, 0, 90, 0) };
+  if (kind === 'hostility') {
+    return {
+      kind,
+      pair: choice(ctx, body.pair, HOSTILITY_PAIRS, `${path}.pair`, 'association-witch'),
+      amount: integer(ctx, body.amount, `${path}.amount`, -20, 20, 0),
+    };
+  }
   if (kind === 'girl') {
     const field = choice(ctx, body.field, ['bond', 'fatigue', 'corruption', 'hp'] as const, `${path}.field`, 'bond');
     const girlId = typeof body.girlId === 'string' ? body.girlId : '';
-    if (!ctx.activeGirls.some(girl => girl.id === girlId)) error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上`);
+    if (!ctx.activeGirls.some(girl => girl.id === girlId)) error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上；可用：${ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`).join('、')}`);
     const range: Record<typeof field, [number, number]> = { bond: [-5, 5], fatigue: [-20, 20], corruption: [-5, 5], hp: [-30, 30] };
     return { kind, girlId, field, amount: integer(ctx, body.amount, `${path}.amount`, range[field][0], range[field][1], 0) };
   }
@@ -405,10 +421,20 @@ function parseOutcome(ctx: Ctx, value: unknown, path: string): OpinionOutcome | 
     const template = parseMissionTemplate(ctx, body.template, `${path}.template`);
     return template ? { kind: 'mission', template } : undefined;
   }
+  if (body.kind === 'truce') {
+    return {
+      kind: 'truce',
+      pair: choice(ctx, body.pair, HOSTILITY_PAIRS, `${path}.pair`, 'association-witch'),
+      days: integer(ctx, body.days, `${path}.days`, 5, 20, 10),
+    };
+  }
+  if (body.kind === 'war') {
+    return { kind: 'war', pair: choice(ctx, body.pair, HOSTILITY_PAIRS, `${path}.pair`, 'association-witch') };
+  }
   if (body.kind === 'join') return { kind: 'join', level: integer(ctx, body.level, `${path}.level`, 1, 5, 1) };
   if (body.kind === 'leave') {
     const girlId = typeof body.girlId === 'string' ? body.girlId : '';
-    if (!ctx.activeGirls.some(girl => girl.id === girlId)) error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上`);
+    if (!ctx.activeGirls.some(girl => girl.id === girlId)) error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上；可用：${ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`).join('、')}`);
     return { kind: 'leave', girlId };
   }
   error(ctx, `${path}.kind`, '不支持的议会结果类型');
@@ -441,6 +467,7 @@ function validateOption(ctx: Ctx, option: OpinionOption, path: string, faction: 
   const otherBonds = allBonds.filter(change => change.girlId !== authorId);
   const factionChanges = option.changes?.filter(change => change.kind === 'faction') ?? [];
   const outcomes = option.outcomes ?? [];
+  const leaderAuthor = ctx.representatives.some(rep => rep.id === authorId);
   if (option.id === 'defer') {
     if (outcomes.length) error(ctx, path, '暂缓不能包含结构性结果');
     if (otherBonds.length) error(ctx, path, '暂缓只能改动提出者的羁绊');
@@ -449,17 +476,18 @@ function validateOption(ctx: Ctx, option: OpinionOption, path: string, faction: 
       if (change.kind === 'faction' && change.faction === faction && change.amount === -2) continue;
       error(ctx, path, '暂缓只能包含提出者羁绊 −1 与所属势力态度 −2');
     }
-    if (bond.length !== 1 || factionChanges.length !== 1) error(ctx, path, '暂缓必须包含提出者羁绊 −1 与势力态度 −2');
+    if (factionChanges.length !== 1) error(ctx, path, '暂缓必须包含势力态度 −2');
+    if (!leaderAuthor && bond.length !== 1) error(ctx, path, '暂缓必须包含提出者羁绊 −1');
     return;
   }
   if (option.id === 'reject') {
     const penalty = materialPenalty(option.changes ?? []);
     if (otherBonds.length) error(ctx, path, '驳回只能改动提出者的羁绊');
-    if (bond.length !== 1 || bond[0].amount !== -2) error(ctx, path, '驳回必须只包含提出者羁绊 −2');
+    if (!leaderAuthor && (bond.length !== 1 || bond[0].amount !== -2)) error(ctx, path, '驳回必须只包含提出者羁绊 −2');
     if (factionChanges.length !== 1 || !factionChanges.some(change => change.kind === 'faction' && change.faction === faction && change.amount === -4)) {
       error(ctx, path, '驳回必须只包含所属势力态度 −4');
     }
-    if (!penalty) error(ctx, path, '驳回必须包含至少一项实际资源惩罚');
+    if (!penalty && !outcomes.some(outcome => outcome.kind === 'war')) error(ctx, path, '驳回必须包含至少一项实际资源惩罚或开战后果');
     return;
   }
   const cost = (option.changes ?? []).some(change => {
@@ -497,9 +525,23 @@ function parseOption(ctx: Ctx, value: unknown, path: string, faction: FactionId,
 function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
   const path = 'opinion';
   const body = record(ctx, value, path);
-  const authorId = typeof body.authorId === 'string' ? body.authorId : '';
-  const author = ctx.activeGirls.find(girl => girl.id === authorId);
-  if (!author) error(ctx, `${path}.authorId`, `角色「${authorId}」不在值夜名册上`);
+  const authorKind: 'girl' | 'leader' = body.authorKind === 'leader' ? 'leader' : 'girl';
+  let authorId = typeof body.authorId === 'string' ? body.authorId : '';
+  let authorFaction: FactionId | undefined;
+  let representative: FactionRepresentative | undefined;
+  let author: Girl | undefined;
+  if (authorKind === 'leader') {
+    if (body.authorFaction === undefined || body.authorFaction === null) error(ctx, `${path}.authorFaction`, '代表提案必须写明 authorFaction');
+    authorFaction = choice(ctx, body.authorFaction, NIGHT_FACTIONS, `${path}.authorFaction`, 'association');
+    representative = factionRepresentativeOf(ctx.state, authorFaction);
+    if (authorId && authorId !== representative.id) {
+      error(ctx, `${path}.authorId`, `代表提案必须使用该方首领 ${representative.id}（${representative.name}）；可用代表：${ctx.representatives.map(rep => `${rep.id}（${rep.name}）`).join('、')}`);
+    }
+    authorId = representative.id;
+  } else {
+    author = ctx.activeGirls.find(girl => girl.id === authorId);
+    if (!author) error(ctx, `${path}.authorId`, `角色「${authorId}」不在值夜名册上；可用：${ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`).join('、')}`);
+  }
   const district = body.district === undefined || body.district === null ? undefined : choice(ctx, body.district, DISTRICT_IDS, `${path}.district`, 'oldtown');
   const derivedFaction = district ? ctx.state.territories[district] : undefined;
   const faction = body.faction === undefined || body.faction === null
@@ -516,11 +558,15 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
     dialogueRaw.slice(0, 5).forEach((entry, index) => {
       const linePath = `${path}.dialogue[${index}]`;
       const line = record(ctx, entry, linePath);
-      const speakerId = typeof line.speakerId === 'string' ? line.speakerId : author?.id;
-      if (!speakerId || !ctx.activeGirls.some(girl => girl.id === speakerId)) error(ctx, `${linePath}.speakerId`, `角色「${speakerId ?? ''}」不在值夜名册上`);
+      const speakerId = typeof line.speakerId === 'string' ? line.speakerId : author?.id ?? representative?.id;
+      const girlSpeaker = ctx.activeGirls.find(girl => girl.id === speakerId);
+      const repSpeaker = ctx.representatives.find(rep => rep.id === speakerId);
+      if (!speakerId || (!girlSpeaker && !repSpeaker)) {
+        error(ctx, `${linePath}.speakerId`, `角色「${speakerId ?? ''}」不在值夜名册或三方代表里；可用：${[...ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`), ...ctx.representatives.map(rep => `${rep.id}（${rep.name}）`)].join('、')}`);
+      }
       const speaker = typeof line.speaker === 'string' && line.speaker.trim()
         ? line.speaker.trim().slice(0, 24)
-        : ctx.activeGirls.find(girl => girl.id === speakerId)?.name ?? '提出者';
+        : girlSpeaker?.name ?? repSpeaker?.name ?? '提出者';
       dialogue.push({
         speakerId,
         speaker,
@@ -541,8 +587,29 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
   }
   const ids = options.map(option => option.id).sort().join(',');
   if (ids !== 'accept,defer,reject') error(ctx, `${path}.options`, '必须同时包含 accept / defer / reject');
+  const relations = options.flatMap(option => (option.outcomes ?? [])
+    .filter((outcome): outcome is Extract<OpinionOutcome, { kind: 'truce' | 'war' }> => outcome.kind === 'truce' || outcome.kind === 'war')
+    .map(outcome => ({ option, outcome })));
+  const touchesRelations = relations.length > 0 || options.some(option => (option.changes ?? []).some(change => change.kind === 'hostility'));
+  if (touchesRelations && authorKind !== 'leader') error(ctx, `${path}.authorKind`, '停战、开战与敌意变化必须由三方首领提出');
+  for (const { option, outcome } of relations) {
+    if (!authorFaction || !outcome.pair.split('-').includes(authorFaction)) {
+      error(ctx, `${path}.options`, `关系提案的 pair「${outcome.pair}」必须包含提案方 ${authorFaction ?? '（未填写）'}`);
+    }
+    if (outcome.kind === 'truce' && option.id !== 'accept') error(ctx, `${path}.options`, '停战只能写在 accept 选项里');
+    if (outcome.kind === 'war' && option.id !== 'reject') error(ctx, `${path}.options`, '开战只能作为 reject 的后果');
+  }
+  const acceptOption = options.find(option => option.id === 'accept');
+  const spend = Math.abs((acceptOption?.changes ?? [])
+    .filter((change): change is Extract<OpinionChange, { kind: 'gold' }> => change.kind === 'gold' && change.amount < 0)
+    .reduce((sum, change) => sum + change.amount, 0));
+  const cedesDistrict = (acceptOption?.outcomes ?? []).some(outcome => outcome.kind === 'territory');
+  if (relations.some(({ outcome }) => outcome.kind === 'truce') && spend < 3000 && !cedesDistrict) {
+    error(ctx, `${path}.options`, '停战/换辖区的批准必须至少支付 3000 星砂，或割让一个辖区');
+  }
   return {
-    authorId: author?.id ?? ctx.activeGirls[0]?.id ?? '',
+    authorId: author?.id ?? representative?.id ?? ctx.activeGirls[0]?.id ?? '',
+    authorKind, authorFaction,
     topic, faction, district,
     title: text(ctx, body.title, `${path}.title`, 30),
     text: text(ctx, body.text, `${path}.text`, 300),
@@ -551,7 +618,7 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
   };
 }
 
-function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
+export function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
   const path = 'monster';
   const body = record(ctx, value, path);
   const stats = parseStats(ctx, body.stats, `${path}.stats`, 30, 110, 60);
@@ -649,6 +716,7 @@ export function validateNightProposal(raw: unknown, state: GameState): NightVali
     errors: [],
     warnings: [],
     activeGirls: state.girls.filter(girl => !girl.retired && !girl.dead),
+    representatives: FACTION_ORDER.map(faction => factionRepresentativeOf(state, faction)),
     itemIds: new Set([
       ...state.generatedItems.map(item => item.id),
       ...listItems().map(item => item.id),
@@ -661,18 +729,22 @@ export function validateNightProposal(raw: unknown, state: GameState): NightVali
   const loot = parseLoot(ctx, raw.loot);
   const envoy = parseMission(ctx, raw.envoy, 'envoy');
   const envoyBody = record(ctx, raw.envoy, 'envoy');
+  const opinionRows = Array.isArray(raw.opinions)
+    ? raw.opinions.slice(0, 3)
+    : raw.opinion ? [raw.opinion] : [];
+  const opinions = opinionRows.map(row => parseOpinion(ctx, row));
   const proposal: NightProposalV2 = {
     version: 2,
-    monster: parseMonster(ctx, raw.monster),
+    monster: undefined,
     candidate: raw.candidate ? parseCandidate(ctx, raw.candidate) : undefined,
     mission: parseMission(ctx, raw.mission, 'mission'),
-    opinion: parseOpinion(ctx, raw.opinion),
+    opinion: opinions[0],
+    opinions,
     envoy: { ...envoy, faction: choice(ctx, envoyBody.faction, NIGHT_FACTIONS, 'envoy.faction', 'association') },
     loot,
   };
-  if (!raw.monster) error(ctx, 'monster', '缺少魔物');
   if (!raw.mission) error(ctx, 'mission', '缺少委托');
-  if (!raw.opinion) error(ctx, 'opinion', '缺少议会提案');
+  if (!opinions.length) error(ctx, 'opinions', '缺少议会提案');
   if (!raw.envoy) error(ctx, 'envoy', '缺少使者委托');
   return { ok: ctx.errors.length === 0, proposal, errors: ctx.errors, warnings: ctx.warnings };
 }
@@ -691,7 +763,17 @@ export function buildNightCatalog(state: GameState): NightCatalog {
     reputation: state.reputation,
     factions: { witch: state.factions.witch.standing, association: state.factions.association.standing, government: state.factions.government.standing },
     territories: state.territories,
-    girls: active.map(girl => ({ id: girl.id, name: girl.name, element: girl.element, archetype: girl.archetype, level: girl.level, bond: girl.bond, fatigue: girl.fatigue, corruption: girl.corruption, origin: factionTagLabel(girl.factionTag) })),
+    representatives: FACTION_ORDER.map(faction => {
+      const rep = factionRepresentativeOf(state, faction);
+      return { id: rep.id, name: rep.name, title: rep.title, faction, level: rep.level };
+    }),
+    girls: active.map(girl => ({
+      id: girl.id, name: girl.name, title: girl.title, element: girl.element, archetype: girl.archetype,
+      level: girl.level, bond: girl.bond, fatigue: girl.fatigue, corruption: girl.corruption,
+      origin: factionTagLabel(girl.factionTag),
+      // 契约卡带回来的性格与外貌也要给模型：不然它只能照着旧内置角色编。
+      personality: clipLine(girl.personality, 120), appearance: clipLine(girl.appearance, 120), quote: clipLine(girl.quote, 60),
+    })),
     items: [
       ...listItems().map(item => ({ id: item.id, name: item.name, slot: item.slot })),
       ...state.generatedItems.map(item => ({ id: item.id, name: item.name, slot: item.slot })),
@@ -724,38 +806,51 @@ export function buildNightCatalog(state: GameState): NightCatalog {
 
 export const NIGHT_SCHEMA_EXAMPLE = {
   version: 2,
-  monster: {
-    name: '', epithet: '', rank: '游荡', element: '月影系', trait: '', description: '', habit: '', weakness: '',
-    maxHp: 120, maxSpirit: 80, stats: { magic: 70, insight: 48, agility: 66, empathy: 35 },
-    skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }],
-  },
   mission: {
     title: '', category: '', description: '', work: 'combat', difficulty: '中危', district: 'oldtown',
     window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5,
-    recommendedLevel: 3, enemyRefs: ['generated'], rewardItemRef: 'loot-1', rewardGirlLevel: 0,
+    recommendedLevel: 3, enemyRefs: ['night-tram'], rewardItemRef: 'loot-1', rewardGirlLevel: 0,
   },
-  opinion: {
-    authorId: '', topic: '经费', faction: 'witch', district: null, title: '', text: '', request: '',
+  opinions: [{
+    authorId: '', authorKind: 'girl', authorFaction: null, topic: '经费', faction: 'witch', district: null, title: '', text: '', request: '',
     dialogue: [{ speakerId: '', speaker: '', text: '', expression: 'sad' }],
     options: [
       { id: 'accept', label: '批准', effect: '', changes: [{ kind: 'gold', amount: -600 }], outcomes: [] },
       { id: 'defer', label: '暂缓', effect: '', changes: [{ kind: 'girl', girlId: '', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] },
       { id: 'reject', label: '驳回', effect: '', changes: [{ kind: 'girl', girlId: '', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
     ],
-  },
+  }],
   envoy: {
     faction: 'association', title: '', description: '', work: 'investigation', difficulty: '中危', district: 'station',
     window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3,
-    recommendedLevel: 2, enemyRefs: ['generated'], rewardGirlLevel: 0,
+    recommendedLevel: 2, enemyRefs: ['echo-cat'], rewardGirlLevel: 0,
   },
   loot: [{ ref: 'loot-1', name: '', faction: 'witch', slot: 'charm', description: '', stats: { insight: 4 }, passive: '' }],
 };
+
+function clipLine(text: string | undefined, limit: number): string {
+  const value = (text ?? '').replace(/\s+/g, ' ').trim();
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
 
 /** 系统提示词：目录、规则、JSON 形状一次给全。 */
 export function buildNightPrompt(state: GameState): string {
   const catalog = buildNightCatalog(state);
   const names = (values: readonly string[]) => values.join(' / ');
   const city = catalog.city;
+  const lounge = state.rooms.find(room => room.type === 'lounge');
+  const opinionCap = Math.max(3, Math.min(5, 1 + (lounge?.level ?? 2)));
+  const pendingOpinions = state.opinions.filter(opinion => opinion.status === 'pending').length;
+  const opinionNeed = Math.max(1, opinionCap - pendingOpinions);
+  const roster = catalog.girls.map(girl => {
+    const lines = [
+      `- ${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype} · Lv.${girl.level} · 羁绊 ${girl.bond} · 出身 ${girl.origin}`,
+      girl.personality ? `  性格：${girl.personality}` : '',
+      girl.appearance ? `  外貌：${girl.appearance}` : '',
+      girl.quote ? `  语气参考：「${girl.quote}」` : '',
+    ].filter(Boolean);
+    return lines.join('\n');
+  }).join('\n');
   const cityBlock = city ? [
     '【城市态势】',
     ...city.briefs.map(brief => `- ${brief.split('\n').join(' / ')}`),
@@ -768,31 +863,39 @@ export function buildNightPrompt(state: GameState): string {
   return `【今晚的机制目录】
 ${JSON.stringify(catalog)}
 
+【值夜名册】authorId / speakerId / girlId 只能从下面这些人里选，名字也必须照抄：
+${roster || '（名册为空）'}
+
+【三方首领】代表提案的 authorId 只能取这些 id；作者是一个势力时，authorFaction 必须写同一个势力：
+${catalog.representatives.map(rep => `- ${rep.name}（${rep.id}）· ${rep.title} · ${factionInfo[rep.faction].name} · Lv.${rep.level}`).join('\n')}
+
+【势力关系】敌意越高越接近开战（满 100 触发战线）：
+${HOSTILITY_PAIRS.map(pair => `- ${pairLabel(pair)}：${state.hostility?.[pair]?.value ?? 0}`).join('\n')}
+
 ${cityBlock}
 
 【硬性规则】
 1. 只输出一个 JSON 对象，不要 Markdown、解释或思维链。
-2. 所有 id 必须来自目录：authorId、speakerId、girlId、faction、district、itemId、skillId、enemyRefs 中的魔物 id。唯一可以新造的是 loot[].ref。
-3. opinion.options 必须恰好 3 项，id 分别为 accept / defer / reject。
-4. defer 只能包含提出者羁绊 −1 与 opinion.faction 的势力态度 −2，不能有资源变化或 outcomes。
-5. reject 必须包含提出者羁绊 −2、opinion.faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
+2. 所有 id 必须来自目录；authorId 只能取【值夜名册】或【三方首领】里的 id，speakerId 只能取名册或三方首领，不要写名单外的角色。唯一可以新造的是 loot[].ref。
+2b. 普通提案 authorKind 写 "girl"；代表提案写 "leader" 并填 authorFaction，authorId 必须是该方首领。
+2c. 关系类提案（可选，不必每晚都有）：允许 accept 带 {kind:"truce",pair,days:5–20} 或 {kind:"territory",district,faction}，reject 可带 {kind:"war",pair}；这类提案必须由 leader 提出，pair 必须包含 authorFaction，accept 至少要支付 3000 星砂或割让辖区。没有关系变化时不要写这些字段。
+3. opinions 是 1–3 条议题的数组；每条的 options 必须恰好 3 项，id 分别为 accept / defer / reject。
+4. defer 只能包含提出者羁绊 −1 与该议题 faction 的势力态度 −2，不能有资源变化或 outcomes。
+5. reject 必须包含提出者羁绊 −2、该议题 faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
 6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。
-7. opinion.dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
-8. 魔物元素 ${names(NIGHT_ELEMENTS)}，位阶 ${names(NIGHT_RANKS)}；候选者不再由叙事者生成，不要输出 candidate 字段。
+7. opinions[].dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
+8. 不再生成新魔物，不要输出 monster 字段；mission.enemyRefs 与 envoy.enemyRefs 只能从目录里的魔物 id 中选。
 9. 委托难度 ${names(NIGHT_DIFFICULTIES)}，工作类型 ${names(NIGHT_WORKS)}，时限 ${names(NIGHT_WINDOWS)}。
-10. 所有数值必须是整数。数值范围：魔物 maxHp 60–240、四维 30–110（心防＝共情 × 2，不用单独给 maxSpirit）、rules 最多 2 条；委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
+10. 所有数值必须是整数。委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
 11. loot 最多 2 件，每件属性总和 ≤8，最多 1 条 passive；rewardItemRef 可以指向 loot[].ref 或目录里的物品 id。
 12. 颜色、立绘、SVG、坐标、本地 id 由程序生成，不要填写。
-
+13. 本次需要 ${opinionNeed} 条议题（会客厅等级上限 ${opinionCap} 条，已有 ${pendingOpinions} 条待议）。不要用同一条议题凑数；不要输出超过这个数量。
 【JSON 形状】
 ${JSON.stringify(NIGHT_SCHEMA_EXAMPLE)}
 
 把空字符串替换成与今晚局势一致的文案；保持字段完整。`;
 }
 
-function mapEnemyRefs(refs: string[], generatedMonster: string): string[] {
-  return refs.map(ref => ref === 'generated' ? generatedMonster : ref);
-}
 
 function mapItemRef(ref: string | undefined, lootIds: Map<string, string>): string | undefined {
   if (!ref) return undefined;
@@ -822,32 +925,28 @@ function materializeLoot(proposal: NightProposalV2, stamp: string) {
 }
 
 /** 把已校验的模型提案变成真正的运行时对象；模型数值不再被固定模板覆盖。 */
+/** 把已校验的模型提案变成运行时对象；v32 起不再生成新魔物，敌人只从现有魔物池里选。 */
 export function materializeNightProposal(proposal: NightProposalV2, state: GameState): {
-  monster: MonsterTemplate; girl?: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission;
+  girl?: Girl; mission: Mission; opinion: Opinion; opinions: Opinion[]; envoyMission: Mission;
   items: ReturnType<typeof materializeLoot>['items'];
 } {
   const pack = createSeedPack();
   const stamp = `${Date.now().toString(36)}${Math.floor(Math.random() * 999).toString(36)}`;
-  const monsterBase = monsters.find(m => m.rank === proposal.monster.rank) ?? monsters[1];
-  const monster: MonsterTemplate = {
-    ...monsterBase,
-    id: `lm_${stamp}`,
-    name: proposal.monster.name,
-    epithet: proposal.monster.epithet,
-    rank: proposal.monster.rank,
-    element: proposal.monster.element,
-    color: monsterBase.color,
-    maxHp: proposal.monster.maxHp,
-    maxSpirit: proposal.monster.maxSpirit,
-    stats: proposal.monster.stats,
-    skillIds: proposal.monster.skillIds,
-    trait: proposal.monster.trait,
-    description: proposal.monster.description,
-    spec: { ...monsterBase.spec },
-    codex: { habit: proposal.monster.habit, weakness: proposal.monster.weakness },
-    rules: proposal.monster.rules,
-  };
   const loot = materializeLoot(proposal, stamp);
+  const enemyPool = [...monsters, ...(state.customMonsters ?? [])].filter(monster =>
+    monster && !monster.storyOnly && !monster.bossOnly && !monster.id.startsWith('boss-mon-') && !(state.removedMonsters ?? []).includes(monster.id),
+  );
+  const resolveEnemyRefs = (refs: string[], salt: number): string[] => {
+    const valid = refs.filter(ref => ref !== 'generated' && enemyPool.some(monster => monster.id === ref)).slice(0, MAX_ENEMIES);
+    if (valid.length) return valid;
+    if (!enemyPool.length) return [];
+    const picks: string[] = [];
+    for (let index = 0; index < Math.min(2, enemyPool.length); index += 1) {
+      const pick = enemyPool[(salt + index) % enemyPool.length];
+      if (pick && !picks.includes(pick.id)) picks.push(pick.id);
+    }
+    return picks;
+  };
   const baseMission = pack.missions.find(m => m.work === proposal.mission.work) ?? pack.missions[0];
   const missionSpec = proposal.mission;
   const mission: Mission = {
@@ -867,7 +966,7 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     status: 'open',
     squad: [],
     work: missionSpec.work,
-    enemyIds: mapEnemyRefs(missionSpec.enemyRefs, monster.id),
+    enemyIds: resolveEnemyRefs(missionSpec.enemyRefs, state.missions.length),
     rounds: missionSpec.rounds,
     attempts: 0,
     worsened: false,
@@ -883,36 +982,46 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     rewardEquipmentId: mapItemRef(missionSpec.rewardItemRef, loot.ids),
     rewardGirlLevel: missionSpec.rewardGirlLevel,
   };
-  const author = state.girls.find(girl => girl.id === proposal.opinion.authorId && !girl.retired && !girl.dead)
-    ?? [...state.girls].filter(girl => !girl.retired && !girl.dead).sort((a, b) => b.bond - a.bond)[0]
-    ?? state.girls[0];
-  const options = proposal.opinion.options.map((option, optionIndex) => ({
-    ...option,
-    changes: option.changes?.map(change => change.kind === 'item'
-      ? { ...change, itemId: mapItemRef(change.itemId, loot.ids) ?? change.itemId }
-      : change),
-    outcomes: option.outcomes?.map((outcome, outcomeIndex) => outcome.kind === 'mission'
-      ? { ...outcome, template: mapMissionTemplate(outcome.template, stamp, optionIndex * 10 + outcomeIndex, loot.ids) }
-      : outcome),
-  })) as OpinionOption[];
-  const opinion: Opinion = {
-    id: `op_${stamp}`,
-    day: state.day,
-    authorId: author?.id ?? proposal.opinion.authorId,
-    topic: proposal.opinion.topic,
-    title: proposal.opinion.title,
-    text: proposal.opinion.text,
-    request: proposal.opinion.request,
-    status: 'pending',
-    faction: proposal.opinion.faction,
-    options,
-    dialogue: proposal.opinion.dialogue.map(line => ({
-      ...line,
-      speakerId: line.speakerId ?? author?.id,
-      speaker: line.speaker || author?.name || '提出者',
-    })),
-    assistantNote: '这份议题的文案、选项、消耗与后果由叙事引擎起草，并经本地规则校验。',
-  };
+  const specs = (proposal.opinions?.length ? proposal.opinions : proposal.opinion ? [proposal.opinion] : []).slice(0, 3);
+  const opinions = specs.map((spec, index) => {
+    const leaderAuthor = spec.authorKind === 'leader' && spec.authorFaction
+      ? factionRepresentativeOf(state, spec.authorFaction)
+      : undefined;
+    const author = leaderAuthor
+      ?? state.girls.find(girl => girl.id === spec.authorId && !girl.retired && !girl.dead)
+      ?? [...state.girls].filter(girl => !girl.retired && !girl.dead).sort((a, b) => b.bond - a.bond)[0]
+      ?? state.girls[0];
+    const options = spec.options.map((option, optionIndex) => ({
+      ...option,
+      changes: option.changes?.map(change => change.kind === 'item'
+        ? { ...change, itemId: mapItemRef(change.itemId, loot.ids) ?? change.itemId }
+        : change),
+      outcomes: option.outcomes?.map((outcome, outcomeIndex) => outcome.kind === 'mission'
+        ? { ...outcome, template: mapMissionTemplate(outcome.template, `${stamp}_${index}`, optionIndex * 10 + outcomeIndex, loot.ids) }
+        : outcome),
+    })) as OpinionOption[];
+    return {
+      id: `op_${stamp}_${index}`,
+      day: state.day,
+      authorId: author?.id ?? spec.authorId,
+      authorKind: spec.authorKind ?? 'girl',
+      authorFaction: spec.authorFaction,
+      topic: spec.topic,
+      title: spec.title,
+      text: spec.text,
+      request: spec.request,
+      status: 'pending',
+      faction: spec.faction,
+      options,
+      dialogue: spec.dialogue.map(line => ({
+        ...line,
+        speakerId: line.speakerId ?? author?.id,
+        speaker: line.speaker || author?.name || '提出者',
+      })),
+      assistantNote: '这份议题的文案、选项、消耗与后果由叙事引擎起草，并经本地规则校验。',
+    } satisfies Opinion;
+  });
+  const opinion = opinions[0]!;
   const envoySpec = proposal.envoy;
   const envoyMission: Mission = {
     ...mission,
@@ -930,7 +1039,7 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     target: envoySpec.target,
     rounds: envoySpec.rounds,
     recommendedLevel: envoySpec.recommendedLevel,
-    enemyIds: mapEnemyRefs(envoySpec.enemyRefs, monster.id),
+    enemyIds: resolveEnemyRefs(envoySpec.enemyRefs, state.missions.length + 1),
     district: envoySpec.district,
     window: envoySpec.window,
     rewardEquipmentId: mapItemRef(envoySpec.rewardItemRef, loot.ids),
@@ -938,6 +1047,5 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     x: (mission.x + 31) % 78 + 8,
     y: (mission.y + 19) % 58 + 12,
   };
-  // v27：候选者只从契约卡库来，叙事者不再产出 girl。
-  return { monster, mission, opinion, envoyMission, items: loot.items };
+  return { mission, opinion, opinions, envoyMission, items: loot.items };
 }

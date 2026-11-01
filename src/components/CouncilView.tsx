@@ -3,6 +3,7 @@ import { ArrowRight, Check, Clock3, Coins, Heart, Moon, ShieldCheck, X } from 'l
 import type { GameState, Opinion } from '../types';
 import { factionInfo } from '../content/items';
 import { opinionOptionTags, previewOpinionOption, resolveOpinionDialogue, resolveOpinionOptions } from '../opinions';
+import { opinionLimit } from '../game';
 import { GirlPortrait } from './GirlPortrait';
 
 type Props = {
@@ -58,7 +59,10 @@ function CouncilBackdrop() {
 }
 
 export function CouncilView({ state, onDecide, onGirl }: Props) {
-  const pending = state.opinions.filter(opinion => opinion.status === 'pending');
+  const limit = opinionLimit(state);
+  const allPending = state.opinions.filter(opinion => opinion.status === 'pending');
+  const pending = allPending.slice(0, limit);
+  const hidden = Math.max(0, allPending.length - pending.length);
   const [index, setIndex] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
   const [phase, setPhase] = useState<'entering' | 'idle' | 'leaving'>('entering');
@@ -150,7 +154,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
           <ul className="council-effort">
             {speaker && speaker.traits.slice(0, 3).map(trait => <li key={trait.id}><span className={`polarity ${trait.polarity}`}>{trait.name}</span>{trait.description}</li>)}
           </ul>
-          <p className="council-hint">{dialogueDone ? '决议会改变辖区归属、预算或她们的状态。按 1 / 2 / 3 也可以直接选择；资源不足的选项会锁定。' : '先听她把话说完，再作决定。点击「继续」或按空格推进对白。'}</p>
+          <p className="council-hint">{hidden > 0 ? `还有 ${hidden} 条议题超出今晚上限，已转入暂缓；升级会客厅可增加席位。` : dialogueDone ? '决议会改变辖区归属、预算或她们的状态。按 1 / 2 / 3 也可以直接选择；资源不足的选项会锁定。' : '先听她把话说完，再作决定。点击「继续」或按空格推进对白。'}</p>
         </aside>
 
         <div className={`council-speaker ${phase}`}>
@@ -219,8 +223,8 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
             </>
           ) : (
             <div className="council-empty">
-              <h2>今晚的议题都处理完了。</h2>
-              <p>会客厅的灯还亮着。下一件事要等明晚。</p>
+              <h2>今晚没有新的议题。</h2>
+              <p>叙事者还没有提交，或今晚的议题已经处理完。不会再显示默认提案。</p>
             </div>
           )}
         </div>

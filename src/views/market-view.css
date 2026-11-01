@@ -181,3 +181,19 @@
 .av-tier{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:999px;font-size:8px;letter-spacing:.06em;color:var(--tier);border:1px solid color-mix(in srgb,var(--tier) 42%,transparent);background:color-mix(in srgb,var(--tier) 12%,transparent)}
 .av-supply-standing{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .av-supply-standing small{font-size:8px;color:#8b7d92}
+
+/* 当日窗口售罄后保留空位，不立刻补人。 */
+.av-candidate-sold{border-style:dashed;background:rgba(19,17,25,.55);opacity:.82}
+.av-candidate-sold:hover{border-color:rgba(244,154,189,.28);transform:none}
+.av-sold-preview{display:grid;place-content:center;justify-items:center;gap:10px;height:250px;background:repeating-linear-gradient(135deg,rgba(244,154,189,.035) 0 1px,transparent 1px 12px),#121019;color:#8e7f98;cursor:default}
+.av-sold-preview svg{color:#b78da3;opacity:.8}
+.av-sold-preview span{font-size:11px;letter-spacing:.18em;color:#b597a8}
+.av-candidate-sold .av-candidate-title h2{color:#b7a7b3}
+.av-candidate-sold .av-candidate-role{color:#9a7f8d}
+.av-candidate-sold .av-candidate-quote{min-height:0;margin-bottom:20px}
+.av-sold-meta{display:flex;justify-content:space-between;gap:12px;padding:12px 0;margin-bottom:14px;border-top:1px solid var(--av-line);border-bottom:1px solid var(--av-line);font-size:9px;color:#8f7f98}
+.av-sold-meta b{display:block;margin-top:4px;font:13px var(--font-data,monospace);font-weight:400;color:#cbb7c3}
+.av-candidate-sold .av-candidate-hire{justify-content:flex-end}
+@media(max-width:1180px){.av-sold-preview{height:210px}}
+@media(max-width:940px){.av-sold-preview{height:260px}}
+@media(max-width:600px){.av-sold-preview{height:160px}}

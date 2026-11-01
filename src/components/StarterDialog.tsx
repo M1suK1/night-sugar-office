@@ -75,6 +75,33 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     const saved = state.factionRoster;
     return saved ? structuredClone(saved) : defaultFactionRoster();
   });
+  const pickedSet = useMemo(() => new Set(picked), [picked]);
+
+  // 卡库是异步读进来的、少女也会退役：池子一变就把「人已经不在池子里」的座位摘掉，
+  // 免得界面上看着都配好了，实际上有一个看不见的旧 id 卡着确认按钮。
+  useEffect(() => {
+    setRoster(current => {
+      const allowed = new Set(pool.map(subject => subject.id));
+      const taken = new Set<string>();
+      let changed = false;
+      const next = structuredClone(current) as Record<FactionId, FactionRoster>;
+      for (const faction of FACTION_ORDER) {
+        let leaderId = next[faction].leaderId;
+        if (leaderId && (!allowed.has(leaderId) || taken.has(leaderId) || pickedSet.has(leaderId))) {
+          leaderId = ''; changed = true;
+        }
+        next[faction].leaderId = leaderId;
+        if (leaderId) taken.add(leaderId);
+        next[faction].memberIds = next[faction].memberIds.filter(id => {
+          if (!allowed.has(id) || taken.has(id) || pickedSet.has(id)) { changed = true; return false; }
+          taken.add(id);
+          return true;
+        });
+      }
+      return changed ? next : current;
+    });
+  }, [pool, pickedSet]);
+
   const [tab, setTab] = useState<'own' | FactionId>('own');
   const [source, setSource] = useState<SourceFilter>('all');
   const [query, setQuery] = useState('');
@@ -147,14 +174,61 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   }, [pool, source, query]);
 
   const poolIds = new Set(pool.map(subject => subject.id));
-  const leaders = FACTION_ORDER.map(faction => roster[faction].leaderId);
-  const poolLeaderIds = new Set(leaders.filter(Boolean));
-  const legal = picked.length >= 4 && picked.length <= 6
-    && leaders.every(id => Boolean(id) && poolIds.has(id))
-    && poolLeaderIds.size === 3
-    && FACTION_ORDER.every(faction => roster[faction].memberIds.length >= 1 && roster[faction].memberIds.length <= MEMBER_LIMIT)
-    && FACTION_ORDER.every(faction => roster[faction].memberIds.every(id => poolIds.has(id)))
-    && FACTION_ORDER.every(faction => !roster[faction].memberIds.includes(roster[faction].leaderId));
+  const nameOf = (id: string) => pool.find(subject => subject.id === id)?.name ?? '这位少女';
+  const issues: string[] = [];
+  if (picked.length < 2) issues.push(`名册还差 ${2 - picked.length} 人`);
+  if (picked.length > 6) issues.push('名册最多 6 人');
+  const seated = new Set<string>();
+  for (const faction of FACTION_ORDER) {
+    const label = factionInfo[faction].name;
+    const leaderId = roster[faction].leaderId;
+    if (!leaderId) issues.push(`${label}还没有首领`);
+    else if (!poolIds.has(leaderId)) issues.push(`${label}的首领已不在可选池里`);
+    else if (seated.has(leaderId)) issues.push(`${nameOf(leaderId)}被指派了两次`);
+    else if (pickedSet.has(leaderId)) issues.push(`${nameOf(leaderId)}同时在名册与${label}首领`);
+    seated.add(leaderId);
+    const members = roster[faction].memberIds.filter(Boolean);
+    if (members.length === 0) issues.push(`${label}还缺随从`);
+    if (members.length > MEMBER_LIMIT) issues.push(`${label}随从最多 ${MEMBER_LIMIT} 位`);
+    for (const id of members) {
+      if (!poolIds.has(id)) issues.push(`${label}有随从已不在可选池里`);
+      else if (seated.has(id)) issues.push(`${nameOf(id)}占了两个位置`);
+      else if (pickedSet.has(id)) issues.push(`${nameOf(id)}同时在名册与${label}`);
+      seated.add(id);
+    }
+  }
+  const legal = issues.length === 0;
+
+  /** 把空着的首领 / 随从位用「没被名册选走、也没坐座位」的人补上，只补不换。 */
+  const fillEmpty = () => {
+    setRoster(current => {
+      const next = structuredClone(current) as Record<FactionId, FactionRoster>;
+      const taken = new Set<string>(picked);
+      for (const faction of FACTION_ORDER) {
+        if (next[faction].leaderId) taken.add(next[faction].leaderId);
+        for (const id of next[faction].memberIds) taken.add(id);
+      }
+      const take = (prefer: FactionId) => {
+        const candidate = pool.find(subject => !taken.has(subject.id) && subject.faction === prefer)
+          ?? pool.find(subject => !taken.has(subject.id));
+        if (!candidate) return undefined;
+        taken.add(candidate.id);
+        return candidate.id;
+      };
+      for (const faction of FACTION_ORDER) {
+        if (!next[faction].leaderId) {
+          const id = take(faction);
+          if (id) next[faction].leaderId = id;
+        }
+        while (next[faction].memberIds.length < 1) {
+          const id = take(faction);
+          if (!id) break;
+          next[faction].memberIds.push(id);
+        }
+      }
+      return next;
+    });
+  };
 
   const confirm = () => {
     const leaders: FactionLeader[] = [];
@@ -188,10 +262,10 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           <span className="starter-kicker">开局编成</span>
           <h2>{forced ? '先把自己的名册和城市的三方定下来' : '先把人和位置定下来'}</h2>
           <p>{cardsOnly
-            ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 4–6 位签进事务所，再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
+            ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
             : forced
-              ? '卡库还不够 20 张，先用默认阵容补满。挑 4–6 位签进事务所，再把三方阵营的首领与随从点好。'
-              : '挑 4–6 位少女签进事务所，再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
+              ? '卡库还不够 20 张，先用默认阵容补满。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
+              : '挑 2 位少女签进事务所（最多 6 位），再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
         {forced ? null : <button id="starter-close" type="button" className="btn ghost" onClick={onClose}><X size={14} />稍后再说</button>}
       </header>
@@ -208,7 +282,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       {tab === 'own' ? (
         <section className="starter-own">
           <div className="starter-bar">
-            <span id="starter-count">已选 {picked.length} / 6 · 至少 4 人</span>
+            <span id="starter-count">已选 {picked.length} / 6 · 至少 2 人</span>
             <div className="starter-bar-actions">
               <button id="starter-add-card" type="button" className="btn ghost" onClick={onAddCard}><UserRoundPlus size={13} />从契约卡库添加</button>
               <button id="starter-add-custom" type="button" className="btn ghost" onClick={onAddCustom}>现场登记一位</button>
@@ -302,8 +376,9 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
               const here = seat?.faction === tab;
               const isLeader = here && seat?.role === 'leader';
               const isMember = here && seat?.role === 'member';
+              const inCrew = pickedSet.has(subject.id);
               return (
-                <div key={subject.id} className={`starter-tile ${isLeader ? 'leader' : ''} ${isMember ? 'member' : ''} ${seat && !here ? 'elsewhere' : ''}`}>
+                <div key={subject.id} className={`starter-tile ${isLeader ? 'leader' : ''} ${isMember ? 'member' : ''} ${seat && !here ? 'elsewhere' : ''} ${inCrew ? 'in-crew' : ''}`}>
                   <button
                     id={`starter-subject-${subject.id}`}
                     type="button"
@@ -320,6 +395,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
                       <span className="starter-tile-tag" style={{ borderColor: factionTagColor(subject.faction) }}>
                         {subject.origin === 'custom' ? '自定义' : factionTagLabel(subject.faction)}
                       </span>
+                      {inCrew && <span className="starter-tile-crew">已在名册</span>}
                       {seat && (
                         <span className="starter-tile-seat">
                           {isLeader ? '本阵首领' : here ? '本阵随从' : `已任${factionInfo[seat.faction].name}${seat.role === 'leader' ? '首领' : '随从'}`}
@@ -344,10 +420,13 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       )}
 
       <footer className="starter-foot">
-        <span className={legal ? 'starter-ok' : 'starter-bad'}>
-          {legal ? '编成合法，可以确认' : '至少 4 人；每方 1 位首领、1–4 位随从；同一个人不能占两个位置'}
+        <span className={legal ? 'starter-ok' : 'starter-bad'} title={issues.join('；')}>
+          {legal ? '编成合法，可以确认' : `${issues.slice(0, 2).join('；')}${issues.length > 2 ? ` 等 ${issues.length} 项` : ''}`}
         </span>
-        <button id="starter-confirm" type="button" className="btn" disabled={!legal} onClick={confirm}>确认编成</button>
+        <div className="starter-foot-actions">
+          {!legal && <button id="starter-fill" type="button" className="btn ghost" onClick={fillEmpty}>补齐空位</button>}
+          <button id="starter-confirm" type="button" className="btn" disabled={!legal} onClick={confirm}>确认编成</button>
+        </div>
       </footer>
       </div>
     </div>

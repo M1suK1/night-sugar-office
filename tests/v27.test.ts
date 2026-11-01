@@ -118,12 +118,12 @@ test('v27 同一张卡不会在编成池里出现两次', () => {
 
 test('v27 开局勾选与加卡提醒的阈值', () => {
   const rich = importedCards(20).state;
-  assert.equal(starterPicks(rich, true).length, 6);
+  assert.equal(starterPicks(rich, true).length, 2);
   assert.equal(starterPicks(rich, true).every(id => rich.candidates.some(girl => girl.id === id)), true);
 
   const one = importedCards(1).state;
   const picks = starterPicks(one, false);
-  assert.equal(picks.length, 5, '1 张卡 + 默认四人');
+  assert.equal(picks.length, 2, '1 张卡 + 默认角色补到 2 位');
   assert.ok(picks.includes('yue'));
   assert.equal(starterPicks(one, true).length, 1, 'cardsOnly 时只取卡');
 

@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { Archive, Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, Upload, RotateCcw, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, SlidersHorizontal, Hourglass, MapPin, Terminal, Save } from 'lucide-react';
 import type { GameState, Girl } from '../types';
-import { buildCost, capacity, statusLabels } from '../game';
+import { loadResearchPrefs, saveResearchPrefs } from '../research';
+import { buildCost, capacity, seatsTaken, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
 import { BUDGET_MAX, BUDGET_MIN, LLM_BUDGET_TASKS, budgetForTask, defaultLlmBudget, loadLlmBudget, loadLlmConfig, loadLlmSettings, resolveLlm, saveLlmBudget, setLlmProvider, testLlmConnection, updateLlmSlot, type LlmBudget, type LlmConfig, type LlmSettings, type LlmTaskKey } from '../llm';
 import { describeVertexCredential, vertexLocation, vertexTarget } from '../vertex';
 import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
-  const full=state.girls.length>=capacity(state),poor=state.gold<girl.cost;
-  return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{state.girls.length} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
+  const taken=seatsTaken(state), full=taken>=capacity(state),poor=state.gold<girl.cost;
+  return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{taken} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
 }
 export function BuildDialog({state,initialRoom,onConfirm}:{state:GameState;initialRoom:string;onConfirm:(id:string)=>void}) {
   const [roomId,setRoomId]=useState(initialRoom);const room=state.rooms.find(r=>r.id===roomId)!,cost=buildCost(room),max=room.level>=4,poor=state.gold<cost;
@@ -45,6 +46,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
   const [player, setPlayer] = useState<PlayerProfile>(loadPlayerProfile);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [researchOn, setResearchOn] = useState(() => loadResearchPrefs().enabled);
   const openMissions = state.missions.filter(m => m.status !== 'done' && m.status !== 'expired');
   const monsterPool = monsters.filter(m => !(state.removedMonsters ?? []).includes(m.id));
   const full = openMissions.length >= state.poolLimits.missions || state.customMonsters.filter(m => !m.id.startsWith('boss-mon-')).length >= state.poolLimits.monsters;
@@ -125,7 +127,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
     {tab === 'llm' && <div className="llm-settings">
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接 OpenAI 兼容接口，或直接用服务账号 JSON 接上 Google Vertex AI。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
       <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
-      <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。</p>
+      <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。Vertex AI 不接受重复惩罚参数，选了也会被忽略。</p>
       <div id="settings-llm-default" className="llm-default">
         <div className="llm-default-head"><b>默认接口</b><span>两份凭证并存，这里选的那一份负责所有生成</span></div>
         <ul className="llm-default-list">
@@ -178,6 +180,43 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       <label className="llm-field"><span>接口地址</span><input id="settings-llm-endpoint" value={llm.endpoint} onChange={e => update({ endpoint: e.target.value })} spellCheck={false} placeholder="https://api.openai.com/v1"/><small className="llm-field-hint">填到 /v1 即可；也可直接粘贴完整的 /chat/completions 地址。</small></label>
       <label className="llm-field"><span>API 密钥</span><input id="settings-llm-key" type="password" value={llm.apiKey} onChange={e => update({ apiKey: e.target.value })} spellCheck={false} autoComplete="off" placeholder="sk-..."/></label>
       <label className="llm-field"><span>模型名称</span><input id="settings-llm-model" value={llm.model} onChange={e => update({ model: e.target.value })} spellCheck={false} placeholder="gpt-4o-mini"/></label>
+      <details className="llm-proxy" open={Boolean(llm.authMode && llm.authMode !== 'bearer') || Boolean(llm.pathMode && llm.pathMode !== 'auto')}>
+        <summary>反向代理（可选）</summary>
+        <p className="llm-field-hint">接口挂在子路径或网关后面时用这里：认证头、Azure 路径、附加请求头。填错只影响生成，不会写进存档。</p>
+        <div className="llm-proxy-grid">
+          <label className="llm-field"><span>认证方式</span>
+            <select id="settings-llm-auth" value={llm.authMode ?? 'bearer'} onChange={e => update({ authMode: e.target.value as never })}>
+              <option value="bearer">Authorization: Bearer</option>
+              <option value="x-api-key">x-api-key</option>
+              <option value="api-key">api-key（Azure）</option>
+              <option value="header">自定义请求头</option>
+              <option value="query">URL 查询参数</option>
+              <option value="none">不发送密钥</option>
+            </select>
+          </label>
+          {(llm.authMode === 'header' || llm.authMode === 'query') && <label className="llm-field"><span>{llm.authMode === 'header' ? '请求头名' : '查询参数名'}</span><input id="settings-llm-auth-name" value={(llm.authMode === 'header' ? llm.headerName : llm.apiKeyQuery) ?? ''} onChange={e => update(llm.authMode === 'header' ? { headerName: e.target.value } : { apiKeyQuery: e.target.value })} spellCheck={false} placeholder={llm.authMode === 'header' ? 'X-Proxy-Token' : 'key'} /></label>}
+          <label className="llm-field"><span>路径模式</span>
+            <select id="settings-llm-path-mode" value={llm.pathMode ?? 'auto'} onChange={e => update({ pathMode: e.target.value as never })}>
+              <option value="auto">自动拼 /chat/completions</option>
+              <option value="openai">OpenAI 兼容</option>
+              <option value="azure">Azure OpenAI</option>
+              <option value="custom">自定义路径模板</option>
+            </select>
+          </label>
+          {llm.pathMode === 'custom' && <label className="llm-field"><span>路径模板</span><input id="settings-llm-custom-path" value={llm.customPath ?? ''} onChange={e => update({ customPath: e.target.value })} spellCheck={false} placeholder="/llm/v1/chat/completions 或 /openai/deployments/{model}/chat/completions" /></label>}
+        </div>
+        <label className="llm-field"><span>附加请求头（JSON，可留空）</span>
+          <textarea id="settings-llm-extra-headers" rows={3} defaultValue={JSON.stringify(llm.extraHeaders ?? {}, null, 0)} spellCheck={false} placeholder={'{"X-Proxy-Route":"night"}'} onBlur={event => {
+            const raw = event.target.value.trim();
+            if (!raw) { update({ extraHeaders: {} }); return; }
+            try {
+              const parsed = JSON.parse(raw) as Record<string, unknown>;
+              const clean = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
+              update({ extraHeaders: clean });
+            } catch { /* 写坏了就先不提交，保持原配置 */ }
+          }} />
+        </label>
+      </details>
       </>}
       <section className="llm-budget" aria-label="输出预算">
         <div className="llm-budget-head"><b>输出预算</b><span>{budget.unified} tokens 统一值</span></div>
@@ -218,6 +257,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥与提示词仅存于 localStorage</span></div>
       {llmNote && <div id="settings-llm-result" className={`llm-result ${llmNote.ok ? 'ok' : 'error'}`} role="status">{llmNote.ok ? <Check size={14}/> : <AlertTriangle size={14}/>}{llmNote.text}</div>}
       <div className="settings-row"><div><b>每日自动补充</b><p>跨日时若池子还有空位，自动请求一次新的魔物、委托与议案；候选者不再由叙事者生成。</p></div><button id="settings-auto-generate" role="switch" aria-checked={autoGenerate} aria-label="每日自动补充" className={`toggle ${autoGenerate?'on':''}`} onClick={()=>onAutoGenerate(!autoGenerate)}><i/></button></div>
+      <div className="settings-row"><div><b>角色起草联网考据</b><p>只在自定义登记起草同人角色时，用 Vertex 的 googleSearch 查一次公开资料（作品名、角色设定、惯用称呼）；查不到会自动退回无资料起草。仅 Vertex / Gemini 支持，状态会记进叙事引擎面板。</p></div><button id="settings-research" role="switch" aria-checked={researchOn} aria-label="角色起草联网考据" className={`toggle ${researchOn?'on':''}`} onClick={()=>{ const next = !researchOn; setResearchOn(next); saveResearchPrefs({ enabled: next }); }}><i/></button></div>
       <button id="settings-llm-generate" className="btn primary full" disabled={generating || full} onClick={generate}><Sparkles size={15}/>{full ? '内容池已满，请先清理' : generating ? '叙事者正在书写' : '生成今晚的提案'}</button>
       <div className="llm-warning"><AlertTriangle size={15}/><p>浏览器直连会暴露密钥给页面脚本。正式版本应改为服务端代理；此处仅用于本地原型验证。叙事引擎面板（屏幕右下角）会保留每次请求读取的内容与思维链。</p></div>
     </div>}

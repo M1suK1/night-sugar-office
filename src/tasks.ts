@@ -3,6 +3,7 @@ import { factionInfo } from './content/items.ts';
 import { incidentPending } from './incidents.ts';
 import { hottestPair, hostilityTier, pairMembers } from './hostility.ts';
 import { factionName } from './territories.ts';
+import { opinionLimit } from './game.ts';
 
 export type TaskKind = 'war' | 'incident' | 'council' | 'faction' | 'mission' | 'storyline' | 'contract';
 
@@ -63,8 +64,7 @@ export function taskInbox(state: GameState): TaskEntry[] {
     });
   });
 
-  for (const opinion of state.opinions) {
-    if (opinion.status !== 'pending') continue;
+  for (const opinion of state.opinions.filter(opinion => opinion.status === 'pending').slice(0, opinionLimit(state))) {
     entries.push({
       id: `task-opinion-${opinion.id}`,
       kind: 'council',

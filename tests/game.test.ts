@@ -5,7 +5,7 @@ import { clearSlot, formatSlotTime, readSlot, slotKey, slotLabel, slotSummary, s
 import { TASK_VISIBLE, taskInbox } from '../src/tasks.ts';
 import { leaveGirl, resignationPressure } from '../src/resignations.ts';
 import assert from 'node:assert/strict';
-import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createBlankState, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, pickPoolIncidentCard, resolveStoryWait, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
+import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createBlankState, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, missionVisibleOnMap, pickPoolIncidentCard, resolveStoryWait, seatsTaken, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
@@ -19,7 +19,7 @@ import { subjectOfCustom } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
-import { materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
+import { buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
 import { readWardrobePackage } from '../src/wardrobeImport.ts';
@@ -105,7 +105,7 @@ const nightProposal = (): NightProposalV2 => ({
     appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfit: '宽大的值夜制服。',
   },
   mission: {
-    title: '窗上的纸月亮', category: '异象调查', description: '一扇窗里同时出现了两个月亮。',
+    title: '窗上的第二个月亮', category: '异象调查', description: '第二扇窗里也出现了月亮，方向与第一扇相反。',
     work: 'investigation', difficulty: '中危', district: 'oldtown', window: 'urgent',
     duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5,
     recommendedLevel: 3, enemyRefs: ['generated'], rewardItemRef: 'loot-1', rewardGirlLevel: 0,
@@ -125,7 +125,7 @@ const nightProposal = (): NightProposalV2 => ({
     ],
   },
   envoy: {
-    faction: 'association', title: '替协会送一盏灯', description: '把灯送到旧车站。', work: 'investigation', difficulty: '中危',
+    faction: 'association', title: '替协会送第二盏灯', description: '把第二盏灯送到旧车站的备用站台。', work: 'investigation', difficulty: '中危',
     district: 'station', window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3,
     recommendedLevel: 2, enemyRefs: ['generated'], rewardGirlLevel: 0,
   },
@@ -138,13 +138,15 @@ const oldScar = (id: string): Scar => ({
   maxHpLoss: 8, gainedAt: '第 13 日 · 02:10', missionId: 'mirror',
 });
 
-test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
+test('初始数据包含五位在册契约者、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
   assert.equal(s.version, 20);
   assert.equal(s.girls.length, 5);
-  assert.equal(s.girls.filter(g => g.retired).length, 1);
+  assert.equal(s.girls.filter(g => g.retired).length, 0);
   assert.equal(s.candidates.length, 1);
-  assert.equal(s.missions.length, 10);
+  assert.equal(s.missions.length, 140);
+  assert.equal(s.missions.filter(m => m.work === 'combat').length, 120);
+  assert.equal(s.missions.filter(m => m.work === 'investigation').length, 20);
   assert.equal(s.minutes, 20 * 60);
   assert.ok(s.missions.slice(0, 3).every(m => m.id.startsWith('c-14-0-') && m.deadlineAt !== undefined && m.district));
   assert.ok(s.missions.every(m => m.district && m.window && m.deadlineAt !== undefined));
@@ -617,7 +619,7 @@ test('自定义契约者登记为一级并进入候选名册', () => {
   const r = act(s, { type: 'createGirl', draft });
   assert.equal(r.ok, true);
   assert.equal(r.state.candidates.length, before + 1);
-  assert.equal(r.state.candidates.at(-1)?.level, 1);
+  assert.equal(r.state.candidates.find(girl => girl.name === '夜见灯')?.level, 1);
   assert.equal(s.candidates.length, before);
 });
 
@@ -645,32 +647,48 @@ test('内容池上限可调整，事件、候选与魔物可手动移除', () =>
   assert.equal(act(purified.state, { type: 'deleteMonster', monsterId: monster }).ok, false);
 });
 
-test('生成提案会写入事件、魔物、装备池，候选者不再由叙事者产出', () => {
+test('生成提案会写入委托、议题与装备池，但不再生成魔物', () => {
   const base = createInitialState();
   const checked = validateNightProposal(nightProposal(), base);
   assert.equal(checked.ok, true, checked.errors.join('；'));
   const content = materializeNightProposal(checked.proposal!, base);
-  assert.equal(content.monster.maxHp, 132);
-  assert.deepEqual(content.monster.stats, { magic: 71, insight: 49, agility: 66, empathy: 35 });
   assert.equal(content.girl, undefined, 'v27：叙事者不再产出候选者');
   assert.equal(content.mission.duration, 75);
   assert.equal(content.mission.reward, 1200);
   assert.equal(content.mission.rounds, 5);
   assert.equal(content.opinion.options.length, 3);
   assert.equal(content.opinion.dialogue?.length, 3);
+  assert.equal(content.opinions.length, 1);
   assert.equal(content.items.length, 1);
   assert.equal(content.mission.rewardEquipmentId, content.items[0].id);
   const result = act(base, { type: 'addGeneratedContent', ...content });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, true, result.message);
   assert.equal(result.state.candidates.length, base.candidates.length);
-  assert.equal(result.state.customMonsters.length, 1);
-  assert.equal(result.state.missions.length, base.missions.length + 2);
+  assert.equal(result.state.customMonsters.length, base.customMonsters.length);
+  assert.equal(result.state.missions.length, base.missions.length, '池满时替换旧自动委托，不突破 120/20 容量');
+  assert.equal(result.state.missions.filter(m => m.work === 'combat').length, 120);
+  assert.equal(result.state.missions.filter(m => m.work === 'investigation').length, 20);
   assert.equal(result.state.opinions.length, base.opinions.length + 1);
   assert.equal(result.state.generatedItems.length, 1);
-  assert.equal(result.state.missions.at(-1)?.enemyIds?.[0], content.monster.id);
+  assert.ok(result.state.missions.at(-1)?.enemyIds?.length, '战斗/调查委托仍引用现有魔物');
+});
 
-  const capped = { ...base, poolLimits: { ...base.poolLimits, monsters: 0 } };
-  assert.equal(act(capped, { type: 'addGeneratedContent', ...content }).ok, false);
+test('v32 每日提案可以一次提交三条议题，且不会带出新魔物', () => {
+  const base = createInitialState();
+  const raw = nightProposal();
+  const first = raw.opinion!;
+  raw.opinions = [first, { ...first, title: '窗边的第二张椅子' }, { ...first, title: '窗边的第三盏灯' }];
+  raw.opinion = undefined;
+  raw.monster = undefined;
+  const checked = validateNightProposal(raw, base);
+  assert.equal(checked.ok, true, checked.errors.join('；'));
+  assert.equal(checked.proposal?.opinions?.length, 3);
+  const content = materializeNightProposal(checked.proposal!, base);
+  assert.equal(content.opinions.length, 3);
+  const result = act(base, { type: 'addGeneratedContent', ...content });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.state.customMonsters.length, base.customMonsters.length);
+  assert.equal(result.state.opinions.filter(opinion => opinion.status === 'pending').length, 3);
 });
 
 test('生成装备随存档往返并重新登记到物品表', () => {
@@ -884,7 +902,7 @@ test('编年史缓存生成内容并在存档中保留', () => {
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.ok, true);
   const kinds = new Set(result.state.chronicle.map(entry => entry.kind));
-  for (const kind of ['魔物', '事件', '议程', '代表', '登记'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
+  for (const kind of ['事件', '议程', '代表', '登记'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
   const loaded = loadState(JSON.stringify(result.state));
   assert.equal(loaded.chronicle.length, result.state.chronicle.length);
   assert.ok(loaded.chronicle.every(entry => entry.title && entry.summary));
@@ -905,7 +923,7 @@ test('契约卡可导出、校验并重新导入候选名册', () => {
   const imported = act(base, { type: 'importCard', card: parsed.card });
   assert.equal(imported.ok, true);
   assert.equal(imported.state.candidates.length, base.candidates.length + 1);
-  assert.equal(imported.state.candidates.at(-1)?.level, yue.level);
+  assert.equal(imported.state.candidates.find(girl => girl.name === yue.name)?.level, yue.level);
   assert.equal(act(imported.state, { type: 'importCard', card: parsed.card }).ok, false);
   const broken = parseGirlCard(JSON.stringify({ ...card, girl: { ...card.girl, skillIds: ['nope', 'nope2', 'nope3'] } }));
   assert.equal(broken.ok, false);
@@ -922,7 +940,7 @@ test('契约卡导入按卡片保留出身，旧卡按名字确定性补齐', ()
     assert.equal(parsed.card.girl.factionTag, tag);
     const imported = act(base, { type: 'importCard', card: parsed.card });
     assert.equal(imported.ok, true);
-    assert.equal(imported.state.candidates.at(-1)?.factionTag, tag, `导入后被改成了别的出身：${tag}`);
+    assert.equal(imported.state.candidates.find(girl => girl.name === yue.name)?.factionTag, tag, `导入后被改成了别的出身：${tag}`);
   }
   // 旧卡片没写出身：按名字补齐，和导入次数、候选 id 都无关。
   const legacyCard = buildGirlCard(yue, base);
@@ -933,7 +951,7 @@ test('契约卡导入按卡片保留出身，旧卡按名字确定性补齐', ()
   const expected = factionTagFor('月见桃');
   assert.equal(legacy.card.girl.factionTag, expected);
   const once = act(base, { type: 'importCard', card: legacy.card });
-  assert.equal(once.state.candidates.at(-1)?.factionTag, expected);
+  assert.equal(once.state.candidates.find(girl => girl.name === yue.name)?.factionTag, expected);
   // 已经废弃的 'office' 出身不该被当成合法值带进来。
   const stale = parseGirlCard(JSON.stringify({ ...buildGirlCard(yue, base), girl: { ...buildGirlCard(yue, base).girl, factionTag: 'office' } }));
   assert.equal(stale.ok, true);
@@ -957,7 +975,7 @@ test('自定义特性的契约卡：带定义能还原，只有 id 时跳过而�
 
   const imported = act(base, { type: 'importCard', card: parsed.card });
   assert.equal(imported.ok, true);
-  const brought = imported.state.candidates.at(-1)!;
+  const brought = imported.state.candidates.find(girl => girl.name === yue.name)!;
   assert.deepEqual(brought.traits.map(trait => trait.name), [...yue.traits.map(trait => trait.name), '夜里不睡']);
   assert.equal(brought.traits.at(-1)?.polarity, 'neutral');
   assert.deepEqual(brought.traits.at(-1)?.tags, ['自定义']);
@@ -1360,7 +1378,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.equal(runtime.topP, 0.98);
   assert.equal(runtime.maxTokens, 32768);
   assert.equal(runtime.maxContext, 400000);
-  assert.equal(activePrompts(flat.preset).length, 17);
+  assert.equal(activePrompts(flat.preset).length, 18);
   const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
   assert.ok(wrapped.system.includes('月见桃 的叙事者'));
   assert.ok(!wrapped.system.includes('注释'));
@@ -1373,7 +1391,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.ok(warned.warnings.some(text => text.includes('SPreset')));
   assert.equal(warned.unsupported.length, 1);
   const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
-  assert.equal(again.preset?.promptOrder?.length, 17);
+  assert.equal(again.preset?.promptOrder?.length, 18);
   assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
 });
 
@@ -1433,6 +1451,8 @@ test('势力辖区每局随机、三方各三片，且有占领上限', () => {
 
 test('接受议会决议可以改变辖区归属并记入台账', () => {
   const s = createInitialState();
+  const content = materializeNightProposal(validateNightProposal(nightProposal(), s).proposal!, s);
+  s.opinions = [content.opinion];
   const opinion = s.opinions.find(item => item.status === 'pending');
   assert.ok(opinion);
   const owner = Object.entries(s.territories).find(([, faction]) => faction !== 'witch')![0] as keyof typeof s.territories;
@@ -1670,13 +1690,13 @@ test('预设词条替换变量，缺失变量与分隔标记不进入系统提�
 test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
   const entries = presetPrompts(legacy.preset);
-  assert.equal(entries.length, 15);
+  assert.equal(entries.length, 16);
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
   assert.ok(wrapped.system.includes('系统底稿'));
   assert.ok(wrapped.system.includes('旧主提示'));
-  assert.equal(DEFAULT_PROMPTS.length, 13);
+  assert.equal(DEFAULT_PROMPTS.length, 14);
   assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'tone', 'task']);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'chat').length, 1);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily').length, 1);
@@ -1687,7 +1707,7 @@ test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入�
   assert.equal(playerSummary({ name: '', alias: '', pronoun: '', appearance: '', personality: '', background: '', relation: '' }), '');
 });
 test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
-  assert.equal(PROMPT_TASK_SCOPES.length, 9);
+  assert.equal(PROMPT_TASK_SCOPES.length, 10);
   assert.ok(!PROMPT_TASK_SCOPES.map(String).includes('shared'));
   assert.deepEqual(Object.keys(DEFAULT_PRESET_BINDING), PROMPT_TASK_SCOPES);
   const legacy = normalizeBinding({ chat: 'preset-a', generate: 'preset-b', story: 'preset-c' });
@@ -2261,12 +2281,12 @@ test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
   assert.equal(imported.preset.schema, 4);
   assert.ok(imported.warnings.some(text => text.includes('默认词条')));
   const entries = presetPrompts(imported.preset);
-  assert.equal(entries.length, 14);
+  assert.equal(entries.length, 15);
   assert.equal(entries.filter(entry => entry.scope === 'daily').length, 1);
   assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
   assert.equal(entries.filter(entry => entry.scope === 'battle').length, 1);
   const runtime = presetRuntime(imported.preset);
-  assert.equal(runtime.entries.length, 14);
+  assert.equal(runtime.entries.length, 15);
   assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
 });
 
@@ -3995,6 +4015,8 @@ test('v20 战线：站队参战按胜负结算声望与两边态度', () => {
 
 test('v20 任务面板：把待处理的议会、委托与弹窗收进同一张清单', () => {
   const state = createInitialState();
+  const content = materializeNightProposal(validateNightProposal(nightProposal(), state).proposal!, state);
+  state.opinions = [content.opinion];
   const inbox = taskInbox(state);
   assert.ok(inbox.some(item => item.kind === 'council' && item.target.modal === 'council'), '议会待议要在清单里');
   const forced = inbox.find(item => item.kind === 'mission');
@@ -4106,6 +4128,23 @@ test('v20 离职：条件消失就收回警告，不再计数', () => {
   const yue = state.girls.find(girl => girl.id === 'yue')!;
   assert.deepEqual(yue.strain, { lowBondDays: 0, highFatigueDays: 0 });
   assert.equal(state.incidents.some(item => item.status === 'pending' && item.templateId === 'resign-yue'), false);
+});
+
+test('完成的委托只在完成当天留在地图，换日后隐藏', () => {
+  const mission = { ...createInitialState().missions[0]!, status: 'done' as const, completedDay: 14 };
+  assert.equal(missionVisibleOnMap(mission, 14), true);
+  assert.equal(missionVisibleOnMap(mission, 15), false);
+  assert.equal(missionVisibleOnMap({ ...mission, status: 'open' as const }, 15), true);
+});
+
+test('退役转文职不占契约席位', () => {
+  const state = createInitialState();
+  const total = state.girls.length;
+  const before = seatsTaken(state);
+  const target = state.girls.find(girl => !girl.dead && !girl.retired && !girl.left)!;
+  target.retired = true;
+  assert.equal(seatsTaken(state), before - 1, '退役的人不再算床位');
+  assert.equal(state.girls.length, total, '退役只是转文职，人还在名册里');
 });
 
 test('v20 离职：离开的人不能派遣，也不占席位', () => {
@@ -4504,10 +4543,11 @@ test('v21 首领可以换位：现属头衔跟着势力走，台词不变', () =
   assert.equal(moved.quote, '城市不把魔女当人，我们就自己写人的定义。');
 });
 
-test('v21 编成：人数必须是 4–6，非法阵容被拒绝且不改状态', () => {
+test('v21 编成：人数必须是 2–6，非法阵容被拒绝且不改状态', () => {
   const base = createInitialState();
-  const tooFew = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling'], roster: defaultFactionRoster() });
+  const tooFew = act(base, { type: 'setStarters', girlIds: ['yue'], roster: defaultFactionRoster() });
   assert.equal(tooFew.ok, false);
+  assert.equal(act(base, { type: 'setStarters', girlIds: ['yue', 'tang'], roster: defaultFactionRoster() }).ok, true, '两位就可以开局');
   const dupLeader = defaultFactionRoster();
   dupLeader.government.leaderId = dupLeader.association.leaderId;
   const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: dupLeader });
@@ -4518,10 +4558,10 @@ test('v21 编成：人数必须是 4–6，非法阵容被拒绝且不改状态'
 test('v21 编成后名册只剩选中的人，没被选中的原班人马不回市场', () => {
   const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: defaultFactionRoster() });
   assert.equal(next.ok, true);
-  // 退役的栀子留在档案里（纪念墙与关系页还要用），只是不再算在编。
-  assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue', 'zhi']);
+  // 新游戏栀子不再默认退役；编成没选中她时，她和其他未入选者一样离开名册。
+  assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue']);
   assert.equal(next.state.girls.filter(girl => !girl.retired).length, 4, '在编的只有选中的四位');
-  assert.equal(next.state.girls.find(girl => girl.id === 'zhi')?.retired, true);
+  assert.equal(next.state.girls.some(girl => girl.id === 'zhi'), false);
   assert.equal(next.state.candidates.some(girl => girl.id === 'zhi'), false);
   assert.equal(next.state.startersPicked, true);
 });
@@ -4554,7 +4594,7 @@ test('v21 势力覆灭后才能雇佣首领，且只扣一次星砂', () => {
   const leader = hired.state.girls.find(girl => girl.id === 'leader-association');
   assert.ok(leader);
   assert.equal(leader.leader, true);
-  assert.equal(leader.level, 7);
+  assert.equal(leader.level, 10);
   assert.equal(hired.state.factions.association.standing, 0);
   assert.equal(hired.state.factions.government.standing, 53);
   const again = act(hired.state, { type: 'hireLeader', leaderId: 'leader-association' });
@@ -4567,7 +4607,7 @@ test('v21 谎报首领会失败；名字与属性来自数据表', () => {
   assert.equal(bogus.ok, false);
   const leader = leaderById('leader-witch');
   assert.ok(leader);
-  assert.equal(leader.level, 8);
+  assert.equal(leader.level, 10);
   assert.deepEqual(leader.stats, { magic: 88, insight: 70, agility: 66, empathy: 50 });
 });
 
@@ -4857,4 +4897,39 @@ test('v25 精神型失败只留下精神疤痕', () => {
   const scar = makeScar(girl, { id: 'm', name: '深夜巡查', x: 50, y: 50 } as Mission, () => 0.01, '第 1 日 · 02:00', false, true);
   assert.equal(girl.scars.length, before);
   assert.equal(scar.kind, 'mental');
+});
+
+test('带契约卡的存档能读回来：g_card_<hash> 是合法 id', () => {
+  const state = createInitialState();
+  const cardGirl = { ...state.girls[0]!, id: 'g_card_deadbeef', name: '卡里的少女', cardId: 'deadbeef' };
+  state.girls = [cardGirl, state.girls[1]!];
+  state.startersPicked = true;
+  state.candidates = [];
+  state.marketWindow = [];
+  const loaded = loadState(JSON.stringify(state));
+  assert.equal(loaded.startersPicked, true);
+  assert.equal(loaded.girls.some(girl => girl.id === 'g_card_deadbeef'), true, '卡里的少女不该被当成坏档丢掉');
+});
+
+test('议会提案的提示词只写值夜名册：契约卡的卡面与性格都要带上，不再出现内置角色', () => {
+  const base = createInitialState();
+  const a = { ...base.girls[0]!, id: 'g_card_deadbeef', name: '白洲梓', title: '静滞之翼', personality: '安静，说话很轻。', appearance: '浅紫色长发，红白制服。', quote: '先把眼前的威胁扫清。' };
+  const b = { ...base.girls[1]!, id: 'g_card_feedface', name: '清姬', title: '青焰之执', personality: '说话带刺。', appearance: '绿色长发，鳞片耳饰。', quote: '别碰我的尾巴。' };
+  const state = { ...base, girls: [a, b], candidates: [] };
+  const prompt = buildNightPrompt(state);
+  assert.ok(prompt.includes('白洲梓') && prompt.includes('g_card_deadbeef'), '名册要带名字与 id');
+  assert.ok(prompt.includes('安静，说话很轻。') && prompt.includes('红白制服'), '契约卡的性格与外貌要进提示词');
+  assert.ok(prompt.includes('清姬'));
+  assert.equal(prompt.includes('零青'), false, '名册外的人不该出现在提示词里');
+});
+
+test('议会提案写错作者或说话人时，报错里列出可用的 id 与名字', () => {
+  const base = createInitialState();
+  const state = { ...base, girls: [{ ...base.girls[0]!, id: 'g_card_cafebabe', name: '白洲梓' }], candidates: [] };
+  const broken = nightProposal();
+  broken.opinion.authorId = 'ling';
+  broken.opinion.dialogue = broken.opinion.dialogue.map(line => ({ ...line, speakerId: 'ling' }));
+  const checked = validateNightProposal(broken, state);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.errors.some(error => error.includes('g_card_cafebabe') && error.includes('白洲梓')), checked.errors.join('；'));
 });

@@ -60,11 +60,62 @@ function recordWar(state: GameState, front: FactionFront, note: string): void {
  *
  * 冷却期内又烧满的，夹在 95 并记一句「双方都在等一个借口」。
  */
+/** 真正生成一条战线；议会决议可以直接调用它，不等敌意满 100。 */
+export function startWar(state: GameState, pair: FactionPair, at: { day: number; minutes: number }, note?: string): FactionFront | undefined {
+  state.fronts = state.fronts ?? [];
+  state.warHistory = state.warHistory ?? [];
+  if (openFrontOfPair(state, pair)) return undefined;
+  const track = trackOf(state, pair);
+  const attacker = attackerOf(state, pair);
+  const defender = pairMembers(pair).find(id => id !== attacker) ?? pairMembers(pair)[1];
+  const district = frontDistrict(state, defender);
+  const startsAt = at.day * 1440 + 20 * 60 + 60;
+  const front: FactionFront = {
+    id: `front-${at.day}-${district}`,
+    pair,
+    day: at.day,
+    district,
+    attacker,
+    defender,
+    startsAt,
+    endsAt: startsAt + 240,
+    attackerPower: frontPower(state, attacker, district),
+    defenderPower: frontPower(state, defender, district),
+    status: 'open',
+    reason: track.reason,
+  };
+  state.fronts.push(front);
+  state.hostility[pair] = { ...track, value: HOSTILITY_AFTER_WAR, updatedDay: at.day, reason: '打起来了，账先记着' };
+  recordWar(state, front, note ?? `${pairLabel(pair)}在${districts[district].name}动上了手：${factionName[attacker]}压过去，${factionName[defender]}守着。`);
+  return front;
+}
+
+/** 停战：结束这一对未完成的战线，压低敌意并进入冷却。 */
+export function settleTruce(state: GameState, pair: FactionPair, days: number, reason = '停战协议'): void {
+  for (const front of state.fronts ?? []) {
+    if (front.pair !== pair) continue;
+    if (front.status !== 'open' && front.status !== 'joined') continue;
+    front.status = 'resolved';
+    front.result ??= 'stalemate';
+  }
+  const track = trackOf(state, pair);
+  const span = Math.max(1, Math.min(60, Math.round(days)));
+  state.hostility[pair] = { ...track, value: Math.min(track.value, 20), updatedDay: state.day, reason };
+  state.truceUntil = { ...(state.truceUntil ?? {}), [pair]: state.day + span };
+  state.logs.unshift({
+    id: `log-truce-${pair}-${state.day}`,
+    time: '',
+    kind: 'territory',
+    text: `${pairLabel(pair)}停战 ${span} 天：${reason}。`,
+  });
+}
+
 export function planFronts(state: GameState, at: { day: number; minutes: number }): FactionFront[] {
   const created: FactionFront[] = [];
   state.fronts = state.fronts ?? [];
   state.warHistory = state.warHistory ?? [];
   for (const pair of ['association-government', 'association-witch', 'government-witch'] as FactionPair[]) {
+    if ((state.truceUntil?.[pair] ?? 0) >= at.day) continue;
     const track = trackOf(state, pair);
     if (track.value < 100) continue;
     if (openFrontOfPair(state, pair)) continue;
@@ -73,28 +124,8 @@ export function planFronts(state: GameState, at: { day: number; minutes: number 
       state.logs.unshift({ id: `log-war-cooldown-${pair}-${at.day}`, time: '', kind: 'territory', text: `${pairLabel(pair)}又烧到了临战线，但两边都还记得上一场。` });
       continue;
     }
-    const attacker = attackerOf(state, pair);
-    const defender = pairMembers(pair).find(id => id !== attacker) ?? pairMembers(pair)[1];
-    const district = frontDistrict(state, defender);
-    const startsAt = at.day * 1440 + 20 * 60 + 60;
-    const front: FactionFront = {
-      id: `front-${at.day}-${district}`,
-      pair,
-      day: at.day,
-      district,
-      attacker,
-      defender,
-      startsAt,
-      endsAt: startsAt + 240,
-      attackerPower: frontPower(state, attacker, district),
-      defenderPower: frontPower(state, defender, district),
-      status: 'open',
-      reason: track.reason,
-    };
-    state.fronts.push(front);
-    state.hostility[pair] = { ...track, value: HOSTILITY_AFTER_WAR, updatedDay: at.day, reason: '打起来了，账先记着' };
-    recordWar(state, front, `${pairLabel(pair)}在${districts[district].name}动上了手：${factionName[attacker]}压过去，${factionName[defender]}守着。`);
-    created.push(front);
+    const front = startWar(state, pair, at);
+    if (front) created.push(front);
   }
   return created;
 }

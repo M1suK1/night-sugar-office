@@ -5,6 +5,9 @@ export const BATTLE_NOTE_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise
 const EXPRESSION_SET = new Set<string>(BATTLE_NOTE_EXPRESSIONS);
 const MIN_NOTE_CHARS = 900;
 const MAX_NOTE_CHARS = 2200;
+/** 新版连贯札记：一次写完，至少 6000 字。 */
+const MIN_CONTINUOUS_CHARS = 6000;
+const MAX_CONTINUOUS_CHARS = 12000;
 
 export type BattleOutcome = NonNullable<BattleState['outcome']>;
 
@@ -104,6 +107,46 @@ export function battleDigest(battle: BattleState): string {
   return parts.join('\n');
 }
 
+/**
+ * 连贯札记用的战斗摘要：只讲「谁做了什么、成没成、局势怎么变」，不带回合、伤害、技能名。
+ *
+ * 技能名一律换成动作类别；数值只保留「压低了护持 / 削去一截体力 / 稳住阵脚」这种可读结果。
+ */
+export function battleStoryDigest(battle: BattleState): string {
+  const actors = battleActors(battle);
+  const byUid = new Map(actors.map(actor => [actor.uid, actor]));
+  const name = (uid: string) => byUid.get(uid)?.name ?? uid;
+  const outcome = battleOutcomeLabel(battle.outcome);
+  const parts = [
+    `战斗：${battle.missionTitle}。结果：${outcome}。`,
+    `参战：${actors.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'}${actor.name}${actor.down ? '（倒下了）' : ''}`).join('、') || '没有留下参战记录'}。`,
+  ];
+  if (battle.pollution !== undefined) parts.push(`环境：辖区污染 ${pollutionTierLabel(battle.pollution)}。`);
+  // 每 3 条事件合成一句，避免把整份战报塞给模型；保留先手与最后几条。
+  const events = battle.events;
+  const beats: string[] = [];
+  for (let index = 0; index < events.length; index += 3) {
+    const slice = events.slice(index, index + 3);
+    const lines = slice.map(event => {
+      const target = event.targets.length ? name(event.targets[0]!) : '空处';
+      const action = event.resource === 'spirit' ? '压制了对方的心神' : event.resource === 'hp' ? '逼得对方后退' : '试着稳住阵脚';
+      return `${name(event.actor)}向${target}出手，${event.hit ? `这一下打实了，${action}` : '被对方避开了'}`;
+    });
+    beats.push(lines.join('；'));
+  }
+  const head = beats.slice(0, 26);
+  const tail = beats.length > 34 ? beats.slice(-8) : [];
+  parts.push('经过：', ...head.map(line => `- ${line}`));
+  if (tail.length) {
+    parts.push(`- 中间还有 ${beats.length - head.length - tail.length} 段交手，节奏更快，双方都在换位与试探；`, ...tail.map(line => `- ${line}`));
+  }
+  const downs = actors.filter(actor => actor.down);
+  if (downs.length) parts.push(`倒下：${downs.map(actor => actor.name).join('、')}。`);
+  if (battle.scars?.length) parts.push(`战后留下疤痕：${battle.scars.map(scar => scar.name).join('、')}。`);
+  parts.push('报酬已经结算；不要写具体星砂数字。');
+  return parts.join('\n');
+}
+
 export interface BattleNoteDraftScene {
   roundFrom: number;
   roundTo: number;
@@ -116,6 +159,9 @@ export interface BattleNoteDraft {
   title: string;
   hook: string;
   summary: string;
+  format?: 'continuous';
+  narration?: string;
+  lines?: BattleNoteLine[];
   scenes: BattleNoteDraftScene[];
 }
 
@@ -127,6 +173,10 @@ export interface BattleNoteDraftResult {
 }
 
 function clean(value: unknown, max = 1200): string {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function cleanLong(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
@@ -159,6 +209,7 @@ function materialize(draft: BattleNoteDraft, battle: BattleState, meta: { source
   }));
   const note: BattleNote = {
     battleId: battle.id,
+    format: draft.format,
     title: draft.title,
     hook: draft.hook,
     summary: draft.summary,
@@ -185,6 +236,44 @@ export function validateBattleNoteDraft(raw: unknown, battle: BattleState, meta:
   if (!hook) errors.push('缺少引子。');
   if (!summary) errors.push('缺少收束摘要。');
   const rawScenes = Array.isArray(value.scenes) ? value.scenes : [];
+  const continuous = value.format === 'continuous' || typeof value.narration === 'string';
+  if (continuous) {
+    const narration = cleanLong(value.narration, MAX_CONTINUOUS_CHARS + 2000);
+    const actors = battleActors(battle);
+    const byKey = new Map(actors.filter(actor => actor.speakable).map(actor => [`${actor.side}:${actor.girlId}`, actor]));
+    const rawLines = Array.isArray(value.lines) ? value.lines : [];
+    const lines: BattleNoteLine[] = [];
+    for (const [index, rawLine] of rawLines.entries()) {
+      if (!rawLine || typeof rawLine !== 'object') { errors.push(`第 ${index + 1} 行不是对象。`); continue; }
+      const line = rawLine as Record<string, unknown>;
+      const speakerSide = line.speakerSide;
+      const speakerId = clean(line.speakerId, 80);
+      const expression = clean(line.expression, 20);
+      const text = clean(line.text, 240);
+      const mode = line.mode === 'thought' ? 'thought' : 'speech';
+      if (speakerSide !== 'ally' && speakerSide !== 'enemy') errors.push(`第 ${index + 1} 行缺少 speakerSide。`);
+      if (!EXPRESSION_SET.has(expression)) errors.push(`第 ${index + 1} 行的表情无效。`);
+      if (!text) errors.push(`第 ${index + 1} 行没有台词。`);
+      const actor = speakerSide === 'ally' || speakerSide === 'enemy' ? byKey.get(`${speakerSide}:${speakerId}`) : undefined;
+      if (!actor) errors.push(`第 ${index + 1} 行的说话者不在场上，或没有立绘。`);
+      const after = Number.isFinite(Number(line.after)) ? Math.max(0, Math.floor(Number(line.after))) : undefined;
+      lines.push({ round: 1, speakerSide: speakerSide === 'enemy' ? 'enemy' : 'ally', speakerId, expression: EXPRESSION_SET.has(expression) ? expression as Expression : 'calm', text, mode, after });
+    }
+    if (lines.length < 4) errors.push('至少需要 4 句台词。');
+    if (lines.length > 16) errors.push('台词最多 16 句。');
+    if (!narration) errors.push('缺少正文。');
+    const numeric = /\d+\s*(点|伤害|回合|%|HP|心防)|第\s*\d+\s*回合/i;
+    if (numeric.test(narration) || lines.some(line => numeric.test(line.text))) errors.push('正文或台词里出现了伤害、回合数或数值；改成动作与结果。');
+    const skillsInBattle = [...new Set(battle.events.map(event => event.skillName).filter(name => name.length >= 2))];
+    if (skillsInBattle.some(name => narration.includes(name) || lines.some(line => line.text.includes(name)))) errors.push('正文或台词里出现了技能名；改成动作描写。');
+    const chars = [...(narration + lines.map(line => line.text).join('')).replace(/\s+/g, '')].length;
+    if (chars < MIN_CONTINUOUS_CHARS) errors.push(`札记只有 ${chars} 字，至少需要 ${MIN_CONTINUOUS_CHARS} 字。`);
+    if (chars > MAX_CONTINUOUS_CHARS) errors.push(`札记有 ${chars} 字，超出 ${MAX_CONTINUOUS_CHARS} 字上限。`);
+    if (errors.length) return { ok: false, errors: errors.slice(0, 8) };
+    const draft: BattleNoteDraft = { title, hook, summary, format: 'continuous', narration, lines, scenes: [{ roundFrom: 1, roundTo: totalBattleRounds(battle), title: '', narration, lines }] };
+    const note = materialize(draft, battle, { source: 'llm', createdAt: meta.createdAt, model: meta.model, presetId: meta.presetId });
+    return { ok: true, errors: [], note, draft };
+  }
   if (rawScenes.length < 3 || rawScenes.length > 5) errors.push('场景必须是 3–5 场。');
   const actors = battleActors(battle);
   const byKey = new Map(actors.filter(actor => actor.speakable).map(actor => [`${actor.side}:${actor.girlId}`, actor]));

@@ -2,15 +2,17 @@ import { useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
-import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
+import { buildCost, drugDaysLeft, inWithdrawal, previewFactionTask } from '../game';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
-import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
+import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf } from '../factions';
 import { pensionFor } from '../contracts';
 import { PrologueDialog } from '../components/PrologueDialog';
 import { prologueFor } from '../prologue.ts';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
 import { currentBoss } from '../content/bosses';
+import { districts } from '../districts.ts';
+import { pairLabel } from '../hostility.ts';
 import './aux-views.css';
 
 type BaseViewProps = {
@@ -127,7 +129,11 @@ export function BaseView({
   const assistant = state.girls.find(girl => girl.id === state.assistantId);
   const eligible = state.girls.filter(girl => girl.status === 'idle' && !girl.retired && !inWithdrawal(girl) && girl.id !== state.assistantId && girl.hp >= 30 && girl.fatigue < 80);
   const expeditionMembers = expedition ? expedition.memberIds.map(id => state.girls.find(girl => girl.id === id)).filter((girl): girl is Girl => Boolean(girl)) : [];
-  const decisionAuthor = decision ? state.girls.find(girl => girl.id === decision.authorId) : undefined;
+  const decisionAuthor = decision
+    ? decision.authorKind === 'leader' && decision.authorFaction
+      ? factionRepresentativeOf(state, decision.authorFaction)
+      : state.girls.find(girl => girl.id === decision.authorId)
+    : undefined;
   const availableEnvoys = factionIds.filter(id => !state.factions[id].envoyTaskId).length;
   const needCareCount = active.filter(g => g.hp < g.maxHp || g.fatigue >= 45 || (g.corruption ?? 0) >= 35 || inWithdrawal(g)).length;
   const toggleExpedition = (id: string) => setExpeditionSquad(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 2 ? current : [...current, id]);
@@ -188,6 +194,7 @@ export function BaseView({
                   aria-label={`查看${girl.name}，${statusText[girl.status]}`}
                 >
                   <img className="av-room-avatar" src={girl.portrait} alt="" loading="lazy" />
+                  {(state.whisperUnread?.[girl.id] ?? 0) > 0 && <span className="whisper-badge" aria-label={`有 ${state.whisperUnread?.[girl.id]} 条新消息`}>{state.whisperUnread?.[girl.id]}</span>}
                   <span>{girl.name}<small>HP {girl.hp} · 蚀 {girl.corruption ?? 0}%</small></span>
                 </button>
                 <button
@@ -247,7 +254,7 @@ export function BaseView({
                 </div>
                 {decision ? (
                   <div className="av-opinion">
-                    <span className="av-opinion-meta">{decisionAuthor?.name ?? '事务所'} · {decision.topic} · 第 {decision.day} 日</span>
+                    <span className="av-opinion-meta">{decisionAuthor?.name ?? '事务所'} · {decision.topic} · 第 {decision.day} 日{decision.authorKind === 'leader' && decision.authorFaction && <em className="av-opinion-author-tag">{factionInfo[decision.authorFaction].name}首领</em>}</span>
                     <h3>{decision.title}</h3>
                     <p>{decision.text}</p>
                     <div className="av-opinion-request"><MessageCircle size={13} /><span>{decision.request}</span></div>
@@ -282,15 +289,28 @@ export function BaseView({
                 <div className="av-envoy-compact-list">
                   {factionIds.map(fid => {
                     const info = factionInfo[fid];
+                    const representative = factionRepresentativeOf(state, fid);
                     const standing = state.factions[fid].standing;
                     const att = factionAttitude(standing);
                     const done = Boolean(state.factions[fid].envoyTaskId);
+                    const task = previewFactionTask(state, fid);
+                    const rivals = Object.entries(state.hostility ?? {})
+                      .filter(([pair]) => pair.split('-').includes(fid))
+                      .sort((left, right) => right[1].value - left[1].value)
+                      .slice(0, 1);
+                    const rival = rivals[0];
                     return (
-                      <div key={fid} className="av-envoy-row" style={{ '--faction': info.color } as React.CSSProperties}>
+                      <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
                         <span className="av-envoy-seal">{info.short}</span>
                         <div className="av-envoy-copy">
-                          <strong>{info.envoy} <small>{info.title} · {info.name}</small></strong>
-                          <p>态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}） · {factionEffects[fid]}</p>
+                          <strong>{representative.name} <small>{representative.title} · {info.name}</small></strong>
+                          <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
+                          <div className="av-envoy-task">
+                            <b id={`av-envoy-title-${fid}`}>{task.title}</b>
+                            <span>{task.work === 'combat' ? '战斗' : '调查'} · {task.difficulty} · {districts[task.district as keyof typeof districts]?.name ?? '未知辖区'} · {task.duration} 分钟</span>
+                            <span>推荐 Lv.{task.recommendedLevel} · 目标 {task.requirement} {task.target} · 报酬 {task.reward.toLocaleString('zh-CN')} 星砂</span>
+                            <span className="av-envoy-reward">完成后：{factionEffects[fid]}</span>
+                          </div>
                         </div>
                         <button
                           id={`av-envoy-accept-${fid}`}
@@ -299,7 +319,7 @@ export function BaseView({
                           disabled={done}
                           onClick={() => onAcceptTask(fid)}
                         >
-                          {done ? <><Check size={12} />已接取</> : <>接受委托<ArrowUpRight size={12} /></>}
+                          {done ? <><Check size={12} />今日已领</> : <>接受委托<ArrowUpRight size={12} /></>}
                         </button>
                       </div>
                     );

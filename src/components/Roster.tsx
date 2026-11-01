@@ -26,6 +26,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
           const draggable = g.status === 'idle' && !g.retired && !inWithdrawal(g);
           const ending = g.contractEndDay - state.day <= 2;
           const stats = effectiveStats(g, state);
+          const unread = state.whisperUnread?.[g.id] ?? 0;
           return (
             <article key={g.id} className={`girl-roster-card ${g.status !== 'idle' ? 'is-busy' : ''} ${g.retired ? 'is-retired' : ''} ${g.witch ? 'is-witch' : ''}`} style={{ '--girl-color': g.color } as React.CSSProperties}
               draggable={draggable}
@@ -34,6 +35,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                 <div className="roster-portrait">
                   <GirlPortrait girl={g} variant="full" />
                   <span className="portrait-motif" />
+                  {unread > 0 && <span className="whisper-badge" aria-label={`有 ${unread} 条新消息`}>{unread}</span>}
                   {g.retired && <span className="retired-stamp">文职</span>}
                   {g.witch && <span className="witch-stamp">魔女</span>}
                 </div>

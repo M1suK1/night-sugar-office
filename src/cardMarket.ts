@@ -7,6 +7,7 @@
  */
 import type { CardBoxEntry } from './cardbox.ts';
 import type { GameState } from './types.ts';
+import { marketSize } from './economy.ts';
 
 /** 已经被用掉的卡编号：名册、候选、编进三方的首领与随从都算。 */
 export function usedCardIds(state: GameState): Set<string> {
@@ -43,10 +44,10 @@ export function cardBoxExhausted(box: CardBoxEntry[], state: GameState): boolean
 }
 
 /**
- * 该不该催玩家加卡：没有可补的卡，而且市场真的快没人了（候选 ≤ 2）。
- * 只是「没补满」不算——20 张开局后市场还有十几位，不该马上催。
+ * 该不该催玩家加卡：没有可补的卡，而且池子快撑不满今天的窗口了。
+ * 只是「没补满」不算——20 张开局后池子里还有十几位，不该马上催。
  */
 export function marketNeedsCards(state: GameState, box: CardBoxEntry[]): boolean {
-  if (state.candidates.length > 2) return false;
+  if (state.candidates.length > marketSize(state.marketLevel)) return false;
   return cardBoxExhausted(box, state);
 }

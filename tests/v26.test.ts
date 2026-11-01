@@ -23,26 +23,23 @@ test('v26 首夜空缺：议案、事件、委托、候选与魔物都按缺口�
   // 内置模板没冷却时算「够用」，所以这里不急着叫叙事者；openingFill 仍会本地兜底填到三条。
   assert.equal(typeof gaps.incidents, 'number');
   assert.equal(gaps.candidates, state.poolLimits.candidates - state.candidates.length);
-  assert.equal(gaps.monsters, state.poolLimits.monsters);
+  assert.equal(gaps.monsters, 0, 'v32 新档已经用本地变体填满魔物池');
   assert.equal(openingNeed(state), true);
   assert.ok(openingLabel(state).includes('条议题'), openingLabel(state));
 
   state.opinions = [1, 2, 3].map(index => ({
-    ...createInitialState().opinions[0]!, id: `op-fill-${index}`, status: 'pending' as const,
+    id: `op-fill-${index}`, day: state.day, authorId: 'yue', topic: '经费' as const,
+    title: `测试议题 ${index}`, text: '测试', request: '测试', status: 'pending' as const, options: [],
   }));
   assert.equal(openingGaps(state).opinions, 0, '够三条就不再要');
 });
 
-test('v26 openingFill 补齐议案与待用事件，并记下当天', () => {
+test('v26 openingFill 只补待用事件；议题交给叙事者生成', () => {
   const state = fresh();
   const result = act(state, { type: 'openingFill' });
   assert.equal(result.ok, true, result.message);
   const next = result.state;
-  assert.equal(next.opinions.filter(opinion => opinion.status === 'pending').length, 3);
-  const titles = next.opinions.filter(opinion => opinion.status === 'pending').map(opinion => opinion.title);
-  assert.equal(new Set(titles).size, titles.length, `三条议题不该重名：${titles.join(' / ')}`);
-  const ids = next.opinions.filter(opinion => opinion.status === 'pending').map(opinion => opinion.id);
-  assert.equal(new Set(ids).size, ids.length, '议题编号也不能重复');
+  assert.equal(next.opinions.filter(opinion => opinion.status === 'pending').length, 0, '不再生成默认议题');
   assert.ok(next.incidentPool.length >= 3, '待用事件也要凑够三个');
   assert.equal(next.openingFilledAt, next.day);
   assert.ok(next.logs.some(log => log.id === `log-opening-${next.day}`), '要留一条补齐记录');
@@ -152,7 +149,7 @@ test('v26 编成确认后可以把卡库里的候选排进名册', () => {
   assert.ok(result.state.girls.some(girl => girl.id === candidate.id), '被选中的候选要进事务所名册');
 });
 
-test('v26 编成没被选中的卡留在市场，退役少女留在档案里', () => {
+test('v26 编成没被选中的卡留在市场，栀子不再默认退休', () => {
   const state = fresh();
   const cards = ['留下的甲', '留下的乙'].map((name, index) => buildGirlCard({ ...state.girls[index]!, name }, state));
   const imported = act(state, { type: 'importCards', cards });
@@ -163,7 +160,7 @@ test('v26 编成没被选中的卡留在市场，退役少女留在档案里', (
   assert.equal(result.ok, true, result.message);
   assert.ok(result.state.candidates.some(girl => girl.name === '留下的甲'), '没被选中的卡还挂在市场');
   assert.ok(result.state.candidates.some(girl => girl.name === '留下的乙'));
-  assert.equal(result.state.girls.find(girl => girl.id === 'zhi')?.retired, true, '退役的栀子留在档案里');
+  assert.equal(Boolean(state.girls.find(girl => girl.id === 'zhi')?.retired), false, '新游戏栀子不退休');
 });
 
 test('v26 序章换了自定义首领就换名字', () => {

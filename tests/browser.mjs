@@ -188,9 +188,9 @@ const nightProposal = {
   version: 2,
   monster: { name: '纸月', epithet: '被折起来的月亮', rank: '游荡', element: '月影系', trait: '害怕被展开', description: '一张悬在空中的纸月亮。', habit: '深夜贴着窗户移动。', weakness: '遇水变软。', maxHp: 132, maxSpirit: 84, stats: { magic: 71, insight: 49, agility: 66, empathy: 35 }, skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }] },
   candidate: { name: '纸灯', codename: '折光', title: '把夜色折成小船的人', element: '星光系', archetype: '治愈', level: 3, cost: 620, stats: { magic: 64, insight: 58, agility: 52, empathy: 72 }, skillIds: ['glimmer-spear'], traits: [{ name: '夜读', description: '熄灯后才开始写字。', polarity: '正面' }], quote: '我会把灯留给你。', goal: '找到愿意收留纸船的人。', goalKind: '生活', appearance: '短发，发梢有折痕。', personality: '安静，喜欢折纸。', outfit: '宽大的值夜制服。' },
-  mission: { title: '窗上的纸月亮', category: '异象调查', description: '一扇窗里同时出现了两个月亮。', work: 'investigation', difficulty: '中危', district: 'oldtown', window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5, recommendedLevel: 3, enemyRefs: ['generated'], rewardItemRef: 'loot-1', rewardGirlLevel: 0 },
+  mission: { title: '窗上的第二个月亮', category: '异象调查', description: '第二扇窗里也出现了月亮，方向与第一扇相反。', work: 'investigation', difficulty: '中危', district: 'oldtown', window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5, recommendedLevel: 3, enemyRefs: ['echo-cat'], rewardItemRef: 'loot-1', rewardGirlLevel: 0 },
   opinion: { authorId: 'yue', topic: '经费', faction: 'witch', title: '窗边的空位', text: '有人希望把靠窗的位置留给新来的孩子。', request: '把窗边的位置留给纸灯。', dialogue: [{ speakerId: 'yue', speaker: '月见桃', text: '窗边那个位置，今晚开始空出来了。', expression: 'calm' }, { speakerId: 'yue', speaker: '月见桃', text: '我想把它留给纸灯。她需要一个能看见月亮的地方。', expression: 'sad' }, { speakerId: 'yue', speaker: '月见桃', text: '经费从我的那份里扣，可以吗？', expression: 'shy' }], options: [{ id: 'accept', label: '批准', effect: '从本月经费中拨出一笔钱，把窗边重新布置。', changes: [{ kind: 'gold', amount: -600 }, { kind: 'girl', girlId: 'yue', field: 'bond', amount: 3 }], outcomes: [] }, { id: 'defer', label: '暂缓', effect: '今晚先不动窗边，等下次例会再说。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] }, { id: 'reject', label: '驳回', effect: '窗边保持原样，经费也不能动。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] }] },
-  envoy: { faction: 'association', title: '替协会送一盏灯', description: '把灯送到旧车站。', work: 'investigation', difficulty: '中危', district: 'station', window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3, recommendedLevel: 2, enemyRefs: ['generated'], rewardGirlLevel: 0 },
+  envoy: { faction: 'association', title: '替协会送第二盏灯', description: '把第二盏灯送到旧车站的备用站台。', work: 'investigation', difficulty: '中危', district: 'station', window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3, recommendedLevel: 2, enemyRefs: ['echo-cat'], rewardGirlLevel: 0 },
   loot: [{ ref: 'loot-1', name: '折月灯罩', faction: 'witch', slot: 'charm', description: '纸折的灯罩，能把月光收得很小。', stats: { insight: 4 }, passive: '' }],
 };
 const close = async () => { if (await page.locator('dialog[open]').count()) await page.locator('#modal-close').click(); };
@@ -199,6 +199,11 @@ async function finishRoster() {
   await page.waitForTimeout(150);
   const dialog = page.locator('#starter-dialog');
   if (!(await dialog.count())) return;
+  // 默认只预选 2 位；这套长流程后面要用 ling / wu 做三人派遣，能补就补到 4 位。
+  for (const id of ['ling', 'wu']) {
+    const card = page.locator(`#starter-card-${id}`);
+    if (await card.count()) await card.click().catch(() => {});
+  }
   await page.locator('#starter-confirm').click();
   if (await page.locator('#prologue-skip').count()) await page.locator('#prologue-skip').click().catch(() => {});
   await expect(page.locator('#prologue-beat')).toHaveCount(0);
@@ -226,6 +231,10 @@ try {
     await finishRoster(); await page.evaluate(async () => document.fonts.ready);
   await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '1'));
   await page.locator('#start-new').click();
+  // 默认只预选 2 位；这套长流程要用到 ling / wu 的三人派遣，先手动补到 4 位。
+  await page.locator('#starter-card-ling').click();
+  await page.locator('#starter-card-wu').click();
+  await expect(page.locator('#starter-count')).toContainText('4 / 6');
   await page.locator('#starter-confirm').click();
   await check('开场三幕：三方各一句、可跳过、只弹一次、记录页能重看', async () => {
     await expect(page.locator('#prologue-beat')).toBeVisible();
@@ -366,6 +375,15 @@ try {
     await expect.poll(async () => (await stored()).missions.find(m => m.id === 'candy').status).toBe('done');
     expect((await stored()).gold).toBe(goldBeforeCandy + candy.reward);
   });
+  await check('完成的委托在筛选下仍能点开战报', async () => {
+    await page.locator('#map-filter-active').click();
+    await expect(page.locator('#mission-candy')).toHaveClass(/done/);
+    await page.locator('#mission-candy').click();
+    await expect(page.locator('dialog')).toContainText('糖果街的失眠电波');
+    await close();
+    await page.locator('#map-filter-all').click();
+  });
+
   await check('三人战斗编队、自动战斗与报告回放', async () => {
     await page.locator('#mission-station').click();
     await expect(page.locator('.enemy-card')).toHaveCount(2);
@@ -516,7 +534,7 @@ try {
     await page.locator('#starter-confirm').click();
     await expect(page.locator('#prologue-beat')).toHaveCount(0);
     const s = await stored();
-    expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(5); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
+    expect(s.gold).toBe(12840); expect(s.girls).toHaveLength(3); expect(s.battles).toEqual([]); expect(s.memorial).toEqual([]);
     await page.evaluate(() => document.getElementById('dismiss-toast')?.click());
   });
   await check('存档位：存入 / 重新开始 / 读回 / 删除', async () => {
@@ -564,11 +582,11 @@ try {
     await page.locator('#settings-starter').click();
     await expect(page.locator('#starter-dialog')).toBeVisible();
     await expect(page.locator('#starter-card-yue .starter-card-art')).toHaveCount(1);
-    await expect(page.locator('#starter-count')).toContainText('4 / 6');
+    await expect(page.locator('#starter-count')).toContainText('2 / 6');
     await page.locator('#starter-card-zhi').click();
-    await expect(page.locator('#starter-count')).toContainText('5 / 6');
+    await expect(page.locator('#starter-count')).toContainText('3 / 6');
     await page.locator('#starter-card-zhi').click();
-    await expect(page.locator('#starter-count')).toContainText('4 / 6');
+    await expect(page.locator('#starter-count')).toContainText('2 / 6');
 
     await page.locator('#starter-tab-witch').click();
     await expect(page.locator('#starter-leader-name-witch')).toContainText('蚀医');
@@ -643,7 +661,7 @@ try {
     await finishRoster();
     await page.locator('#nav-market').click();
     await page.locator('#av-market-tab-retired').click();
-    await expect(page.locator('.av-retired-card')).toHaveCount(2);
+    await expect(page.locator('.av-retired-card')).toHaveCount(1);
     await expect(page.locator('.av-retired-card:has(#av-market-remote-yue)')).toContainText('退休金');
     await page.locator('#av-market-remote-yue').click();
     await expect(page.locator('.remote-banner')).toContainText('远程联络 · 手机');
@@ -665,7 +683,7 @@ try {
     await page.locator('#av-market-tab-supplies').click();
     await expect(page.locator('.av-supply-card').first()).toBeVisible();
     await page.locator('#av-market-tab-retired').click();
-    await expect(page.locator('.av-retired-card')).toHaveCount(1);
+    await expect(page.locator('.av-retired-card')).toHaveCount(0);
     await page.locator('#av-market-tab-candidates').click();
     await page.locator('#av-market-upgrade').click();
     await expect.poll(async () => (await stored()).marketLevel).toBe(2);
@@ -903,6 +921,72 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
   });
+  await check('角色起草联网考据：只给同人角色查资料，再注入提示词', async () => {
+    await resetAll();
+    await page.evaluate(() => sessionStorage.removeItem('night-sugar-office:started'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('#start-new').click();
+    await page.locator('#starter-confirm').click();
+    await expect(page.locator('#prologue-beat')).toHaveCount(0);
+    const portrait = fs.readFileSync('artifacts/fixture-portrait.png', 'base64');
+    fs.writeFileSync('artifacts/fixture-research.png', Buffer.from(portrait, 'base64'));
+
+    let researchCalls = 0;
+    let profileCalls = 0;
+    let profileBody = '';
+    await page.route('**/*aiplatform.googleapis.com/**', route => {
+      const payload = route.request().postDataJSON();
+      const isResearch = Array.isArray(payload?.tools) && payload.tools.some(tool => tool?.googleSearch);
+      if (isResearch) {
+        researchCalls += 1;
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({
+            candidates: [{
+              content: { parts: [{ text: '· 博丽的巫女，红白巫女服，用符卡战斗。' }] },
+              finishReason: 'STOP',
+              groundingMetadata: { webSearchQueries: ['博丽灵梦'], groundingChunks: [{ web: { uri: 'https://example.com/reimu', title: '示例百科' } }] },
+            }],
+          }),
+        });
+      }
+      profileCalls += 1;
+      profileBody = JSON.stringify(payload);
+      const profile = {
+        name: '灵梦', codename: '梦', title: '博丽的巫女', element: '星光系', archetype: '侦查',
+        quote: '走吧。', goal: '守住神社。', appearance: '红白巫女服。', personality: '直率。',
+        outfitDescription: '红白两色的巫女服。', color: '#cc2244', focus: 'insight',
+        skillIds: ['glimmer-spear', 'night-prayer', 'moon-phase'],
+        traits: [
+          { name: '直觉', description: '总能先一步察觉异样。', polarity: 'positive' },
+          { name: '懒散', description: '没事时只想喝茶。', polarity: 'negative' },
+          { name: '守序', description: '该做的事不会推给别人。', polarity: 'neutral' },
+        ],
+      };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(profile) }] }, finishReason: 'STOP' }] }) });
+    });
+    await page.evaluate(() => {
+      localStorage.setItem('night-sugar:llm-config', JSON.stringify({ provider: 'vertex', apiKey: 'AIzaTEST', model: 'gemini-2.5-pro', location: 'us-central1' }));
+      localStorage.setItem('night-sugar:research', 'on');
+    });
+    await page.locator('#nav-market').click();
+    await page.locator('#av-market-custom').click();
+    await page.setInputFiles('#custom-portrait-file', 'artifacts/fixture-research.png');
+    await expect(page.locator('#custom-portrait-research')).toBeVisible();
+    await page.locator('#custom-portrait-research').fill('东方Project 博丽灵梦');
+    await page.locator('#custom-draft').click();
+    await expect(page.locator('#custom-name')).toHaveValue('灵梦');
+    expect(researchCalls).toBe(1);
+    expect(profileCalls).toBe(1);
+    expect(profileBody).toContain('【联网资料（只作考据，可能不准确）】');
+    expect(profileBody).toContain('博丽的巫女');
+    await close();
+    await page.unroute('**/*aiplatform.googleapis.com/**');
+    await page.evaluate(() => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:research'); });
+    await page.reload({ waitUntil: 'networkidle' });
+    await finishRoster();
+  });
+
   await check('只导入立绘后可手动完成登记', async () => {
     await page.locator('#nav-market').click();
     await page.locator('#av-market-custom').click();
@@ -962,11 +1046,11 @@ try {
     await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-llm-generate').click();
     await expect(page.locator('.proposal-modal')).toBeVisible();
-    await expect(page.locator('.proposal-modal')).toContainText('纸月');
+    await expect(page.locator('.proposal-modal')).toContainText('窗上的第二个月亮');
     await expect(page.locator('.proposal-modal')).toContainText('折月灯罩');
     await expect(page.locator('.proposal-modal')).not.toContainText('新的候选者');
-    await expect(page.locator('.proposal-options article')).toHaveCount(3);
-    await expect(page.locator('.proposal-options article').first()).toContainText('星砂');
+    await expect(page.locator('.proposal-options > div')).toHaveCount(3);
+    await expect(page.locator('.proposal-options > div').first()).toContainText('星砂');
     await expect.poll(async () => (await stored()).candidates.length).toBe(before.candidates.length);
     await layout('proposal');
     await page.screenshot({ path: 'artifacts/night-proposal.png', fullPage: true, animations: 'disabled' });
@@ -974,9 +1058,9 @@ try {
     await expect.poll(async () => (await stored()).generatedItems.length).toBe(1);
     const after = await stored();
     expect(after.candidates.some(girl => girl.name === '纸灯')).toBe(false, 'v27：叙事者不再产出候选者');
-    expect(after.customMonsters.some(monster => monster.name === '纸月')).toBe(true);
-    expect(after.missions.some(mission => mission.title === '窗上的纸月亮' && mission.reward >= 1200 && mission.duration === 75)).toBe(true);
-    expect(after.missions.some(mission => mission.envoy && mission.title === '替协会送一盏灯')).toBe(true);
+    expect(after.customMonsters.some(monster => monster.name === '纸月')).toBe(false, 'v32：不再生成新魔物');
+    expect(after.missions.some(mission => mission.title === '窗上的第二个月亮' && mission.reward >= 1200 && mission.duration === 75)).toBe(true);
+    expect(after.missions.some(mission => mission.envoy && mission.title === '替协会送第二盏灯')).toBe(true);
     expect(after.opinions.some(opinion => opinion.title === '窗边的空位' && opinion.dialogue?.length === 3)).toBe(true);
     await page.unroute('**/chat/completions');
     await page.evaluate(async () => { localStorage.removeItem('night-sugar:llm-config'); localStorage.removeItem('night-sugar:llm-auto'); });
@@ -1188,6 +1272,45 @@ try {
     await expect(page.locator('#import-save-confirm')).toHaveCount(0);
     await page.screenshot({ path: 'artifacts/save-import.png', animations: 'disabled' });
   });
+  await check('会客厅代表就是开局首领，卡片能看到委托内容', async () => {
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    await finishRoster();
+    await page.locator('#nav-base').click();
+    await page.locator('#av-lounge-tab-envoys').click();
+    const witchCard = page.locator('#av-envoy-card-witch');
+    await expect(witchCard).toContainText('蚀医·夜鸮');
+    await expect(witchCard).toContainText('战斗');
+    await expect(witchCard).toContainText('分钟');
+    await expect(witchCard).toContainText('报酬');
+    await expect(page.locator('#av-envoy-accept-witch')).toBeEnabled();
+  });
+
+  await check('灯下私语：模型生成后才出现角标，打开对话清零', async () => {
+    await resetAll();
+    await page.reload({ waitUntil: 'networkidle' });
+    await finishRoster();
+    const raw = await readSave();
+    const girl = raw.girls.find(entry => !entry.retired) ?? raw.girls[0];
+    raw.whisperQueue = [{ id: `e2e-whisper-${raw.day}`, girlId: girl.id, missionId: 'candy', day: raw.day, outcome: 'victory', createdAt: Date.now() }];
+    await writeSave(raw);
+    await page.evaluate(() => {
+      sessionStorage.setItem('night-sugar-office:started', '1');
+      localStorage.setItem('night-sugar:llm-config', JSON.stringify({ provider: 'openai', endpoint: 'https://mock.local/v1', apiKey: 'k', model: 'm' }));
+    });
+    await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: '所长，我把窗关好了。' } }] }) }));
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('.whisper-badge')).toHaveCount(1);
+    await expect(page.locator('.whisper-badge')).toContainText('1');
+    await expect.poll(async () => (await readSave()).whisperQueue?.length ?? 0).toBe(0);
+    await page.locator(`#roster-girl-${girl.id}`).click();
+    await page.locator('#girl-talk').click();
+    await expect(page.locator('.whisper-badge')).toHaveCount(0);
+    await page.locator('#modal-close').click();
+    await page.unroute('**/chat/completions');
+    await page.evaluate(() => localStorage.removeItem('night-sugar:llm-config'));
+  });
+
   await check('地图九辖区：地形边界、区域面板与环境影响', async () => {
     await resetAll();
     await page.reload({ waitUntil: 'networkidle' });
@@ -1270,14 +1393,14 @@ try {
     await page.locator('#preset-item-builtin-balanced').click();
     await page.locator('#preset-duplicate').click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(13);
-    await page.locator('#preset-entry-add').click();
     await expect(page.locator('.preset-entry')).toHaveCount(14);
-    await page.locator('#preset-entry-content-13').fill('{{player}} 这一句会引用玩家档案。');
+    await page.locator('#preset-entry-add').click();
+    await expect(page.locator('.preset-entry')).toHaveCount(15);
+    await page.locator('#preset-entry-content-14').fill('{{player}} 这一句会引用玩家档案。');
     await page.locator('#preset-entry-enabled-0').click();
     await expect(page.locator('#preset-entry-enabled-0')).toHaveAttribute('aria-pressed', 'false');
-    await page.locator('#preset-entry-up-13').click();
-    await expect(page.locator('#preset-entry-content-12')).toHaveValue(/玩家档案/);
+    await page.locator('#preset-entry-up-14').click();
+    await expect(page.locator('#preset-entry-content-13')).toHaveValue(/玩家档案/);
     await expect(page.locator('.preset-token-total')).toContainText('tokens');
     await page.locator('#preset-task-tab-arc').click();
     await expect(page.locator('#preset-bind-current')).toHaveValue(/preset-/);
@@ -1347,7 +1470,7 @@ try {
     await expect(page.locator('.preset-report.ok')).toContainText('已导入');
     await page.locator('.preset-list button', { hasText: '旧版预设' }).click();
     await page.locator('#preset-tab-prompts').click();
-    await expect(page.locator('.preset-entry')).toHaveCount(14);
+    await expect(page.locator('.preset-entry')).toHaveCount(15);
     await expect(page.locator('#preset-entry-content-0')).toHaveValue(/旧版主体/);
     await page.locator('#modal-close').click();
   });
@@ -1364,7 +1487,7 @@ try {
     await page.locator('#open-settings').click();
     await page.locator('#settings-tab-llm').click();
     await page.locator('#settings-prompt-daily').click();
-    await expect(page.locator('.preset-task-tabs button')).toHaveCount(11);
+    await expect(page.locator('.preset-task-tabs button')).toHaveCount(12);
     await expect(page.locator('.preset-list')).toHaveCount(0);
     await expect(page.locator('#preset-task-tab-daily')).toHaveClass(/active/);
     await expect(page.locator('#preset-tab-prompts')).toHaveClass(/active/);
@@ -3145,8 +3268,8 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
 
     await page.locator('#start-new').click();
     await expect(page.locator('#starter-dialog')).toBeVisible();
-    // 卡库那张排在最前，默认四位补满——不用手点也能直接确认。
-    await expect(page.locator('#starter-count')).toContainText('5 / 6');
+    // 卡库那张排在最前，再补一位默认角色凑够 2 位——不用手点也能直接确认。
+    await expect(page.locator('#starter-count')).toContainText('2 / 6');
     await expect(page.locator('.starter-grid').first()).toContainText('卡库优先');
     await expect.poll(async () => (await stored()).candidates.some(g => g.name === '卡库优先')).toBe(true);
     const brought = (await stored()).candidates.find(g => g.name === '卡库优先');
@@ -3243,33 +3366,56 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await expect(page.locator('#start-hint')).toContainText('20 张契约卡');
     await page.locator('#start-new').click();
     await expect(page.locator('#starter-dialog')).toBeVisible();
-    await expect(page.locator('#starter-count')).toContainText('6 / 6');
+    await expect(page.locator('#starter-count')).toContainText('2 / 6');
     await expect(page.locator('.starter-grid').first()).not.toContainText('月见桃');
     await page.locator('#starter-confirm').click();
     await expect(page.locator('#prologue-beat')).toHaveCount(0);
     const after = await stored();
-    expect(after.candidates.length).toBe(8);
-    expect(after.candidates.every(girl => Boolean(girl.cardId)), '市场里全是卡').toBe(true);
+    expect(after.candidates.length).toBe(12);
+    expect(after.candidates.every(girl => Boolean(girl.cardId)), '市场池里全是卡').toBe(true);
     await page.locator('#nav-market').click();
-    await expect(page.locator('.av-candidate')).toHaveCount(8);
+    await expect(page.locator('.av-candidate')).toHaveCount(2);
+  });
+
+  await check('开局编成：调走随从会点名缺谁、补齐后能确认，名册里的人在阵营页变暗', async () => {
+    await resetAll();
+    await page.evaluate(() => sessionStorage.removeItem('night-sugar-office:started'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await seedCards(Array.from({ length: 20 }, (_, index) => `位${String(index + 1).padStart(2, '0')}`), 'starter-fix');
+    await page.locator('#start-new').click();
+    await expect(page.locator('#starter-dialog')).toBeVisible();
+    await page.locator('#starter-tab-association').click();
+    await expect(page.locator('.starter-tile.in-crew').first()).toBeVisible();
+    await page.locator('#starter-tab-witch').click();
+    const memberName = (await page.locator('#starter-members-witch .starter-chip').first().innerText()).trim();
+    await page.locator('#starter-tab-association').click();
+    await page.locator('.starter-tile', { hasText: memberName }).first().locator('.starter-tile-star').click();
+    await expect(page.locator('.starter-foot .starter-bad')).toContainText('月蚀庭还缺随从');
+    await expect(page.locator('#starter-confirm')).toBeDisabled();
+    await page.locator('#starter-fill').click();
+    await expect(page.locator('#starter-confirm')).toBeEnabled();
+    await page.locator('#starter-confirm').click();
+    await expect(page.locator('#prologue-beat')).toHaveCount(0);
   });
 
   await check('卡库用完：市场提示加卡并能打开卡库', async () => {
     await resetAll();
     await page.evaluate(() => sessionStorage.removeItem('night-sugar-office:started'));
     await page.reload({ waitUntil: 'networkidle' });
-    await seedCards(['孤单的一张'], 'solo');
+    await seedCards(['孤单的一张', '孤单的两张', '孤单的三张', '孤单的四张'], 'solo');
     await page.locator('#start-new').click();
     await expect(page.locator('#starter-dialog')).toBeVisible();
-    await expect.poll(async () => (await stored()).candidates.some(girl => Boolean(girl.cardId))).toBe(true);
-    const card = (await stored()).candidates.find(girl => Boolean(girl.cardId));
-    await page.locator(`#starter-card-${card.id}`).click();
+    await expect(page.locator('#starter-count')).toContainText('2 / 6');
     await page.locator('#starter-confirm').click();
     await expect(page.locator('#prologue-beat')).toHaveCount(0);
+    const pool = (await stored()).candidates.filter(girl => Boolean(girl.cardId));
+    expect(pool).toHaveLength(2);
     await page.locator('#nav-market').click();
-    await expect(page.locator('.av-candidate')).toHaveCount(1);
-    await page.locator(`#av-market-hire-${card.id}`).click();
-    await page.locator('#hire-confirm').click();
+    await expect(page.locator('.av-candidate')).toHaveCount(2);
+    for (const card of pool) {
+      await page.locator(`#av-market-hire-${card.id}`).click();
+      await page.locator('#hire-confirm').click();
+    }
     await expect.poll(async () => (await stored()).candidates.length).toBe(0);
     await expect(page.locator('#market-card-hint')).toContainText('用完');
     await page.locator('#market-open-cardbox').click();

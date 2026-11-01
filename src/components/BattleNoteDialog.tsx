@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
@@ -133,7 +133,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
         const expression = activeExpression(actor);
         const speaking = Boolean(activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId);
         return (
-          <figure key={actor.uid} className={`battle-note-portrait ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`} style={{ '--note-color': actor.color } as CSSProperties}>
+          <figure key={actor.uid} className={`battle-note-portrait ${actor.side} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`} style={{ '--note-color': actor.color } as CSSProperties}>
             <div className="battle-note-portrait-art">
               <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
               <span className="battle-note-expression">{expressionLabel[expression]}</span>
@@ -162,7 +162,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
           </div>
           <div className="battle-note-head-meta">
             <span className="battle-note-outcome">{battleOutcomeLabel(battle.outcome)}</span>
-            <span>{totalBattleRounds(battle)} 回合</span>
+            {note?.format !== 'continuous' && <span>{totalBattleRounds(battle)} 回合</span>}
             {note && <span className={`battle-note-source ${note.source}`}>{note.source === 'llm' ? '叙事版' : '简报版'}</span>}
             <button id="battle-note-close" type="button" className="icon-btn" aria-label="关闭战斗札记" onClick={onClose}><X size={18} /></button>
           </div>
@@ -197,24 +197,45 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
                 <>
                   {note.scenes.map((entry, index) => (
                     <section key={entry.id} ref={node => { sceneRefs.current[entry.id] = node; }} className={`battle-note-scene ${index === sceneIndex ? 'current' : ''}`} data-note-scene={entry.id}>
-                      <div className="battle-note-scene-head">
+                      {note.format !== 'continuous' && <div className="battle-note-scene-head">
                         <span>SCENE {String(index + 1).padStart(2, '0')}</span>
                         <h3>{entry.title}</h3>
                         <em>回合 {entry.roundFrom}{entry.roundTo > entry.roundFrom ? `–${entry.roundTo}` : ''}</em>
-                      </div>
-                      {entry.narration.split(/\n+/).filter(Boolean).map((paragraph, at) => <p key={at} className="battle-note-narration">{paragraph}</p>)}
-                      <div className="battle-note-lines">
-                        {entry.lines.map((line, at) => {
+                      </div>}
+                      {(() => {
+                        const paragraphs = entry.narration.split(/\n+/).filter(Boolean);
+                        const positioned = entry.lines.map((line, index) => ({ line, index, after: typeof line.after === 'number' ? Math.max(0, Math.floor(line.after)) : undefined }));
+                        const byAfter = new Map<number, typeof positioned>();
+                        for (const item of positioned) {
+                          if (item.after === undefined) continue;
+                          const list = byAfter.get(item.after) ?? [];
+                          list.push(item);
+                          byAfter.set(item.after, list);
+                        }
+                        const renderLine = (line: BattleNoteLine, at: number) => {
                           const speaker = speakerFor(line);
                           const key = lineKey(entry.id, at);
-                          return (
-                            <button key={key} id={`battle-note-line-${entry.id}-${at}`} type="button" data-note-line={key} aria-label={speaker ? `${speaker.name}：${line.text}` : line.text} style={{ '--speaker-color': speaker?.color ?? '#f3aec9' } as CSSProperties} className={`battle-note-line ${lineOnRight(line) ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${activeKey === key ? 'active' : ''}`} onClick={() => setActiveKey(key)}>
-                              {speaker && <span className="battle-note-speaker">{speaker.name}{line.mode === 'thought' ? ' · 心声' : ''}</span>}
-                              <span className="battle-note-bubble">{line.text}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                          return <button key={key} id={`battle-note-line-${entry.id}-${at}`} type="button" data-note-line={key} aria-label={speaker ? `${speaker.name}：${line.text}` : line.text} style={{ '--speaker-color': speaker?.color ?? '#f3aec9' } as CSSProperties} className={`battle-note-line ${lineOnRight(line) ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${activeKey === key ? 'active' : ''}`} onClick={() => setActiveKey(key)}>
+                            {speaker && <span className="battle-note-speaker">{speaker.name}{line.mode === 'thought' ? ' · 心声' : ''}</span>}
+                            <span className="battle-note-bubble">{line.text}</span>
+                          </button>;
+                        };
+                        if (note.format === 'continuous') {
+                          const tail = positioned.filter(item => item.after === undefined || item.after > paragraphs.length);
+                          return <>
+                            {(byAfter.get(0) ?? []).map(item => renderLine(item.line, item.index))}
+                            {paragraphs.map((paragraph, at) => <Fragment key={`p-${at}`}>
+                              <p className="battle-note-narration">{paragraph}</p>
+                              {(byAfter.get(at + 1) ?? []).map(item => renderLine(item.line, item.index))}
+                            </Fragment>)}
+                            {tail.length > 0 && <div className="battle-note-lines">{tail.map(item => renderLine(item.line, item.index))}</div>}
+                          </>;
+                        }
+                        return <>
+                          {paragraphs.map((paragraph, at) => <p key={at} className="battle-note-narration">{paragraph}</p>)}
+                          <div className="battle-note-lines">{positioned.map(item => renderLine(item.line, item.index))}</div>
+                        </>;
+                      })()}
                     </section>
                   ))}
                   <footer className="battle-note-summary">
@@ -227,7 +248,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
                 <div className="battle-note-empty">
                   <Feather size={24} />
                   <h3>这一战还没有札记</h3>
-                  <p>让叙事者按回合把战况、挡下攻击的人、退缩的人与最后的收束写成 3–5 场。没有 API 密钥时会生成一份据实简报。</p>
+                  <p>让叙事者一次写完这一战：动作、环境、停顿与对白，不写回合、伤害数字和技能名。没有 API 密钥时会生成一份据实简报。</p>
                   {error && <div className="battle-note-error">{error}</div>}
                   <button id="battle-note-generate" type="button" className="btn primary" onClick={onGenerate}><Sparkles size={15} />让叙事者写这一战</button>
                 </div>
@@ -235,11 +256,11 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
             </div>
 
             <footer className="battle-note-controls">
-              <div className="battle-note-scene-nav">
+              {note?.format === 'continuous' ? <div className="battle-note-scene-nav"><span>一次写完 · {note.charCount} 字</span></div> : <div className="battle-note-scene-nav">
                 <button id="battle-note-prev" type="button" className="btn icon-text" disabled={!note || sceneIndex <= 0} onClick={() => jumpScene(-1)}><ArrowLeft size={14} />上一场</button>
                 <span>{note ? `${sceneIndex + 1} / ${note.scenes.length}` : '—'}{scene ? ` · ${scene.title}` : ''}</span>
                 <button id="battle-note-next" type="button" className="btn icon-text" disabled={!note || sceneIndex >= note.scenes.length - 1} onClick={() => jumpScene(1)}>下一场<ArrowRight size={14} /></button>
-              </div>
+              </div>}
               <div className="battle-note-control-actions">
                 {note && <button id="battle-note-regenerate" type="button" className="btn icon-text" disabled={busy} onClick={onRegenerate}><RefreshCw size={14} />重写</button>}
                 {note && <button id="battle-note-close-2" type="button" className="btn primary" onClick={onClose}>收进记录</button>}

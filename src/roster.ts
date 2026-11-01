@@ -101,16 +101,19 @@ export function rosterPool(state: GameState, library: CardBoxEntry[] = [], optio
 /** 卡库够 20 张时编成界面不显示内置角色。 */
 export const STARTER_DEFAULT = ['yue', 'tang', 'ling', 'wu'];
 
-/** 开局默认勾选：卡库前 6 张；卡不够 20 张时再用默认四人补到至少四位。 */
+/** 开局默认勾进事务所的契约少女数：先 2 位，三方名册再各补首领与随从。 */
+export const STARTER_COUNT = 2;
+
+/** 开局默认勾选：卡库前 2 张；卡不够 20 张时再用默认角色补到 2 位。 */
 export function starterPicks(state: GameState, cardsOnly: boolean): string[] {
   const cards = [...state.girls, ...state.candidates]
     .filter(girl => Boolean(girl.cardId) && !girl.dead && !girl.retired)
     .map(girl => girl.id);
-  const picked = [...new Set(cards)].slice(0, 6);
+  const picked = [...new Set(cards)].slice(0, STARTER_COUNT);
   if (cardsOnly) return picked;
   const defaults = STARTER_DEFAULT.filter(id => state.girls.some(girl => girl.id === id && !girl.dead));
   const fallback = defaults.length ? defaults : state.girls.filter(girl => !girl.dead && !girl.retired).map(girl => girl.id).slice(0, 4);
-  return [...new Set([...picked, ...fallback])].slice(0, 6);
+  return [...new Set([...picked, ...fallback])].slice(0, STARTER_COUNT);
 }
 
 /** 面板条目现在坐在哪：`{ faction, role }`；没编进名册就是空。 */

@@ -244,6 +244,38 @@ export function rosterMembers(state: RosterState, faction: FactionId): FactionGi
     .filter((girl): girl is FactionGirl => Boolean(girl));
 }
 
+/** 会客厅与议会里的「三方代表」：就是玩家开局指派的首领；旧档解析不到时才退回静态代表。 */
+export interface FactionRepresentative {
+  id: string;
+  name: string;
+  title: string;
+  color: string;
+  faction: FactionId;
+  level: number;
+  portrait?: string;
+  portraitSpec?: PortraitSpec;
+  quote?: string;
+  note?: string;
+  kind: 'leader' | 'envoy';
+}
+
+export function factionRepresentativeOf(state: RosterState, faction: FactionId): FactionRepresentative {
+  const leader = rosterLeader(state, faction);
+  return {
+    id: leader.id,
+    name: leader.name,
+    title: leaderTitle(leader, faction),
+    color: leader.color,
+    faction,
+    level: leader.level,
+    portrait: leader.portrait,
+    portraitSpec: leader.portraitSpec,
+    quote: leader.quote,
+    note: leader.note,
+    kind: 'leader',
+  };
+}
+
 /** 三方名册里所有的自定义少女（含首领），用于校验与去重。 */
 export function customRosterOf(state: Partial<Pick<GameState, 'customFactionLeaders' | 'customFactionGirls'>>): RosterSubject[] {
   const leaders = (state.customFactionLeaders ?? []).map(subjectOfLeader);

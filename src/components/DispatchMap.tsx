@@ -3,7 +3,7 @@ import { Radar, Candy, TrainFront, Eclipse, Cat, Mail, Plus, Minus, LocateFixed,
 import type { GameState, Mission } from '../types';
 import { findMonster } from '../content/monsters';
 import { districts, districtOrder, effectLines, districtOfMission, type DistrictId } from '../districts';
-import { missionDeadlineLabel } from '../game';
+import { missionDeadlineLabel, missionVisibleOnMap } from '../game';
 import { factionColor, factionName } from '../territories';
 import { windowLabel } from '../shift';
 import { cityAveragePollution, clampPollution, pollutionEffect, pollutionLines, pollutionRelief, pollutionTier, pollutionTierColors, pollutionTierLabel, pollutionTierNames, pollutionTierOrder } from '../pollution';
@@ -16,10 +16,11 @@ type Filter = 'all' | 'combat' | 'investigation' | 'urgent' | 'active';
 
 export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: GameState; onMission: (id: string) => void; onFront: (id: string) => void; onDropGirl: (girlId: string, missionId: string) => void }) {
   const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null), [focus, setFocus] = useState<DistrictId | null>(null);
-  const open = state.missions.filter(m => m.status === 'open').length;
+  const missions = useMemo(() => state.missions.filter(m => missionVisibleOnMap(m, state.day)), [state.missions, state.day]);
+  const open = missions.filter(m => m.status === 'open').length;
   const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
   const threat = (m: Mission) => (m.enemyIds ?? []).reduce((sum, id) => sum + (findMonster(id)?.maxHp ?? 0), 0);
-  const pins = useMemo(() => state.missions.map(m => ({ mission: m, district: districtOfMission(m).id })), [state.missions]);
+  const pins = useMemo(() => missions.map(m => ({ mission: m, district: districtOfMission(m).id })), [missions]);
   const focused = focus ? districts[focus] : null;
   const focusedMissions = focus ? pins.filter(p => p.district === focus && p.mission.status !== 'done' && p.mission.status !== 'expired') : [];
   const districtCount = (id: DistrictId) => pins.filter(p => p.district === id && (p.mission.status === 'open' || p.mission.status === 'active')).length;
@@ -36,7 +37,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
       <span><span className="signal-dot" />心愿信号已同步</span>
     </div>
     {list ? <div className="mission-list-view">
-      {state.missions.filter(visible).map(m => {
+      {missions.filter(visible).map(m => {
         const Icon = icons[m.id as keyof typeof icons] ?? (m.work === 'combat' ? Swords : ScanEye);
         const region = districtOfMission(m);
         const deadline = missionDeadlineLabel(m, state);
@@ -51,7 +52,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
           <ArrowUpRight size={18} />
         </button>;
       })}
-      {!state.missions.some(visible) && <div className="map-empty"><Radar /><h3>这个筛选项下没有委托</h3><p>切换到「全部委托」，或推进时间等待新的心愿信号。</p></div>}
+      {!missions.some(visible) && <div className="map-empty"><Radar /><h3>这个筛选项下没有委托</h3><p>切换到「全部委托」，或推进时间等待新的心愿信号。</p></div>}
     </div> : <div className={`map-viewport ${over ? 'is-drag-over' : ''}`}>
       <div className="map-world" style={{ transform: `scale(${zoom})` }}>
         <img className="city-art" src="/art/city.svg" alt="樱雾市夜间街区，穿城河流连接糖果公园、旧钟楼与南十字街区" draggable={false} />
@@ -81,8 +82,8 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
             </g>;
           })}
         </svg>
-        <svg className="mission-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{state.missions.filter(m => m.status === 'active').map(m => <path key={m.id} d={`M 53 88 Q ${m.x - 10} 76 ${m.x} ${m.y}`} fill="none" stroke={m.color} strokeWidth=".22" strokeDasharray=".6 .6" />)}</svg>
-        {state.missions.map(m => {
+        <svg className="mission-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{missions.filter(m => m.status === 'active').map(m => <path key={m.id} d={`M 53 88 Q ${m.x - 10} 76 ${m.x} ${m.y}`} fill="none" stroke={m.color} strokeWidth=".22" strokeDasharray=".6 .6" />)}</svg>
+        {missions.map(m => {
           const Icon = icons[m.id as keyof typeof icons] ?? (m.work === 'combat' ? Swords : ScanEye);
           const squad = m.squad.map(id => state.girls.find(g => g.id === id)).filter(Boolean);
           const region = districtOfMission(m);

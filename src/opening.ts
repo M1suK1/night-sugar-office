@@ -1,7 +1,7 @@
 import type { GameState } from './types.ts';
 import { incidentPoolNeed } from './incidents.ts';
 
-/** 首夜本地兜底要凑到的议案条数。 */
+/** 首夜叙事者要补到的议案条数；本地不再生成默认议题。 */
 export const OPENING_OPINIONS = 3;
 /** 首夜本地兜底要凑到的待用弹窗事件条数。 */
 export const OPENING_INCIDENTS = 3;

@@ -25,10 +25,17 @@ export interface VertexParams {
   maxTokens?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  /** 原样透传给 generateContent 的 tools（例如 `[{ googleSearch: {} }]`）。 */
+  tools?: unknown[];
+}
+
+export interface VertexGrounding {
+  queries: string[];
+  sources: { title: string; uri: string }[];
 }
 
 export type VertexCallResult =
-  | { ok: true; text: string; reasoning?: string; finish?: string; usage?: { prompt?: number; completion?: number; total?: number } }
+  | { ok: true; text: string; reasoning?: string; finish?: string; grounding?: VertexGrounding; usage?: { prompt?: number; completion?: number; total?: number } }
   | { ok: false; message: string; reasoning?: string; status?: number; usage?: { prompt?: number; completion?: number; total?: number } };
 
 export const DEFAULT_VERTEX_LOCATION = 'us-central1';
@@ -245,6 +252,10 @@ interface VertexResponseBody {
     content?: { parts?: { text?: string; thought?: boolean }[] };
     finishReason?: string;
     finishMessage?: string;
+    groundingMetadata?: {
+      webSearchQueries?: string[];
+      groundingChunks?: { web?: { uri?: string; title?: string } }[];
+    };
   }[];
   promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
@@ -297,15 +308,17 @@ export async function vertexChat(
   if (params.temperature !== undefined) generationConfig.temperature = params.temperature;
   if (params.topP !== undefined) generationConfig.topP = params.topP;
   if (params.maxTokens !== undefined) generationConfig.maxOutputTokens = params.maxTokens;
-  if (params.presencePenalty !== undefined) generationConfig.presencePenalty = params.presencePenalty;
-  if (params.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = params.frequencyPenalty;
+  // Gemini 的 generateContent 不认 OpenAI 的 presence/frequency penalty：
+  // 有些模型会直接 400「Penalty is not enabled for this model」，所以一律不发送。
+  // 这两个字段保留在 VertexParams 里只是为了兼容调用签名，值会被忽略。
   const payload: Record<string, unknown> = { contents };
   if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
   if (Object.keys(generationConfig).length > 0) payload.generationConfig = generationConfig;
+  if (params.tools?.length) payload.tools = params.tools;
 
   const model = normalizeVertexModel(input.model);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 60_000);
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 600_000);
   /** 发一次请求；404 时换 v1beta1 再试，别让新模型卡在版本上。 */
   const send = async (version: VertexVersion): Promise<{ ok: true; body: VertexResponseBody } | { ok: false; failure: { message: string; status?: number } }> => {
     const target = vertexTarget({ model, location: input.location, expressKey: serviceAccount ? undefined : input.secret, version }, serviceAccount);
@@ -354,9 +367,20 @@ export async function vertexChat(
       ].filter(Boolean).join('；');
       return { ok: false, message: `模型没有返回文本内容（${detail}）。请确认该模型支持 generateContent，并检查模型名与区域。`, reasoning, usage };
     }
-    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), usage };
+    // googleSearch 的引用信息在候选上；没有联网时这里是 undefined。
+    const meta = candidate?.groundingMetadata;
+    const grounding: VertexGrounding | undefined = meta && (meta.groundingChunks?.length || meta.webSearchQueries?.length)
+      ? {
+        queries: (meta.webSearchQueries ?? []).filter((query): query is string => typeof query === 'string').slice(0, 8),
+        sources: (meta.groundingChunks ?? [])
+          .map(chunk => ({ title: chunk.web?.title ?? '', uri: chunk.web?.uri ?? '' }))
+          .filter(source => source.uri.startsWith('http'))
+          .slice(0, 8),
+      }
+      : undefined;
+    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), grounding, usage };
   } catch (error) {
-    if (controller.signal.aborted) return { ok: false, message: '请求超时仍未返回，已中止。可以重试，或换一个更快的模型。' };
+    if (controller.signal.aborted) return { ok: false, message: '请求超过 600 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
     const detail = error instanceof Error ? error.message : '';
     return { ok: false, message: `浏览器无法访问 Vertex AI，或网络被拦截。${detail ? `（${detail}）` : ''}` };
   } finally {

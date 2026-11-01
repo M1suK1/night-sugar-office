@@ -2,6 +2,7 @@ import type { FactionId, GameState, MissionTemplate, Opinion, OpinionChange, Opi
 import { factionInfo, getItem } from './content/items.ts';
 import { districts, type DistrictId } from './districts.ts';
 import { absoluteMinutes, SHIFT_END } from './shift.ts';
+import { pairLabel } from './hostility.ts';
 
 export interface OpinionDefaultContext {
   authorId?: string;
@@ -163,6 +164,7 @@ function formatChanges(changes: OpinionChange[], state?: GameState): string[] {
     if (change.kind === 'faction') return `${signed(change.amount)} ${factionLabel(change.faction)}态度`;
     if (change.kind === 'item') return `${signed(change.amount)} ${getItem(change.itemId)?.name ?? change.itemId}`;
     if (change.kind === 'minutes') return `推进 ${change.amount} 分钟`;
+    if (change.kind === 'hostility') return `${pairLabel(change.pair)}敌意 ${signed(change.amount)}`;
     const girl = state?.girls.find(entry => entry.id === change.girlId);
     return `${girl?.name ?? '契约者'} ${girlFieldLabels[change.field]} ${signed(change.amount)}`;
   });
@@ -175,6 +177,8 @@ export function opinionOptionTags(option: OpinionOption, state?: GameState): str
     if (outcome.kind === 'mission') tags.push(`+1 特殊委托「${outcome.template.title}」`);
     if (outcome.kind === 'join') tags.push(`+1 免费契约者 Lv.${outcome.level}`);
     if (outcome.kind === 'leave') tags.push(`−1 契约者 ${state?.girls.find(girl => girl.id === outcome.girlId)?.name ?? ''}`);
+    if (outcome.kind === 'truce') tags.push(`${pairLabel(outcome.pair)} 停战 ${outcome.days} 天`);
+    if (outcome.kind === 'war') tags.push(`${pairLabel(outcome.pair)} 开战`);
   }
   if (option.shift && !(option.outcomes ?? []).some(outcome => outcome.kind === 'territory')) {
     tags.push(`${districts[option.shift.district].name} → ${factionLabel(option.shift.faction)}`);
@@ -201,6 +205,9 @@ export function previewOpinionOption(state: GameState, _opinion: Opinion, option
       missing.push(`仓库缺少 ${Math.abs((state.inventory[change.itemId] ?? 0) + change.amount)} 件「${getItem(change.itemId)?.name ?? change.itemId}」`);
     }
     if (change.kind === 'minutes') minutes += Math.max(0, change.amount);
+    if (change.kind === 'hostility' && change.amount > 0 && state.hostility?.[change.pair]?.value + change.amount >= 100) {
+      missing.push(`这一步会让${pairLabel(change.pair)}的敌意冲破 100，可能立刻开战`);
+    }
   }
   for (const outcome of option.outcomes ?? []) {
     if (outcome.kind !== 'leave') continue;

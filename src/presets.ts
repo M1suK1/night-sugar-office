@@ -7,7 +7,7 @@
 export type PromptRole = 'system' | 'user' | 'assistant';
 
 /** 词条用途：共用词条会进入所有请求，任务词条只进入对应生成器。 */
-export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit' | 'battle';
+export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit' | 'battle' | 'whisper';
 
 export interface PromptScopeInfo {
   id: PromptScope;
@@ -26,13 +26,14 @@ export const PROMPT_SCOPES: PromptScopeInfo[] = [
   { id: 'incident', label: '突发事件', hint: '需要立刻处理的夜间突发状况' },
   { id: 'outfit', label: '服装词条', hint: '为立绘里的服装写衣柜描述' },
   { id: 'battle', label: '战斗札记', hint: '把一场战斗扩写成多人分场叙事' },
+  { id: 'whisper', label: '灯下私语', hint: '她主动发来的消息，读战报与当前状态' },
 ];
 
 export const PROMPT_SCOPE_IDS = new Set<PromptScope>(PROMPT_SCOPES.map(scope => scope.id));
 
 /** 可独立绑定预设的生成任务；共用词条随每个任务一起注入，本身没有绑定。 */
 export type PromptTask = Exclude<PromptScope, 'shared'>;
-export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit', 'battle'];
+export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit', 'battle', 'whisper'];
 
 export function isPromptScope(value: unknown): value is PromptScope {
   return typeof value === 'string' && PROMPT_SCOPE_IDS.has(value as PromptScope);
@@ -265,7 +266,8 @@ function sanitizeEntry(raw: unknown, index: number): PromptEntry | null {
   return {
     id: identifier || (typeof value.id === 'string' && value.id ? value.id : entryId(index)),
     name: typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0, 40) : (marker ? '—— 分隔 ——' : `词条 ${index + 1}`),
-    content: content.slice(0, 8000),
+    // 写作指南常常超过 8000 字：静默切掉会变成半句话，模型读到的就是残文。
+    content: content.slice(0, 64000),
     role: value.role === 'user' ? 'user' : value.role === 'assistant' ? 'assistant' : 'system',
     enabled: value.enabled === false ? false : value.disable !== true,
     scope: isPromptScope(value.scope) ? value.scope : 'shared',
@@ -908,6 +910,7 @@ export const DEFAULT_PRESET_BINDING: PresetBinding = {
   incident: 'builtin-balanced',
   outfit: 'builtin-strict',
   battle: 'builtin-balanced',
+  whisper: 'builtin-balanced',
 };
 
 const LEGACY_TASK: Partial<Record<PromptTask, 'chat' | 'generate' | 'story'>> = {
@@ -1017,6 +1020,7 @@ export const DEFAULT_PROMPTS: PromptEntry[] = [
   { id: 'incident', name: '突发事件', role: 'system', enabled: true, scope: 'incident', builtin: true, content: '生成一件必须立刻决定的事：三方势力之一提出要求，或环境突然变化，或某位少女的状态出了岔子。写具体的人、地点与时间压力，三个选项的代价与收益必须真的不同。' },
   { id: 'outfit', name: '服装词条', role: 'system', enabled: true, scope: 'outfit', builtin: true, content: '为附带的立绘里的这套服装写一条衣柜词条。只写衣服本身，不要写人物身份、剧情或数值。用夜糖事务所的口吻。' },
   { id: 'battle', name: '战斗札记', role: 'system', enabled: true, scope: 'battle', builtin: true, content: '为一场已经打完的战斗写札记。只写发生过的回合、动作与对话，不改胜负、伤害、奖励或角色状态。让参战且有名有姓的魔法少女自己说话；没有名字与立绘的魔物只出现在旁白里。3–5 场，每场覆盖连续回合，最后收束到这场战斗留下的东西。' },
+  { id: 'whisper', name: '灯下私语', role: 'system', enabled: true, scope: 'whisper', builtin: true, content: '写一条她主动发给所长的消息。她刚打完这一场，只写她此刻真的会说出口的 2–3 句，不超过 120 字；可以提战斗里的一个细节、自己的伤势或一句关心。不要旁白、不要解释规则、不要替所长回答，也不要改变任何数值。' },
 ];
 
 function scopedEntries(runtime: PresetRuntime, scope: PromptScope): PromptEntry[] {

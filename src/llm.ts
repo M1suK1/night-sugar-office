@@ -1,9 +1,26 @@
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
+import { recentMissionRuns } from './missionHistory.ts';
 
 /** openai = 任意 OpenAI 兼容接口；vertex = Google Vertex AI（服务账号 JSON 或 Express 密钥）。 */
 export type LlmProvider = 'openai' | 'vertex';
 
-export interface LlmConfig {
+export type LlmAuthMode = 'bearer' | 'x-api-key' | 'api-key' | 'header' | 'query' | 'none';
+export type LlmPathMode = 'auto' | 'openai' | 'azure' | 'custom';
+
+/** 反向代理常用配置；全部可选，缺省时行为与旧版一致。 */
+export interface LlmProxyOptions {
+  authMode?: LlmAuthMode;
+  /** authMode = header 时的头名，例如 X-Proxy-Token。 */
+  headerName?: string;
+  /** authMode = query 时的参数名。 */
+  apiKeyQuery?: string;
+  extraHeaders?: Record<string, string>;
+  pathMode?: LlmPathMode;
+  /** pathMode = custom 时的路径模板，支持 {model}。 */
+  customPath?: string;
+}
+
+export interface LlmConfig extends LlmProxyOptions {
   endpoint: string;
   apiKey: string;
   model: string;
@@ -37,17 +54,12 @@ export interface LlmResponseSnapshot {
   usage?: { prompt?: number; completion?: number; total?: number };
 }
 
-/** 单条返回正文最多落盘多少字：40 条日志 × 8k 仍在 localStorage 余量内。 */
-const RESPONSE_TEXT_LIMIT = 8000;
-
-/** 统一收口返回正文的裁剪，避免各条链路各写一份。 */
+/** 统一收口返回正文；日志保留完整文本，由 localStorage 写入失败时自动淘汰旧记录。 */
 function responseTextOf(text: string | undefined): { text?: string; textTruncated?: boolean } {
   if (typeof text !== 'string') return {};
   const trimmed = text.trim();
   if (!trimmed) return { text: '' };
-  return trimmed.length > RESPONSE_TEXT_LIMIT
-    ? { text: trimmed.slice(0, RESPONSE_TEXT_LIMIT), textTruncated: true }
-    : { text: trimmed };
+  return { text: trimmed };
 }
 
 export interface LlmLogEntry {
@@ -66,8 +78,6 @@ export interface LlmLogEntry {
 }
 
 const LOG_LIMIT = 40;
-const SECTION_LIMIT = 1100;
-const REASONING_LIMIT = 2400;
 
 export function loadLlmLog(): LlmLogEntry[] {
   try {
@@ -89,15 +99,9 @@ function endpointHost(endpoint: string): string {
   try { return new URL(endpoint).host; } catch { return endpoint.slice(0, 60); }
 }
 
+/** 日志里的请求保留完整分段；不再按字符预算裁剪。 */
 function trimRequest(request?: LlmRequestSnapshot): LlmRequestSnapshot | undefined {
-  if (!request) return undefined;
-  let budget = 3600;
-  const sections = request.sections.slice(0, 14).map(section => {
-    const text = section.text.replace(/\s+\n/g, '\n').slice(0, Math.min(SECTION_LIMIT, Math.max(0, budget)));
-    budget -= text.length;
-    return { label: section.label, text };
-  }).filter(section => section.text.length > 0);
-  return { ...request, sections, truncated: budget <= 0 || request.truncated };
+  return request;
 }
 
 function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { endpoint: string }): LlmLogEntry {
@@ -108,13 +112,19 @@ function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { end
     endpoint: endpointHost(entry.endpoint),
     detail: entry.detail?.replace(/\s+/g, ' ').slice(0, 600),
     request: trimRequest(entry.request),
-    response: entry.response
-      ? { ...entry.response, reasoning: entry.response.reasoning?.slice(0, REASONING_LIMIT) }
-      : undefined,
+    response: entry.response,
   };
   try {
-    const next = [full, ...loadLlmLog()].slice(0, LOG_LIMIT);
-    localStorage.setItem(LOG_KEY, JSON.stringify(next));
+    let next = [full, ...loadLlmLog()].slice(0, LOG_LIMIT);
+    // 请求段不再裁剪后，日志可能撞到 localStorage 配额；优先保住最新一条完整记录。
+    while (next.length) {
+      try {
+        localStorage.setItem(LOG_KEY, JSON.stringify(next));
+        break;
+      } catch {
+        next = next.slice(0, -1);
+      }
+    }
   } catch { /* logging must never break generation */ }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('night-sugar:llm-log', { detail: { entry: full } }));
   return full;
@@ -182,21 +192,31 @@ export async function generateDaily(config: LlmConfig, state: GameState, context
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
-    message: result.ok ? `生成成功：${result.data.monster.name} / ${result.data.candidate?.name ?? '（无候选者）'} / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
+    message: result.ok ? `生成成功：${result.data.opinions?.length ?? (result.data.opinion ? 1 : 0)} 份议题 / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
   });
   return result;
 }
 
-export async function generateGirlProfile(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+/** 联网考据的日志：进「叙事引擎」面板，方便核对查了什么、有没有来源。 */
+export function logResearchEvent(entry: { ok: boolean; model: string; message: string; durationMs: number; detail?: string }): void {
+  recordLlmLog({ kind: '联网考据', endpoint: 'Vertex AI · googleSearch', model: entry.model, ok: entry.ok, message: entry.message, detail: entry.detail, durationMs: entry.durationMs });
+}
+
+export interface GirlResearch {
+  summary: string;
+  sources: { title: string; uri: string }[];
+}
+
+export async function generateGirlProfile(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, research?: GirlResearch): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateGirlProfileCore(config, portrait, hint, preset, meta);
+  const result = await generateGirlProfileCore(config, portrait, hint, preset, meta, research);
   recordLlmLog({
     kind: '角色起草', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
-    message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}${portrait ? '（已读取立绘）' : '（无立绘）'}` : result.message,
+    message: result.ok ? `起草成功：${result.data.name} / ${result.data.codename}${portrait ? '（已读取立绘）' : '（无立绘）'}${research ? '（联网考据）' : ''}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
   });
@@ -207,7 +227,100 @@ export interface DialogueContext {
   girl: Girl; state: GameState; text: string; remote?: boolean;
 }
 
-export async function generateDialogue(config: LlmConfig, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+export interface DialogueParseLimits {
+  maxLines?: number;
+  perLine?: number;
+  totalLimit?: number;
+  actionLimit?: number;
+}
+
+const DIALOGUE_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
+const EXPRESSION_WORDS: Record<string, Expression> = {
+  平静: 'calm', 微笑: 'smile', 笑: 'smile', 惊讶: 'surprise', 吃惊: 'surprise',
+  难过: 'sad', 伤心: 'sad', 生气: 'angry', 愤怒: 'angry', 害羞: 'shy', 脸红: 'shy',
+};
+
+function expressionOf(value: unknown): Expression {
+  if (typeof value !== 'string') return 'calm';
+  const key = value.trim().toLowerCase() as Expression;
+  if (DIALOGUE_EXPRESSIONS.includes(key)) return key;
+  return EXPRESSION_WORDS[value.trim()] ?? 'calm';
+}
+
+function cleanLine(value: unknown): string {
+  return typeof value === 'string'
+    ? value.trim().replace(/^["“]|["”]$/g, '').replace(/\s+/g, ' ').trim()
+    : '';
+}
+
+/** 模型偶尔会把动作写成括号；只去掉最外层一对，不猜内容。 */
+function cleanAction(value: unknown): string {
+  return cleanLine(value).replace(/^[（(]|[）)]$/g, '').trim();
+}
+
+/**
+ * 把模型输出解析成 1–3 条「台词 + 动作 + 表情」。
+ *
+ * 优先 JSON；拿不到 JSON 时按换行拆成纯文本台词，绝不把整段原文硬塞进动作字段。
+ * 解析在客户端做，模型返回格式不稳定的情况不会直接变成空回复。
+ */
+export function parseDialogueReply(raw: string, limits: DialogueParseLimits = {}): DialogueLine[] {
+  const maxLines = Math.max(1, Math.min(3, limits.maxLines ?? 3));
+  const perLine = Math.max(20, limits.perLine ?? 120);
+  const totalLimit = Math.max(perLine, limits.totalLimit ?? 420);
+  const actionLimit = Math.max(10, limits.actionLimit ?? 60);
+  const parsed = extractJsonObject(raw);
+  const source = parsed ? (Array.isArray(parsed.lines) ? parsed.lines : Array.isArray(parsed.messages) ? parsed.messages : null) : null;
+  let rows: unknown[] = source ?? [];
+  if (!source && raw.trim()) {
+    rows = raw.split(/\n+/).map(line => line.trim()).filter(Boolean).slice(0, maxLines)
+      .map(text => ({ text, expression: 'calm' }));
+  }
+  const lines: DialogueLine[] = [];
+  let used = 0;
+  for (const row of rows) {
+    if (lines.length >= maxLines) break;
+    const item = typeof row === 'string' ? { text: row } : row && typeof row === 'object' ? row as Record<string, unknown> : null;
+    if (!item) continue;
+    let text = cleanLine(item.text);
+    let action = cleanAction(item.action);
+    if (!text && !action) continue;
+    if (action === text) action = '';
+    if (text.length > perLine) text = text.slice(0, perLine).trim();
+    if (action.length > actionLimit) action = action.slice(0, actionLimit).trim();
+    if (used + text.length > totalLimit) {
+      const room = Math.max(0, totalLimit - used);
+      text = text.slice(0, room).trim();
+      if (!text && !action) break;
+    }
+    if (!text && !action) continue;
+    lines.push({ text, action: action || undefined, expression: expressionOf(item.expression) });
+    used += text.length + (action ? 1 : 0);
+  }
+  return lines;
+}
+
+export function dialogueReplyText(lines: DialogueLine[]): string {
+  return lines.map(line => line.text).filter(Boolean).join('\n');
+}
+
+const DIALOGUE_FORMAT_HINT = `【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：
+{"lines":[{"text":"说出口的台词","action":"可省略的动作或神态","expression":"calm|smile|surprise|sad|angry|shy"}]}
+一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 420 字。`;
+
+function missionMemory(state: GameState, girl: Girl, excludeMissionId?: string): string {
+  const runs = recentMissionRuns(state, girl.id, 6).filter(run => run.missionId !== excludeMissionId).slice(0, 4);
+  if (!runs.length) return '最近没有出勤记录。';
+  return runs.map(run => {
+    const peers = run.girlIds.filter(id => id !== girl.id).map(id => [...state.girls, ...state.candidates].find(entry => entry.id === id)?.name).filter(Boolean);
+    const outcome = { victory: '胜利', defeat: '失败', repelled: '击退', draw: '平局', success: '调查成功', failure: '调查失败' }[run.outcome];
+    const work = run.work === 'combat' ? '战斗' : '调查';
+    return `第 ${run.day} 日「${run.title}」：${work} · ${run.district ? districts[run.district]?.name ?? run.district : '事务所周边'} · ${outcome}${peers.length ? `；同行 ${peers.join('、')}` : ''}。`;
+  }).join('\n');
+}
+
+
+export async function generateDialogue(config: LlmConfig, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string; lines: DialogueLine[] } | { ok: false; message: string }> {
   const started = Date.now();
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = applyPresetApi(runtime, config);
@@ -216,7 +329,10 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     recordLlmLog({ kind: '角色对话', ok: false, model: cfg.model.trim(), durationMs: 0, message, endpoint: llmEndpointLabel(cfg) });
     return { ok: false, message };
   }
-  const history = (state.messages[girl.id] ?? []).map(message => ({ role: message.role === 'player' ? 'user' as const : 'assistant' as const, content: message.text }));
+  const history = (state.messages[girl.id] ?? []).map(message => ({
+    role: message.role === 'player' ? 'user' as const : 'assistant' as const,
+    content: message.action ? `${message.text}\n（${message.action}）` : message.text,
+  }));
   const bondLabel = girl.bond >= 85 ? '爱意' : girl.bond >= 70 ? '依恋' : girl.bond >= 55 ? '亲近' : girl.bond >= 40 ? '平常' : girl.bond >= 25 ? '戒备' : '疏离';
   const stage = (value: number) => value >= 85 ? '爱意' : value >= 70 ? '依恋' : value >= 55 ? '亲近' : value >= 40 ? '平常' : value >= 25 ? '戒备' : '疏离';
   const allGirls = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
@@ -239,6 +355,9 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
 与同伴的关系：${peers.join('；') || '还没有特别亲近的同伴'}。
 经历的战斗：${battles.join(' ') || '还没有参加过战斗'}。
 状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕：${girl.scars.map(scar => scar.name).join('、')}` : ''}。
+【最近参与】
+${missionMemory(state, girl)}
+（只作为记忆与语气参考，不要逐条复述委托记录；当前这次对话没有新的委托结算。）
 ${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}`;
   const MAX_CONTEXT = runtime.maxContext;
   const recentHistory: typeof history = [];
@@ -253,8 +372,9 @@ ${remote ? '你们正在通电话，她退役后住在城南家中；电话那�
   }
   const omitted = history.length - recentHistory.length;
   const boundedSystem = omitted > 0 ? `${baseSystem}\n（更早的 ${omitted} 条对话因上下文预算省略，只保留最近的部分。）` : baseSystem;
+  const dialogueSystem = `${boundedSystem}\n\n${DIALOGUE_FORMAT_HINT}`;
   const messages: ChatMessage[] = applyRegexToMessages([
-    { role: 'system', content: boundedSystem },
+    { role: 'system', content: dialogueSystem },
     ...recentHistory,
     { role: 'user', content: applyRegexScripts(text, runtime.regex, 'input', 'prompt') },
   ], runtime.regex);
@@ -266,12 +386,97 @@ ${remote ? '你们正在通电话，她退役后住在城南家中；电话那�
     '玩家这句话',
   ]), slots: slotList(runtime) };
   const result = await chat(cfg, messages, { params });
-  const clean = result.ok ? applyRegexScripts(result.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 400), runtime.regex, 'output', 'display') : '';
-  const final = clean ? { ok: true as const, text: clean } : { ok: false as const, message: result.ok ? '模型没有返回可用的对话内容。' : result.message };
+  const parsedLines = result.ok
+    ? parseDialogueReply(result.text, { maxLines: 3, perLine: 120, totalLimit: 420, actionLimit: 60 })
+      .map(line => ({
+        ...line,
+        text: applyRegexScripts(line.text, runtime.regex, 'output', 'display'),
+        action: line.action ? applyRegexScripts(line.action, runtime.regex, 'output', 'display') : undefined,
+      }))
+      .filter(line => line.text || line.action)
+    : [];
+  const clean = dialogueReplyText(parsedLines);
+  const final = parsedLines.length
+    ? { ok: true as const, text: clean, lines: parsedLines }
+    : { ok: false as const, message: result.ok ? '模型没有返回可用的对话内容。' : result.message };
   recordLlmLog({
     kind: '角色对话', ok: final.ok, model: cfg.model.trim(), status: final.ok ? 200 : statusOf(final.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
-    message: final.ok ? `与${girl.name}完成一次对话` : final.message,
+    message: final.ok ? `与${girl.name}完成一次对话（${final.lines.length} 条）` : final.message,
+    detail: final.ok ? undefined : final.message,
+    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
+  });
+  return final;
+}
+
+/** 灯下私语：让刚回来的她读着这一战的战报，主动写 2–3 句。 */
+export async function generateWhisper(
+  config: LlmConfig,
+  state: GameState,
+  job: WhisperJob,
+  preset?: PresetRuntime,
+): Promise<{ ok: true; text: string; lines: DialogueLine[] } | { ok: false; message: string }> {
+  const started = Date.now();
+  const runtime = preset ?? EMPTY_RUNTIME;
+  const cfg = applyPresetApi(runtime, config);
+  const girl = state.girls.find(entry => entry.id === job.girlId);
+  if (!girl) return { ok: false, message: '找不到发消息的契约者。' };
+  if (!hasCredentials(cfg)) {
+    const message = '请先在设置中填写 API 密钥（本地接口可留空）。';
+    recordLlmLog({ kind: '灯下私语', ok: false, model: cfg.model.trim(), durationMs: 0, message, endpoint: llmEndpointLabel(cfg) });
+    return { ok: false, message };
+  }
+  const mission = state.missions.find(entry => entry.id === job.missionId);
+  const battle = state.battles.find(entry => entry.id === job.battleId)
+    ?? state.battles.find(entry => entry.missionId === job.missionId);
+  const unitName = (uid: string) => battle?.units.find(unit => unit.uid === uid)?.name ?? uid;
+  const events = (battle?.events ?? []).slice(0, 14).map(event =>
+    `- 第 ${event.round} 回合：${unitName(event.actor)} 使用「${event.skillName}」${event.targets.length ? `对 ${event.targets.map(unitName).join('、')}` : ''}${event.amount !== undefined ? `，${event.hit ? '' : '未命中，'}数值 ${event.amount}` : ''}${event.hit === false ? '（未命中）' : ''}`,
+  ).join('\n');
+  const outcomeLabel = { victory: '胜利', defeat: '失败', success: '调查成功', failure: '调查失败' }[job.outcome];
+  const recentWithActions = (state.messages[girl.id] ?? []).slice(-6).map(message => `${message.role === 'player' ? '所长' : girl.name}：${message.text}${message.action ? `（${message.action}）` : ''}`).join('\n') || '（还没有聊过）';
+  const body = `【她】${girl.name}（${girl.title}）· ${girl.element}/${girl.archetype ?? '未定'} · Lv.${girl.level}
+性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。语气参考：${girl.quote ?? '没有留下出场白'}。
+对所长（玩家）的羁绊：${girl.bond}/100${job.outcome === 'victory' || job.outcome === 'success' ? '。她刚打完这一场，还带着疲惫与一点侥幸。' : '。这一场没打好，她可能有点自责或嘴硬。'}
+
+【这一次】${mission ? `${mission.title} · ${mission.work === 'combat' ? '战斗' : '调查'} · ${mission.difficulty} · ${mission.district ? districts[mission.district]?.name ?? mission.district : '事务所周边'}` : job.missionId}
+结果：${outcomeLabel}${mission ? `；报酬 ${mission.reward} 星砂` : ''}
+${battle ? `战斗共 ${battle.round}/${battle.rounds} 回合，结果 ${battle.outcome ?? '未知'}。` : '这次没有发生战斗，只有现场的线索与判断。'}
+${events ? `【战报】
+${events}` : ''}
+
+【战后】生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，疤痕 ${girl.scars.length} 道` : ''}。
+${job.outcome === 'victory' || job.outcome === 'success' ? '她赢了，但不想只报平安。' : '她没赢，可能想解释、道歉、或者嘴硬。'}
+
+【最近参与】
+${missionMemory(state, girl, job.missionId)}
+【最近对话】
+${recentWithActions}`;
+  const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语');
+  const messages: ChatMessage[] = [
+    { role: 'system', content: `${system}\n\n${DIALOGUE_FORMAT_HINT}` },
+    { role: 'user', content: '写她此刻发给所长的消息，1–3 条，可以有动作和表情；只输出 JSON。' },
+  ];
+  const params = presetParams(runtime);
+  const request = requestSnapshot(messages, requestParams(cfg, params), ['角色卡（含预设）', '战报与最近对话']);
+  const result = await chat(cfg, messages, { params });
+  const parsedLines = result.ok
+    ? parseDialogueReply(result.text, { maxLines: 3, perLine: 90, totalLimit: 300, actionLimit: 50 })
+      .map(line => ({
+        ...line,
+        text: applyRegexScripts(line.text, runtime.regex, 'output', 'display'),
+        action: line.action ? applyRegexScripts(line.action, runtime.regex, 'output', 'display') : undefined,
+      }))
+      .filter(line => line.text || line.action)
+    : [];
+  const text = dialogueReplyText(parsedLines);
+  const final = parsedLines.length
+    ? { ok: true as const, text, lines: parsedLines }
+    : { ok: false as const, message: result.ok ? '模型没有返回可用的私语内容。' : result.message };
+  recordLlmLog({
+    kind: '灯下私语', ok: final.ok, model: cfg.model.trim(), status: final.ok ? 200 : statusOf(final.message),
+    durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
+    message: final.ok ? `${girl.name}的灯下私语已生成（${final.lines.length} 条）` : final.message,
     detail: final.ok ? undefined : final.message,
     request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
   });
@@ -295,7 +500,7 @@ export interface LlmSettings {
 export const defaultLlmConfig: LlmConfig = resolveLlm(defaultLlmSettings);
 
 /** 一个接口自己的那份凭证；切换默认接口不会覆盖另一份。 */
-export interface LlmCredential {
+export interface LlmCredential extends LlmProxyOptions {
   endpoint: string;
   apiKey: string;
   model: string;
@@ -316,6 +521,7 @@ export const LLM_BUDGET_TASKS = [
   { key: 'incident', label: '突发事件' },
   { key: 'outfit', label: '服装词条' },
   { key: 'battle', label: '战斗札记' },
+  { key: 'whisper', label: '灯下私语' },
 ] as const;
 export type LlmTaskKey = (typeof LLM_BUDGET_TASKS)[number]['key'];
 export interface LlmBudget {
@@ -325,7 +531,7 @@ export interface LlmBudget {
 }
 const BUDGET_KEY = 'night-sugar:llm-budget';
 /** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
-export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, arc: 4000, battle: 3000, event: 3000, storyline: 3000 };
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, arc: 4000, battle: 16000, event: 3000, storyline: 3000, whisper: 1200 };
 
 function clampBudget(value: unknown, fallback: number): number {
   const num = Math.round(Number(value));
@@ -384,6 +590,12 @@ function mergeSlot(base: LlmCredential, raw: unknown): LlmCredential {
     apiKey: typeof value.apiKey === 'string' ? value.apiKey : base.apiKey,
     model: typeof value.model === 'string' && value.model.trim() ? value.model : base.model,
     location: typeof value.location === 'string' ? value.location : base.location,
+    authMode: value.authMode ?? base.authMode,
+    headerName: typeof value.headerName === 'string' ? value.headerName : base.headerName,
+    apiKeyQuery: typeof value.apiKeyQuery === 'string' ? value.apiKeyQuery : base.apiKeyQuery,
+    extraHeaders: value.extraHeaders && typeof value.extraHeaders === 'object' ? { ...value.extraHeaders } : base.extraHeaders,
+    pathMode: value.pathMode ?? base.pathMode,
+    customPath: typeof value.customPath === 'string' ? value.customPath : base.customPath,
   };
 }
 
@@ -396,6 +608,12 @@ export function resolveLlm(settings: LlmSettings, provider: LlmProvider = settin
     apiKey: slot.apiKey,
     model: slot.model.trim(),
     location: slot.location.trim() || 'us-central1',
+    authMode: slot.authMode,
+    headerName: slot.headerName,
+    apiKeyQuery: slot.apiKeyQuery,
+    extraHeaders: slot.extraHeaders,
+    pathMode: slot.pathMode,
+    customPath: slot.customPath,
   };
 }
 
@@ -532,9 +750,7 @@ async function testLlmConnectionCore(config: LlmConfig): Promise<{ ok: boolean; 
   const model = config.model.trim();
   if (!model) return { ok: false, message: '请先填写模型名称。' };
   try {
-    const response = await fetch(`${apiBase(config.endpoint)}/models`, {
-      headers: { Authorization: `Bearer ${config.apiKey.trim()}` },
-    });
+    const response = await fetch(buildApiUrl(config, 'models'), { headers: apiHeaders(config) });
     if (!response.ok) {
       const detail = await errorDetail(response);
       return { ok: false, message: `连接失败：服务返回 ${response.status}${detail ? `（${detail}）` : ''}。` };
@@ -550,8 +766,41 @@ async function testLlmConnectionCore(config: LlmConfig): Promise<{ ok: boolean; 
   }
 }
 
-function apiBase(endpoint: string): string {
-  return endpoint.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+/** 把接口地址拼成真正的请求地址：保留子路径与查询串，支持 Azure 与自定义路径模板。 */
+export function buildApiUrl(config: Pick<LlmConfig, 'endpoint' | 'model' | 'authMode' | 'apiKey' | 'apiKeyQuery' | 'pathMode' | 'customPath'>, leaf: 'chat' | 'models' = 'chat'): string {
+  const raw = config.endpoint.trim();
+  const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  let path = parsed.pathname.replace(/\/+$/, '');
+  const mode = config.pathMode ?? 'auto';
+  if (mode === 'custom' && config.customPath?.trim()) {
+    path = config.customPath.trim().replace(/^\/+/, '').replace(/\{model\}/g, encodeURIComponent(config.model));
+    if (!path.startsWith('/')) path = `/${path}`;
+  } else if (mode === 'azure') {
+    path = `${path}/openai/deployments/${encodeURIComponent(config.model)}/chat/completions`;
+  } else if (leaf === 'models') {
+    path = path.replace(/\/chat\/completions$/i, '') + '/models';
+  } else if (!/\/chat\/completions$/i.test(path)) {
+    path = `${path}/chat/completions`;
+  }
+  parsed.pathname = path;
+  if (config.authMode === 'query' && config.apiKey.trim()) parsed.searchParams.set(config.apiKeyQuery?.trim() || 'key', config.apiKey.trim());
+  return parsed.toString();
+}
+
+/** 认证头：默认 Bearer；反代可换成 x-api-key / api-key / 自定义头 / 不认证。 */
+export function apiHeaders(config: Pick<LlmConfig, 'apiKey' | 'authMode' | 'headerName' | 'extraHeaders'>): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const key = config.apiKey.trim();
+  const mode = config.authMode ?? 'bearer';
+  if (key && mode === 'bearer') headers.Authorization = `Bearer ${key}`;
+  if (key && mode === 'x-api-key') headers['x-api-key'] = key;
+  if (key && mode === 'api-key') headers['api-key'] = key;
+  if (key && mode === 'header') headers[(config.headerName ?? 'X-API-Key').trim() || 'X-API-Key'] = key;
+  for (const [name, value] of Object.entries(config.extraHeaders ?? {})) {
+    if (!name.trim() || name.toLowerCase() === 'content-type' || typeof value !== 'string') continue;
+    headers[name.trim()] = value;
+  }
+  return headers;
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -594,8 +843,11 @@ export function requestParams(config: LlmConfig, params?: LlmCallParams): Record
   if (params?.temperature !== undefined) out.temperature = params.temperature;
   if (params?.topP !== undefined) out.top_p = params.topP;
   if (params?.maxTokens !== undefined) out.max_tokens = params.maxTokens;
-  if (params?.presencePenalty !== undefined) out.presence_penalty = params.presencePenalty;
-  if (params?.frequencyPenalty !== undefined) out.frequency_penalty = params.frequencyPenalty;
+  // 日志里也只记真正会发出去的参数：Vertex 的请求体里没有 penalty。
+  if (config.provider !== 'vertex') {
+    if (params?.presencePenalty !== undefined) out.presence_penalty = params.presencePenalty;
+    if (params?.frequencyPenalty !== undefined) out.frequency_penalty = params.frequencyPenalty;
+  }
   return out;
 }
 
@@ -623,7 +875,7 @@ function isLocalEndpoint(endpoint: string): boolean {
 function hasCredentials(config: LlmConfig): boolean {
   // Vertex 的 endpoint 是拼出来的，只有密钥能代表「配置好了」。
   if (config.provider === 'vertex') return Boolean(config.apiKey.trim());
-  return Boolean(config.apiKey.trim()) || isLocalEndpoint(config.endpoint);
+  return config.authMode === 'none' || Boolean(config.apiKey.trim()) || isLocalEndpoint(config.endpoint);
 }
 
 /** Vertex 走 generateContent，消息形状和 OpenAI 的 system/user/assistant 一一对应。 */
@@ -633,11 +885,10 @@ async function chatVertex(config: LlmConfig, messages: ChatMessage[], options: L
     { model: config.model, location: config.location, secret: config.apiKey, timeoutMs: options.timeoutMs },
     messages,
     {
+      // Vertex 不接受 penalty 参数（部分模型会 400），这里不再透传。
       temperature: params.temperature ?? 0.9,
       topP: params.topP,
       maxTokens: params.maxTokens,
-      presencePenalty: params.presencePenalty,
-      frequencyPenalty: params.frequencyPenalty,
     },
   );
 }
@@ -649,10 +900,10 @@ async function chat(config: LlmConfig, messages: ChatMessage[], options: LlmCall
   const model = config.model.trim();
   if (!model) return { ok: false, message: '请先在设置中填写模型名称。' };
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 60_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 600_000);
   try {
-    const url = `${apiBase(config.endpoint)}/chat/completions`;
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` };
+    const url = buildApiUrl(config);
+    const headers = apiHeaders(config);
     const reasoningModel = /^(o1|o3|o4|gpt-5)/i.test(model);
     const payload: Record<string, unknown> = { model, messages };
     if (reasoningModel) {
@@ -707,7 +958,7 @@ async function chat(config: LlmConfig, messages: ChatMessage[], options: LlmCall
     }
     return { ok: true, text, reasoning, finish: choice?.finish_reason, usage };
   } catch (error) {
-    if (controller.signal.aborted) return { ok: false, message: '请求超过 60 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
+    if (controller.signal.aborted) return { ok: false, message: '请求超过 600 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
     const detail = error instanceof Error ? error.message : '';
     return { ok: false, message: `浏览器无法访问接口，或服务未允许跨域请求。${detail ? `（${detail}）` : ''}` };
   } finally {
@@ -821,7 +1072,7 @@ async function chatJson(
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
   // 设置里的输出预算优先：预算比契约下限低就按预算来，截断后还有一次自动放大重试。
-  if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: runtime.maxTokens };
+  if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: Math.max(runtime.maxTokens, tokenFloor) };
   else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
   else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
   const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入');
@@ -1495,30 +1746,32 @@ export async function generateWitchFormProfile(
 export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const total = totalBattleRounds(battle);
+  const cfg = applyPresetApi(preset ?? EMPTY_RUNTIME, config);
+  if (!hasCredentials(cfg)) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const cast = battleCast(battle);
   const castText = cast.length
     ? cast.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'} ${actor.name}${actor.codename ? `（${actor.codename}）` : ''}｜speakerId=${actor.girlId}｜表情=${actor.expression}`).join('\n')
     : '（没有带姓名与立绘的参战魔法少女；本场只能写旁白）';
-  const body = `战斗记录：\n${battleDigest(battle)}
+  const body = `战斗记录（只给发生过的动作与结果，不含数值）：
+${battleStoryDigest(battle)}
 可说话角色（speakerId 必须原样使用，且只能从这张表里选）：
 ${castText}
+
 只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","hook":"","summary":"","scenes":[{"roundFrom":1,"roundTo":2,"title":"","narration":"","lines":[{"round":1,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}]}
-要求：3–5 场；第一场 roundFrom=1，相邻场景回合连续，最后一场 roundTo=${total}；每场旁白 2–4 段，写清战况、谁救了谁、谁退缩了；台词只给上表里的角色，必须带 speakerSide、speakerId、六种表情之一；倒下的角色不能在倒下后的回合继续说话；魔物没有立绘和名字，只能出现在旁白里。全文 1200–1800 字，不改胜负、伤害、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
+{"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}
+要求：一次写完，不分场、不分段标题、不写回合。narration 是一整篇连贯的战斗叙事，6000–10000 字，用动作、环境、停顿推进；narration 不要重复台词，也不要写「某某说」后再把原话抄一遍。台词 6–14 句全部放在 lines，按发生顺序用 after 指定插入位置：after 是该句台词之前已经写完的旁白段落数（0 = 第一段之前，1 = 第一段之后，依此类推），必须随剧情递增，不能把所有台词堆在结尾。只给上表里的角色，必须带 speakerSide、speakerId、表情与 speech/thought；倒下的角色不能在倒下后继续说话。不要写伤害数值、回合数、HP/心防数字、技能名或“第几回合”；技能只写动作（例如“短促的突刺被外壳弹开”“一层薄薄的护持挡住正面冲击”）。魔物没有立绘与名字，只出现在旁白里。不改胜负、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
   const outcome = await chatJson(config, preset, 'battle', body, '请把这场战斗写成札记。', ['共用词条 + 战斗札记词条 + 结构契约', `战斗：${battle.missionTitle}`], meta, {
     story: battle.missionTitle,
-    context: `结果：${battle.outcome ?? '未结算'}；共 ${total} 回合；参战：${cast.map(actor => actor.name).join('、') || '无'}`,
+    context: `结果：${battle.outcome ?? '未结算'}；参战：${cast.map(actor => actor.name).join('、') || '无'}`,
     char: castText,
-  }, 3600);
+  }, 14000);
   if (!outcome.result.ok) {
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: outcome.result.message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: outcome.result.message, request: meta.request, response: meta.response });
     return { ok: false, message: `写札记失败：${outcome.result.message}` };
   }
   if (!outcome.raw) {
     const message = jsonFailureMessage('写札记失败：', outcome);
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const normalized = normalizeBattleNoteDraft(outcome.raw);
@@ -1528,27 +1781,27 @@ ${castText}
     const repairBody = `${body}\n\n【上一次输出（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略场景或台词；speakerId 必须来自上面的可说话角色表。`;
     const repaired = await chatJson(config, preset, 'battle', repairBody, '请只输出修正后的完整 JSON。', ['共用词条 + 战斗札记词条 + 结构契约', '修复上一次札记'], meta, {
       story: battle.missionTitle,
-      context: `修复札记；共 ${total} 回合`,
-    }, 3600);
+      context: '修复札记',
+    }, 14000);
     source = repaired;
     if (!repaired.result.ok) {
-      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: repaired.result.message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message: repaired.result.message, request: meta.request, response: meta.response });
       return { ok: false, message: `札记未通过校验，修复请求失败：${repaired.result.message}` };
     }
     if (!repaired.raw) {
       const message = jsonFailureMessage('札记未通过校验，且修复输出无法解析。', repaired);
-      recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+      recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message, request: meta.request, response: meta.response });
       return { ok: false, message };
     }
-    validation = validateBattleNoteDraft(normalizeBattleNoteDraft(repaired.raw), battle, { createdAt: new Date().toISOString(), model: config.model.trim(), presetId: preset?.id });
+    validation = validateBattleNoteDraft(normalizeBattleNoteDraft(repaired.raw), battle, { createdAt: new Date().toISOString(), model: cfg.model.trim(), presetId: preset?.id });
   }
   if (!validation.ok || !validation.note) {
     const message = `札记未通过校验：${validation.errors.join('；')}`;
-    recordLlmLog({ kind: '战斗札记', ok: false, model: config.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const note = validation.note;
-  recordLlmLog({ kind: '战斗札记', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `战斗札记：${battle.missionTitle}（${note.charCount} 字，${source.attempts} 次请求）`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '战斗札记', ok: true, model: cfg.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message: `战斗札记：${battle.missionTitle}（${note.charCount} 字，${source.attempts} 次请求）`, request: meta.request, response: meta.response });
   return { ok: true, data: note };
 }
 
@@ -1560,7 +1813,7 @@ export interface GeneratedGirlProfile {
   color?: string;
 }
 
-async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
+async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta, research?: GirlResearch): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const skillList = girlSkillPool().map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
@@ -1571,7 +1824,11 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
     ? '先观察附带的立绘：发色与发型、瞳色、服装轮廓与配色、配饰、兽耳或尾巴、姿态与表情。appearance 必须具体描述这些可见特征；outfitDescription 必须写到颜色、材质与穿法；element、archetype、personality 和 title 都要从画面气质推断，不能与立绘冲突。'
     : '这次没有立绘，请只根据世界观与文字要求起草，不要假装看见图片。';
   const hintRule = hint?.trim() ? `\n玩家对画面的额外要求（优先满足）：${hint.trim()}` : '';
-  const outcome = await chatJson(config, preset, 'profile', `${visualRule}${hintRule}\n\n${schema}`, portrait
+  // 联网资料只作考据：与立绘/玩家要求冲突时以后者为准，也允许模型说「查不到」。
+  const researchRule = research?.summary
+    ? `\n\n【联网资料（只作考据，可能不准确）】\n${research.summary.slice(0, 2000)}${research.sources.length ? `\n来源：${research.sources.map(source => source.title || source.uri).join('；')}` : ''}\n要求：只用来对齐作品设定、角色关键词与惯用称呼。与立绘或玩家要求冲突时，以立绘与玩家为准；不要照抄原文，不要写链接，不要编造资料里没有的设定。`
+    : '';
+  const outcome = await chatJson(config, preset, 'profile', `${visualRule}${hintRule}${researchRule}\n\n${schema}`, portrait
     ? [{ type: 'text', text: '请根据这张立绘起草这位新契约者，确保外貌、服装、元素与职阶都和画面一致。' }, { type: 'image_url', image_url: { url: portrait } }]
     : '请起草这位新契约者。', ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：起草新契约者'], meta);
   const result = outcome.result;
@@ -1616,6 +1873,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
 }
 
 import { factionInfo } from './content/items.ts';
+import { districts } from './districts.ts';
 import { cityAveragePollution } from './pollution.ts';
 import {
   applyFormat, applyRegexScripts, applyRegexToMessages, composeTaskSystem, presetRuntime, promptTokens, resolvePresetWorld, type ChatPreset, type PresetRuntime, type PromptScope,
@@ -1627,10 +1885,10 @@ import { skills, tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { battleCast, battleDigest, normalizeBattleNoteDraft, totalBattleRounds, validateBattleNoteDraft } from './battleNote.ts';
+import { battleCast, battleStoryDigest, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
-import type { Archetype, BattleNote, BattleState, DraftTrait, Element, Equipment, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryMissionSpec, StoryNodeKind } from './types';
+import type { Archetype, BattleNote, BattleState, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryMissionSpec, StoryNodeKind, WhisperJob } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {
