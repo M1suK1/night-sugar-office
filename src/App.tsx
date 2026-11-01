@@ -53,11 +53,15 @@ import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
 import { StoryGraphDialog } from './components/StoryGraphDialog';
 import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
-import { StartDialog } from './components/StartDialog';
+import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
+import { prologueFor } from './prologue';
+import { OPENING_CARDS } from './opening';
+import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
+import { cardboxCards, loadCardBox } from './cardbox';
 import { StarterDialog } from './components/StarterDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
@@ -74,7 +78,7 @@ type Modal =
   | { type: 'mission'; id: string; girlId?: string }
   | { type: 'front'; id: string }
   | { type: 'cardbox' }
-  | { type: 'slots' }
+  | { type: 'slots'; boot?: boolean }
   | { type: 'starter' }
   | { type: 'battle'; id: string }
   | { type: 'battle-note'; id: string }
@@ -83,9 +87,13 @@ type Modal =
   | { type: 'story-graph'; id: string }
   | { type: 'codex'; id?: string }
   | { type: 'presets'; scope?: PromptScope; presetId?: string }
-  | { type: 'settings' | 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' }
+  | { type: 'settings'; boot?: boolean }
+  | { type: 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' }
   | { type: 'faction'; id: FactionId }
   | { type: 'office' };
+
+/** 开场相位：标题页 → 编成 → 序章 → 正片。 */
+type BootPhase = 'title' | 'roster' | 'prologue' | 'play';
 
 function readAutoGenerate() { try { return localStorage.getItem('night-sugar:auto-generate') === 'on'; } catch { return false; } }
 function readReduced() { try { return localStorage.getItem('night-sugar:motion') === 'reduced' || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } }
@@ -126,8 +134,15 @@ export default function App() {
   const [incidentFocus, setIncidentFocus] = useState<string | null>(null);
   const [arcBusy, setArcBusy] = useState<string | null>(null);
   const STARTED_KEY = 'night-sugar-office:started';
-  const markStarted = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setStarted(true); };
-  const [started, setStarted] = useState(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1'; } catch { return false; } });
+  // 相位取代「已开始」布尔：标题页 → 编成 → 序章 → 正片。会话标记只记「已进入正片」。
+  const [phase, setPhase] = useState<BootPhase>(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1' ? 'play' : 'title'; } catch { return 'title'; } });
+  /** 启动时读到的自动存档是否存在——标题页只在这时给「接着上一夜」。 */
+  const [hadSave, setHadSave] = useState(false);
+  /** 卡库里能用的卡数：够 20 张时编成界面不掺内置角色。 */
+  const [boxUsable, setBoxUsable] = useState(0);
+  const enterPlay = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setPhase('play'); };
+  /** 载入存档后的分流：没编成过的老档先补编成，空白档直接进正片。 */
+  const afterLoad = (next: GameState) => { if (!next.startersPicked && !next.blank) setPhase('roster'); else enterPlay(); };
   const [generating, setGenerating] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
@@ -164,11 +179,31 @@ export default function App() {
       const boot = await bootState({ keepInline: true });
       if (!alive) return;
       setState(boot.state);
-      if (boot.hadSave) setStarted(true);
+      setHadSave(boot.hadSave);
+      // 有存档也停在标题页：老板该先决定是接着那一夜还是重开一场。
+      // 但会话里已经进过正片、读到的又是一份没编成过的旧档时，先补编成。
+      try {
+        if (sessionStorage.getItem(STARTED_KEY) === '1' && !boot.state.startersPicked && !boot.state.blank) setPhase('roster');
+      } catch { /* 没有存储时按标题页处理。 */ }
       setBooted(true);
     })();
     return () => { alive = false; };
   }, []);
+
+  // 标题页/编成期间随时更新卡库张数，决定编成池要不要补内置角色。
+  useEffect(() => {
+    if (phase !== 'title' && phase !== 'roster') return;
+    let alive = true;
+    void loadCardBox().then(box => { if (alive) setBoxUsable(box.length); }).catch(() => { /* 读不出来就当没卡。 */ });
+    return () => { alive = false; };
+  }, [phase]);
+
+  // 开场守卫：进了正片但名册还没定（重置、读老档、导入未编成的存档），先回编成。
+  useEffect(() => {
+    if (phase !== 'play' || !booted) return;
+    if (state.startersPicked || state.blank) return;
+    setPhase('roster');
+  }, [phase, booted, state.startersPicked, state.blank]);
 
   // 自动存档：每个状态变更立即排队写入（写入串行化，IDB 事务不能并发冲同一键）。
   // 不做防抖——刷新页面丢掉最后一步的代价，比多写几 kB 大得多。
@@ -364,7 +399,7 @@ export default function App() {
         return { ok: false, message: applied.message };
       }
       setState(applied.state);
-      notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的魔物、候选者、委托与议会提案已经入场。');
+      notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的魔物、委托与议会提案已经入场；候选者改由契约卡库补货。');
       return { ok: true, message: applied.message };
     } finally {
       generatingRef.current = false;
@@ -475,6 +510,7 @@ export default function App() {
     const next = importState(text);
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
+    if (phase !== 'play') { setState(next); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
     setPendingSave(next);
   };
 
@@ -483,10 +519,98 @@ export default function App() {
     const next = await readSlot(id);
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
     setModal(null);
+    if (phase !== 'play') { setState(next); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
     setPendingSave(next);
   };
   const deleteSlot = async (id: SaveSlotId) => { await clearSlot(id); notify(`存档位 ${id} 已清空。`); };
-  const restartGame = () => { setAuto(false); setModal(null); perform({ type: 'reset' }); notify('新的一局开始了，先看看开场。'); };
+  const restartGame = () => { setAuto(false); setModal(null); perform({ type: 'reset' }); setPhase('roster'); notify('新的一局开始了，先看看开场。'); };
+
+  /** 开始新游戏：标准开局 → 卡库摆出最多 20 张选人池 → 进编成。 */
+  const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
+    let next = act(state, { type: 'reset', mode }).state;
+    try {
+      const box = await loadCardBox();
+      setBoxUsable(box.length);
+      const picks = unusedCards(box, next, OPENING_CARDS);
+      if (picks.length) {
+        // 卡库开局不摆内置候选：那 20 个位置都留给玩家的卡。
+        next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
+        const imported = act(next, { type: 'importCards', cards: cardboxCards(box, picks.map(entry => entry.hash)) });
+        if (imported.ok) next = imported.state;
+      }
+    } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ }
+    setState(next);
+    // 空白档案里没有契约者，先别进编成，否则四个位置一个都填不满。
+    setPhase(mode === 'blank' && !next.girls.length && !next.candidates.length ? 'prologue' : 'roster');
+  };
+
+  /** 首夜空缺：先本地兜底，有 key 再让叙事者补上委托与弹窗。 */
+  const [openingBusy, setOpeningBusy] = useState(false);
+  const openingRunning = useRef(false);
+  const fillOpening = async () => {
+    if (openingRunning.current) return;
+    openingRunning.current = true;
+    setOpeningBusy(true);
+    try {
+      // 本地兜底先跑：没 key 也要有议题和待用事件，别让开局空着。
+      const local = act(state, { type: 'openingFill' });
+      const base = local.ok ? local.state : state;
+      if (local.ok) setState(local.state);
+      if (!llmHasKey()) return;
+      if (!canAcceptGeneratedContent(base).ok) return;
+      const config = loadLlmConfig();
+      const daily = await generateDaily(config, base, worldBrief(base), taskRuntime(boundPreset('daily', presets, binding), 'daily'));
+      if (!daily.ok) { notify(`叙事者这次没接上：${daily.message}。今夜先用本地内容开着。`, false); return; }
+      const content = materializeNightProposal(daily.data, base);
+      // 用函数式更新落地，等模型这段时间里玩家点过的东西不会被盖掉。
+      setState(prev => { const applied = act(prev, { type: 'addGeneratedContent', ...content }); return applied.ok ? applied.state : prev; });
+      const batch = await generateIncidentBatch(config, base, taskRuntime(boundPreset('incident', presets, binding), 'incident'));
+      if (!batch.ok) return;
+      setState(prev => { const merged = act(prev, { type: 'mergeIncidentPool', entries: batch.data.entries }); return merged.ok ? merged.state : prev; });
+    } finally {
+      openingRunning.current = false;
+      setOpeningBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (phase !== 'play' || !booted) return;
+    // 只补「首夜」：补过（openingFilledAt ≠ 0）就交给每日自动补充，不再插手。
+    if (state.openingFilledAt !== 0) return;
+    void fillOpening();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, booted, state.openingFilledAt]);
+
+  // 市场补货：候选只能从卡库来；缺几个补几个，没卡可用就空着。
+  const [marketTick, setMarketTick] = useState(0);
+  const marketEmptyDay = useRef(0);
+  const refilling = useRef(false);
+  const refillMarketFromCards = async () => {
+    if (refilling.current) return;
+    refilling.current = true;
+    try {
+      const box = await loadCardBox();
+      const gap = marketCardGap(state);
+      if (gap > 0) {
+        const picks = unusedCards(box, state, gap);
+        if (picks.length) {
+          const applied = act(state, { type: 'refillMarket', cards: cardboxCards(box, picks.map(entry => entry.hash)) });
+          if (applied.ok) setState(applied.state);
+        }
+      }
+      if (marketNeedsCards(state, box) && marketEmptyDay.current !== state.day) {
+        marketEmptyDay.current = state.day;
+        notify('卡库里的卡都用完了。去契约卡库加几张新的，市场会自己补货。', false);
+      }
+    } catch { /* 卡库读不出来就不补，不挡路。 */ } finally {
+      refilling.current = false;
+    }
+  };
+  useEffect(() => {
+    if (phase !== 'play' || !booted) return;
+    if (marketCardGap(state) <= 0) return;
+    void refillMarketFromCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, booted, state.day, state.candidates.length, marketTick]);
 
   const runCommand = async (line: string): Promise<string> => {
     const raw = line.trim();
@@ -651,6 +775,18 @@ export default function App() {
   const selectedBattle = modal?.type === 'battle' || modal?.type === 'battle-note' ? state.battles.find(b => b.id === modal.id) : undefined;
   const selectedNote = modal?.type === 'battle-note' ? state.battleNotes?.find(note => note.battleId === modal.id) : undefined;
   const modalTitle = modal?.type === 'starter' ? '开局编成' : modal?.type === 'talk' ? (modal.remote ? '远程联络' : '灯下私语') : modal?.type === 'girl' ? '契约者详细档案' : modal?.type === 'wardrobe' ? '衣柜与礼装' : modal?.type === 'expression' ? '表情差分管理' : modal?.type === 'witch-form' ? '魔女化立绘' : modal?.type === 'mission' ? '委托详情与派遣' : modal?.type === 'settings' ? '游戏设置' : modal?.type === 'presets' ? '对话补全预设' : modal?.type === 'help' ? '夜班操作手册' : modal?.type === 'notifications' ? '事务所通知' : modal?.type === 'reset' ? '重置进度确认' : modal?.type === 'hire' ? '缔结契约' : modal?.type === 'build' ? '建造与扩建' : modal?.type === 'room' ? '基地房间详情' : modal?.type === 'battle' ? '战斗剧场' : modal?.type === 'codex' ? '魔物图鉴' : modal?.type === 'memorial' ? '星光纪念墙' : modal?.type === 'custom' ? '契约登记' : modal?.type === 'chronicle' ? '使魔编年史' : modal?.type === 'faction' ? `查看${factionInfo[modal.id].name}档案` : modal?.type === 'office' ? '事务所档案' : modal?.type === 'slots' ? '存档位' : modal?.type === 'cardbox' ? '契约卡库' : '安排派遣';
+  const [cardCount, setCardCount] = useState(0);
+  const modalKind = modal?.type ?? '';
+  useEffect(() => {
+    if (phase !== 'title') return;
+    let alive = true;
+    void loadCardBox().then(box => { if (alive) setCardCount(box.length); }).catch(() => { if (alive) setCardCount(0); });
+    return () => { alive = false; };
+  }, [phase, modalKind]);
+  const titleHint = [
+    cardCount > 0 ? `卡库里有 ${cardCount} 张契约卡；开局会先把最近导入的几张排进名册。` : '卡库里还没有卡，开局用默认的四位在编少女编成三方。',
+    hadSave ? `上次停在第 ${state.day} 日。` : '',
+  ].filter(Boolean).join(' ');
   const stabilityStage = cityStage(state.reputation);
   const durable = storeAvailable();
 
@@ -670,22 +806,38 @@ export default function App() {
         <TriangleAlert size={13} />这台浏览器没给出可用的 IndexedDB（隐私模式或存储被禁用），本次进度不会被保存。
       </div>
     )}
-    {!started && <StartDialog onStandard={markStarted} onBlank={() => { setState(act(state, { type: 'reset', mode: 'blank' }).state); markStarted(); }} />}
-    {started && !state.prologueSeen && <PrologueDialog onDone={() => setState(prev => act(prev, { type: 'seenPrologue' }).state)} />}
-    {modal?.type === 'starter' && (
+    {phase === 'title' && (
+      <TitleDialog
+        cards={cardCount}
+        hint={titleHint}
+        onNew={() => void startNewGame('standard')}
+        onLoad={() => setModal({ type: 'slots', boot: true })}
+        onSettings={() => setModal({ type: 'settings', boot: true })}
+        onBlank={() => void startNewGame('blank')}
+      />
+    )}
+    {(phase === 'roster' || modal?.type === 'starter') && (
       <StarterDialog
         state={state}
+        forced={phase === 'roster'}
+        cardsOnly={boxUsable >= OPENING_CARDS}
         onConfirm={(girlIds, roster, custom) => {
-          if (perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls })) setModal(null);
+          if (!perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls })) return;
+          setModal(null);
+          // 只在开场编成时推进相位；从设置页重开编成不该把人送回序章。
+          if (phase === 'roster') setPhase(state.prologueSeen ? 'play' : 'prologue');
         }}
         onAddCard={() => setModal({ type: 'cardbox' })}
         onAddCustom={() => setModal({ type: 'custom' })}
         onClose={() => setModal(null)}
       />
     )}
+    {phase === 'prologue' && (
+      <PrologueDialog beats={prologueFor(state)} onDone={() => { setState(prev => act(prev, { type: 'seenPrologue' }).state); enterPlay(); }} />
+    )}
     <a id="skip-main-content" className="skip-link" href="#main-content">跳转到主要内容</a>
     <Navigation page={page} onPage={navigate} onHelp={() => setModal({ type: 'help' })} onSettings={() => setModal({ type: 'settings' })} onCodex={() => setModal({ type: 'codex' })} onMemorial={() => setModal({ type: 'memorial' })} onWorkshop={() => setModal({ type: 'workshop' })} memorialCount={state.memorial.length} />
-    <Topbar state={state} saved={saved} onNotifications={() => setModal({ type: 'notifications' })} onCommand={() => setCmdOpen(true)} />
+    <Topbar state={state} saved={saved} onNotifications={() => setModal({ type: 'notifications' })} onCommand={() => setCmdOpen(true)} filling={phase === 'play' && openingBusy} />
     <main id="main-content" className={`app-main page-${page}`}>
       {page === 'dispatch' ? <>
         <PageHeading page={page}><div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div></PageHeading>
@@ -830,10 +982,10 @@ export default function App() {
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
-      {modal.type === 'slots' && <SaveSlotsDialog onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} />}
-      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) setModal(null); }} />}
+      {modal.type === 'slots' && <SaveSlotsDialog boot={modal.boot} onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} onContinue={modal.boot && hadSave ? () => { setModal(null); enterPlay(); } : undefined} day={hadSave ? state.day : undefined} girls={hadSave ? state.girls.length : undefined} startersPicked={state.startersPicked} />}
+      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) { setModal(null); setMarketTick(tick => tick + 1); } }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
+      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
@@ -956,7 +1108,7 @@ export default function App() {
           <span>星砂<b>{pendingSave.gold.toLocaleString('zh-CN')}</b></span>
         </div>
         <div className="settings-data-actions">
-          <button id="import-save-confirm" className="btn primary" onClick={() => { setState(pendingSave); setPendingSave(null); notify(`已载入第 ${pendingSave.day} 日的存档。`); }}>确认覆盖并继续</button>
+          <button id="import-save-confirm" className="btn primary" onClick={() => { const next = pendingSave; setState(next); setPendingSave(null); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); }}>确认覆盖并继续</button>
           <button id="import-save-cancel" className="btn" onClick={() => setPendingSave(null)}>取消</button>
         </div>
       </div>

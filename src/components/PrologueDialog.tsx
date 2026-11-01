@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowRight, Moon } from 'lucide-react';
-import { PROLOGUE } from '../prologue.ts';
+import { PROLOGUE, type PrologueBeat } from '../prologue.ts';
 
 /**
  * 开场三幕：一段旁白 + 少量台词，翻页推进。
  * 只用 CSS 动效（无图片、无动画库），所以加载慢也不会白屏。
  */
-export function PrologueDialog({ onDone, replay = false }: { onDone: () => void; replay?: boolean }) {
+export function PrologueDialog({ onDone, replay = false, beats = PROLOGUE }: { onDone: () => void; replay?: boolean; beats?: PrologueBeat[] }) {
   const [index, setIndex] = useState(0);
   const [closing, setClosing] = useState(false);
-  const beat = PROLOGUE[index];
-  const last = index === PROLOGUE.length - 1;
+  const beat = beats[index];
+  const last = index === beats.length - 1;
 
   const finish = useCallback(() => {
     if (closing) return;
@@ -68,7 +68,7 @@ export function PrologueDialog({ onDone, replay = false }: { onDone: () => void;
         </div>
         <div className="prologue-foot">
           <div className="prologue-dots" aria-hidden="true">
-            {PROLOGUE.map((item, i) => <i key={item.id} className={i === index ? 'on' : i < index ? 'done' : ''} />)}
+            {beats.map((item, i) => <i key={item.id} className={i === index ? 'on' : i < index ? 'done' : ''} />)}
           </div>
           <div className="prologue-actions">
             <button id="prologue-skip" type="button" className="ghost" onClick={finish}>{replay ? '关闭' : '跳过'}</button>

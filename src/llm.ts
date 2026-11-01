@@ -182,7 +182,7 @@ export async function generateDaily(config: LlmConfig, state: GameState, context
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: config.model.trim(), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
-    message: result.ok ? `生成成功：${result.data.monster.name} / ${result.data.candidate.name} / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
+    message: result.ok ? `生成成功：${result.data.monster.name} / ${result.data.candidate?.name ?? '（无候选者）'} / ${result.data.mission.title}${result.warnings.length ? `（${result.warnings.length} 条软修正）` : ''}` : result.message,
     detail: result.ok ? undefined : result.message,
     request: meta.request, response: meta.response,
   });

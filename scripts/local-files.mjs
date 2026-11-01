@@ -8,20 +8,20 @@
  * 只在这三种情况下挂载：npm run dev、npm run preview、node scripts/serve.mjs。
  * 纯静态部署时前端拿不到 /api/paths，会自动退回浏览器下载与「选择文件夹」。
  *
- * 约束：只写 JSON、只写这两个目录、单文件 ≤ 8MB、文件名只保留最后一段。
+ * 约束：只写 JSON、只写这两个目录、单文件 ≤ 24MB、文件名只保留最后一段。
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanCardDir } from './cards-api.mjs';
+import { readCardFile, scanCardDir } from './cards-api.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const DATA_DIR = join(ROOT, 'data');
 export const SAVES_DIR = join(DATA_DIR, 'saves');
 export const CARDS_DIR = join(DATA_DIR, 'cards');
 
-const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BYTES = 24 * 1024 * 1024;
 const KINDS = new Map([['save', SAVES_DIR], ['card', CARDS_DIR]]);
 
 function json(res, status, body) {
@@ -45,7 +45,7 @@ async function readBody(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BYTES) throw new Error('文件超过 8MB，本地通道不收。');
+    if (size > MAX_BYTES) throw new Error('文件超过 24MB，本地通道不收。');
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -91,8 +91,11 @@ export async function handleLocalApi(req, res) {
     }
     if (route === '/cards' && req.method === 'GET') {
       const asked = url.searchParams.get('dir')?.trim();
-      const result = await scanCardDir(asked && asked.length ? asked : CARDS_DIR);
-      if (result.ok && !asked) result.defaultDir = CARDS_DIR;
+      const name = url.searchParams.get('name')?.trim();
+      const target = asked && asked.length ? asked : CARDS_DIR;
+      // 带 name 就是按需读单张（大卡扫描时只报名字，前端再逐张来取）。
+      const result = name ? await readCardFile(target, name) : await scanCardDir(target);
+      if (!name && result.ok && !asked) result.defaultDir = CARDS_DIR;
       json(res, result.status ?? 200, result);
       return;
     }
@@ -125,7 +128,7 @@ export async function handleLocalApi(req, res) {
       if (req.method === 'POST') {
         const text = typeof body?.text === 'string' ? body.text : '';
         if (!text) { json(res, 400, { ok: false, message: '没有收到文件内容。' }); return; }
-        if (Buffer.byteLength(text, 'utf8') > MAX_BYTES) { json(res, 400, { ok: false, message: '文件超过 8MB，本地通道不收。' }); return; }
+        if (Buffer.byteLength(text, 'utf8') > MAX_BYTES) { json(res, 400, { ok: false, message: '文件超过 24MB，本地通道不收。' }); return; }
         try {
           JSON.parse(text);
         } catch {

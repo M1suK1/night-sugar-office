@@ -161,6 +161,8 @@ export interface RosterSubject {
   stats?: Record<StatKey, number>;
   skillIds?: string[];
   codename?: string;
+  /** 来自契约卡库的卡编号。 */
+  cardId?: string;
 }
 
 /** 原属首领 → 面板条目。 */
@@ -187,13 +189,13 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
 export function subjectOfCustom(input: {
   id: string; name: string; factionTag: GirlFaction; level: number; color: string;
   portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
-  skillIds: string[]; codename?: string; quote?: string; title?: string;
+  skillIds: string[]; codename?: string; quote?: string; title?: string; cardId?: string;
 }): RosterSubject {
   return {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
     level: input.level, color: input.color, portrait: input.portrait,
     portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
-    origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename,
+    origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
   };
 }
 
@@ -205,6 +207,7 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
     color: subject.color, level: subject.level,
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
+    cardId: subject.cardId,
   };
 }
 
@@ -221,6 +224,7 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
     origin: faction,
     titles: { association: subject.title, government: subject.title, witch: subject.title },
     duty: { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
+    cardId: subject.cardId,
   };
 }
 

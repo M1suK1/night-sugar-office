@@ -377,7 +377,7 @@ test('v24 迁移：v17 存档补 tier / cycleStartDay / customBosses / boss 血�
   delete legacy.customBosses;
   legacy.boss = { id: 'boss-1', appearedDay: 16, lastTick: 0, deadline: 23040, missionId: 'boss-16' };
   const migrated = loadState(JSON.stringify(legacy));
-  assert.equal(migrated.version, 18);
+  assert.equal(migrated.version, 20);
   assert.equal(migrated.cycleStartDay, migrated.day);
   assert.deepEqual(migrated.customBosses, []);
   assert.equal(migrated.boss?.template, 'boss-candy-throne');

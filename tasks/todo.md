@@ -279,3 +279,44 @@
 - [x] 导出存档与导出契约卡改为先写项目目录，成功时提示落点、失败才走下载；存档位弹窗多一节「项目目录里的存档」，点一下就能读回来。
 - [x] 契约卡库默认把路径填成 `data/cards` 并直接可扫；`data/` 目录自身进版本库，里面的 `.json` 由 `.gitignore` 排除。
 - [x] 302 项状态测试、92 组浏览器流程（+1：本地路径导出与两处默认指向）。
+
+## v26 开局流程重做（三选项 → 卡库读卡 → 势力分配 → 序章 → 首夜空缺补齐）
+
+- [x] `src/types.ts`：`GameState.openingFilledAt`、`version` 18 → 19、`GameAction.openingFill`。
+- [x] `src/game.ts`：两个初始状态写字段、`openingFill` 处理器（本地补三条议案 + 三个待用事件、记当天、幂等）、读档迁移 `??= 0`、白名单加 19。
+- [x] `src/opening.ts`：`openingGaps` / `openingNeed` / `openingLabel` 与两个常量；委托/候选/魔物只参与「值不值得请叙事者」的判断。
+- [x] `generateOpinions(state, variant)`：同一个时段也能补出不同议题；同标题的待议不再重复提出（顺带修掉同 id 重复）。
+- [x] `src/prologue.ts`：`prologueFor(state)` / `prologueFrom(options)`，第二幕点名名册人数、卡库来源与三方现任首领，第三幕交代第几日与七条委托；`PROLOGUE` 留作静态兜底。
+- [x] `src/components/PrologueDialog.tsx`：收 `beats`，记录页重播也传当前名册。
+- [x] `src/components/TitleDialog.tsx`：三选项 + 空白档案次级链接 + `#start-hint`（卡库张数 / 上次停在第几日）。`StartDialog` 删除。
+- [x] `src/App.tsx`：`phase` 状态机、`startNewGame`（卡库最近导入优先、最多补满候选上限）、`fillOpening`（先本地后叙事者、函数式落地）、`#opening-fill` 生成中徽标、名册守卫、读档 `afterLoad`、标题页设置/存档位接线。
+- [x] `src/components/StarterDialog.tsx`：`forced`（开场必经、无关闭）+ `initialPicked`（卡库少女先选，默认阵容补满 4–6）。
+- [x] `src/components/SaveSlotsDialog.tsx`：`boot` 模式（`#slot-current` / 隐藏保存、删除、重开）；`UtilityDialogs.tsx` 的 `boot` 只留「一般 / 故事引擎」与卡库。
+- [x] `src/components/Shell.tsx` + `src/styles.css`：顶栏首夜补稿徽标（900px / 560px 两档收窄，reduced-motion 下不动画）。
+- [x] `setStarters`：编成后保留退役/已故少女，候选池不再整池清空；`tests/v21` 两条断言同步。
+- [x] `tests/v26.test.ts` 15 条；`tests/browser.mjs` 改 6 处旧流程 + 新增 5 条（标题页、卡库优先、势力分配→序章、读档接着上一夜、首夜空缺）。
+- [x] 322 项状态测试、97 组浏览器流程（新增 15 + 5）。
+
+## 卡库扫描的 256KB 误杀（跟进）
+
+- [x] `scripts/cards-api.mjs`：扫描上限 256KB → 24MB；≤256KB 内联内容，大卡只报 `name`/`bytes`。
+- [x] 新增 `readCardFile` 与 `GET /api/cards?dir=&name=`，只读目录内单个 `.json`，越界名字 400、超限 413、读不到 404。
+- [x] `src/components/CardLibraryDialog.tsx`：扫描后逐张补读大卡，带「已读 x / n」进度，失败只记一条。
+- [x] `scripts/local-files.mjs`：写入上限 8MB → 24MB，10MB+ 的卡也能导出到 `data/cards`。
+- [x] `tests/cards-api.test.ts` 5 条；浏览器「本地路径」流程补一张 400KB 的卡验大卡按需读取。
+- [x] 322 项状态测试、97 组浏览器流程。
+
+## v27 卡库成为唯一人事来源（开局 20 张 / 市场补货 / 瀑布流）
+
+- [x] `GameState.version` 19 → 20；`poolLimits.candidates` 6 → 20；v19 老档迁移到 `max(现值, 20)`。
+- [x] `OPENING_CARDS = 20`；`startNewGame` 有卡时先清掉内置候选 `lu`，再按最近导入导 20 张。
+- [x] `src/cardMarket.ts`：`usedCardIds` / `marketCardGap` / `unusedCards` / `cardBoxExhausted` / `marketNeedsCards`。
+- [x] `GameAction.refillMarket`：从卡库补候选，逐张走 `importCard` 的去重与上限；补货写一条日志。
+- [x] `refreshMarket` 只做过期清理，不再造原生候选；叙事者提案去掉 candidate（schema 可选、提示词删段、预览删块）。
+- [x] `rosterPool(..., { cardsOnly, limit })`：卡 ≥20 只给卡与自定义；不足 20 用内置补位；同一张卡按 `cardId` 去重。
+- [x] `cardFactionRoster` + `starterPicks`：卡够 20 时默认三方用卡预填（3 首领 + 3 随从），开局勾选卡库前 6 张。
+- [x] `FactionLeader` / `FactionGirl` 增加 `cardId`，编进三方后也不会被市场重复补进来。
+- [x] 市场：候选 ≤2 且卡库空时提示一次；空市场显示 `#market-card-hint` 与 `#market-open-cardbox`。
+- [x] 卡库瀑布流：`columns` 3/2/1 + `break-inside: avoid`，保留全部 `#cardbox-row-*` / `#cardbox-check-*` id。
+- [x] 测试：`tests/v27.test.ts` 10 条；浏览器新增 3 条（瀑布流 / 20 张开局 / 用完提示），改旧流程 2 处。
+- [x] 332 项状态测试、100 组浏览器流程。

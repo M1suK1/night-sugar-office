@@ -140,7 +140,7 @@ const oldScar = (id: string): Scar => ({
 
 test('初始数据包含六位契约者（含退役）、战斗与调查委托、基地容量', () => {
   const s = createInitialState();
-  assert.equal(s.version, 18);
+  assert.equal(s.version, 20);
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 1);
   assert.equal(s.candidates.length, 1);
@@ -645,15 +645,14 @@ test('内容池上限可调整，事件、候选与魔物可手动移除', () =>
   assert.equal(act(purified.state, { type: 'deleteMonster', monsterId: monster }).ok, false);
 });
 
-test('生成提案会写入事件、候选、魔物、装备池，池满时拒绝', () => {
+test('生成提案会写入事件、魔物、装备池，候选者不再由叙事者产出', () => {
   const base = createInitialState();
   const checked = validateNightProposal(nightProposal(), base);
   assert.equal(checked.ok, true, checked.errors.join('；'));
   const content = materializeNightProposal(checked.proposal!, base);
   assert.equal(content.monster.maxHp, 132);
   assert.deepEqual(content.monster.stats, { magic: 71, insight: 49, agility: 66, empathy: 35 });
-  assert.equal(content.girl.level, 3);
-  assert.deepEqual(content.girl.stats, { magic: 64, insight: 58, agility: 52, empathy: 72 });
+  assert.equal(content.girl, undefined, 'v27：叙事者不再产出候选者');
   assert.equal(content.mission.duration, 75);
   assert.equal(content.mission.reward, 1200);
   assert.equal(content.mission.rounds, 5);
@@ -663,14 +662,14 @@ test('生成提案会写入事件、候选、魔物、装备池，池满时拒�
   assert.equal(content.mission.rewardEquipmentId, content.items[0].id);
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.ok, true);
-  assert.equal(result.state.candidates.length, base.candidates.length + 1);
+  assert.equal(result.state.candidates.length, base.candidates.length);
   assert.equal(result.state.customMonsters.length, 1);
   assert.equal(result.state.missions.length, base.missions.length + 2);
   assert.equal(result.state.opinions.length, base.opinions.length + 1);
   assert.equal(result.state.generatedItems.length, 1);
   assert.equal(result.state.missions.at(-1)?.enemyIds?.[0], content.monster.id);
 
-  const capped = { ...base, poolLimits: { ...base.poolLimits, candidates: 1 } };
+  const capped = { ...base, poolLimits: { ...base.poolLimits, monsters: 0 } };
   assert.equal(act(capped, { type: 'addGeneratedContent', ...content }).ok, false);
 });
 
@@ -885,7 +884,7 @@ test('编年史缓存生成内容并在存档中保留', () => {
   const result = act(base, { type: 'addGeneratedContent', ...content });
   assert.equal(result.ok, true);
   const kinds = new Set(result.state.chronicle.map(entry => entry.kind));
-  for (const kind of ['魔物', '少女', '事件', '议程', '代表', '登记'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
+  for (const kind of ['魔物', '事件', '议程', '代表', '登记'] as const) assert.ok(kinds.has(kind), `缺少 ${kind} 条目`);
   const loaded = loadState(JSON.stringify(result.state));
   assert.equal(loaded.chronicle.length, result.state.chronicle.length);
   assert.ok(loaded.chronicle.every(entry => entry.title && entry.summary));
@@ -1410,7 +1409,7 @@ test('营业时间跨午夜：20:00 开门，次日 02:00 打烊', () => {
 test('旧存档迁移：白天时段的 v7 存档回到当晚 20:00', () => {
   const s = createInitialState(); s.version = 7; s.minutes = 8 * 60;
   const loaded = loadState(JSON.stringify(s));
-  assert.equal(loaded.version, 18);
+  assert.equal(loaded.version, 20);
   assert.equal(loaded.minutes, SHIFT_START);
   const midnight = createInitialState(); midnight.minutes = 1500;
   assert.equal(loadState(JSON.stringify(midnight)).minutes, 1500);
@@ -3171,7 +3170,7 @@ test('v19 旧档 v11 迁到 12：污染补齐、档案默认、出身按 id 重�
   for (const candidate of legacy.candidates as Array<Record<string, unknown>>) delete candidate.factionTag;
 
   const loaded = loadState(JSON.stringify(legacy));
-  assert.equal(loaded.version, 18);
+  assert.equal(loaded.version, 20);
   assert.deepEqual(loaded.pollution, initialPollution(), '缺污染时整套补上初始值');
   assert.deepEqual(loaded.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const girl of loaded.girls) {
@@ -3384,9 +3383,9 @@ test('v19 事务所档案逐字段 trim、限长，非法或空值只影响自�
   assert.equal(capped.goal.length, OFFICE_LIMITS.goal);
 });
 
-test('v19 新档是 version 18，带默认档案，三方态度统一 50', () => {
+test('v19 新档是 version 20，带默认档案，三方态度统一 50', () => {
   const state = createInitialState();
-  assert.equal(state.version, 18);
+  assert.equal(state.version, 20);
   assert.deepEqual(state.pollution, initialPollution());
   assert.deepEqual(state.office, sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE));
   for (const faction of FACTION_ORDER) {
@@ -3918,7 +3917,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 15', () => 
   ];
   state.warHistory = [{ pair: 'government-witch', day: 2 }, { pair: 'nonsense' as never, day: 3 }];
   const loaded = loadState(JSON.stringify(state));
-  assert.equal(loaded.version, 18);
+  assert.equal(loaded.version, 20);
   assert.equal(loaded.gold, 4321);
   assert.equal(hostilityValue(loaded, 'association-government'), 100, '越界值被夹回来');
   assert.equal(loaded.fronts.length, 1);
@@ -3931,7 +3930,7 @@ test('v20 读档修复敌意值、战线与战史，v13 旧档迁到 15', () => 
   delete (old as unknown as Record<string, unknown>).fronts;
   delete (old as unknown as Record<string, unknown>).warHistory;
   const migrated = loadState(JSON.stringify(old));
-  assert.equal(migrated.version, 18);
+  assert.equal(migrated.version, 20);
   assert.equal(Object.keys(migrated.hostility).length, 3, '老档按初始旧账补齐');
   assert.deepEqual(migrated.fronts, []);
   assert.deepEqual(migrated.warHistory, []);
@@ -4221,7 +4220,7 @@ test('v15 读档保留 prologueSeen，v14 旧档按已看过处理', () => {
   legacy.version = 14;
   const migrated = loadState(JSON.stringify(legacy));
   assert.ok(migrated);
-  assert.equal(migrated.version, 18);
+  assert.equal(migrated.version, 20);
   assert.equal(migrated.prologueSeen, true, '旧档不该被开场打断');
 });
 
@@ -4479,7 +4478,7 @@ test('v21 编成：自定义名册随存档往返，读档后仍认得出是谁'
 // ── v21 §4 开局编成 ──────────────────────────────
 test('v21 新档带默认三方阵容：首领回原属，随从 3/3/3', () => {
   const state = createInitialState();
-  assert.equal(state.version, 18);
+  assert.equal(state.version, 20);
   assert.equal(state.startersPicked, false);
   for (const faction of FACTION_ORDER) {
     const entry = state.factionRoster[faction];
@@ -4519,7 +4518,10 @@ test('v21 编成：人数必须是 4–6，非法阵容被拒绝且不改状态'
 test('v21 编成后名册只剩选中的人，没被选中的原班人马不回市场', () => {
   const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: defaultFactionRoster() });
   assert.equal(next.ok, true);
-  assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue']);
+  // 退役的栀子留在档案里（纪念墙与关系页还要用），只是不再算在编。
+  assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue', 'zhi']);
+  assert.equal(next.state.girls.filter(girl => !girl.retired).length, 4, '在编的只有选中的四位');
+  assert.equal(next.state.girls.find(girl => girl.id === 'zhi')?.retired, true);
   assert.equal(next.state.candidates.some(girl => girl.id === 'zhi'), false);
   assert.equal(next.state.startersPicked, true);
 });
@@ -4805,7 +4807,7 @@ test('v25 v16 旧档迁移：绝对值折算成百分比，心防改写为共情
   legacy.girls[0].maxSpirit = 84;
   legacy.girls[0].spirit = 30;
   const migrated = loadState(JSON.stringify(legacy));
-  assert.equal(migrated.version, 18);
+  assert.equal(migrated.version, 20);
   assert.equal(migrated.generatedItems[0].spiritBonus, undefined);
   assert.equal(migrated.generatedItems[0].spiritBonusPct, 30);
   assert.equal(migrated.girls[0].maxSpirit, effectiveGuard(migrated.girls[0]));

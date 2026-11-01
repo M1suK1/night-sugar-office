@@ -342,3 +342,50 @@ useEffect(() => {
 2. 卡库导入上限按"最近添加优先 5 张"还是"按等级从高到低"？我按最近添加。
 3. 「设置」在标题页是否需要允许改玩家档案（名字/外貌等）？我按"允许"设计（和游戏内同一份 `PlayerProfile`）。
 4. 空白档案如果卡库里有卡，要不要也走 `roster`（我按"要"设计：有卡就进编成，没卡直接进序章）。
+
+## 13. 实施记录（2026-10-31）
+
+按 §10 的顺序全部落地，`GameState.version` 18 → 19，规模 **322 项状态测试 / 97 组浏览器流程**（新增 `tests/v26.test.ts` 15 条、`tests/browser.mjs` 5 条）。
+
+### 13.1 与计划的偏差（都是有原因的）
+
+| 计划 | 实际 | 原因 |
+|---|---|---|
+| 首夜补稿按 `[phase, state.day, state.openingFilledAt]` 每次跨日都跑 | 只在 `openingFilledAt === 0`（首夜）跑一次 | 跨日补稿会和「每日自动补充」抢同一件事，重复写议案；首夜之后交给既有链路 |
+| `#opening-fill` 是小徽标，缺口存在时一直在 | 只在生成中显示（`openingBusy`），完成即消失 | `openingGaps` 里候选/魔物本来就要叙事者写，徽标常驻会把「还缺 5 位候选」变成永久的催办 |
+| `initialPicked` 直接替换默认阵容 | 卡库少女排前面，再用默认阵容补满 | 卡库只有一张时 `picked.length < 4`，`#starter-confirm` 是禁用的；§9.2 期望的「已选 5 / 6」也要求这样合并 |
+| 序章 `PROLOGUE` 保留为 `prologueFor(空)` 的默认输出 | `PROLOGUE` 仍是常量，`prologueFor(null/无 girls)` 回落到它 | 记录页重播与静态渲染不依赖存档 |
+| `generateOpinions` 原样复用 | 加 `variant` 参数与「同标题待议不重复」 | 同一分钟里连补三条会生成三条同 id、同标题的议案（`makeOpinion` 的 id 只哈希作者+标题+分钟） |
+| 首夜补的议题 `unshift` | 补的排在既有议题之后 | 桌上已经摊开的那一条继续排第一，玩家不会一进门就跳到随机议题 |
+| 未提 `setStarters` | 保留退役/已故少女、候选池不再清空 | 编成不该把纪念墙上的退役少女抹掉，也不该把市场的候选一次清空；`tests/v21` 的两条断言同步更新 |
+
+### 13.2 新增的守卫
+
+- `phase` 取代 `started`：`title → roster → prologue → play`，`STARTED_KEY` 只表示「已进过正片」。
+- 名册守卫三条路径共用：启动时（会话已进过正片 + 存档未编成）、读档后（`afterLoad`）、正片里状态被重置（`startersPicked` 变 false 的 effect）。
+- 标题页「接着上一夜」只在 `bootState().hadSave` 为真时可点；没有进度时 `#slot-current` 写明「还没有进行中的一夜」。
+- `fillOpening` 用函数式 `setState` 落地叙事者结果，等模型那段时间里玩家的操作不会被旧快照覆盖。
+
+### 13.3 窄屏标题页
+
+`320×800` 下四张卡片合计约 980px，原来的 `.start-overlay` 是 `place-items: center` 且不滚动，卡片上下会被裁掉。改成 `place-items: safe center; overflow-y: auto`：内容放得下时仍然居中，放不下时贴顶并可以滚到底（`#start-hint` 与「空白档案」都够得着）。
+
+### 13.4 构建在受限账户下起不来（跟进修复）
+
+`npm run build` 在沙箱/受限账户里会先死在 Vite 加载配置这一步：默认用 esbuild 打包 `vite.config.ts`，esbuild 解析时会一路向上读目录，读到工作区外（本机是 `G:\DS`）就报 `Cannot read directory "../../../..": Access is denied`。`tools/vite.mjs` 现在在支持原生 TypeScript 的 Node 上自动追加 `--configLoader runner`，配置交给 Node 直接 import，构建与预览都恢复正常（已用 `npm run build` 与 `npm run preview` + `/api/paths` 验证）。加了这个参数之后从项目目录直接构建即可，不再需要 subst 盘符；`npm run dev` 仍要用 esbuild 预打包 React 的 CJS 入口，受限环境里请改用 build + preview，或在普通终端里跑 dev。
+
+### 13.5 验收时的环境备注
+
+本机沙箱下 `esbuild` 会去读盘符上级目录（`G:\DS` 不可列）而报 `Cannot read directory '../../..'`。构建/预览验收用 `subst X: <工作区>` 后从 `X:` 运行即可（`node tools/vite.mjs build`、`node tests/browser.mjs`）。浏览器验收本身需要完整权限，因为 Playwright 要用管道启动本机 Chrome。
+
+## 14. 跟进：卡库扫描的 256KB 误杀（2026-11-01）
+
+导入 `data/cards/夜糖事务所-契约卡-安可.json`（10.2MB）时报「超过 256KB，可能不是契约卡」。原因不在卡库本身：`CARD_BOX_MAX_BYTES` 早就是 24MB，但**本地扫描接口** `scripts/cards-api.mjs` 还留着 `MAX_BYTES = 256 * 1024`，而且把每张卡的内容内联在扫描结果里——真按 24MB 放开，一次扫描 16 张 10MB 的卡就会变成 180MB 的单个 JSON。
+
+改法：
+
+- 扫描结果分两种：`≤ 256KB` 的小卡照旧内联 `text`；更大的卡只返回 `name` + `bytes`，由前端逐张调 `GET /api/cards?dir=…&name=…` 补读（新增 `readCardFile`）。
+- 单张读取只认目录内的单个 `.json`：名字里有 `/`、`\` 或 `..` 一律 400，超过 24MB 报 413，读不到报 404。
+- `scripts/local-files.mjs` 的写入上限从 8MB 提到 24MB，和卡库一致（10MB+ 的卡也能正常导出到 `data/cards`）。
+- 浏览器验收里的「本地路径」流程改成扫临时目录，顺便塞一张 400KB 的卡验「大卡按需读取」，不再把用户整柜大卡读进测试浏览器。
+- 新增 `tests/cards-api.test.ts` 5 条：小卡内联 / 大卡只报大小、超 24MB 跳过、单张读全文、越界名字拒绝、文件不存在。

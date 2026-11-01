@@ -94,6 +94,8 @@ export interface FactionLeader {
   titles: Record<FactionId, string>;
   /** 覆灭后被雇佣，每次出勤的势力影响。 */
   duty: { faction: FactionId; note: string };
+  /** 来自契约卡库时的卡编号，用来避免同一张卡重复进市场。 */
+  cardId?: string;
 }
 
 /** 某一方现存的首领与随从（可在开局编成里重新分配）。 */
@@ -118,6 +120,8 @@ export interface FactionGirl {
   tag: FactionId;
   quote: string;
   note: string;
+  /** 来自契约卡库时的卡编号，用来避免同一张卡重复进市场。 */
+  cardId?: string;
 }
 export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {
@@ -865,7 +869,7 @@ export interface ShiftState { day: number; wave: number }
 /** 九区污染度，0–100。 */
 export type PollutionMap = Record<DistrictId, number>;
 export interface GameState {
-  version: 18; day: number; minutes: number; gold: number; reputation: number;
+  version: 20; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
   logs: Log[]; samples: Sample[]; completed: string[]; messages: Record<string, Message[]>;
   memorial: Memorial[]; battles: BattleState[]; battleNotes?: BattleNote[]; packHash: string;
@@ -924,6 +928,8 @@ export interface GameState {
   customFactionGirls: FactionGirl[];
   /** 开局编成是否已完成。 */
   startersPicked: boolean;
+  /** 首夜空缺已补齐的日期（0 表示还没补过）。 */
+  openingFilledAt: number;
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }
@@ -938,6 +944,10 @@ export type GameAction =
   | { type: 'setAssistant'; girlId?: string }
   | { type: 'setOfficeProfile'; profile: OfficeProfile }
   | { type: 'seenPrologue' }
+  /** 首夜空缺：本地兜底补议案与待用事件，并把 openingFilledAt 记为当天。 */
+  | { type: 'openingFill' }
+  /** 市场补货：把卡库里还没用过的卡转成候选者。 */
+  | { type: 'refillMarket'; cards: GirlCard[] }
   | {
       type: 'setStarters';
       girlIds: string[];
@@ -960,7 +970,7 @@ export type GameAction =
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }
-  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission; items?: Equipment[] }
+  | { type: 'addGeneratedContent'; monster: MonsterTemplate; girl?: Girl; mission: Mission; opinion?: Opinion; envoyMission?: Mission; items?: Equipment[] }
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }

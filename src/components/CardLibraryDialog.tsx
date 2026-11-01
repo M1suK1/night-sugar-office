@@ -14,7 +14,8 @@ interface ScanResult {
   ok: boolean;
   dir?: string;
   message?: string;
-  files?: { name: string; text: string }[];
+  /** 小卡直接带 `text`；带立绘的大卡只有名字与大小，扫描后再单独取内容。 */
+  files?: { name: string; text?: string; bytes?: number }[];
   skipped?: { name: string; reason: string }[];
 }
 
@@ -93,13 +94,31 @@ export function CardLibraryDialog({ onImport, notify }: {
         return;
       }
       const failed = (data.skipped ?? []).map(item => ({ name: item.name, message: item.reason }));
-      const result = await absorb(data.files, failed);
+      const files = data.files ?? [];
+      const inputs: { name: string; text: string }[] = [];
+      // 大卡（带立绘的，动辄 10MB+）扫描时只报名字，避免一次把整个目录塞进一个 JSON；这里逐张补读。
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        if (typeof file.text === 'string') { inputs.push({ name: file.name, text: file.text }); continue; }
+        setBusy(`已读 ${index + 1} / ${files.length}`);
+        try {
+          const one = await fetch(`/api/cards?dir=${encodeURIComponent(target)}&name=${encodeURIComponent(file.name)}`);
+          const payload = JSON.parse(await one.text()) as { ok?: boolean; text?: string; message?: string };
+          if (payload?.ok && typeof payload.text === 'string') inputs.push({ name: file.name, text: payload.text });
+          else failed.push({ name: file.name, message: payload?.message ?? '这个文件读不出来' });
+        } catch {
+          failed.push({ name: file.name, message: '这个文件读不出来' });
+        }
+      }
+      setBusy('');
+      const result = await absorb(inputs, failed);
       if (result.added.length) notify(`从 ${data.dir ?? target} 收进 ${result.added.length} 张，已自动选中。`);
       else if (result.duplicates.length) notify(`目录里的 ${result.duplicates.length} 张都已在库里。`, false);
       else notify('这个目录里没有能读的契约卡。', false);
     } catch {
       notify('连不上本地服务，静态部署请用「选择文件夹」。', false);
     } finally {
+      setBusy('');
       setScanning(false);
     }
   };
@@ -192,12 +211,13 @@ export function CardLibraryDialog({ onImport, notify }: {
         {shown.map(entry => {
           const short = entry.hash.slice(0, 8);
           const on = pickedSet.has(entry.hash);
-          return <li key={entry.hash} id={`cardbox-row-${short}`} className={`cardbox-row ${on ? 'on' : ''}`} onClick={() => toggle(entry.hash)}>
+          const color = girlFactionColors[entry.factionTag];
+          return <li key={entry.hash} id={`cardbox-row-${short}`} className={`cardbox-card ${on ? 'on' : ''}`} onClick={() => toggle(entry.hash)}>
             <input id={`cardbox-check-${short}`} type="checkbox" checked={on} aria-label={`选择 ${entry.name}`} onChange={() => toggle(entry.hash)} />
+            <span className="cardbox-card-mark" aria-hidden="true" style={{ color, borderColor: `${color}66` }}>{entry.name.slice(0, 1)}</span>
             <span className="cardbox-name">{entry.name}<small>{entry.fileName}</small></span>
-            <span className="cardbox-meta">Lv.{entry.level}</span>
-            <span className="cardbox-meta">{entry.element}</span>
-            <span className="cardbox-tag" style={{ color: girlFactionColors[entry.factionTag], borderColor: `${girlFactionColors[entry.factionTag]}55` }}>{cardBoxTagLabel(entry.factionTag)}</span>
+            <span className="cardbox-card-meta">Lv.{entry.level} · {entry.element}</span>
+            <span className="cardbox-tag" style={{ color, borderColor: `${color}55` }}>{cardBoxTagLabel(entry.factionTag)}</span>
           </li>;
         })}
       </ul>

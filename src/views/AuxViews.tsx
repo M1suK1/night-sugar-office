@@ -7,6 +7,7 @@ import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, eq
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { pensionFor } from '../contracts';
 import { PrologueDialog } from '../components/PrologueDialog';
+import { prologueFor } from '../prologue.ts';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
 import { currentBoss } from '../content/bosses';
@@ -743,7 +744,7 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
         </div>
       </header>
 
-      {prologue && <PrologueDialog replay onDone={() => setPrologue(false)} />}
+      {prologue && <PrologueDialog replay beats={prologueFor(state)} onDone={() => setPrologue(false)} />}
 
       <div className="av-record-summary av-record-summary-v4">
         <div className="av-record-stat">

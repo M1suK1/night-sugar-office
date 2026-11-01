@@ -35,6 +35,7 @@ import { HOSTILITY_PAIRS, applyHostility, clampHostility, hostilityGain, inciden
 import { frontLabel, openFrontIn, planFronts, resolveDueFronts } from './fronts.ts';
 import { INCIDENT_PENDING_LIMIT, blockingIncidents, dueIncidents, expireIncidents, incidentPending, markIncidentCooldown, topUpFromFallback, mergeIncidentPool } from './incidents.ts';
 import { clampPollution, difficultyWeights, districtName, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionFloor, pollutionForecast, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, purifyTo, repairPollution } from './pollution.ts';
+import { OPENING_INCIDENTS, OPENING_OPINIONS } from './opening.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
@@ -205,6 +206,7 @@ function sanitizeCustomLeader(input: unknown, faction: FactionId, id: string): F
     origin: faction,
     titles: { association: '', government: '', witch: '', ...(src.titles ?? {}) },
     duty: src.duty ?? { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
+    cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
   };
 }
 /** 同上，随从版本。 */
@@ -226,6 +228,7 @@ function sanitizeCustomGirl(input: unknown, faction: FactionId, id: string): Fac
     tag: faction,
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
     note: '由事务所编入名册的少女。',
+    cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
   };
 }
 
@@ -270,11 +273,6 @@ function sanitizeFactionRoster(
     roster[faction] = { leaderId, memberIds: unique };
   }
   return { roster, leaders: usedLeaders, girls: usedGirls };
-}
-
-/** 没被开局选中的候选：契约卡来的留在市场，事务所原班人马直接退场。 */
-function starterKeepInPool(girl: Girl): boolean {
-  return Boolean(girl.custom);
 }
 
 function hydrate(girl: GirlInput): Girl {
@@ -380,54 +378,15 @@ function makeCandidate(state: GameState, level: number, salt = 0, tag?: GirlFact
 }
 
 /**
- * 补名册：先补出身缺口，再用确定性洗牌袋填满剩余名额。
+ * 换日清理：只把过期的原生候选清掉。
  *
- * 市场只有 2–5 个非自定义槽位，纯随机经常连着几天都是同一方的人，玩家会觉得
- * 全城只剩一种出身。所以这里分两步：先看当前名册缺哪几方，按洗牌袋的顺序补；
- * 槽位不够时不硬塞，也不替换玩家自己的契约卡。
+ * v27 起市场不再自己造人——候选者的唯一来源是契约卡库（`refillMarket`），
+ * 没有卡就空着，由界面提示玩家去加卡。这里保留过期逻辑，是为了让老档里
+ * 还挂着的原生候选照常到期，不留下永远占位的旧面孔。
  */
 function refreshMarket(state: GameState): void {
   state.candidates = state.candidates.filter(g => g.custom || (g.candidateUntilDay ?? 0) > state.day);
-  const target = marketSize(state.marketLevel);
-  const bag = factionBag(state.marketDay);
-  let bagIndex = 0;
-  const nextTag = (): GirlFaction => {
-    const tag = bag[bagIndex % bag.length];
-    bagIndex += 1;
-    return tag;
-  };
-  const customCount = state.candidates.filter(g => g.custom).length;
-  const slots = Math.max(0, Math.min(target, 6 - customCount));
-  const nonCustom = () => state.candidates.filter(g => !g.custom);
-  // 第一步：补齐缺席的出身。已有的一方不再重复补，避免四五个名额被同一方吃掉。
-  for (const tag of bag) {
-    if (nonCustom().length >= slots) break;
-    if (nonCustom().some(g => g.factionTag === tag)) continue;
-    pushCandidate(state, nextTag(), slots);
-  }
-  // 第二步：仍有空位时按洗牌袋顺序填满；已出现的出身照样可以再来一个。
-  let guard = 0;
-  while (nonCustom().length < slots && guard < 12) {
-    pushCandidate(state, nextTag(), slots);
-    guard += 1;
-  }
   state.marketDay = state.day;
-}
-
-/** 同一天内稳定的出身洗牌袋：四个出身各一次，按 hash 轮转，不靠 `Math.random`。 */
-function factionBag(day: number): GirlFaction[] {
-  const order: GirlFaction[] = ['association', 'government', 'witch', 'none'];
-  const offset = hashText(`faction-bag:${day}`) % order.length;
-  return [...order.slice(offset), ...order.slice(0, offset)];
-}
-
-function pushCandidate(state: GameState, tag: GirlFaction, slots: number): void {
-  const roll = hashText(`${state.day}:${state.marketDay}:${state.candidates.length}:${tag}`);
-  const level = roll % 10 < 7 ? 1 : 2;
-  const girl = makeCandidate(state, level, state.marketDay * 10 + state.candidates.length, tag);
-  if (state.candidates.some(g => g.id === girl.id)) return;
-  if (state.candidates.filter(g => !g.custom).length >= slots) return;
-  state.candidates.push(girl);
 }
 
 /** 商店的阶级权重：市场等级越高，高阶级越常出现。 */
@@ -693,11 +652,15 @@ function makeOpinion(state: GameState, author: Girl, topic: Opinion['topic'], ti
     assistantNote: state.assistantId === author.id ? `${author.name}亲自提交，附了一份写得很短的预算。` : undefined,
   };
 }
-function generateOpinions(state: GameState): void {
-  if (state.opinions.filter(opinion => opinion.status === 'pending').length >= 6) return;
+/**
+ * 生成一条议题；`variant` 让同一个时段也能补出不同的议题（首夜连补三条时用）。
+ * 返回是否真的加了一条：同一个议题标题还挂在待议里就不再重复提。
+ */
+function generateOpinions(state: GameState, variant = 0): boolean {
+  if (state.opinions.filter(opinion => opinion.status === 'pending').length >= 6) return false;
   const pool = state.girls.filter(girl => !girl.dead && girl.status !== 'mission');
-  if (!pool.length) return;
-  const author = pool[hashText(`${state.day}:${state.minutes}`) % pool.length];
+  if (!pool.length) return false;
+  const author = pool[hashText(`${state.day}:${state.minutes}:${variant}`) % pool.length];
   const topics: { topic: Opinion['topic']; title: string; text: string; request: string }[] = [
     { topic: '经费', title: '想把会客厅的灯换暖一点', text: '现在的白光太像诊所。夜里回来的人，应该看见一点偏黄的光。', request: '申请 600 星砂更换会客厅灯具。' },
     { topic: '排班', title: '下周的夜班可以少排一个人吗', text: '连续出勤之后，大家的恢复速度明显变慢了。', request: '下一周期战斗委托最多接两件。' },
@@ -706,9 +669,11 @@ function generateOpinions(state: GameState): void {
     { topic: '城市', title: '糖果街的灯又灭了', text: '居民说不是电的问题。她们想再去看看。', request: '把糖果街的调查优先级提前。' },
     { topic: '私人心愿', title: '想请半天假', text: '不是去玩。只是想去看看城南那棵还没开的树。', request: '批准半天个人时间，不扣羁绊。' },
   ];
-  const pick = topics[hashText(`${author.id}:${state.day}`) % topics.length];
+  const pick = topics[hashText(`${author.id}:${state.day}:${variant}`) % topics.length];
+  if (state.opinions.some(opinion => opinion.status === 'pending' && opinion.title === pick.title)) return false;
   state.opinions.unshift(makeOpinion(state, author, pick.topic, pick.title, pick.text, pick.request));
-  state.logs.unshift({ id: `log-op-${author.id}-${state.day}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `${author.name}向事务所提交了议题「${pick.title}」。` });
+  state.logs.unshift({ id: `log-op-${author.id}-${state.day}-${variant}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `${author.name}向事务所提交了议题「${pick.title}」。` });
+  return true;
 }
 function settleExpedition(state: GameState, expeditionId: string, at: { day: number; minutes: number }): void {
   const expedition = state.expeditions.find(e => e.id === expeditionId);
@@ -1923,8 +1888,9 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     { id: 'l-3', time: '第 14 日 · 20:40', kind: 'finance', text: '收到上月委托尾款，星砂储备补充。', delta: 480 },
   ];
   const state: GameState = {
-    version: 18, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
+    version: 20, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     prologueSeen: false,
+    openingFilledAt: 0,
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],
@@ -1934,7 +1900,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
-    poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
+    poolLimits: { missions: 12, monsters: 8, candidates: 20 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
     pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
@@ -1951,8 +1917,9 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
 /** 全空档案：只有启动资金、一间会客厅和城里的九片辖区。 */
 export function createBlankState(pack: ContentPack = createSeedPack(), seed = `${pack.hash}:${Math.random()}`): GameState {
   const state: GameState = {
-    version: 18, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
+    version: 20, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     prologueSeen: false,
+    openingFilledAt: 0,
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],
@@ -1967,7 +1934,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
     inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
-    poolLimits: { missions: 12, monsters: 8, candidates: 6 }, removedMonsters: [],
+    poolLimits: { missions: 12, monsters: 8, candidates: 20 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
     pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
@@ -2813,6 +2780,32 @@ export function act(state: GameState, action: GameAction): ActionResult {
       next.prologueSeen = true;
       return { state: next, ok: true, message: '' };
     }
+    case 'openingFill': {
+      if (state.openingFilledAt === state.day) return { state, ok: true, message: '今夜已经补过了。' };
+      const next = clone(state);
+      const before = next.opinions.filter(opinion => opinion.status === 'pending').length;
+      const beforeIds = new Set(next.opinions.map(opinion => opinion.id));
+      // 每个 variant 换一位提议人/一个话题；和已有的议题撞标题就换下一个。
+      for (let variant = 0; variant < OPENING_OPINIONS + 6; variant += 1) {
+        if (next.opinions.filter(opinion => opinion.status === 'pending').length >= OPENING_OPINIONS) break;
+        generateOpinions(next, variant);
+      }
+      // 补上来的排在原来那条后面：桌上已经摊开的那份先处理，新提的按顺序跟上。
+      const added = next.opinions.filter(opinion => !beforeIds.has(opinion.id));
+      if (added.length) {
+        next.opinions = [...next.opinions.filter(opinion => beforeIds.has(opinion.id)), ...added];
+      }
+      const addedOpinions = next.opinions.filter(opinion => opinion.status === 'pending').length - before;
+      const addedIncidents = topUpFromFallback(next, { day: next.day, minutes: next.minutes }, OPENING_INCIDENTS).length;
+      next.openingFilledAt = next.day;
+      if (addedOpinions > 0 || addedIncidents > 0) {
+        next.logs.unshift({
+          id: `log-opening-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council',
+          text: `今夜的空缺已经补齐：${addedOpinions} 条议题、${addedIncidents} 个待用事件。`,
+        });
+      }
+      return { state: next, ok: true, message: addedOpinions || addedIncidents ? `补齐了 ${addedOpinions} 条议题、${addedIncidents} 个待用事件。` : '今夜该有的都有了。' };
+    }
     case 'setStarters': {
       const ids = Array.isArray(action.girlIds) ? [...new Set(action.girlIds)] : [];
       if (ids.length < 4 || ids.length > 6) return { state, ok: false, message: '开局编成至少 4 人、最多 6 人。' };
@@ -2852,10 +2845,10 @@ export function act(state: GameState, action: GameAction): ActionResult {
       const next = clone(state);
       const starters = drafted.map(girl => hydrate({ ...girl, candidateUntilDay: 0, status: 'idle', remaining: 0, roomId: 'lounge' }));
       const starterIds = new Set(starters.map(girl => girl.id));
-      // 没被选中的原班人马直接离开事务所，不回市场。
-      next.girls = starters;
-      // 被编进势力的自定义少女是势力的人，不再留在候选池里等我们雇佣。
-      next.candidates = next.candidates.filter(girl => !starterIds.has(girl.id) && !rostered.has(girl.id) && starterKeepInPool(girl));
+      // 没被选中的原班人马直接离开事务所，不回市场；但已经退役或故去的留在档案里，编成不该抹掉她们。
+      next.girls = [...starters, ...state.girls.filter(girl => girl.retired || girl.dead)];
+      // 编进事务所或势力的人不再挂牌；剩下的人还在市场里等活儿，编成不该清空候选池。
+      next.candidates = next.candidates.filter(girl => !starterIds.has(girl.id) && !rostered.has(girl.id));
       next.factionRoster = roster;
       next.customFactionLeaders = parsed.leaders;
       next.customFactionGirls = parsed.girls;
@@ -3320,10 +3313,30 @@ export function act(state: GameState, action: GameAction): ActionResult {
       merged.logs.unshift({ id: `log-cardbox-${merged.day}-${merged.minutes}-${added.length}`, time: dateLabel(merged.day, merged.minutes), kind: 'base', text: `契约卡库导入 ${added.length} 张：${added.join('、')}。` });
       return { state: merged, ok: true, message: cardboxReport(added.length, skipped.length, failed.length) };
     }
+    case 'refillMarket': {
+      // 市场补货：卡库里还没用过的卡 → 候选者。逐张走 importCard，去重与上限都由它兜住。
+      let next = state;
+      const added: string[] = [];
+      let duplicate = 0;
+      let failed = 0;
+      for (const card of action.cards ?? []) {
+        if (next.candidates.length >= next.poolLimits.candidates) break;
+        const result = act(next, { type: 'importCard', card });
+        if (result.ok) { next = result.state; added.push(card.girl.name); continue; }
+        if (result.message.includes('已经导入过')) duplicate += 1;
+        else failed += 1;
+      }
+      if (!added.length) {
+        return { state, ok: false, message: duplicate ? '卡库里的卡都已经在市场里了。' : '卡库里的卡没能补进市场。' };
+      }
+      const merged = clone(next);
+      merged.logs.unshift({ id: `log-market-cards-${merged.day}-${added.length}`, time: dateLabel(merged.day, merged.minutes), kind: 'base', text: `市场补进了 ${added.length} 位新面孔：${added.join('、')}。` });
+      return { state: merged, ok: true, message: `市场补进了 ${added.length} 位新面孔。${failed ? `另有 ${failed} 张没能登记。` : ''}` };
+    }
     case 'createGirl': {
       const next = clone(state); const draft = action.draft;
       if (next.gold < 300) return { state, ok: false, message: '发布自定义契约需要 300 星砂登记费。' };
-      if (next.candidates.length >= 6) return { state, ok: false, message: '候选名册已满。' };
+      if (next.candidates.length >= next.poolLimits.candidates) return { state, ok: false, message: '候选名册已满。' };
       if (!next.blank && next.reputation < 40) return { state, ok: false, message: '城市安定度需要达到 40 才能撰写新契约。' };
       const stats = draft.stats;
       const sum = stats.magic + stats.insight + stats.agility + stats.empathy;
@@ -3731,13 +3744,13 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'addGeneratedContent': {
       const gate = canAcceptGeneratedContent(state);
       if (!gate.ok) return { state, ok: false, message: gate.message };
-      if (state.missions.some(m => m.id === action.mission.id) || state.candidates.some(g => g.id === action.girl.id) || state.customMonsters.some(m => m.id === action.monster.id)) return { state, ok: false, message: '生成内容与现有条目重复。' };
+      if (state.missions.some(m => m.id === action.mission.id) || (action.girl && state.candidates.some(g => g.id === action.girl!.id)) || state.customMonsters.some(m => m.id === action.monster.id)) return { state, ok: false, message: '生成内容与现有条目重复。' };
       if (action.envoyMission && state.missions.some(m => m.id === action.envoyMission!.id)) return { state, ok: false, message: '使者委托与现有事件重复。' };
       if (action.items?.length && action.items.some(item => state.generatedItems.some(existing => existing.id === item.id))) return { state, ok: false, message: '生成装备与现有条目重复。' };
       const next = clone(state);
       const annotate = (m: Mission): Mission => annotateMission(next, m);
       next.customMonsters.push(action.monster);
-      next.candidates.push(action.girl);
+      if (action.girl) next.candidates.push(action.girl);
       next.missions.push(annotate({ ...action.mission, generated: true, sourcePack: 'llm' }));
       if (action.envoyMission) {
         next.missions.push(annotate({ ...action.envoyMission, generated: true, sourcePack: 'llm' }));
@@ -3750,13 +3763,13 @@ export function act(state: GameState, action: GameAction): ActionResult {
       }
       if (action.opinion) next.opinions.unshift(action.opinion);
       archive(next, '魔物', action.monster.name, `${action.monster.epithet}。${action.monster.description}`);
-      archive(next, '少女', action.girl.name, `${action.girl.title} · ${action.girl.element} · ${action.girl.archetype}`);
+      if (action.girl) archive(next, '少女', action.girl.name, `${action.girl.title} · ${action.girl.element} · ${action.girl.archetype}`);
       archive(next, '事件', action.mission.title, action.mission.description);
       if (action.opinion) archive(next, '议程', action.opinion.title, action.opinion.text);
       if (action.envoyMission) archive(next, '代表', action.envoyMission.title, action.envoyMission.description);
       for (const item of (action.items ?? []).slice(0, 2)) archive(next, '登记', item.name, item.description);
-      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。市场出现候选者 ${action.girl.name}${action.opinion ? `，会客厅多了一份议题「${action.opinion.title}」` : ''}${action.items?.length ? `，仓库登记了 ${action.items.length} 件新装备` : ''}。` });
-      return { state: next, ok: true, message: '新的委托已出现在地图上，候选者进入市场，会客厅也收到了议题。' };
+      next.logs.unshift({ id: `log-gen-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `叙事者提交了新的夜班提案：「${action.mission.title}」。${action.opinion ? `会客厅多了一份议题「${action.opinion.title}」` : ''}${action.items?.length ? `${action.opinion ? '，' : ''}仓库登记了 ${action.items.length} 件新装备` : ''}。` });
+      return { state: next, ok: true, message: `新的委托已出现在地图上${action.opinion ? '，会客厅也收到了议题' : ''}。候选者改由契约卡库补充。` };
     }
     case 'saveBattleNote': {
       const note = action.note;
@@ -3782,7 +3795,6 @@ export function act(state: GameState, action: GameAction): ActionResult {
 export function canAcceptGeneratedContent(state: GameState): { ok: boolean; message: string } {
   const open = state.missions.filter(m => m.status !== 'done').length;
   if (open + 2 > state.poolLimits.missions) return { ok: false, message: '事件池至少需要两个空位，先移除事件再生成。' };
-  if (state.candidates.length >= state.poolLimits.candidates) return { ok: false, message: '市场池已满，先移除一位候选者再生成。' };
   // 上限管的是这一档里自己长出来的魔物；内置那 21 只是内容库，不该占玩家的池子。
   // Boss 副本是系统自己合成的，不占玩家的魔物池名额。
   const owned = state.customMonsters.filter(monster => !monster.id.startsWith(BOSS_MONSTER_PREFIX));
@@ -3867,7 +3879,7 @@ export function loadState(raw: string | null): GameState {
   if (!parsed || typeof parsed !== 'object') return createInitialState();
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(value.version as number)) return createInitialState();
   try {
     const blankSave = value.blank === true;
     if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
@@ -3901,7 +3913,7 @@ export function loadState(raw: string | null): GameState {
     }
     const state = clone(value) as unknown as GameState;
     const previousVersion = Number(value.version);
-    state.version = 18;
+    state.version = 20;
     // 老存档不该被开场打断：只有本版之后新建的档才可能没看过。
     state.prologueSeen = previousVersion >= 15 ? value.prologueSeen !== false : true;
     // 阵容：老存档直接沿用静态名册，编成保持“已完成”，不再逼老玩家重选。
@@ -3981,6 +3993,13 @@ export function loadState(raw: string | null): GameState {
     }
     if (previousVersion < 17) migrateGuardFields(state);
     if (previousVersion < 18) migrateTierFields(state);
+    // v27：市场池改由卡库补货，容量抬到 20，装得下开局那批卡；之后仍可在设置里调。
+    if (previousVersion < 20) {
+      state.poolLimits ??= { missions: 12, monsters: 8, candidates: 20 };
+      state.poolLimits.candidates = Math.max(state.poolLimits.candidates, 20);
+    }
+    // v26：首夜空缺补记；老档一律视为没补过，进游戏后补一次。
+    state.openingFilledAt = Number.isFinite(state.openingFilledAt) ? state.openingFilledAt : 0;
     state.blank = value.blank === true;
     state.memorial ??= []; state.battles = Array.isArray(state.battles) ? state.battles.slice(0, 20) : [];
     const battleIds = new Set(state.battles.map(battle => battle.id));
@@ -4031,7 +4050,7 @@ export function loadState(raw: string | null): GameState {
     state.boss ??= null; state.bossCycle ??= 0; state.nextBossDay ??= state.day + 2;
     state.customSkills ??= [];
     state.customMonsters ??= [];
-    state.poolLimits ??= { missions: 12, monsters: 8, candidates: 6 };
+    state.poolLimits ??= { missions: 12, monsters: 8, candidates: 20 };
     state.removedMonsters ??= [];
     state.chronicle = Array.isArray(state.chronicle)
       ? state.chronicle.filter((entry): entry is ChronicleEntry => Boolean(entry) && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && Number.isFinite(entry.day)).slice(0, 200)
@@ -4094,7 +4113,7 @@ export function importState(raw: string): GameState | null {
   try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
-  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(Number(value.version))) return null;
+  if (![1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(Number(value.version))) return null;
   if (!Array.isArray(value.girls) || (!value.girls.length && value.blank !== true)) return null;
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;

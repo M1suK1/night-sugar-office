@@ -5,7 +5,8 @@ import { factionInfo } from '../content/items';
 import { FACTION_ORDER } from '../territories';
 import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, type RosterSubject } from '../factions';
 import { loadCardBox, type CardBoxEntry } from '../cardbox';
-import { rosterPool } from '../roster';
+import { cardFactionRoster, rosterPool, starterPicks } from '../roster';
+import { OPENING_CARDS } from '../opening';
 import { GirlPortrait } from './GirlPortrait';
 
 interface StarterDialogProps {
@@ -18,9 +19,12 @@ interface StarterDialogProps {
   onAddCard: () => void;
   onAddCustom: () => void;
   onClose: () => void;
+  /** 卡库够 20 张：只显示卡与自定义，内置角色不出现。 */
+  cardsOnly?: boolean;
+  /** 开场必经：不给关闭按钮，也不显示「稍后再说」。 */
+  forced?: boolean;
 }
 
-const STARTER_DEFAULT = ['yue', 'tang', 'ling', 'wu'];
 const MEMBER_LIMIT = 4;
 
 interface Pick {
@@ -38,9 +42,9 @@ interface Pick {
 type SourceFilter = 'all' | 'native' | 'custom';
 
 /** 开局编成：挑自己的少女，再把三方的首领与随从分配好。 */
-export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose }: StarterDialogProps) {
+export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose, cardsOnly = false, forced = false }: StarterDialogProps) {
   const poolPicks = useMemo<Pick[]>(() => {
-    const own = state.girls.filter(girl => !girl.dead).map(girl => ({
+    const own = state.girls.filter(girl => !girl.dead && (!cardsOnly || girl.custom)).map(girl => ({
       id: girl.id, name: girl.name, level: girl.level, color: girl.color, portrait: girl.portrait,
       tag: factionTagLabel(girl.factionTag), source: girl.custom ? '契约卡' : '在编',
       custom: Boolean(girl.custom), archetype: girl.archetype,
@@ -51,19 +55,23 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     }));
     const seen = new Set<string>();
     return [...own, ...cards].filter(pick => (seen.has(pick.id) ? false : (seen.add(pick.id), true)));
-  }, [state.girls, state.candidates]);
+  }, [state.girls, state.candidates, cardsOnly]);
 
   /** 三方名册的可选池：原属阵容 + 已编进来的自定义少女 + 契约卡库 + 名册里的自定义少女。 */
   const [library, setLibrary] = useState<CardBoxEntry[]>([]);
   useEffect(() => { void loadCardBox().then(setLibrary).catch(() => setLibrary([])); }, []);
-  const pool = useMemo<RosterSubject[]>(() => rosterPool(state, library), [state, library]);
+  const pool = useMemo<RosterSubject[]>(() => rosterPool(state, library, { cardsOnly, limit: OPENING_CARDS }), [state, library, cardsOnly]);
 
   const [picked, setPicked] = useState<string[]>(() => {
-    const ids = STARTER_DEFAULT.filter(id => state.girls.some(girl => girl.id === id && !girl.dead));
-    if (ids.length) return ids;
-    return state.girls.filter(girl => !girl.dead).slice(0, 4).map(girl => girl.id);
+    const valid = new Set(poolPicks.map(pick => pick.id));
+    return starterPicks(state, cardsOnly).filter(id => valid.has(id));
   });
   const [roster, setRoster] = useState<Record<FactionId, FactionRoster>>(() => {
+    // 卡够 20 张时内置角色不在池子里，默认阵容改用卡先坐满三方。
+    if (cardsOnly) {
+      const seeded = cardFactionRoster(pool, starterPicks(state, true));
+      if (seeded) return seeded;
+    }
     const saved = state.factionRoster;
     return saved ? structuredClone(saved) : defaultFactionRoster();
   });
@@ -72,6 +80,18 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   const [query, setQuery] = useState('');
 
   const toggle = (id: string) => {
+    const adding = !picked.includes(id);
+    if (adding) {
+      const seat = seatOf(id);
+      if (seat) {
+        setRoster(current => {
+          const next = structuredClone(current) as Record<FactionId, FactionRoster>;
+          if (next[seat.faction].leaderId === id) next[seat.faction].leaderId = '';
+          next[seat.faction].memberIds = next[seat.faction].memberIds.filter(member => member !== id);
+          return next;
+        });
+      }
+    }
     setPicked(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 6 ? current : [...current, id]);
   };
 
@@ -88,7 +108,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       const next = structuredClone(current) as Record<FactionId, FactionRoster>;
       // 一个人只能坐一个位置：先把她在别处的座位清掉。
       for (const key of FACTION_ORDER) {
-        if (next[key].leaderId === subject.id) next[key].leaderId = defaultFactionRoster()[key].leaderId;
+        if (next[key].leaderId === subject.id) next[key].leaderId = '';
         next[key].memberIds = next[key].memberIds.filter(id => id !== subject.id);
       }
       next[faction].leaderId = subject.id;
@@ -126,10 +146,14 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     });
   }, [pool, source, query]);
 
-  const poolLeaderIds = new Set(FACTION_ORDER.map(faction => roster[faction].leaderId));
+  const poolIds = new Set(pool.map(subject => subject.id));
+  const leaders = FACTION_ORDER.map(faction => roster[faction].leaderId);
+  const poolLeaderIds = new Set(leaders.filter(Boolean));
   const legal = picked.length >= 4 && picked.length <= 6
+    && leaders.every(id => Boolean(id) && poolIds.has(id))
     && poolLeaderIds.size === 3
     && FACTION_ORDER.every(faction => roster[faction].memberIds.length >= 1 && roster[faction].memberIds.length <= MEMBER_LIMIT)
+    && FACTION_ORDER.every(faction => roster[faction].memberIds.every(id => poolIds.has(id)))
     && FACTION_ORDER.every(faction => !roster[faction].memberIds.includes(roster[faction].leaderId));
 
   const confirm = () => {
@@ -162,10 +186,14 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       <header className="starter-head">
         <div>
           <span className="starter-kicker">开局编成</span>
-          <h2>先把人和位置定下来</h2>
-          <p>挑 4–6 位少女签进事务所，再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。</p>
+          <h2>{forced ? '先把自己的名册和城市的三方定下来' : '先把人和位置定下来'}</h2>
+          <p>{cardsOnly
+            ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 4–6 位签进事务所，再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
+            : forced
+              ? '卡库还不够 20 张，先用默认阵容补满。挑 4–6 位签进事务所，再把三方阵营的首领与随从点好。'
+              : '挑 4–6 位少女签进事务所，再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
-        <button id="starter-close" type="button" className="btn ghost" onClick={onClose}><X size={14} />稍后再说</button>
+        {forced ? null : <button id="starter-close" type="button" className="btn ghost" onClick={onClose}><X size={14} />稍后再说</button>}
       </header>
 
       <nav className="starter-tabs">
@@ -184,7 +212,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
             <div className="starter-bar-actions">
               <button id="starter-add-card" type="button" className="btn ghost" onClick={onAddCard}><UserRoundPlus size={13} />从契约卡库添加</button>
               <button id="starter-add-custom" type="button" className="btn ghost" onClick={onAddCustom}>现场登记一位</button>
-              <button id="starter-default" type="button" className="btn ghost" onClick={() => setPicked(STARTER_DEFAULT.filter(id => state.girls.some(girl => girl.id === id)))}>恢复默认四人</button>
+              <button id="starter-default" type="button" className="btn ghost" onClick={() => setPicked(starterPicks(state, cardsOnly).filter(id => poolPicks.some(pick => pick.id === id)))}>{cardsOnly ? '恢复卡库预选' : '恢复默认阵容'}</button>
               <button id="starter-reset-roster" type="button" className="btn ghost" onClick={() => setRoster(defaultFactionRoster())}><RotateCcw size={13} />按原属重置阵容</button>
             </div>
           </div>

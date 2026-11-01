@@ -37,7 +37,7 @@ export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemori
   </aside>;
 }
 
-export function Topbar({ state, onNotifications, onCommand, saved }: { state: GameState; onNotifications: () => void; onCommand: () => void; saved: boolean }) {
+export function Topbar({ state, onNotifications, onCommand, saved, filling }: { state: GameState; onNotifications: () => void; onCommand: () => void; saved: boolean; filling?: boolean }) {
   const stage = cityStage(state.reputation);
   return <header className="topbar">
     <div className="wordmark">
@@ -77,6 +77,10 @@ export function Topbar({ state, onNotifications, onCommand, saved }: { state: Ga
         <ShieldCheck size={17} />
         <span><small>城市安定度 · {stage.name}</small><b>{state.reputation}<em>/ 100</em></b></span>
       </div>
+      {filling && <div id="opening-fill" className="opening-fill" role="status" aria-live="polite" title="开场先把这一夜缺的议题、事件与委托补上">
+        <Sparkles size={13} />
+        <span>叙事者正在补这一夜的空缺</span>
+      </div>}
       <div className="top-factions" role="group" aria-label="三方势力态度">
         {factionOrder.map(id => {
           const info = factionInfo[id];

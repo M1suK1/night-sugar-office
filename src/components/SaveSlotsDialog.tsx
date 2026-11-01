@@ -7,13 +7,20 @@ import { listLocalFiles, localPaths, shortPath, type LocalFile } from '../localf
 
 type SlotAction = (id: SaveSlotId) => void | Promise<void>;
 
-export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFile }: {
+export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFile, boot = false, onContinue, day, girls, startersPicked }: {
   onSave: SlotAction;
   onLoad: SlotAction;
   onDelete: SlotAction;
   onRestart: () => void;
   /** 从项目 data/saves 里读一份导出过的存档；没有本地服务时是 undefined。 */
   onLoadFile?: (name: string) => void | Promise<void>;
+  /** 标题页进来：只读档，不给保存/删除/重开。 */
+  boot?: boolean;
+  /** 标题页里「接着上一夜」：读自动存档进正片。 */
+  onContinue?: () => void;
+  day?: number;
+  girls?: number;
+  startersPicked?: boolean;
 }) {
   const [slots, setSlots] = useState<(SaveSlotSummary | null)[]>([]);
   const [used, setUsed] = useState(0);
@@ -41,9 +48,18 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
   };
 
   return <div className="standard-modal slot-modal" id="save-slots-dialog">
-    <div className="modal-eyebrow"><Save size={14} />存档位</div>
-    <h2>三个位置，够把不同的夜晚都留着。</h2>
-    <p className="muted">自动存档始终写当前进度；这里的三个位置只有你按下保存才会变。</p>
+    <div className="modal-eyebrow"><Save size={14} />{boot ? '读取存档' : '存档位'}</div>
+    <h2>{boot ? '要接着哪一夜？' : '三个位置，够把不同的夜晚都留着。'}</h2>
+    <p className="muted">{boot ? '先读自动存档，或者挑一个存过的位置。' : '自动存档始终写当前进度；这里的三个位置只有你按下保存才会变。'}</p>
+    {boot && <section className="slot-current" id="slot-current">
+      <div className="slot-local-head"><span><HardDriveDownload size={12} />自动存档</span></div>
+      <p className="muted">
+        {typeof day === 'number' ? `第 ${day} 日${typeof girls === 'number' ? ` · ${girls} 位少女` : ''}${startersPicked ? '' : ' · 还没编成'}` : '还没有进行中的一夜。'}
+      </p>
+      <button id="slot-current-load" type="button" className="btn" disabled={typeof day !== 'number' || !onContinue} onClick={onContinue}>
+        <HardDriveDownload size={14} />接着上一夜
+      </button>
+    </section>}
 
     {savesDir && onLoadFile && <section className="slot-local" id="slot-local">
       <div className="slot-local-head">
@@ -78,15 +94,15 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
             </> : <span className="slot-empty-note">还没有存过东西。</span>}
           </div>
           <div className="slot-actions">
-            <button id={`slot-save-${id}`} type="button" className="btn" onClick={() => void run(onSave, id)}>
+            {!boot && <button id={`slot-save-${id}`} type="button" className="btn" onClick={() => void run(onSave, id)}>
               <HardDriveUpload size={14} />{summary ? '覆盖' : '存入'}
-            </button>
+            </button>}
             <button id={`slot-load-${id}`} type="button" className="btn ghost" disabled={!summary} onClick={() => void run(onLoad, id)}>
               <HardDriveDownload size={14} />读取
             </button>
-            <button id={`slot-delete-${id}`} type="button" className="btn ghost danger" disabled={!summary} onClick={() => void run(onDelete, id)}>
+            {!boot && <button id={`slot-delete-${id}`} type="button" className="btn ghost danger" disabled={!summary} onClick={() => void run(onDelete, id)}>
               <Trash2 size={14} />删除
-            </button>
+            </button>}
           </div>
         </li>;
       })}
@@ -94,7 +110,7 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
 
     <div className="slot-foot">
       <span className="slot-usage" id="slots-used-bytes">三个档位共占 {Math.max(1, Math.round(used / 1024))} KB</span>
-      {confirming ? <div className="slot-restart-confirm">
+      {boot ? null : confirming ? <div className="slot-restart-confirm">
         <span><AlertTriangle size={14} />当前进度会被清空，三个档位不受影响。</span>
         <button id="slots-restart-confirm" type="button" className="btn danger" onClick={onRestart}>确认重新开始</button>
         <button id="slots-restart-cancel" type="button" className="btn ghost" onClick={() => setConfirming(false)}>再想想</button>

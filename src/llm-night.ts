@@ -1,7 +1,7 @@
 import type {
   Archetype, Element, Expression, FactionId, GameState, Girl,
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
-  OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, Trait, TraitPolarity, WorkKind,
+  OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
 import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
@@ -96,7 +96,7 @@ export interface NightLootSpec {
 export interface NightProposalV2 {
   version: 2;
   monster: NightMonsterSpec;
-  candidate: NightCandidateSpec;
+  candidate?: NightCandidateSpec;
   mission: NightMissionSpec;
   opinion: NightOpinionSpec;
   envoy: NightEnvoySpec;
@@ -664,14 +664,13 @@ export function validateNightProposal(raw: unknown, state: GameState): NightVali
   const proposal: NightProposalV2 = {
     version: 2,
     monster: parseMonster(ctx, raw.monster),
-    candidate: parseCandidate(ctx, raw.candidate),
+    candidate: raw.candidate ? parseCandidate(ctx, raw.candidate) : undefined,
     mission: parseMission(ctx, raw.mission, 'mission'),
     opinion: parseOpinion(ctx, raw.opinion),
     envoy: { ...envoy, faction: choice(ctx, envoyBody.faction, NIGHT_FACTIONS, 'envoy.faction', 'association') },
     loot,
   };
   if (!raw.monster) error(ctx, 'monster', '缺少魔物');
-  if (!raw.candidate) error(ctx, 'candidate', '缺少候选者');
   if (!raw.mission) error(ctx, 'mission', '缺少委托');
   if (!raw.opinion) error(ctx, 'opinion', '缺少议会提案');
   if (!raw.envoy) error(ctx, 'envoy', '缺少使者委托');
@@ -730,12 +729,6 @@ export const NIGHT_SCHEMA_EXAMPLE = {
     maxHp: 120, maxSpirit: 80, stats: { magic: 70, insight: 48, agility: 66, empathy: 35 },
     skillIds: ['monster-claw'], rules: [{ trigger: 'roundStart', effect: 'heal', amount: 3 }],
   },
-  candidate: {
-    name: '', codename: '', title: '', element: '星光系', archetype: '治愈', level: 1, cost: 420,
-    stats: { magic: 64, insight: 58, agility: 52, empathy: 72 }, skillIds: ['glimmer-spear'],
-    traits: [{ name: '', description: '', polarity: '正面' }], quote: '', goal: '', goalKind: '生活',
-    appearance: '', personality: '', outfit: '',
-  },
   mission: {
     title: '', category: '', description: '', work: 'combat', difficulty: '中危', district: 'oldtown',
     window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5,
@@ -785,9 +778,9 @@ ${cityBlock}
 5. reject 必须包含提出者羁绊 −2、opinion.faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
 6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。
 7. opinion.dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
-8. 魔物元素 ${names(NIGHT_ELEMENTS)}，位阶 ${names(NIGHT_RANKS)}；候选者职业 ${names(NIGHT_ARCHETYPES)}，目标类型 ${names(NIGHT_GOALS)}。
+8. 魔物元素 ${names(NIGHT_ELEMENTS)}，位阶 ${names(NIGHT_RANKS)}；候选者不再由叙事者生成，不要输出 candidate 字段。
 9. 委托难度 ${names(NIGHT_DIFFICULTIES)}，工作类型 ${names(NIGHT_WORKS)}，时限 ${names(NIGHT_WINDOWS)}。
-10. 所有数值必须是整数。数值范围：魔物 maxHp 60–240、四维 30–110（心防＝共情 × 2，不用单独给 maxSpirit）、rules 最多 2 条；候选者四维 35–95 且总和 200–330、cost 200–900、level 1–5、技能 1–3 个；委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
+10. 所有数值必须是整数。数值范围：魔物 maxHp 60–240、四维 30–110（心防＝共情 × 2，不用单独给 maxSpirit）、rules 最多 2 条；委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
 11. loot 最多 2 件，每件属性总和 ≤8，最多 1 条 passive；rewardItemRef 可以指向 loot[].ref 或目录里的物品 id。
 12. 颜色、立绘、SVG、坐标、本地 id 由程序生成，不要填写。
 
@@ -830,7 +823,7 @@ function materializeLoot(proposal: NightProposalV2, stamp: string) {
 
 /** 把已校验的模型提案变成真正的运行时对象；模型数值不再被固定模板覆盖。 */
 export function materializeNightProposal(proposal: NightProposalV2, state: GameState): {
-  monster: MonsterTemplate; girl: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission;
+  monster: MonsterTemplate; girl?: Girl; mission: Mission; opinion: Opinion; envoyMission: Mission;
   items: ReturnType<typeof materializeLoot>['items'];
 } {
   const pack = createSeedPack();
@@ -853,44 +846,6 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     spec: { ...monsterBase.spec },
     codex: { habit: proposal.monster.habit, weakness: proposal.monster.weakness },
     rules: proposal.monster.rules,
-  };
-  const baseGirl = pack.girls[1] ?? pack.girls[0];
-  const candidate = proposal.candidate;
-  const maxHp = Math.round(60 + candidate.stats.empathy * 0.8);
-  const maxSpirit = Math.round(50 + candidate.stats.insight * 0.5);
-  const girl: Girl = {
-    ...baseGirl,
-    id: `g_${stamp}`,
-    name: candidate.name,
-    codename: candidate.codename,
-    title: candidate.title,
-    element: candidate.element,
-    archetype: candidate.archetype,
-    color: '#f3aec9',
-    portrait: '',
-    level: candidate.level,
-    stats: { ...candidate.stats },
-    baseStats: { ...candidate.stats },
-    hp: maxHp, maxHp, baseMaxHp: maxHp,
-    spirit: maxSpirit, maxSpirit,
-    status: 'idle', roomId: 'lounge', remaining: 0, missionId: undefined,
-    skill: findSkill(candidate.skillIds[0])?.name ?? candidate.skillIds[0],
-    skills: candidate.skillIds,
-    goal: candidate.goal,
-    goalKind: candidate.goalKind,
-    appearance: candidate.appearance,
-    personality: candidate.personality,
-    outfitDescription: candidate.outfit,
-    quote: candidate.quote,
-    traits: candidate.traits.map((trait, index): Trait => ({
-      id: `trait_lm_${stamp}_${index}`, name: trait.name, polarity: trait.polarity, tags: [], description: trait.description,
-    })),
-    corruption: 0, witch: false, drugUntilDay: undefined, withdrawalDays: 0,
-    contractEndDay: state.day + 20, contractDays: 20, contractRenewals: 0, pensionMissed: 0,
-    relationships: { player: 20 },
-    scars: [], conditions: [], retired: false, dead: false,
-    cost: candidate.cost,
-    expression: 'calm',
   };
   const loot = materializeLoot(proposal, stamp);
   const baseMission = pack.missions.find(m => m.work === proposal.mission.work) ?? pack.missions[0];
@@ -983,5 +938,6 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
     x: (mission.x + 31) % 78 + 8,
     y: (mission.y + 19) % 58 + 12,
   };
-  return { monster, girl, mission, opinion, envoyMission, items: loot.items };
+  // v27：候选者只从契约卡库来，叙事者不再产出 girl。
+  return { monster, mission, opinion, envoyMission, items: loot.items };
 }
