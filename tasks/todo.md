@@ -632,3 +632,14 @@
 - [x] `applyImportCard` / `importCards`：新登记与「同卡改版覆盖」两条路径都会落地故事线，日志与提示写明带了几段；卡片的改版指纹加上「段号/状态/进度/标题」，只有故事线推进过也会被识别成新版本。
 - [x] `App.tsx` 导出提示补「（含 N 段故事线）」。
 - [x] 测试：新增 `tests/v45.test.ts` 五条（导出剥离旧 id、卡片往返、导入重映射、重复导入与改版覆盖、三段上限与单条进行中）；21 个测试文件 426 项全绿，`tsc --noEmit` 0 错，`check:rules` 30 模块无环无 BOM。
+
+## v47 每日提案与蓝图提示词（先于 v46 落地）
+
+- [x] **每日提案提示词补全**：`buildNightPrompt` 重排为「机制目录 / 名册 / 城市 / 字段说明书 / 硬性规则 / JSON 形状」；新增字段说明书逐条写清 mission、envoy、opinions、`changes` 与 `outcomes` 的合法 kind 与方向。
+- [x] **提案改两个分支**：模型只写 accept / reject；`validateOpinion` 改为只收这两项，`materializeNightProposal` 自动补一条固定的 defer（提出者羁绊 −1、势力 −2），界面仍是三个按钮，老提案里的 defer 会被丢掉后补回。
+- [x] **目录瘦身**：`catalog.items` 改为阶级统计（每阶最多三个示例名），`catalog.monsters` 整段删除；提示词里的完整物品表与魔物表一起消失。
+- [x] **委托只给难度**：新增 `src/nightPick.ts` 的 `pickMissionTemplate()`，按 work + difficulty 从真实委托模板确定性抽一条，数值与魔物组合原样沿用；每日提案的 mission / envoy 与蓝图阶段委托共用。
+- [x] **掉落改阶级**：`loot` 只写 `{tier, slot, faction}`，`pickEquipmentOfTier()` 按阶级抽成品，`materializeLoot` 不再新造 `lm_item_*`；旧提案里自造装备仍走 fallback。
+- [x] **蓝图阶段委托支持战斗**：`StoryMissionSpec` 加 `work`，`storyMissionForBeat` 在只写 work 时抽模板、沿用魔物组合、用模型写的 goal 覆盖描述；难度在「简单/常规/棘手/危险」与「低危/中危/高危/绝望」之间映射。
+- [x] **角色事件 cast**：蓝图提示词写清「cast 1–3 人、必须含主角、每个人都要在 opening 里出场并有台词或动作」。
+- [x] 测试：新增 `tests/v47.test.ts` 六条；22 个测试文件 432 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。

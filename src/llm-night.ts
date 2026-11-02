@@ -1,5 +1,5 @@
 import type {
-  Archetype, Element, Expression, FactionId, GameState, Girl,
+  Archetype, Element, Equipment, Expression, FactionId, GameState, Girl,
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
   OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
@@ -8,13 +8,14 @@ import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
 import { MAX_ENEMIES } from './combat.ts';
 import { factionInfo, listItems } from './content/items.ts';
+import { tierOf } from './items.ts';
+import { pickEquipmentOfTier, pickMissionTemplate } from './nightPick.ts';
 import { findSkill } from './content/skills.ts';
 import { factionRepresentativeOf, type FactionRepresentative } from './factions.ts';
 import { HOSTILITY_PAIRS, pairLabel } from './hostility.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { findAnySkill, isBossSkill } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
-import { spawnableMonsters } from './rules/encounters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
 import { factionBrief, factionTagLabel } from './factions.ts';
 import { representativeOf } from './office.ts';
@@ -45,8 +46,8 @@ export interface NightCatalog {
   territories: Record<DistrictId, FactionId>;
   representatives: { id: string; name: string; title: string; faction: FactionId; level: number }[];
   girls: { id: string; name: string; title?: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string; personality?: string; appearance?: string; quote?: string }[];
-  items: { id: string; name: string; slot: string }[];
-  monsters: { id: string; name: string; rank: string }[];
+  /** 装备只给阶级统计与几个例子名：具体哪一件由程序按阶级抽（v47）。 */
+  itemTiers: { tier: number; count: number; examples: string[] }[];
   pool: { missions: number; monsters: number; candidates: number };
   /** 城市态势：三方态度与首领主张、最脏的两个辖区、辖区当主。数值仍由本地结算。 */
   city?: {
@@ -95,6 +96,8 @@ export interface NightLootSpec {
   ref: string; name: string; faction: FactionId;
   slot: 'weapon' | 'charm' | 'consumable'; description: string;
   stats?: Partial<Record<StatKey, number>>; passive?: string;
+  /** v47：按阶级抽到的成品物品 id；有它就说明这件掉落是现成货，不再新造。 */
+  itemId?: string;
 }
 
 export interface NightProposalV2 {
@@ -250,11 +253,29 @@ function parseLoot(ctx: Ctx, value: unknown): NightLootSpec[] {
   value.slice(0, 2).forEach((entry, index) => {
     const path = `loot[${index}]`;
     const body = record(ctx, entry, path);
-    const ref = text(ctx, body.ref, `${path}.ref`, 32);
+    // v47：按阶级抽的掉落不需要 ref（没人引用它），自动补一个即可。
+    const refRaw = body.ref === undefined || body.ref === null ? `loot-${index + 1}` : body.ref;
+    const ref = text(ctx, refRaw, `${path}.ref`, 32);
     if (!/^[a-z0-9][a-z0-9_-]{2,31}$/i.test(ref)) error(ctx, `${path}.ref`, '只能使用 3–32 位字母、数字、下划线或连字符');
     if (refs.has(ref)) error(ctx, `${path}.ref`, 'ref 重复');
     refs.add(ref);
     const slot = choice(ctx, body.slot, ['weapon', 'charm', 'consumable'] as const, `${path}.slot`, 'charm');
+    // v47：只给阶级 → 从物品表里抽一件同阶成品，不再让模型编名字与属性。
+    const tier = optionalInteger(ctx, body.tier, `${path}.tier`, 1, 5);
+    if (tier !== undefined) {
+      const picked = pickEquipmentOfTier({ tier, slot, seed: `${ctx.state.day}:loot:${index}`, allowConsumable: true });
+      if (!picked) {
+        error(ctx, `${path}.tier`, `物品表里没有 ${tier} 阶的${slot === 'consumable' ? '消耗品' : '装备'}可发放`);
+        return;
+      }
+      loot.push({
+        ref, itemId: picked.id, name: picked.name, faction: picked.faction, slot: picked.slot,
+        description: picked.description, stats: picked.stats, passive: picked.passive,
+      });
+      ctx.lootRefs.add(ref);
+      ctx.itemIds.add(picked.id);
+      return;
+    }
     const statsRaw = body.stats === undefined || body.stats === null ? {} : record(ctx, body.stats, `${path}.stats`);
     const stats: Partial<Record<StatKey, number>> = {};
     let total = 0;
@@ -329,9 +350,19 @@ function parseMissionTemplate(ctx: Ctx, value: unknown, path: string): MissionTe
 
 function parseMission(ctx: Ctx, value: unknown, path: string): NightMissionSpec {
   const body = record(ctx, value, path);
-  const duration = integer(ctx, body.duration, `${path}.duration`, 45, 180, 60);
+  const work = body.work === undefined || body.work === null
+    ? undefined
+    : choice(ctx, body.work, NIGHT_WORKS, `${path}.work`, 'combat');
+  const difficultyWanted = body.difficulty === undefined || body.difficulty === null
+    ? '中危'
+    : choice(ctx, body.difficulty, NIGHT_DIFFICULTIES, `${path}.difficulty`, '中危');
+  // v47：只写难度时，其余数值从真实委托模板里抽；模型显式写了就照它的来（旧提案兼容）。
+  const picked = pickMissionTemplate({ state: ctx.state, work, difficulty: difficultyWanted, seed: `${ctx.state.day}:${path}:${String(body.title ?? '')}` });
+  const num = (key: string, raw: unknown, fallback: number, min: number, max: number): number =>
+    raw === undefined || raw === null ? fallback : integer(ctx, raw, `${path}.${key}`, min, max, fallback);
+  const duration = num('duration', body.duration, picked?.duration ?? 60, 45, 180);
   const enemyRefs = body.enemyRefs === undefined
-    ? ['generated']
+    ? (picked?.enemyIds.length ? picked.enemyIds : ['generated'])
     : stringArray(ctx, body.enemyRefs, `${path}.enemyRefs`, 1, 3);
   for (const ref of enemyRefs) {
     if (ref !== 'generated' && !findMonster(ref) && !ctx.state.customMonsters.some(monster => monster.id === ref)) {
@@ -341,20 +372,22 @@ function parseMission(ctx: Ctx, value: unknown, path: string): NightMissionSpec 
   const district = body.district === undefined || body.district === null ? undefined : choice(ctx, body.district, DISTRICT_IDS, `${path}.district`, 'oldtown');
   return {
     title: text(ctx, body.title, `${path}.title`, 30),
-    category: text(ctx, body.category ?? '代表委托', `${path}.category`, 20),
+    category: text(ctx, body.category ?? picked?.category ?? '代表委托', `${path}.category`, 20),
     description: text(ctx, body.description, `${path}.description`, 220),
-    work: choice(ctx, body.work, NIGHT_WORKS, `${path}.work`, 'combat'),
-    difficulty: choice(ctx, body.difficulty, NIGHT_DIFFICULTIES, `${path}.difficulty`, '中危'),
+    work: work ?? picked?.work ?? 'combat',
+    difficulty: difficultyWanted,
     district,
     window: body.window === undefined || body.window === null
       ? (duration >= 90 ? 'long' : 'urgent')
       : choice(ctx, body.window, NIGHT_WINDOWS, `${path}.window`, 'urgent'),
     duration,
-    reward: integer(ctx, body.reward, `${path}.reward`, 400, 1800, 900),
-    requirement: choice(ctx, body.requirement, NIGHT_STATS, `${path}.requirement`, 'insight'),
-    target: integer(ctx, body.target, `${path}.target`, 40, 95, 58),
-    rounds: integer(ctx, body.rounds, `${path}.rounds`, 2, 6, 4),
-    recommendedLevel: integer(ctx, body.recommendedLevel, `${path}.recommendedLevel`, 1, 8, 2),
+    reward: num('reward', body.reward, picked?.reward ?? 900, 400, 1800),
+    requirement: body.requirement === undefined || body.requirement === null
+      ? (picked?.requirement ?? 'insight')
+      : choice(ctx, body.requirement, NIGHT_STATS, `${path}.requirement`, 'insight'),
+    target: num('target', body.target, picked?.target ?? 58, 40, 95),
+    rounds: num('rounds', body.rounds, picked?.rounds ?? 4, 2, 6),
+    recommendedLevel: num('recommendedLevel', body.recommendedLevel, picked?.recommendedLevel ?? 2, 1, 8),
     enemyRefs,
     rewardItemRef: itemRef(ctx, body.rewardItemRef, `${path}.rewardItemRef`),
     rewardGirlLevel: optionalInteger(ctx, body.rewardGirlLevel, `${path}.rewardGirlLevel`, 0, 5) ?? 0,
@@ -585,17 +618,22 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
     });
   }
   const optionsRaw = body.options;
-  if (!Array.isArray(optionsRaw)) error(ctx, `${path}.options`, '必须是恰好 3 项');
+  if (!Array.isArray(optionsRaw)) error(ctx, `${path}.options`, '必须给出 accept 与 reject 两项');
   const options: OpinionOption[] = [];
   if (Array.isArray(optionsRaw)) {
-    if (optionsRaw.length !== 3) error(ctx, `${path}.options`, '必须恰好 3 项');
-    optionsRaw.slice(0, 3).forEach((entry, index) => {
+    // v47：只要 accept / reject 两个分支；defer 由程序固定补，模型写多了也不收。
+    const kept = optionsRaw.filter(entry => {
+      if (!isRecord(entry)) return false;
+      return entry.id === 'accept' || entry.id === 'reject';
+    });
+    if (kept.length !== 2) error(ctx, `${path}.options`, '必须恰好是 accept 与 reject 两项');
+    kept.slice(0, 2).forEach((entry, index) => {
       const option = parseOption(ctx, entry, `${path}.options[${index}]`, faction, author?.id ?? authorId);
       if (option) options.push(option);
     });
   }
   const ids = options.map(option => option.id).sort().join(',');
-  if (ids !== 'accept,defer,reject') error(ctx, `${path}.options`, '必须同时包含 accept / defer / reject');
+  if (ids !== 'accept,reject') error(ctx, `${path}.options`, '必须同时包含 accept 与 reject');
   const relations = options.flatMap(option => (option.outcomes ?? [])
     .filter((outcome): outcome is Extract<OpinionOutcome, { kind: 'truce' | 'war' }> => outcome.kind === 'truce' || outcome.kind === 'war')
     .map(outcome => ({ option, outcome })));
@@ -783,12 +821,10 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       // 契约卡带回来的性格与外貌也要给模型：不然它只能照着旧内置角色编。
       personality: clipLine(girl.personality, 120), appearance: clipLine(girl.appearance, 120), quote: clipLine(girl.quote, 60),
     })),
-    items: [
-      ...listItems().map(item => ({ id: item.id, name: item.name, slot: item.slot })),
-      ...state.generatedItems.map(item => ({ id: item.id, name: item.name, slot: item.slot })),
-    ],
-    // enemyRefs 只认这张表：真实魔物 + 自制魔物，去掉 Boss 专属、剧情专属与旧池子副本。
-    monsters: spawnableMonsters(state).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),
+    itemTiers: [1, 2, 3, 4, 5].map(tier => {
+      const bag = [...listItems(), ...state.generatedItems].filter(item => tierOf(item) === tier && item.slot !== 'consumable');
+      return { tier, count: bag.length, examples: bag.slice(0, 3).map(item => item.name) };
+    }).filter(row => row.count > 0),
     pool: {
       missions: Math.max(0, state.poolLimits.missions - state.missions.filter(mission => mission.status !== 'done').length),
       monsters: Math.max(0, state.poolLimits.monsters - state.customMonsters.filter(monster => !monster.id.startsWith('boss-mon-')).length),
@@ -812,25 +848,20 @@ export function buildNightCatalog(state: GameState): NightCatalog {
 export const NIGHT_SCHEMA_EXAMPLE = {
   version: 2,
   mission: {
-    title: '', category: '', description: '', work: 'combat', difficulty: '中危', district: 'oldtown',
-    window: 'urgent', duration: 75, reward: 1200, requirement: 'insight', target: 62, rounds: 5,
-    recommendedLevel: 3, enemyRefs: ['night-tram'], rewardItemRef: 'loot-1', rewardGirlLevel: 0,
+    title: '', description: '', work: 'combat', difficulty: '中危',
   },
   opinions: [{
     authorId: '', authorKind: 'girl', authorFaction: null, topic: '经费', faction: 'witch', district: null, title: '', text: '', request: '',
     dialogue: [{ speakerId: '', speaker: '', text: '', expression: 'sad' }],
     options: [
       { id: 'accept', label: '批准', effect: '', changes: [{ kind: 'gold', amount: -600 }], outcomes: [] },
-      { id: 'defer', label: '暂缓', effect: '', changes: [{ kind: 'girl', girlId: '', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] },
       { id: 'reject', label: '驳回', effect: '', changes: [{ kind: 'girl', girlId: '', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
     ],
   }],
   envoy: {
-    faction: 'association', title: '', description: '', work: 'investigation', difficulty: '中危', district: 'station',
-    window: 'urgent', duration: 45, reward: 720, requirement: 'empathy', target: 52, rounds: 3,
-    recommendedLevel: 2, enemyRefs: ['echo-cat'], rewardGirlLevel: 0,
+    faction: 'association', title: '', description: '', work: 'investigation', difficulty: '中危', district: 'station', rewardGirlLevel: 0,
   },
-  loot: [{ ref: 'loot-1', name: '', faction: 'witch', slot: 'charm', description: '', stats: { insight: 4 }, passive: '' }],
+  loot: [{ tier: 3, slot: 'charm', faction: 'witch' }],
 };
 
 function clipLine(text: string | undefined, limit: number): string {
@@ -881,20 +912,53 @@ ${cityBlock}
 
 【硬性规则】
 1. 只输出一个 JSON 对象，不要 Markdown、解释或思维链。
-2. 所有 id 必须来自目录；authorId 只能取【值夜名册】或【三方首领】里的 id，speakerId 只能取名册或三方首领，不要写名单外的角色。唯一可以新造的是 loot[].ref。
+2. 所有 id 必须来自目录；authorId 只能取【值夜名册】或【三方首领】里的 id，speakerId 只能取名册或三方首领，不要写名单外的角色。
 2b. 普通提案 authorKind 写 "girl"；代表提案写 "leader" 并填 authorFaction，authorId 必须是该方首领。
 2c. 关系类提案（可选，不必每晚都有）：允许 accept 带 {kind:"truce",pair,days:5–20} 或 {kind:"territory",district,faction}，reject 可带 {kind:"war",pair}；这类提案必须由 leader 提出，pair 必须包含 authorFaction，accept 至少要支付 3000 星砂或割让辖区。没有关系变化时不要写这些字段。
-3. opinions 是 1–3 条议题的数组；每条的 options 必须恰好 3 项，id 分别为 accept / defer / reject。
-4. defer 只能包含提出者羁绊 −1 与该议题 faction 的势力态度 −2，不能有资源变化或 outcomes。
+3. opinions 是 1–3 条议题的数组；每条的 options **恰好 2 项**，id 只能是 accept 与 reject。
+4. 暂缓由系统固定处理（提出者羁绊 −1、所属势力态度 −2、下个议事日重新提出），**你不要写 defer**。
 5. reject 必须包含提出者羁绊 −2、该议题 faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
 6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。
 7. opinions[].dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
-8. 不再生成新魔物，不要输出 monster 字段；mission.enemyRefs 与 envoy.enemyRefs 只能从目录里的魔物 id 中选。
-9. 委托难度 ${names(NIGHT_DIFFICULTIES)}，工作类型 ${names(NIGHT_WORKS)}，时限 ${names(NIGHT_WINDOWS)}。
-10. 所有数值必须是整数。委托 duration 45–180、reward 400–1800、target 40–95、rounds 2–6、recommendedLevel 1–8；议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90。
-11. loot 最多 2 件，每件属性总和 ≤8，最多 1 条 passive；rewardItemRef 可以指向 loot[].ref 或目录里的物品 id。
+8. 不再生成新魔物，不要输出 monster 字段。
+9. 委托只写 work（${names(NIGHT_WORKS)}）与 difficulty（${names(NIGHT_DIFFICULTIES)}）；时长、报酬、判定属性、目标值、轮次、敌人组合、辖区由程序按 difficulty 从真实委托模板里抽，你不要写这些字段。战斗委托会沿用模板的魔物组合，所以也不要自己编敌人。
+10. 议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90；所有数值必须是整数。
+11. loot 最多 2 件，只写阶级与槽位：{"tier":3,"slot":"charm","faction":"witch"}；具体是哪一件由程序从三阶器物里随机发放，不要写 name / stats / passive。
 12. 颜色、立绘、SVG、坐标、本地 id 由程序生成，不要填写。
 13. 本次需要 ${opinionNeed} 条议题（会客厅等级上限 ${opinionCap} 条，已有 ${pendingOpinions} 条待议）。不要用同一条议题凑数；不要输出超过这个数量。
+
+【字段说明书】
+■ mission（今晚的主委托）
+  · title：6–14 字，地点 + 异常，不写数值。
+  · description：80–160 字，报案人口吻，写现场能听到／闻到的具体东西。
+  · work：combat（要正面打）或 investigation（走访、取样、问话）。
+  · difficulty：${names(NIGHT_DIFFICULTIES)} 之一；难度决定程序抽到哪一档模板。
+■ envoy（三方使者委托）
+  · 与 mission 同口径，另外写 faction（${names(NIGHT_FACTIONS)}）与 district（可选），其余交给程序。
+■ opinions[]（议会提案）
+  · authorId / authorKind / authorFaction：谁提的、是少女还是首领。
+  · topic：${names(NIGHT_TOPICS)} 之一。
+  · faction：这条议题牵动哪一方；district：涉及辖区时才写，否则 null。
+  · title ≤14 字；text 60–140 字，写清她要什么、为什么现在提；request 一句话说明她要你答应什么。
+  · dialogue：3–5 句，speakerId 必须是名册或首领 id，expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
+  · options：恰好 accept 与 reject 两项，各自 changes / outcomes 如下。
+■ options[].changes 的合法 kind
+  · {kind:"gold", amount}           负数=支出，正数=收入，单条 ≤1500
+  · {kind:"reputation", amount}     城市安定度，±10
+  · {kind:"faction", faction, amount}  势力态度，±15
+  · {kind:"girl", girlId, field, amount}  field 取 bond / fatigue / corruption / spirit / hp；bond ±5，fatigue ≤20
+  · {kind:"item", itemId, amount}   指向目录里已有的物品 id，负数=消耗
+  · {kind:"minutes", amount}        正数=占用时间，≤90
+  · {kind:"hostility", pair, amount} 只有领袖提案可写，±9
+■ options[].outcomes 的合法 kind
+  · {kind:"leave"}                                 她因此离开事务所
+  · {kind:"truce", pair, days}                     两方停战，只能写在 accept
+  · {kind:"war", pair}                             两方开战，只能写在 reject
+  · {kind:"territory", district, faction}          辖区易主
+  · {kind:"mission", template}                     追加一份委托模板；本轮不用，别写
+■ loot[]：只写 {tier:1–5, slot:"weapon|charm|consumable", faction}
+■ 不要写的字段：duration / reward / requirement / target / rounds / recommendedLevel / enemyRefs / window / 颜色 / 坐标 / 任何本地 id。
+
 【JSON 形状】
 ${JSON.stringify(NIGHT_SCHEMA_EXAMPLE)}
 
@@ -917,14 +981,17 @@ function mapMissionTemplate(template: MissionTemplate, stamp: string, index: num
 
 function materializeLoot(proposal: NightProposalV2, stamp: string) {
   const ids = new Map<string, string>();
-  const items = proposal.loot.map((loot, index) => {
+  const items: Equipment[] = [];
+  proposal.loot.forEach((loot, index) => {
+    // v47：按阶级抽到的成品直接从物品表来，不再新造一件。
+    if (loot.itemId) { ids.set(loot.ref, loot.itemId); return; }
     const id = `lm_item_${stamp}_${index}`;
     ids.set(loot.ref, id);
-    return {
+    items.push({
       id, name: loot.name, faction: loot.faction, slot: loot.slot,
       price: 0, standingReq: 0, description: loot.description,
       stats: loot.stats, passive: loot.passive,
-    };
+    } as Equipment);
   });
   return { ids, items };
 }
@@ -1005,6 +1072,19 @@ export function materializeNightProposal(proposal: NightProposalV2, state: GameS
         ? { ...outcome, template: mapMissionTemplate(outcome.template, `${stamp}_${index}`, optionIndex * 10 + outcomeIndex, loot.ids) }
         : outcome),
     })) as OpinionOption[];
+    // v47：模型只写 accept / reject，「暂缓」由程序固定补一条，界面仍是三个按钮。
+    if (!options.some(option => option.id === 'defer')) {
+      options.splice(1, 0, {
+        id: 'defer',
+        label: '暂缓',
+        effect: '把这条议题推到下个议事日再谈。',
+        changes: [
+          { kind: 'girl', girlId: author?.id ?? spec.authorId, field: 'bond', amount: -1 },
+          { kind: 'faction', faction: spec.faction, amount: -2 },
+        ],
+        outcomes: [],
+      } as OpinionOption);
+    }
     return {
       id: `op_${stamp}_${index}`,
       day: state.day,

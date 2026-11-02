@@ -10,6 +10,7 @@ import { deployIncidentCard } from '../rules/encounters.ts';
 import { customIncidentCards } from '../content/library.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
 import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
+import { pickMissionTemplate } from '../nightPick.ts';
 import type { CharacterEvent, GameState, Girl, Incident, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
 // v35 从 src/game.ts 拆出：故事蓝图的推进与故事委托（两者互相调用，合成一个模块）。
 
@@ -224,12 +225,21 @@ export function planToStoryline(girl: Girl, plan: StoryPlan, day: number, minute
 export function storyMissionForBeat(state: GameState, story: Storyline, beat: StoryBeat): Mission {
   const spec = beat.mission;
   const rank = storyRank[spec?.difficulty ?? '常规'] ?? 2;
+  // v47：只写了 work 的阶段委托，从真实委托模板里抽一条：数值与敌人组合都照搬，描述用模型写的 goal。
+  const picked = spec?.work && !spec.monsters?.length
+    ? pickMissionTemplate({
+      state,
+      work: spec.work,
+      difficulty: STORY_TO_NIGHT_DIFFICULTY[spec.difficulty] ?? '中危',
+      seed: `${story.id}:${beat.id}`,
+    })
+    : undefined;
   const district = spec?.district ?? districtAt(20 + (hashText(`${story.id}:${beat.id}`) % 58), 25 + (hashText(beat.id) % 50));
   const region = districts[district];
-  const duration = Math.max(60, Math.min(180, Math.round(spec?.duration ?? 90)));
+  const duration = Math.max(60, Math.min(180, Math.round(spec?.duration ?? picked?.duration ?? 90)));
   const pin = districtPin(district, `${story.id}:${beat.id}`);
   const now = absoluteMinutes(state.day, state.minutes);
-  const target = applyPct(spec?.target ?? 45 + rank * 7, region.effect.targetPct);
+  const target = applyPct(spec?.target ?? picked?.target ?? 45 + rank * 7, region.effect.targetPct);
   const reward = applyPct(260 + rank * 120, region.effect.rewardPct);
   const companionId = spec?.companion ? ensureStoryCompanion(state, story, beat) : undefined;
   const monsters = spec?.monsters ?? [];
@@ -237,25 +247,29 @@ export function storyMissionForBeat(state: GameState, story: Storyline, beat: St
     state.customMonsters ??= [];
     for (const monster of monsters) if (!state.customMonsters.some(item => item.id === monster.id)) state.customMonsters.push(monster);
   }
+  const work: Mission['work'] = monsters.length ? 'combat' : (picked?.work ?? 'investigation');
+  const enemyIds = monsters.length
+    ? monsters.map(monster => monster.id).slice(0, MAX_ENEMIES)
+    : picked?.work === 'combat' ? picked.enemyIds.slice(0, MAX_ENEMIES) : [];
   return {
     id: `sm-${story.id}-${beat.id}`,
     title: (spec?.title ?? beat.title).slice(0, 40),
-    category: `${region.name} · 故事委托`,
-    description: (beat.summary || beat.hook).slice(0, 240),
+    category: `${region.name} · ${picked?.category ?? '故事委托'}`,
+    description: (spec?.goal || beat.summary || beat.hook).slice(0, 240),
     x: pin.x, y: pin.y,
     difficulty: spec?.difficulty ?? '常规',
     duration,
     reward,
-    requirement: spec?.requirement ?? 'insight',
+    requirement: spec?.requirement ?? picked?.requirement ?? 'insight',
     target,
     color: `rgb(${region.tint})`,
     status: 'open',
     squad: [],
-    work: monsters.length ? 'combat' : 'investigation',
-    enemyIds: monsters.length ? monsters.map(monster => monster.id).slice(0, MAX_ENEMIES) : undefined,
-    rounds: monsters.length ? Math.max(2, Math.ceil(duration / ROUND_MINUTES)) : undefined,
+    work,
+    enemyIds: enemyIds.length ? enemyIds : undefined,
+    rounds: work === 'combat' ? Math.max(2, Math.ceil(duration / ROUND_MINUTES)) : undefined,
     attempts: 0,
-    recommendedLevel: 3,
+    recommendedLevel: picked?.recommendedLevel ?? 3,
     district,
     window: 'long',
     longDays: 2,
@@ -270,6 +284,11 @@ export function storyMissionForBeat(state: GameState, story: Storyline, beat: St
     rewardEquipmentId: spec?.rewardEquipment ? registerItem({ ...spec.rewardEquipment, id: spec.rewardEquipment.id || `relic-${hashText(`${story.id}:${beat.id}`).toString(16)}` }).id : undefined,
   };
 }
+
+/** 蓝图用「简单 / 常规 / 棘手 / 危险」，委托模板用「低危 / 中危 / 高危 / 绝望」。 */
+const STORY_TO_NIGHT_DIFFICULTY: Record<string, string> = {
+  简单: '低危', 常规: '中危', 棘手: '高危', 危险: '绝望',
+};
 
 /** 为故事线当前这一幕发出委托；已经发过则不重复。 */
 

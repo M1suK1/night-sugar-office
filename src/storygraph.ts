@@ -212,7 +212,10 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
         kind,
         spec: {
           title: str(spec.title, 30), goal: str(spec.goal, 160), category: str(spec.category, 30, '故事委托'),
-          difficulty: str(spec.difficulty, 8, '常规'), duration: clampInt(spec.duration, 30, 180, 90),
+          difficulty: str(spec.difficulty, 8, '常规'),
+          // v47：只收 work；数值与敌人交给模板抽。
+          work: spec.work === 'combat' || spec.work === 'investigation' ? spec.work : undefined,
+          duration: clampInt(spec.duration, 30, 180, 90),
           district: spec.district as DistrictId | undefined, requirement: spec.requirement,
           requiredGirlId: spec.requiredGirlId, companion: spec.companion, monsters: spec.monsters,
           rewardEquipment: spec.rewardEquipment, followUpIncident: spec.followUpIncident, followUpEvent: spec.followUpEvent,

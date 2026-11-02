@@ -4948,14 +4948,15 @@ test('议会提案写错作者或说话人时，报错里列出可用的 id 与�
   assert.ok(checked.errors.some(error => error.includes('g_card_cafebabe') && error.includes('白洲梓')), checked.errors.join('；'));
 });
 
-test('v39 每日提案目录不再塞技能表，魔物只列真实可上场的', () => {
+test('v39 每日提案目录不再塞技能表，魔物表与完整物品表也不再进提示词', () => {
   const state = createInitialState();
   const catalog = buildNightCatalog(state);
   assert.equal('skills' in catalog, false, '不再生成技能，就不该把 60 多个技能塞进提示词');
-  const ids = catalog.monsters.map(monster => monster.id);
-  assert.equal(new Set(ids).size, ids.length, '魔物表不能有重复 id');
-  assert.equal(ids.some(id => id.startsWith('pool-mon-')), false, '旧池子副本不该再出现在提示词里');
-  assert.equal(catalog.monsters.every(monster => monster.name && monster.rank), true);
+  // v47：委托改由本地按难度抽模板，魔物表整段删除；装备也只给阶级统计。
+  assert.equal('monsters' in catalog, false, '委托不再让模型选敌人，魔物表就不该进提示词');
+  assert.equal('items' in catalog, false, '完整物品表不再进提示词');
+  assert.ok(catalog.itemTiers.length > 0, '装备按阶级给统计');
+  assert.ok(catalog.itemTiers.every(row => row.count > 0 && row.examples.length <= 3), '每阶只给最多三个示例名');
 });
 
 test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整份提案作废', () => {

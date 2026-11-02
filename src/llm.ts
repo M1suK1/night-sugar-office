@@ -1412,8 +1412,13 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
 - start: {"kind":"start"}
 - scene: {"kind":"scene","narration":"120–260字，写具体地点、动作和她没说出口的话","lines":[{"speaker":"旁白|角色名","text":"一句台词"}]}
 - choice: {"kind":"choice","prompt":"她在等你怎么回应","options":[{"id":"a","label":"选项","intent":"这个选择意味着什么","effect":{"bond":2}},{"id":"b","label":"另一个选项","intent":"","effect":{"corruption":1}}]}，2–4 个选项，id 短且唯一
-- mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","category":"故事委托","difficulty":"简单|常规|棘手|危险","duration":90,"requirement":"magic|insight|agility|empathy"}}
+- mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","work":"combat|investigation","difficulty":"简单|常规|棘手|危险"}}
+  · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；
+    战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。
 - event: {"kind":"event","title":"","hook":"一句引子","cast":["名册里的角色 id"],"opening":"250–350 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档"}
+  · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。
+  · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。
+  · 涉及三方首领时 id 也要从名册或首领名单里取，不要新造名字。
 - reward: {"kind":"reward","effect":{"bond":2,"gold":0}}
 - wait: {"kind":"wait","days":0,"minutes":60}
 - end: {"kind":"end","summary":"这条结局收在哪里","ending":"两三个字的结局名，同一张图里不能重复"}

@@ -339,6 +339,8 @@ export interface StoryCompanion {
 }
 export interface StoryMissionSpec {
   title: string; goal: string; category: string; difficulty: string;
+  /** v47：只写「打」还是「查」；其余数值与敌人由模板决定。 */
+  work?: WorkKind;
   duration: number; district?: DistrictId; requirement?: StatKey; target?: number;
   /** 需先缔结契约、且必须编入小队的少女；给了 `companion` 会先落一位新候选者。 */
   requiredGirlId?: string;
