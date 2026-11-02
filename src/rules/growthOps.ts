@@ -1,0 +1,216 @@
+import { defaultWitchPersonality } from '../personality.ts';
+import { loadBalance } from '../balance.ts';
+import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
+import { WARDROBE_LIMIT } from '../rules/labels.ts';
+import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
+import { allocatePoint, statLabel } from '../progression.ts';
+import { buildCost } from '../rules/roster.ts';
+import { book, clone, dateLabel, findRosterGirl } from '../rules/core.ts';
+import type { ActionResult, GameAction, GameState, Outfit } from '../types.ts';
+// v35 从 src/game.ts 拆出：动作处理器。
+
+/** build 的动作处理器（v35 从 act 拆出）。 */
+export function applyBuild(state: GameState, action: Extract<GameAction, { type: 'build' }>): ActionResult {
+      const next = clone(state); const room = next.rooms.find(r => r.id === (action.roomId ?? 'dorm')) ?? next.rooms.find(r => r.type === 'dorm')!;
+      if (room.level >= 4) return { state, ok: false, message: '这个房间已经达到最高等级。' };
+      const cost = buildCost(room);
+      if (next.gold < cost) return { state, ok: false, message: `星砂不足，扩建需要 ${cost}。` };
+      next.gold -= cost; room.level += 1;
+      book(next, next.day, -cost);
+      if (room.type === 'dorm') room.capacity += 2;
+      next.logs.unshift({ id: `log-build-${room.id}-${room.level}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `${room.name}升至 ${room.level} 级${room.type === 'dorm' ? '，新增 2 个契约席位' : ''}。`, delta: -cost });
+      return { state: next, ok: true, message: `${room.name}已升级${room.type === 'dorm' ? '，新增 2 个席位' : ''}。` };
+}
+
+/** changeOutfit 的动作处理器（v35 从 act 拆出）。 */
+export function applyChangeOutfit(state: GameState, action: Extract<GameAction, { type: 'changeOutfit' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.witch) return { state, ok: false, message: '魔女化期间已锁定在魔女化立绘；先点击衣柜第五格恢复普通形态。' };
+      if (!girl.wardrobe.some(o => o.id === action.outfitId)) return { state, ok: false, message: '衣柜里没有这套服装。' };
+      girl.outfitId = action.outfitId;
+      return { state: next, ok: true, message: `${girl.name}换上了「${girl.wardrobe.find(o => o.id === action.outfitId)?.name}」。` };
+}
+
+/** setExpression 的动作处理器（v35 从 act 拆出）。 */
+export function applySetExpression(state: GameState, action: Extract<GameAction, { type: 'setExpression' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      girl.expression = action.expression;
+      return { state: next, ok: true, message: `${girl.name}的表情已切换。` };
+}
+
+/** setPersonality 的动作处理器（v35 从 act 拆出）。 */
+export function applySetPersonality(state: GameState, action: Extract<GameAction, { type: 'setPersonality' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const text = action.text.trim().slice(0, 600);
+      if (!text) return { state, ok: false, message: '性格描述不能为空。' };
+      if (girl.witch) girl.witchPersonality = text;
+      else girl.personality = text;
+      return { state: next, ok: true, message: girl.witch ? `${girl.name}的魔女化性格记录已更新。` : `${girl.name}的性格记录已更新。` };
+}
+
+/** allocateStat 的动作处理器（v35 从 act 拆出）。 */
+export function applyAllocateStat(state: GameState, action: Extract<GameAction, { type: 'allocateStat' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const result = allocatePoint(girl, action.stat, action.amount ?? 1);
+      if (!result.ok) return { state, ok: false, message: result.message };
+      const stat = statLabel[action.stat];
+      return { state: next, ok: true, message: `${girl.name}的${stat}提升到 ${girl.stats[action.stat]}，还剩 ${girl.unspentPoints ?? 0} 点。` };
+}
+
+/** setLevelUpMode 的动作处理器（v35 从 act 拆出）。 */
+export function applySetLevelUpMode(state: GameState, action: Extract<GameAction, { type: 'setLevelUpMode' }>): ActionResult {
+      if (state.levelUpMode === action.mode) return { state, ok: false, message: '已经是这个模式了。' };
+      const next = clone(state);
+      next.levelUpMode = action.mode;
+      next.logs.unshift({ id: `log-level-mode-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `升级成长方式改为${action.mode === 'manual' ? '手动加点：升级只发 10 点，由你分配' : '自动加点：按职阶直接成长'}。` });
+      return { state: next, ok: true, message: action.mode === 'manual' ? '以后升级会发可分配点数。' : '以后升级按职阶自动加属性。' };
+}
+
+/** importWardrobe 的动作处理器（v35 从 act 拆出）。 */
+export function applyImportWardrobe(state: GameState, action: Extract<GameAction, { type: 'importWardrobe' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const base = action.mode === 'replace' ? [] : girl.wardrobe;
+      const incoming = action.outfits
+        .map(outfit => sanitizeOutfit(outfit, girl.color))
+        .filter((outfit): outfit is Outfit => Boolean(outfit))
+        .filter(outfit => !base.some(existing => existing.id === outfit.id || existing.name === outfit.name));
+      if (!incoming.length) return { state, ok: false, message: '没有可以导入的新服装（名称为空或与现有衣柜重名）。' };
+      const merged: Outfit[] = [];
+      for (const outfit of [...base, ...incoming]) {
+        if (merged.some(existing => existing.id === outfit.id || existing.name === outfit.name)) continue;
+        merged.push(outfit);
+      }
+      const kept = merged.slice(0, WARDROBE_LIMIT);
+      const added = incoming.filter(outfit => kept.some(item => item.id === outfit.id)).length;
+      const dropped = incoming.length - added;
+      girl.wardrobe = kept;
+      if (action.outfitId && kept.some(outfit => outfit.id === action.outfitId)) girl.outfitId = action.outfitId;
+      else if (!kept.some(outfit => outfit.id === girl.outfitId)) girl.outfitId = kept[0].id;
+      pruneOrphanVariants(girl);
+      next.logs.unshift({ id: `log-wardrobe-import-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}的衣柜${action.mode === 'replace' ? '被替换并' : ''}新增 ${added} 套服装${dropped ? `（${dropped} 套因衣柜已满未导入）` : ''}。` });
+      return { state: next, ok: true, message: `已导入 ${added} 套服装${dropped ? `，${dropped} 套因衣柜已满未导入` : ''}。` };
+}
+
+/** removeOutfit 的动作处理器（v35 从 act 拆出）。 */
+export function applyRemoveOutfit(state: GameState, action: Extract<GameAction, { type: 'removeOutfit' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (girl.wardrobe.length <= 1) return { state, ok: false, message: '至少要为契约者保留一套服装。' };
+      const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
+      if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
+      girl.wardrobe = girl.wardrobe.filter(item => item.id !== action.outfitId);
+      if (girl.outfitId === action.outfitId) girl.outfitId = girl.wardrobe[0].id;
+      pruneOrphanVariants(girl);
+      return { state: next, ok: true, message: `「${outfit.name}」已从衣柜移除。` };
+}
+
+/** renameOutfit 的动作处理器（v35 从 act 拆出）。 */
+export function applyRenameOutfit(state: GameState, action: Extract<GameAction, { type: 'renameOutfit' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
+      if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
+      const name = action.name.trim().slice(0, 16);
+      if (!name) return { state, ok: false, message: '服装名称不能为空。' };
+      if (girl.wardrobe.some(item => item.id !== outfit.id && item.name === name)) return { state, ok: false, message: '衣柜里已经有同名服装。' };
+      outfit.name = name;
+      if (action.description !== undefined) outfit.description = action.description.trim().slice(0, 120);
+      return { state: next, ok: true, message: `服装已改名为「${name}」。` };
+}
+
+/** setVariant 的动作处理器（v35 从 act 拆出）。 */
+export function applySetVariant(state: GameState, action: Extract<GameAction, { type: 'setVariant' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const parsed = parseExpressionVariantKey(action.key);
+      if (!parsed) return { state, ok: false, message: '表情差分的服装或表情无法识别。' };
+      if (!isExpressionVariantData(action.dataUrl)) return { state, ok: false, message: '差分需要是 8MB 以内的图片。' };
+      if (!girl.importedVariants) girl.importedVariants = {};
+      const usedForOutfit = Object.keys(girl.importedVariants).filter(key => parseExpressionVariantKey(key)?.outfitId === parsed.outfitId).length;
+      if (!girl.importedVariants[action.key] && usedForOutfit >= EXPRESSION_VARIANT_LIMIT) return { state, ok: false, message: `这套服装最多保存 ${EXPRESSION_VARIANT_LIMIT} 张表情差分，请先删除旧图。` };
+      girl.importedVariants[action.key] = action.dataUrl;
+      return { state: next, ok: true, message: `「${expressionLabel(parsed.expression)}」表情差分已保存。` };
+}
+
+/** setVariants 的动作处理器（v35 从 act 拆出）。 */
+export function applySetVariants(state: GameState, action: Extract<GameAction, { type: 'setVariants' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const entries = Object.entries(action.variants);
+      if (!entries.length) return { state, ok: false, message: '没有可保存的表情差分。' };
+      const staged = { ...(girl.importedVariants ?? {}) };
+      for (const [key, dataUrl] of entries) {
+        if (!parseExpressionVariantKey(key)) return { state, ok: false, message: `无法识别差分键「${key}」。` };
+        if (!isExpressionVariantData(dataUrl)) return { state, ok: false, message: '差分需要是 8MB 以内的图片。' };
+        staged[key] = dataUrl;
+      }
+      const perOutfit = new Map<string, number>();
+      for (const key of Object.keys(staged)) {
+        const parsed = parseExpressionVariantKey(key);
+        if (!parsed) return { state, ok: false, message: `无法识别差分键「${key}」。` };
+        perOutfit.set(parsed.outfitId, (perOutfit.get(parsed.outfitId) ?? 0) + 1);
+      }
+      if ([...perOutfit.values()].some(count => count > EXPRESSION_VARIANT_LIMIT)) return { state, ok: false, message: `每套服装最多保存 ${EXPRESSION_VARIANT_LIMIT} 张表情差分。` };
+      girl.importedVariants = staged;
+      return { state: next, ok: true, message: `已保存 ${entries.length} 张表情差分。` };
+}
+
+/** deleteVariant 的动作处理器（v35 从 act 拆出）。 */
+export function applyDeleteVariant(state: GameState, action: Extract<GameAction, { type: 'deleteVariant' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!girl.importedVariants?.[action.key]) return { state, ok: false, message: '这张表情差分已经不存在。' };
+      delete girl.importedVariants[action.key];
+      return { state: next, ok: true, message: '表情差分已移除。' };
+}
+
+/** setOutfitDescription 的动作处理器（v35 从 act 拆出）。 */
+export function applySetOutfitDescription(state: GameState, action: Extract<GameAction, { type: 'setOutfitDescription' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const outfit = girl.wardrobe.find(item => item.id === action.outfitId);
+      if (!outfit) return { state, ok: false, message: '衣柜里没有这套服装。' };
+      const description = action.description.trim().slice(0, 200);
+      if (!description) return { state, ok: false, message: '描述不能为空。' };
+      outfit.description = description;
+      return { state: next, ok: true, message: `「${outfit.name}」的描述已更新。` };
+}
+
+/** setWitchForm 的动作处理器（v35 从 act 拆出）。 */
+export function applySetWitchForm(state: GameState, action: Extract<GameAction, { type: 'setWitchForm' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!action.outfit) {
+        if (!girl.witch) return { state, ok: false, message: `${girl.name}现在没有处于魔女化状态。` };
+        girl.witch = false;
+        return { state: next, ok: true, message: `${girl.name}已恢复普通形态；魔女化立绘仍留在衣柜第五格。` };
+      }
+      const activate = action.activate !== false;
+      const witchAt = loadBalance().corruptionThreshold;
+      if (activate && girl.corruption < witchAt && !girl.witch) return { state, ok: false, message: `${girl.name}的侵蚀还没有到能切换到魔女姿态的程度（${witchAt}）。立绘仍可以先导入。` };
+      const outfit = sanitizeOutfit({ ...action.outfit, id: 'witchform', form: 'witch' }, girl.color);
+      if (!outfit) return { state, ok: false, message: '这份魔女化立绘无法识别。' };
+      girl.witchForm = { ...outfit, form: 'witch' };
+      const witchPersonality = action.personality?.trim().slice(0, 600);
+      if (witchPersonality) girl.witchPersonality = witchPersonality;
+      if (!activate) return { state: next, ok: true, message: `${girl.name}的魔女化立绘已保存到衣柜第五格。` };
+      girl.witch = true;
+      if (!girl.witchPersonality?.trim()) girl.witchPersonality = defaultWitchPersonality(girl);
+      next.logs.unshift({ id: `log-witchform-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}允许你保存了她的魔女化立绘。` });
+      return { state: next, ok: true, message: `${girl.name}已切换到魔女化立绘，普通服装暂时锁定。` };
+}
+
+/** clearWitchForm 的动作处理器（v35 从 act 拆出）。 */
+export function applyClearWitchForm(state: GameState, action: Extract<GameAction, { type: 'clearWitchForm' }>): ActionResult {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      if (!girl.witchForm) return { state, ok: false, message: '还没有保存过魔女化立绘。' };
+      girl.witchForm = undefined;
+      girl.witch = false;
+      return { state: next, ok: true, message: `${girl.name}的魔女化立绘已撤下，第五格重新空出。` };
+}

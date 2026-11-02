@@ -1,7 +1,7 @@
 import { loadBalance } from '../balance.ts';
 import { REMOTE_CALL_COST } from '../contracts.ts';
 import { absoluteMinutes } from '../shift.ts';
-import type { ActionResult, DialogueLine, DialogueReply, Expression, GameState, Girl } from '../types.ts';
+import type { ActionResult, DialogueLine, DialogueReply, Expression, GameAction, GameState, Girl } from '../types.ts';
 import { districtOfMission } from './battle.ts';
 import { book, clone, dateLabel, findGirl } from './core.ts';
 import { relationshipStage, statusLabels, workLabels } from './labels.ts';
@@ -145,4 +145,41 @@ export function talk(state: GameState, girlId: string, text: string, remote = fa
   next.messages[girl.id] = messages.slice(-60);
   if (next.whisperUnread?.[girl.id]) delete next.whisperUnread[girl.id];
   return { state: next, ok: true, message: gain ? `与${girl.name}的羁绊 +${gain}。` : '今晚已经聊得够多了，明天再继续吧。' };
+}
+
+/** markWhispersRead 的动作处理器（v35 从 act 拆出）。 */
+export function applyMarkWhispersRead(state: GameState, action: Extract<GameAction, { type: 'markWhispersRead' }>): ActionResult {
+      if (!state.whisperUnread?.[action.girlId]) return { state, ok: true, message: '' };
+      const next = clone(state);
+      if (next.whisperUnread) delete next.whisperUnread[action.girlId];
+      return { state: next, ok: true, message: '' };
+}
+
+/** addWhisper 的动作处理器（v35 从 act 拆出）。 */
+export function applyAddWhisper(state: GameState, action: Extract<GameAction, { type: 'addWhisper' }>): ActionResult {
+      const job = state.whisperQueue?.find(entry => entry.id === action.jobId);
+      if (!job) return { state, ok: false, message: '这条私语已经处理过了。' };
+      const girl = findGirl(state, job.girlId);
+      if (!girl) return { state, ok: false, message: '找不到发消息的契约者。' };
+      const lines = action.lines?.length
+        ? normalizeDialogueLines({ lines: action.lines }, [])
+        : normalizeDialogueLines(action.text, []);
+      if (!lines.length) return { state, ok: false, message: '模型没有返回可用的私语。' };
+      const next = clone(state);
+      next.whisperQueue = (next.whisperQueue ?? []).filter(entry => entry.id !== job.id);
+      const messages = next.messages[girl.id] ?? [];
+      for (const line of lines) messages.push({ role: 'girl', text: line.text, action: line.action, expression: line.expression, whisper: true, at: dateLabel(next.day, next.minutes), burstId: job.id });
+      next.messages[girl.id] = messages.slice(-60);
+      next.whisperUnread = { ...(next.whisperUnread ?? {}), [girl.id]: (next.whisperUnread?.[girl.id] ?? 0) + 1 };
+      next.logs.unshift({ id: `log-whisper-${job.id}`, time: dateLabel(next.day, next.minutes), kind: 'relationship', text: `${girl.name}发来一条灯下私语。` });
+      return { state: next, ok: true, message: `${girl.name}给你发了一条消息。` };
+}
+
+/** dropWhisper 的动作处理器（v35 从 act 拆出）。 */
+export function applyDropWhisper(state: GameState, action: Extract<GameAction, { type: 'dropWhisper' }>): ActionResult {
+      if (!state.whisperQueue?.some(entry => entry.id === action.jobId)) return { state, ok: true, message: '' };
+      const next = clone(state);
+      next.whisperQueue = (next.whisperQueue ?? []).filter(entry => entry.id !== action.jobId);
+      next.logs.unshift({ id: `log-whisper-drop-${action.jobId}`, time: dateLabel(next.day, next.minutes), kind: 'relationship', text: `一条灯下私语没能写出来：${action.reason ? action.reason.slice(0, 80) : '模型没有返回内容'}。` });
+      return { state: next, ok: true, message: '' };
 }

@@ -1,0 +1,92 @@
+import { effectiveMaxHp, effectiveMaxSpirit } from '../economy.ts';
+import { factionStanding, itemPrice } from '../rules/market.ts';
+import { factionInfo, getItem } from '../content/items.ts';
+import { book, clone, dateLabel, findGirl } from '../rules/core.ts';
+import type { ActionResult, GameAction, GameState } from '../types.ts';
+// v35 从 src/game.ts 拆出：动作处理器。
+
+/** buyItem 的动作处理器（v35 从 act 拆出）。 */
+export function applyBuyItem(state: GameState, action: Extract<GameAction, { type: 'buyItem' }>): ActionResult {
+      const next = clone(state);
+      const entry = action.stockId
+        ? next.marketStock.find(stock => stock.id === action.stockId)
+        : next.marketStock.find(stock => !stock.sold && stock.itemId === action.itemId);
+      if (!entry) return { state, ok: false, message: '今日货架已经售罄，明天会重新进货。' };
+      if (entry.sold) return { state, ok: false, message: '这个货位今天已经售出，明天会刷新。' };
+      const item = getItem(entry.itemId);
+      if (!item) return { state, ok: false, message: '货架上没有这件物资。' };
+      const standing = factionStanding(next, item.faction);
+      if (standing < item.standingReq) return { state, ok: false, message: `${factionInfo[item.faction].name}声望需要 ${item.standingReq}，当前 ${standing}。` };
+      if (item.id === 'tax-voucher' && (next.inventory['tax-voucher'] ?? 0) > 0) return { state, ok: false, message: '税补券每 7 日只能兑换一张。' };
+      if (item.id === 'moon-drug' && (next.inventory['moon-drug'] ?? 0) >= 5) return { state, ok: false, message: '抑制剂最多囤积 5 支。' };
+      const price = itemPrice(next, item);
+      if (next.gold < price) return { state, ok: false, message: `购买需要 ${price} 星砂。` };
+      next.gold -= price; book(next, next.day, -price);
+      entry.sold = true;
+      next.inventory[item.id] = (next.inventory[item.id] ?? 0) + 1;
+      next.logs.unshift({ id: `log-buy-${entry.id}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `从${factionInfo[item.faction].name}购入「${item.name}」。`, delta: -price });
+      return { state: next, ok: true, message: `已购入「${item.name}」，放入事务所仓库。` };
+}
+
+/** equipItem 的动作处理器（v35 从 act 拆出）。 */
+export function applyEquipItem(state: GameState, action: Extract<GameAction, { type: 'equipItem' }>): ActionResult {
+      const next = clone(state); const girl = findGirl(next, action.girlId); const item = getItem(action.itemId);
+      if (!girl || !item) return { state, ok: false, message: '找不到对应的契约者或装备。' };
+      if (item.slot !== action.slot) return { state, ok: false, message: '这件物资不能装备到这个槽位。' };
+      if ((next.inventory[item.id] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有这件装备。' };
+      const previous = girl.equipment[action.slot];
+      if (previous) next.inventory[previous] = (next.inventory[previous] ?? 0) + 1;
+      next.inventory[item.id] -= 1;
+      girl.equipment[action.slot] = item.id;
+      girl.maxHp = effectiveMaxHp(girl); girl.hp = Math.min(girl.hp, girl.maxHp);
+      girl.maxSpirit = effectiveMaxSpirit(girl); girl.spirit = Math.min(girl.spirit, girl.maxSpirit);
+      return { state: next, ok: true, message: `${girl.name}装备了「${item.name}」。` };
+}
+
+/** unequipItem 的动作处理器（v35 从 act 拆出）。 */
+export function applyUnequipItem(state: GameState, action: Extract<GameAction, { type: 'unequipItem' }>): ActionResult {
+      const next = clone(state); const girl = findGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到对应的契约者。' };
+      const previous = girl.equipment[action.slot];
+      if (!previous) return { state, ok: false, message: '这个槽位没有装备。' };
+      next.inventory[previous] = (next.inventory[previous] ?? 0) + 1;
+      delete girl.equipment[action.slot];
+      girl.maxHp = effectiveMaxHp(girl); girl.hp = Math.min(girl.hp, girl.maxHp);
+      girl.maxSpirit = effectiveMaxSpirit(girl); girl.spirit = Math.min(girl.spirit, girl.maxSpirit);
+      return { state: next, ok: true, message: `${girl.name}卸下了「${getItem(previous)?.name ?? '装备'}」。` };
+}
+
+/** useItem 的动作处理器（v35 从 act 拆出）。 */
+export function applyUseItem(state: GameState, action: Extract<GameAction, { type: 'useItem' }>): ActionResult {
+      const next = clone(state); const girl = findGirl(next, action.girlId); const item = getItem(action.itemId);
+      if (!girl || !item) return { state, ok: false, message: '找不到对应的契约者或物资。' };
+      if ((next.inventory[item.id] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有这件物资。' };
+      if (item.effect === 'drug') {
+        if (!girl.witch) return { state, ok: false, message: '只有魔女需要月蚀抑制剂。' };
+        next.inventory[item.id] -= 1;
+        girl.drugUntilDay = next.day + 10; girl.withdrawalDays = 0; girl.hp = Math.min(effectiveMaxHp(girl), girl.hp + 20);
+        next.logs.unshift({ id: `log-use-drug-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}使用了月蚀抑制剂。断药状态结束，药效维持至第 ${girl.drugUntilDay} 日。` });
+        return { state: next, ok: true, message: `${girl.name}的断药状态已解除。` };
+      }
+      if (item.effect === 'heal') {
+        next.inventory[item.id] -= 1;
+        girl.hp = Math.min(effectiveMaxHp(girl), girl.hp + (item.amount ?? 40));
+        return { state: next, ok: true, message: `${girl.name}恢复了 ${item.amount ?? 40} 点生命。` };
+      }
+      if (item.effect === 'purify') {
+        next.inventory[item.id] -= 1;
+        girl.corruption = Math.max(0, girl.corruption - (item.amount ?? 8));
+        return { state: next, ok: true, message: `${girl.name}完成净化课程，侵蚀度下降。` };
+      }
+      if (item.effect === 'taxRefund') {
+        next.inventory[item.id] -= 1;
+        next.gold += item.amount ?? 1500; book(next, next.day, item.amount ?? 1500);
+        return { state: next, ok: true, message: `税补券兑换为 ${item.amount ?? 1500} 星砂。` };
+      }
+      if (item.effect === 'contractDiscount') {
+        next.inventory[item.id] = (next.inventory[item.id] ?? 1) - 1;
+        next.inventory['permit'] = 1;
+        return { state: next, ok: true, message: '执勤许可已激活，下一次签约金降低 10%。' };
+      }
+      return { state, ok: false, message: '这件物资需要在对应界面使用。' };
+}

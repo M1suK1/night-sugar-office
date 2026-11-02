@@ -491,3 +491,14 @@
 - [x] 内容工坊弹窗页签新增只读「叙事者生成」区，列 `state.incidentPool/incidents` 中 `source === 'llm'` 的弹窗（去重、≤20），可一键「登记」成自制弹窗卡再保存。
 - [x] 蓝图事件节点编辑器加参与角色 chips 与开场白文本域。
 - [x] v34 7 项测试；game 254、v24 25、budget 10、其余 87 全部通过（383 条）；`tsc --noEmit` 通过。
+
+## v35 把 game.ts 按功能拆开
+
+- [x] 护栏先行：`tests/game-api.test.ts` 冻结 79 个运行时导出名、`tools/check-imports.mjs`（`npm run check:rules`）查环与体积、`tools/fix-imports.mjs` 按 tsc 输出补/删 import 并把纯类型 import 改成 `import type`。
+- [x] 21 个功能模块先落位：core / labels / candidate / outfits / pools / roster / market / missions / encounters / conditions / opinion / battle / investigation / incidentOps / storyCore / storyRun / storyEvent / time / dailyOps / state / persistence。
+- [x] 拆开三处天然耦合：`hashText` 下沉 `core`（原 candidate ↔ outfits 环）、`defeatBoss` 归 `battle`（原 battle ↔ time 环）、蓝图推进与故事委托合成 `storyRun`（两者互相调用）。
+- [x] `act` 的 70 个 case 全部搬成 `applyX(state, action)` 处理器，分进 dailyOps / rosterOps / growthOps / itemOps / cardOps / factionOps / storyOps；调度器只剩 96 行。
+- [x] `cardOps` 里 `importCards → importCard` 改为直接调用处理器，不再递归 `act`；`validBattleNote` / `validGeneratedItem` / `canAcceptGeneratedContent` 移到 `validate.ts`，`persistence` 成为只进不出的终点。
+- [x] `src/game.ts` 只剩 25 行显式 barrel，84 个导出名与类型一字不差；20 个 UI 文件与 11 个测试的 import 没改。
+- [x] 最终规模：`src/rules/` 29 个模块，最大 429 行（battle），无循环依赖；`tsc --noEmit` 0 错。
+- [x] v35 新增 1 条导出名快照测试；16 个文件 384 条逐文件全过（game 254 / v24 25 / v26 15 / v29 11 / budget 10 / vertex 10 / v27 10 / store 9 / market-window 7 / v33 6 / cards-api 5 / research 5 / v31 5 / v32 4 / v34 7 / game-api 1）。

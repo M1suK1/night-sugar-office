@@ -1,7 +1,8 @@
 import { bossTemplateOf } from '../content/bosses.ts';
+import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
 import { getItem, items, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
-import { getSkill } from '../content/skills.ts';
+
 import { districtAt, districts } from '../districts.ts';
 import { effectiveGuard } from '../economy.ts';
 import { defaultFactionRoster } from '../factions.ts';
@@ -13,7 +14,7 @@ import { repairPollution } from '../pollution.ts';
 import { SHIFT_END, SHIFT_START, WAVE_AT, absoluteMinutes, deadlineFor, shiftStartAt } from '../shift.ts';
 import type { TerritoryMap } from '../territories.ts';
 import { FACTION_ORDER, repairTerritories } from '../territories.ts';
-import type { BattleNote, ChronicleEntry, Equipment, FactionGirl, FactionId, FactionLeader, FactionPair, GameState, Girl, HostilityTrack, MarketStockEntry, Mission, StatKey } from '../types.ts';
+import type { BattleNote, ChronicleEntry, FactionGirl, FactionId, FactionLeader, FactionPair, GameState, Girl, HostilityTrack, MarketStockEntry, Mission } from '../types.ts';
 import { defaultSkills, hydrate, sanitizeCustomGirl, sanitizeCustomLeader, sanitizeFactionRoster } from './candidate.ts';
 import { clone, dateLabel } from './core.ts';
 import { makeFactionStock, normalizeMarketWindow } from './market.ts';
@@ -22,43 +23,6 @@ import { createInitialState } from './state.ts';
 
 export const SAVE_KEY = 'night-sugar-office:v1';
 /** 衣柜上限：三套制式 + 一格自定义礼装。 */
-
-/** 生成前的池容量预检，避免自动补充先花掉 API 请求再被拒。 */
-export function canAcceptGeneratedContent(_state: GameState): { ok: boolean; message: string } {
-  // 每日提案只产出委托与议题，不再产出魔物；池子满时由 addGeneratedContent 替换最旧的自动委托。
-  return { ok: true, message: '' };
-}
-
-export function validGeneratedItem(item: unknown): item is Equipment {
-  if (!item || typeof item !== 'object') return false;
-  const entry = item as Equipment;
-  if (typeof entry.id !== 'string' || !entry.id.startsWith('lm_item_')) return false;
-  if (typeof entry.name !== 'string' || !entry.name || typeof entry.description !== 'string') return false;
-  if (!['weapon', 'charm', 'consumable'].includes(entry.slot)) return false;
-  if (!['witch', 'association', 'government'].includes(entry.faction)) return false;
-  if (entry.stats && (typeof entry.stats !== 'object' || Array.isArray(entry.stats))) return false;
-  return true;
-}
-
-export const characterIds = new Set(['yue', 'tang', 'ling', 'wu', 'zhi', 'lu']);
-
-export function safeId(id: unknown): id is string {
-  // 契约卡的 id 是 `g_card_<hash>`：中间那道下划线也得放行，否则带卡的档一读就被判成坏档。
-  return typeof id === 'string' && (characterIds.has(id) || /^g_[a-z0-9_]{6,}$/.test(id));
-}
-
-export function validGirl(value: unknown): value is Girl {
-  if (!value || typeof value !== 'object') return false;
-  const g = value as Girl;
-  if (!safeId(g.id) || typeof g.name !== 'string' || !g.name) return false;
-  if (!g.stats || typeof g.stats !== 'object') return false;
-  for (const key of ['magic', 'insight', 'agility', 'empathy'] as StatKey[]) if (!Number.isFinite(g.stats[key])) return false;
-  if (!['idle', 'mission', 'healing', 'resting', 'retired', 'expedition'].includes(g.status)) return false;
-  if (!Number.isFinite(g.hp) || !Number.isFinite(g.maxHp) || !Number.isFinite(g.fatigue) || !Number.isFinite(g.bond)) return false;
-  if (!Array.isArray(g.skills) || !g.skills.every(s => typeof s === 'string' && getSkill(s))) return false;
-  return true;
-}
-
 export function migrate(raw: Record<string, unknown>): GameState | null {
   if (raw.version !== 1) return null;
   try {
@@ -76,35 +40,6 @@ export function migrate(raw: Record<string, unknown>): GameState | null {
     return { ...base, day: Number(raw.day) || 14, minutes: Number(raw.minutes) || 0, gold: Number(raw.gold) || 0, reputation: Number(raw.reputation) || 50, girls, missions, logs: Array.isArray(raw.logs) ? raw.logs.slice(0, 300) : base.logs, completed: Array.isArray(raw.completed) ? raw.completed.filter(x => typeof x === 'string') : [], samples: Array.isArray(raw.samples) ? raw.samples.slice(-60) : base.samples, messages: {}, memorial: [], battles: [] };
   } catch { return null; }
 }
-
-export const BATTLE_NOTE_EXPRESSIONS = new Set(['calm', 'smile', 'surprise', 'sad', 'angry', 'shy']);
-
-export function validBattleNote(value: unknown): value is BattleNote {
-  if (!value || typeof value !== 'object') return false;
-  const note = value as Partial<BattleNote>;
-  if (typeof note.battleId !== 'string' || !note.battleId) return false;
-  if (typeof note.title !== 'string' || typeof note.hook !== 'string' || typeof note.summary !== 'string') return false;
-  if (note.source !== 'llm' && note.source !== 'template') return false;
-  if (!Number.isFinite(note.charCount) || typeof note.createdAt !== 'string') return false;
-  if (!Array.isArray(note.scenes) || note.scenes.length < 1 || note.scenes.length > 8) return false;
-  let lineTotal = 0;
-  for (const scene of note.scenes) {
-    if (!scene || typeof scene !== 'object') return false;
-    if (typeof scene.id !== 'string' || typeof scene.title !== 'string' || typeof scene.narration !== 'string') return false;
-    if (!Number.isFinite(scene.roundFrom) || !Number.isFinite(scene.roundTo) || scene.roundTo < scene.roundFrom) return false;
-    if (!Array.isArray(scene.lines) || scene.lines.length > 80) return false;
-    lineTotal += scene.lines.length;
-    for (const line of scene.lines) {
-      if (!line || typeof line !== 'object') return false;
-      if (!Number.isFinite(line.round) || !BATTLE_NOTE_EXPRESSIONS.has(line.expression)) return false;
-      if (line.speakerSide !== 'ally' && line.speakerSide !== 'enemy') return false;
-      if (typeof line.speakerId !== 'string' || !line.speakerId || typeof line.text !== 'string' || !line.text.trim()) return false;
-      if (line.mode !== undefined && line.mode !== 'speech' && line.mode !== 'thought') return false;
-    }
-  }
-  return lineTotal <= 240;
-}
-
 export function loadState(raw: string | null): GameState {
   if (!raw) return createInitialState();
   let parsed: unknown;
