@@ -559,3 +559,7 @@
   - `src/content/missions-extra.ts` 与 `src/content/seed-pack.ts`：全部 16 条内置/扩展委托模板 description 重构为 80~140 字的充实调查简报，补充市民报案背景、变电网杂波/镜潮信件/失落乳牙等现场感官异象，根除一两句话草率带过的梗概短句；逻辑属性 100% 绝对一致。
   - `src/rules/persistence.ts`：`stripPoolPadding` 在读档时自动将老存档保留的未完成委托 description 刷新为最新完整叙事简报，老玩家在地图上立刻看到丰满文案。
   - 验证：19 个测试文件 409 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。
+- [x] **阶段三（都市魔物与天灾图鉴）**：
+  - `src/content/monsters.ts` 与 `src/content/monsters-extra.ts`：全部 21 只基础与扩展魔物重构（回声猫、镜修女、末班车、糖王、糖蛾、空月、蜜蜡蜂、磁带蛇、沥青犬、雨伞树、失眠羊、焦糖蜘蛛、雾中列车员、静默护士、铁皮合唱团、灰烬马、午夜电台、无面主妇等）；称号、外貌生态描述（60~110字）、图鉴习性、弱点对策及特性说明全面升级为都市怪谈调查档案文风，根除“它叫你名字不要答应”类干瘪短句。
+  - `src/content/bosses.ts`：重塑天灾 Boss 糖霜王座背景 blurb 与三阶段台词。
+  - 验证：魔物 ID、阶级、五维数值、技能、立绘参数、触发规则完全一致；19 个测试文件 409 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。

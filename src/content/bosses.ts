@@ -8,15 +8,15 @@ import { customBossTemplates } from './library.ts';
  */
 export const bosses: BossTemplate[] = [{
   id: 'boss-candy-throne', name: '糖霜王座', title: '加冕的蛀牙',
-  blurb: '糖果街的甜味在某个夜里被抽干了。游乐场中央的王座长高了一截，坐上去的东西正在给自己加冕。',
+  blurb: '整条商业街所沉淀的甜美记忆在某个暴雨深夜被彻底抽干。废弃游乐场中央的石膏王座破土疯长，一尊由浓稠结晶糖霜自我塑形的狂暴天灾端坐其上，冷酷地将整座街区剥落的温度与味觉熔铸为属于自己的冠冕。',
   monsterId: 'candy-throne',
   maxHp: 2400,
   // 心防由共情推出（v25）：180 共情 = 360 心防，要 4–5 发共情技才破。
   stats: { magic: 96, insight: 88, agility: 72, empathy: 180 },
   phases: [
-    { atHpPct: 1.00, skillIds: ['boss-sugar-crown', 'boss-clock-hands'], line: '它把糖冠按回头顶，全城的灯都暗了一格。' },
-    { atHpPct: 0.62, skillIds: ['boss-sugar-crown', 'boss-mirror-litany'], addIds: ['sugar-moth', 'sugar-moth'], line: '王座开始融化，甜味变成了粘住脚踝的东西。' },
-    { atHpPct: 0.30, skillIds: ['boss-tide-of-names', 'boss-clock-hands'], line: '它张了张嘴，吐出的全是别人的名字。' },
+    { atHpPct: 1.00, skillIds: ['boss-sugar-crown', 'boss-clock-hands'], line: '它以干瘪骨指将沉重糖冠按压至头顶，整座城区的防护灯网瞬间黯淡了一格。' },
+    { atHpPct: 0.62, skillIds: ['boss-sugar-crown', 'boss-mirror-litany'], addIds: ['sugar-moth', 'sugar-moth'], line: '王座底座在刺耳蜂鸣中融化坍塌，翻滚的沸腾糖浆化作缠绕队员脚踝的致命泥沼。' },
+    { atHpPct: 0.30, skillIds: ['boss-tide-of-names', 'boss-clock-hands'], line: '它猛然裂开层叠利齿的巨口，自深渊般的颌骨深处狂暴呕吐出数以千计早已殉职的名字。' },
   ],
   reward: 5200, duration: 90, recommendedLevel: 6, color: '#F2A0C0',
   firstDay: 10, defeatGapDays: 10, pollutionPressure: 3,
