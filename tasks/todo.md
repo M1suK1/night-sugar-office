@@ -524,3 +524,13 @@
 - [x] 编成页加「换一组」按钮（`#starter-reroll`），随时重掷名册与三方座位。
 - [x] 派遣选人列表在名字后面显示职业（输出 / 守护 / 治愈 / 控制 / 侦查，缺省「未定」），样式 `.assignment-role`。
 - [x] 新增 `tests/starter.test.ts` 5 条：座位不重叠、同种子可复现、池子不足回退、首领同势力、洗牌不丢不重。
+
+## v38 委托板固定 12 条 / 删掉编号副本
+
+- [x] 委托上限固定 `MISSION_POOL_SIZE = 12`：不再按 120 战斗 + 20 调查铺满，`poolLimits.missions` 新档与老档都压回 12。
+- [x] `ensureMissionPools` 只从真实模板补（种子包 + `missions-extra` + 自制委托），同模板同时只出现一次，标题不再拼「辖区记录015」。
+- [x] 完成/过期/换日都会立刻补回 12：`advance`、`syncShift` 过期后、`endNight` 同步各补一次；`trimMissionPools` 超限时先淘汰最旧的自动委托，使者与故事委托保留。
+- [x] 魔物不再复制：删掉 `ensureMonsterPool` 的 `名字·N` / `档案第 N 号` 克隆，容量跟着真实魔物数量走；首夜空缺的魔物缺口按真实池子算。
+- [x] 老档清理：`stripPoolPadding` 在读取时删掉带「记录NNN」「第 N 次现场记录」的委托与 `pool-mon-<day>-<index>` 魔物，然后把上限压回 12。
+- [x] 新增 `tests/pool.test.ts` 6 条：12 条且模板不重复、完成后补回、换日仍 12、老档清副本、超限淘汰顺序、幂等。
+- [x] 19 个文件 402 条测试逐文件全过；`tsc --noEmit` 0 错；`npm run check:rules` 通过。

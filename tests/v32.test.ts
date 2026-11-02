@@ -9,13 +9,16 @@ const pending = (index: number): Opinion => ({
   title: `测试议题 ${index}`, text: '测试', request: '测试', status: 'pending', options: [],
 });
 
-test('v32 新档：5 名在册、无默认退役、140 条委托与 50 只魔物', () => {
+test('v38 新档：5 名在册、无默认退役、板上 12 条真实委托、没有编号副本', () => {
   const state = createInitialState();
   assert.equal(state.girls.length, 5);
   assert.equal(state.girls.some(girl => girl.id === 'zhi' && girl.retired), false);
-  assert.equal(state.missions.filter(mission => mission.work === 'combat').length, 120);
-  assert.equal(state.missions.filter(mission => mission.work === 'investigation').length, 20);
-  assert.equal(state.customMonsters.length, 50);
+  const live = state.missions.filter(mission => mission.status === 'open' || mission.status === 'active');
+  assert.equal(live.length, 12, '板上固定 12 条');
+  assert.equal(live.filter(mission => mission.work === 'combat').length > 0, true);
+  assert.equal(live.filter(mission => mission.work === 'investigation').length > 0, true);
+  assert.equal(live.every(mission => !/记录\\d{3}$/.test(mission.title)), true, '不再有编号副本');
+  assert.equal(state.customMonsters.filter(monster => /^pool-mon-/.test(monster.id)).length, 0, '魔物不再复制凑数');
   assert.equal(state.opinions.length, 0, '不再预置默认议题');
   assert.equal(new Set(state.missions.map(missionKey)).size, state.missions.length, '地图委托内容不重复');
 });
@@ -43,7 +46,7 @@ test('v32 提案提示词要求补足议题，不再要求生成魔物', () => {
 
 test('v32 每日提案只补委托与议题，不再新增魔物', () => {
   const state = createInitialState();
-  const before = state.customMonsters.length;
-  assert.equal(before, 50);
+  const before = state.customMonsters.filter(monster => /^pool-mon-/.test(monster.id)).length;
+  assert.equal(before, 0, '没有本地复制出来的魔物池');
   assert.ok(buildNightPrompt(state).includes('opinions'));
 });

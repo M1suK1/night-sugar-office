@@ -221,7 +221,13 @@ export const TARGET_CEILING = 96;
 
 export function makeCommission(state: GameState, wave: number, slot: number): Mission {
   const pool = commissionPool();
-  const template = pool[hashText(`${state.day}:${wave}:${slot}:${districts[districtOrderFor(state.day, wave, slot)].id}`) % pool.length];
+  // 同一时间还在板上的模板不再重复抽：先把没用过的用完，实在没有了才回到全部模板。
+  const liveTemplates = new Set(state.missions
+    .filter(mission => mission.status === 'open' || mission.status === 'active')
+    .map(mission => mission.templateId ?? mission.id));
+  const fresh = pool.filter(template => !liveTemplates.has(template.id));
+  const source = fresh.length ? fresh : pool;
+  const template = source[hashText(`${state.day}:${wave}:${slot}:${districts[districtOrderFor(state.day, wave, slot)].id}`) % source.length];
   const regionId = template.district ?? districtOrderFor(state.day, wave, slot);
   const region = districts[regionId];
   const window: CommissionWindow = template.window ?? (slot === 0 ? 'long' : 'urgent');
@@ -282,13 +288,16 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
   };
 }
 
-/** 内容工坊「投放测试」：把一份自制模板直接变成当前夜晚可接的委托。 */
-
-/** 内容工坊「投放测试」：把一份自制模板直接变成当前夜晚可接的委托。 */
-export function deployMissionTemplate(state: GameState, template: MissionTemplate): Mission {
-  const regionId = template.district ?? districtOrderFor(state.day, state.shift.wave, 0);
+/**
+ * 把一份模板变成当前夜晚可接的委托。
+ *
+ * `options.district` 用来轮换辖区（池子补货时按顺序铺开）；
+ * `options.fromPool` 标记这条是本地池子补的，不是工坊投放的测试件。
+ */
+export function deployMissionTemplate(state: GameState, template: MissionTemplate, options: { district?: DistrictId; fromPool?: boolean } = {}): Mission {
+  const regionId = options.district ?? template.district ?? districtOrderFor(state.day, state.shift.wave, 0);
   const region = districts[regionId];
-  const pin = districtPin(regionId, `workshop-${template.id}-${state.day}-${state.minutes}-${state.missions.length}`);
+  const pin = districtPin(regionId, `pool-${template.id}-${state.day}-${state.minutes}-${state.missions.length}`);
   const window = template.window ?? 'urgent';
   const spawnAt = absoluteMinutes(state.day, state.minutes);
   const longDays = window === 'long' ? LONG_MIN_DAYS : undefined;
@@ -316,6 +325,7 @@ export function deployMissionTemplate(state: GameState, template: MissionTemplat
     girlId: undefined,
     attempts: 0,
     rounds: template.rounds,
+    ...(options.fromPool ? { generated: true, sourcePack: 'pool' as const } : {}),
   };
 }
 

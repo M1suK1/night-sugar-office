@@ -1,5 +1,6 @@
 import type { GameState } from './types.ts';
 import { incidentPoolNeed } from './incidents.ts';
+import { spawnableMonsters } from './rules/encounters.ts';
 
 /** 首夜叙事者要补到的议案条数；本地不再生成默认议题。 */
 export const OPENING_OPINIONS = 3;
@@ -36,13 +37,14 @@ export interface OpeningGaps {
 export function openingGaps(state: GameState): OpeningGaps {
   const pendingOpinions = state.opinions.filter(opinion => opinion.status === 'pending').length;
   const openMissions = state.missions.filter(mission => mission.status === 'open' || mission.status === 'active').length;
-  const ownedMonsters = state.customMonsters.filter(monster => !monster.id.startsWith('boss-mon-')).length;
+  // 魔物按「真实能上场的」算：注册表里的魔物 + 自制魔物，不再按复制出来的池子条目数。
+  const monsterPool = spawnableMonsters(state).length;
   return {
     opinions: Math.max(0, OPENING_OPINIONS - pendingOpinions),
     incidents: Math.max(0, Math.min(OPENING_INCIDENTS, incidentPoolNeed(state))),
-    missions: Math.max(0, state.poolLimits.missions - 2 - openMissions),
+    missions: Math.max(0, state.poolLimits.missions - openMissions),
     candidates: Math.max(0, state.poolLimits.candidates - state.candidates.length),
-    monsters: Math.max(0, state.poolLimits.monsters - ownedMonsters),
+    monsters: Math.max(0, state.poolLimits.monsters - monsterPool),
   };
 }
 

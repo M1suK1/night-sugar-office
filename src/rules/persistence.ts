@@ -182,10 +182,12 @@ export function loadState(raw: string | null): GameState {
       state.poolLimits ??= { missions: 140, monsters: 50, candidates: 20, combatMissions: 120, investigationMissions: 20 };
       state.poolLimits.candidates = Math.max(state.poolLimits.candidates, 20);
     }
-    state.poolLimits.combatMissions = Math.max(120, state.poolLimits.combatMissions ?? 120);
-    state.poolLimits.investigationMissions = Math.max(20, state.poolLimits.investigationMissions ?? 20);
-    state.poolLimits.missions = Math.max(140, state.poolLimits.missions ?? 140);
+    // v38：委托池固定 12 条，做完/超时由模板补回；不再用编号副本凑数。
+    state.poolLimits.missions = 12;
+    state.poolLimits.combatMissions = 0;
+    state.poolLimits.investigationMissions = 0;
     state.poolLimits.monsters = Math.max(50, state.poolLimits.monsters ?? 50);
+    stripPoolPadding(state);
     // v26：首夜空缺补记；老档一律视为没补过，进游戏后补一次。
     state.openingFilledAt = Number.isFinite(state.openingFilledAt) ? state.openingFilledAt : 0;
     state.blank = value.blank === true;
@@ -322,4 +324,18 @@ export function importState(raw: string): GameState | null {
   if (!value.girls.every(validGirl)) return null;
   if (!Number.isFinite(value.day) || !Number.isFinite(value.gold)) return null;
   return loadState(raw);
+}
+
+/**
+ * v38：清掉 v32 用编号副本凑出来的委托与魔物。
+ *
+ * 委托：标题形如「旧钟楼的未寄信 · 糖果公园记录015」，描述里带「第 15 次现场记录」；
+ * 魔物：id 形如 `pool-mon-<day>-<index>`，名字后缀「·3」、称号带「档案第 3 号」。
+ * 这些不是内容，是占位。真实模板留在种子包与自制内容库里。
+ */
+export function stripPoolPadding(state: GameState): number {
+  const before = state.missions.length;
+  state.missions = state.missions.filter(mission => !/ · .+记录\d{3}$/.test(mission.title) && !/第 \d+ 次现场记录/.test(mission.description));
+  state.customMonsters = (state.customMonsters ?? []).filter(monster => !/^pool-mon-\d+-\d+$/.test(monster.id));
+  return before - state.missions.length;
 }

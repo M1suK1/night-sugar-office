@@ -19,7 +19,7 @@ import { settleInvestigation } from './investigation.ts';
 import { makeFactionStock, refreshMarket } from './market.ts';
 import { makeBossMission, makeCommission } from './missions.ts';
 import { trimOpinions } from './opinion.ts';
-import { ensureMissionPools, ensureMonsterPool } from './pools.ts';
+import { MISSION_POOL_SIZE, ensureMissionPools, ensureMonsterPool } from './pools.ts';
 import { resolveStoryWait } from './storyRun.ts';
 // v35 从 src/game.ts 拆出：时钟、换日、打烊与赌场账本。
 
@@ -90,12 +90,16 @@ export function syncShift(state: GameState): number {
     changed += 1;
     state.logs.unshift({ id: `log-expire-${mission.id}`, time: dateLabel(state.day, state.minutes), kind: 'dispatch', text: `「${mission.title}」超过接取时限，委托已自动撤销。` });
   }
+  // 过期的位子立刻从模板补回来，板子上始终是 12 条。
+  if (changed) ensureMissionPools(state);
   if (state.minutes < SHIFT_START) return changed;
   if (state.shift.day !== state.day) state.shift = { day: state.day, wave: 0 };
   while (state.shift.wave < WAVE_AT.length && now >= shiftStartAt(state.day) + WAVE_AT[state.shift.wave]) {
     const wave = state.shift.wave;
     const fresh: string[] = [];
+    const liveMissions = () => state.missions.filter(mission => mission.status === 'open' || mission.status === 'active').length;
     for (let slot = 0; slot < WAVE_SIZES[wave]; slot++) {
+      if (liveMissions() >= MISSION_POOL_SIZE) break;
       const mission = makeCommission(state, wave, slot);
       if (state.missions.some(existing => existing.id === mission.id)) continue;
       state.missions.unshift(mission);
@@ -151,7 +155,6 @@ export function advanceClock(state: GameState, to: number): void {
     accruePension(state, days);
     for (const girl of state.girls) tickConditions(girl, days);
     for (let i = 0; i < days; i++) processDay(state);
-    ensureMissionPools(state);
     ensureMonsterPool(state);
     for (const opinion of state.opinions) {
       if (opinion.status === 'deferred' && (opinion.revisitDay ?? Infinity) <= state.day) {
@@ -264,6 +267,8 @@ export function advance(state: GameState, minutes: number): ActionResult {
   const step = Math.min(minutes, closeAbs - nowAbs);
   const next = clone(state);
   syncShift(next);
+  // 战斗/调查刚结算完的位子，同一次推进里就补回模板。
+  ensureMissionPools(next);
   const end = next.day * 1440 + next.minutes + step;
   let lastBattle: BattleState | undefined;
   for (let guard = 0; guard < 24; guard++) {
@@ -363,6 +368,7 @@ export function endNight(state: GameState): ActionResult {
   advanceClock(next, absoluteMinutes(closedDay, SHIFT_START));
   next.shift = { day: next.day, wave: 0 };
   syncShift(next);
+  ensureMissionPools(next);
   for (const incident of dueIncidents(next, 'dayStart', { day: next.day, minutes: next.minutes }, { wave: 0 })) {
     next.incidents.unshift(incident);
     markIncidentCooldown(next, incident);

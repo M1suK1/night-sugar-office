@@ -1,9 +1,8 @@
-import { BOSS_MONSTER_PREFIX } from '../content/bosses.ts';
-import { monsters } from '../content/monsters.ts';
-import { createSeedPack } from '../content/seed-pack.ts';
 import type { DistrictId } from '../districts.ts';
-import { districts } from '../districts.ts';
-import type { GameState, Mission, MissionTemplate, MonsterTemplate } from '../types.ts';
+import type { GameState, Mission, MissionTemplate } from '../types.ts';
+import { createSeedPack } from '../content/seed-pack.ts';
+import { customMissionTemplates } from '../content/library.ts';
+import { extraMissions } from '../content/missions-extra.ts';
 import { spawnableMonsters } from './encounters.ts';
 import { deployMissionTemplate, districtOrderFor } from './missions.ts';
 // v35 从 src/game.ts 拆出：委托池与魔物池的维护。
@@ -17,119 +16,78 @@ export function missionKeyTaken(state: GameState, mission: Pick<Mission, 'title'
   return state.missions.some(existing => missionKey(existing) === key);
 }
 
-/** 把地图委托补到战斗/调查各自的容量；只补缺口，标题与描述必须唯一。 */
+/** 地图上同时存在的委托总数：固定 12；做完或超时就从模板补回来。 */
+export const MISSION_POOL_SIZE = 12;
 
-/** 把地图委托补到战斗/调查各自的容量；只补缺口，标题与描述必须唯一。 */
+/**
+ * 把地图上的委托补到 12 条。
+ *
+ * 只从真实模板里拿（种子包 + `missions-extra` + 自制委托），**不再复制编号**：
+ * 以前那种 `标题 · 辖区记录017` 只是把同一个模板换个名字，玩家两天就看穿了。
+ * 同一个模板在同一时间最多出现一次；模板用完了就让它少几条，也不造假。
+ */
 export function ensureMissionPools(state: GameState): number {
-  const combatCap = state.poolLimits.combatMissions ?? 120;
-  const investigationCap = state.poolLimits.investigationMissions ?? 20;
-  const initialKeys = new Set<string>();
-  for (const mission of state.missions) {
-    let key = missionKey(mission);
-    if (initialKeys.has(key)) {
-      mission.title = `${mission.title} · 档案补记`;
-      mission.description = `${mission.description}（同名委托的另一份档案。）`;
-      key = missionKey(mission);
-    }
-    initialKeys.add(key);
+  const cap = MISSION_POOL_SIZE;
+  const liveCount = state.missions.filter(mission => mission.status === 'open' || mission.status === 'active').length;
+  if (liveCount >= cap) {
+    state.poolLimits.missions = cap;
+    return 0;
   }
-  const live = (work: 'combat' | 'investigation') => state.missions.filter(mission => mission.work === work && (mission.status === 'open' || mission.status === 'active')).length;
-  const templates = createSeedPack().missions;
-  const used = new Set(state.missions.map(missionKey));
+  const taken = new Set(state.missions
+    .filter(mission => mission.status === 'open' || mission.status === 'active')
+    .map(mission => mission.templateId ?? mission.id));
+  // 真实模板：种子包 + 自制委托。种子包里的模板可能没写敌人，补一只池子里的魔物兜底。
+  const fallbackEnemy = spawnableMonsters(state)[0]?.id;
+  const templates = [...createSeedPack().missions.filter(template => !template.boss), ...extraMissions, ...customMissionTemplates()]
+    .filter(template => !(template as { storylineId?: string }).storylineId && !taken.has(template.id))
+    .map(template => ({
+      ...template,
+      enemyIds: template.enemyIds?.length ? template.enemyIds : fallbackEnemy ? [fallbackEnemy] : [],
+      rounds: template.rounds ?? 3,
+      recommendedLevel: template.recommendedLevel ?? 3,
+    })) as unknown as MissionTemplate[];
   let added = 0;
-  for (const [work, cap] of [['combat', combatCap], ['investigation', investigationCap]] as const) {
-    const pool = templates.filter(template => template.work === work);
-    if (!pool.length) continue;
-    let count = live(work);
-    let variant = 0;
-    while (count < cap && variant < cap * 4) {
-      const base = pool[variant % pool.length] as unknown as MissionTemplate;
-      const regionId = (base.district ?? districtOrderFor(state.day, state.shift.wave, variant)) as DistrictId;
-      const region = districts[regionId];
-      const title = `${base.title} · ${region.name}记录${String(variant + 1).padStart(3, '0')}`;
-      const description = `${base.description}（${region.name}的第 ${variant + 1} 次现场记录。）`;
-      const key = missionKey({ title, description });
-      variant += 1;
-      if (used.has(key)) continue;
-      const seedMonster = spawnableMonsters(state)[variant % Math.max(1, spawnableMonsters(state).length)]?.id;
-      const mission = deployMissionTemplate(state, {
-        id: base.id,
-        title,
-        category: base.category,
-        description,
-        difficulty: base.difficulty as MissionTemplate['difficulty'],
-        color: base.color,
-        duration: base.duration,
-        requirement: base.requirement,
-        target: base.target,
-        work: base.work,
-        enemyIds: base.enemyIds?.length ? base.enemyIds : seedMonster ? [seedMonster] : [],
-        rounds: base.rounds ?? 3,
-        recommendedLevel: base.recommendedLevel ?? 3,
-        district: regionId,
-        window: base.window,
-        reward: base.reward,
-        rewardEquipmentId: base.rewardEquipmentId,
-        rewardGirlLevel: base.rewardGirlLevel ?? 0,
-      });
-      mission.generated = true;
-      mission.sourcePack = 'pool';
-      state.missions.push(mission);
-      used.add(key);
-      count += 1;
-      added += 1;
-    }
-  }
-  state.poolLimits.missions = Math.max(state.poolLimits.missions ?? 0, combatCap + investigationCap);
-  return added;
-}
-
-/** 新增 LLM 委托后压回容量；只淘汰自动生成、未派遣的旧委托。 */
-
-/** 新增 LLM 委托后压回容量；只淘汰自动生成、未派遣的旧委托。 */
-export function trimMissionPools(state: GameState): void {
-  for (const [work, cap] of [['combat', state.poolLimits.combatMissions ?? 120], ['investigation', state.poolLimits.investigationMissions ?? 20]] as const) {
-    let live = state.missions.filter(mission => mission.work === work && (mission.status === 'open' || mission.status === 'active'));
-    while (live.length > cap) {
-      const victim = live.find(mission => mission.status === 'open' && mission.generated && mission.sourcePack !== 'story');
-      if (!victim) break;
-      state.missions = state.missions.filter(mission => mission.id !== victim.id);
-      live = live.filter(mission => mission.id !== victim.id);
-    }
-  }
-}
-
-/** 魔物池由本地变体补到容量；不再依赖每日 LLM 产怪。 */
-
-/** 魔物池由本地变体补到容量；不再依赖每日 LLM 产怪。 */
-export function ensureMonsterPool(state: GameState): number {
-  const cap = state.poolLimits.monsters ?? 50;
-  const removed = new Set(state.removedMonsters ?? []);
-  const existing = new Set((state.customMonsters ?? []).map(monster => monster.id));
-  const bases = monsters.filter(monster => !monster.storyOnly && !monster.bossOnly && !monster.id.startsWith(BOSS_MONSTER_PREFIX) && !removed.has(monster.id));
-  if (!bases.length) return 0;
-  let index = 0;
-  let added = 0;
-  while ((state.customMonsters ?? []).filter(monster => !monster.id.startsWith(BOSS_MONSTER_PREFIX)).length < cap && index < cap * 3) {
-    const base = bases[index % bases.length];
-    const id = `pool-mon-${state.day}-${index}`;
-    index += 1;
-    if (existing.has(id) || removed.has(id)) continue;
-    const copy: MonsterTemplate = {
-      ...base,
-      id,
-      name: `${base.name}·${index}`,
-      epithet: `${base.epithet}（档案第 ${index} 号）`,
-      description: `${base.description} 这是事务所档案中编号 ${index} 的同类记录。`,
-      spec: { ...base.spec },
-      rules: [...(base.rules ?? [])],
-    };
-    state.customMonsters = [...(state.customMonsters ?? []), copy];
-    existing.add(id);
+  for (const template of templates) {
+    if (liveCount + added >= cap) break;
+    const district = (template.district ?? districtOrderFor(state.day, state.shift.wave, added)) as DistrictId;
+    const mission = deployMissionTemplate(state, template, { district, fromPool: true });
+    if (state.missions.some(existing => existing.id === mission.id)) continue;
+    state.missions.push(mission);
     added += 1;
   }
+  state.poolLimits.missions = cap;
   return added;
 }
+
+/** 新增 LLM 委托后压回容量：板上始终只留 12 条，超出的自动生成委托先淘汰。 */
+export function trimMissionPools(state: GameState): void {
+  const live = state.missions.filter(mission => mission.status === 'open' || mission.status === 'active');
+  let excess = live.length - MISSION_POOL_SIZE;
+  if (excess <= 0) return;
+  // 从最旧的开始淘汰：新生成的委托（使者、提案）刚 push 到末尾，不能被自己挤掉。
+  for (const mission of [...live]) {
+    if (excess <= 0) break;
+    if (mission.status !== 'open' || !mission.generated || mission.sourcePack === 'story') continue;
+    state.missions = state.missions.filter(item => item.id !== mission.id);
+    excess -= 1;
+  }
+}
+
+/**
+ * 魔物池：只认真实魔物，不再复制。
+ *
+ * v32 会把基础魔物轮流复制成 `名字·3`、`档案第 3 号` 来凑到 50 只——那是占位不是内容。
+ * 现在只清理这些旧副本；真正的魔物来自 `content/monsters` 与内容工坊，缺了就该补内容而不是编号。
+ */
+export function ensureMonsterPool(state: GameState): number {
+  const before = (state.customMonsters ?? []).length;
+  state.customMonsters = (state.customMonsters ?? []).filter(monster => !/^pool-mon-/.test(monster.id));
+  // 魔物池容量跟着真实内容走：有几只算几只，不拿编号副本把数字撑到 50。
+  const real = spawnableMonsters(state).length;
+  state.poolLimits.monsters = Math.min(state.poolLimits.monsters ?? real, real);
+  return before - state.customMonsters.length;
+}
+
 /** 地图只保留未完成、或当天刚完成的委托；换日后旧完成记录退回档案。 */
 
 /** 地图只保留未完成、或当天刚完成的委托；换日后旧完成记录退回档案。 */

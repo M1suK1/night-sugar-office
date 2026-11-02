@@ -144,9 +144,10 @@ test('初始数据包含五位在册契约者、战斗与调查委托、基地�
   assert.equal(s.girls.length, 5);
   assert.equal(s.girls.filter(g => g.retired).length, 0);
   assert.equal(s.candidates.length, 1);
-  assert.equal(s.missions.length, 140);
-  assert.equal(s.missions.filter(m => m.work === 'combat').length, 120);
-  assert.equal(s.missions.filter(m => m.work === 'investigation').length, 20);
+  const liveMissions = s.missions.filter(m => m.status === 'open' || m.status === 'active');
+  assert.equal(liveMissions.length, 12, '板上固定 12 条真实委托');
+  assert.ok(liveMissions.some(m => m.work === 'combat') && liveMissions.some(m => m.work === 'investigation'));
+  assert.equal(liveMissions.every(m => !/记录\d{3}$/.test(m.title)), true, '没有编号副本');
   assert.equal(s.minutes, 20 * 60);
   assert.ok(s.missions.slice(0, 3).every(m => m.id.startsWith('c-14-0-') && m.deadlineAt !== undefined && m.district));
   assert.ok(s.missions.every(m => m.district && m.window && m.deadlineAt !== undefined));
@@ -675,9 +676,7 @@ test('生成提案会写入委托、议题与装备池，但不再生成魔物',
   assert.equal(result.ok, true, result.message);
   assert.equal(result.state.candidates.length, base.candidates.length);
   assert.equal(result.state.customMonsters.length, base.customMonsters.length);
-  assert.equal(result.state.missions.length, base.missions.length, '池满时替换旧自动委托，不突破 120/20 容量');
-  assert.equal(result.state.missions.filter(m => m.work === 'combat').length, 120);
-  assert.equal(result.state.missions.filter(m => m.work === 'investigation').length, 20);
+  assert.equal(result.state.missions.filter(m => m.status === 'open' || m.status === 'active').length, 12, '池满时替换旧自动委托，始终 12 条');
   assert.equal(result.state.opinions.length, base.opinions.length + 1);
   assert.equal(result.state.generatedItems.length, 1);
   assert.ok(result.state.missions.at(-1)?.enemyIds?.length, '战斗/调查委托仍引用现有魔物');
@@ -1249,22 +1248,26 @@ test('辖区环境影响委托目标、报酬与截止时间', () => {
   assert.equal(long.deadlineAt, deadlineFor('long', state.day, state.minutes));
 });
 
-test('委托按三个时段放号，紧急委托到点失效且不能派遣', () => {
+test('委托板固定 12 条：过期或被接走都立刻从模板补回，不会越堆越多', () => {
   let s = createInitialState();
+  const live = (state: typeof s) => state.missions.filter(m => m.status === 'open' || m.status === 'active');
   assert.equal(WAVE_AT.length, 3);
-  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-0-')).length, 3);
+  assert.equal(live(s).length, 12, '开局就是 12 条');
   assert.equal(s.missions.filter(m => m.status === 'expired').length, 0);
-  s = act(s, { type: 'advance', minutes: 120 }).state;
-  assert.equal(s.minutes, 22 * 60);
-  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-1-')).length, 2);
-  assert.ok(s.missions.some(m => m.status === 'expired'));
-  s = act(s, { type: 'advance', minutes: 120 }).state;
-  assert.equal(s.minutes, 24 * 60);
-  assert.equal(s.missions.filter(m => m.id.startsWith('c-14-2-')).length, 2);
+
+  // 把两条紧接到期的委托推到过期，再推进几分钟：位子要立刻补回模板。
+  const doomed = live(s).filter(m => m.status === 'open').slice(0, 2);
+  for (const mission of doomed) mission.deadlineAt = s.day * 1440 + s.minutes + 1;
+  const before = new Set(s.missions.map(m => m.id));
+  s = act(s, { type: 'advance', minutes: 5 }).state;
+  assert.equal(s.minutes, 20 * 60 + 5);
+  assert.ok(s.missions.filter(m => m.status === 'expired').length >= 2, '过期的留在记录里');
+  assert.equal(live(s).length, 12, '补回 12 条');
+  assert.ok(live(s).some(m => !before.has(m.id)), '补进来的是新委托');
+
   const expired = s.missions.filter(m => m.status === 'expired');
-  assert.ok(expired.length >= 2);
-  const denied = act(s, { type: 'dispatch', missionId: expired[0].id, squad: ['yue'] });
-  assert.equal(denied.ok, false);
+  const denied = act(s, { type: 'dispatch', missionId: expired[0]!.id, squad: ['yue'] });
+  assert.equal(denied.ok, false, '过期委托不能派遣');
 });
 
 test('自定义契约礼装占衣柜一格，衣柜上限四格', () => {
