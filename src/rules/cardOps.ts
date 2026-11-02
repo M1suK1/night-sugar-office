@@ -11,9 +11,10 @@ import { normalizeMarketWindow, unshiftMarketWindow } from '../rules/market.ts';
 import { advancedCost, marketSize, marketUpgradeCost } from '../economy.ts';
 import { factionInfo } from '../content/items.ts';
 import { sanitizePortraitSrc } from '../image.ts';
+import { applyCardStorylines } from '../cardStory.ts';
 import { factionTask } from '../rules/missions.ts';
 import { archive, book, clone, dateLabel, hashText } from '../rules/core.ts';
-import type { ActionResult, GameAction, GameState, Girl, GirlCard, Trait } from '../types.ts';
+import type { ActionResult, GameAction, GameState, Girl, GirlCard, Storyline, Trait } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
 /** acceptFactionTask 的动作处理器（v35 从 act 拆出）。 */
@@ -85,10 +86,16 @@ function wardrobeFingerprint(wardrobe: unknown): string {
   return wardrobe.map(item => `${item?.id ?? ''}:${imageFingerprint(item?.portrait)}`).join(';');
 }
 
+/** 故事线的改版指纹：只认段号、状态、进度与标题，够判断「卡里的故事变了没」。 */
+function storyFingerprint(stories: Storyline[] | undefined): string {
+  if (!stories?.length) return '';
+  return stories.map(story => `${story.slot ?? 0}/${story.status}/${story.stage}/${story.title}`).join('|');
+}
+
 function importCardInto(next: GameState, card: GirlCard): { ok: true; name: string; message: string } | { ok: false; message: string } {
   const key = girlCardHash(card);
   const g = card.girl;
-  const signature = (value: typeof g | Girl) => JSON.stringify([
+  const signature = (value: typeof g | Girl, stories?: Storyline[]) => JSON.stringify([
     imageFingerprint(value.portrait),
     value.portraitSpec ?? null,
     wardrobeFingerprint(value.wardrobe),
@@ -101,15 +108,16 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     value.personality ?? '',
     value.outfitDescription ?? '',
     value.color ?? '',
+    storyFingerprint(stories),
   ]);
   const roster = [...next.girls, ...next.candidates];
   // 同一张卡在详情里换过立绘/表情后再导出：按卡号或（自定义卡）名字+代号认人，直接更新，而不是拒收或再养一个。
   const existing = roster.find(girl => girl.cardId === key)
     ?? roster.find(girl => girl.custom && girl.cardId && girl.name === g.name && girl.codename === g.codename);
   if (existing) {
-    if (existing.cardRevision === signature(g)) return { ok: false, message: '这张契约卡已经导入过，不能重复登记。' };
+    if (existing.cardRevision === signature(g, card.storylines)) return { ok: false, message: '这张契约卡已经导入过，不能重复登记。' };
     existing.cardId = key;
-    existing.cardRevision = signature(g);
+    existing.cardRevision = signature(g, card.storylines);
     existing.portrait = g.portrait ?? '';
     existing.portraitSpec = g.portraitSpec;
     if (g.wardrobe?.length) existing.wardrobe = g.wardrobe.map(outfit => ({ ...outfit }));
@@ -125,8 +133,9 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     existing.quote = g.quote ?? existing.quote;
     existing.goal = g.goal ?? existing.goal;
     existing.color = g.color || existing.color;
-    next.logs.unshift({ id: `log-card-update-${existing.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${existing.name}」已用新版本覆盖：立绘、表情与衣柜跟着卡片一起更新。` });
-    return { ok: true, name: existing.name, message: `契约卡已更新：${existing.name}的立绘与表情换成了卡里的版本。` };
+    const stories = applyCardStorylines(next, existing.id, card.storylines ?? []);
+    next.logs.unshift({ id: `log-card-update-${existing.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${existing.name}」已用新版本覆盖：立绘、表情、衣柜${stories ? `与 ${stories} 段故事线` : ''}跟着卡片一起更新。` });
+    return { ok: true, name: existing.name, message: `契约卡已更新：${existing.name}的立绘与表情换成了卡里的版本${stories ? `，${stories} 段故事线也一起搬了过来` : ''}。` };
   }
   if (next.candidates.length >= next.poolLimits.candidates) return { ok: false, message: `候选名册已满（${next.poolLimits.candidates} 位），请先移除一位候选或到设置中调高上限。` };
   if (!g.name || !Array.isArray(g.skillIds) || g.skillIds.length !== 3) return { ok: false, message: '契约卡资料不完整。' };
@@ -157,16 +166,18 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
       : [customOutfitFor({ color: g.color, outfitDescription: g.outfitDescription, portrait: g.portrait, portraitSpec: g.portraitSpec })],
     outfitId: g.wardrobe?.length ? (g.outfitId ?? g.wardrobe[0].id) : 'custom',
     expression: g.expression ?? 'calm',
-    corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7, cardId: key, cardRevision: signature(g),
+    corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7, cardId: key, cardRevision: signature(g, card.storylines),
     portraitSpec: g.portraitSpec, portraitHint: g.portraitHint ?? '', importedVariants: g.importedVariants,
     witchForm: g.witchForm ? { ...g.witchForm, id: 'witchform', form: 'witch' } : undefined,
   }, { clone: false });
   next.candidates.unshift(girl);
   unshiftMarketWindow(next, girl.id);
+  const stories = applyCardStorylines(next, girl.id, card.storylines ?? []);
   archive(next, '登记', girl.name, `从契约卡导入。${girl.title}。${girl.appearance}`);
   const lostNote = lostTraits > 0 ? `（${lostTraits} 条特性没能随卡片带来，已跳过）` : '';
-  next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。${lostNote}` });
-  return { ok: true, name: girl.name, message: `契约卡已导入：${girl.name}进入候选名册。${lostNote}` };
+  const storyNote = stories ? `随卡带来了 ${stories} 段故事线。` : '';
+  next.logs.unshift({ id: `log-card-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡「${girl.name}」已导入候选名册，保留 7 天。${lostNote}${storyNote}` });
+  return { ok: true, name: girl.name, message: `契约卡已导入：${girl.name}进入候选名册。${lostNote}${storyNote}` };
 }
 
 /** importCard 的动作处理器（v35 从 act 拆出）。 */

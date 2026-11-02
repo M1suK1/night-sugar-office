@@ -231,6 +231,8 @@ export interface GirlDraft {
 
 export interface GirlCard {
   format: 'night-sugar/girl-card'; version: 1; exportedAt: string; sourceDay: number; packHash?: string;
+  /** v45 起随卡带走的「她的故事」：含已走完的段，导入时整份还原。 */
+  storylines?: Storyline[];
   girl: {
     name: string; codename: string; title: string; element: Element; archetype?: Archetype;
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;

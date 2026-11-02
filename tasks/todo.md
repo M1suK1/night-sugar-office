@@ -624,3 +624,11 @@
   - `CouncilView` 助手席改用 `variant="bust"`；`styles.css` 立绘框 240 → 360px，名字 13 → 15px、说明 11 → 12px，内边距 16 → 18px。
   - 窄屏（≤1080px）不再 `display: none`，改成「120×160 缩略图 + 名字与说明」的两栏窄条。
 - [x] 测试：新增 `tests/v44.test.ts` 六条（字段默认与夹取、老配置兼容、基准/羁绊/封顶、故事线专用档、优先占位、每晚上限、同日去重）；`game.test.ts` 的数值字段计数同步为 16。20 个测试文件 421 项全绿，`tsc --noEmit` 0 错，`check:rules` 30 模块无环无 BOM。
+
+## v45 导出契约卡时带上她的故事线
+
+- [x] `src/cardStory.ts`（新）：`cardStorylinesFor()` 导出深拷贝并剥掉旧存档的委托/事件引用；`sanitizeCardStorylines()` 洗净外部卡片（坏条目丢弃、最多三段、只留一条进行中）；`applyCardStorylines()` 导入时重写 id、把 `girlId` 指向新少女、重建段与段的先后关系。
+- [x] `GirlCard` 新增顶层 `storylines?: Storyline[]`；`buildGirlCard()` 按 `girlId` 摘出这位少女的故事线一并写入，`parseGirlCard()` 读回时做同样的清洗。
+- [x] `applyImportCard` / `importCards`：新登记与「同卡改版覆盖」两条路径都会落地故事线，日志与提示写明带了几段；卡片的改版指纹加上「段号/状态/进度/标题」，只有故事线推进过也会被识别成新版本。
+- [x] `App.tsx` 导出提示补「（含 N 段故事线）」。
+- [x] 测试：新增 `tests/v45.test.ts` 五条（导出剥离旧 id、卡片往返、导入重映射、重复导入与改版覆盖、三段上限与单条进行中）；21 个测试文件 426 项全绿，`tsc --noEmit` 0 错，`check:rules` 30 模块无环无 BOM。

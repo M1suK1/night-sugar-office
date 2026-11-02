@@ -1,10 +1,11 @@
-import type { Expression, Girl, GirlCard, Outfit, StatKey, Trait, TraitPolarity } from './types';
+import type { Expression, Girl, GirlCard, Outfit, StatKey, Storyline, Trait, TraitPolarity } from './types';
 import { sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
 import { skillById } from './content/skills.ts';
 import { traitById } from './content/traits.ts';
 import { sanitizeGirlFaction } from './factions.ts';
 import { safeOptimizedImageDataUrl, yieldToGC } from './image.ts';
+import { cardStorylinesFor, sanitizeCardStorylines } from './cardStory.ts';
 
 const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
@@ -24,9 +25,11 @@ export function girlCardHash(card: GirlCard): string {
   return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan, g.factionTag ?? ''].join(':'));
 }
 
-export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string }): GirlCard {
+export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string; storylines?: Storyline[] }): GirlCard {
+  const stories = cardStorylinesFor({ storylines: state.storylines ?? [] }, girl.id);
   return {
     format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: state.day, packHash: state.packHash,
+    storylines: stories.length ? stories : undefined,
     girl: {
       name: girl.name, codename: girl.codename, title: girl.title, element: girl.element, archetype: girl.archetype,
       color: girl.color, quote: girl.quote, goal: girl.goal, appearance: girl.appearance, personality: girl.personality,
@@ -134,9 +137,11 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       };
     })()
     : undefined;
+  const stories = sanitizeCardStorylines(card.storylines);
   const normalized: GirlCard = {
     format: 'night-sugar/girl-card', version: 1, exportedAt: typeof card.exportedAt === 'string' ? card.exportedAt : new Date().toISOString(),
     sourceDay: typeof card.sourceDay === 'number' ? card.sourceDay : 1, packHash: typeof card.packHash === 'string' ? card.packHash : undefined,
+    storylines: stories.length ? stories : undefined,
     girl: {
       name: g.name!.trim(), codename: g.codename!.trim(), title: g.title!.trim(), element: g.element as GirlCard['girl']['element'],
       archetype: g.archetype, color: g.color, quote: typeof g.quote === 'string' ? g.quote.slice(0, 200) : undefined,

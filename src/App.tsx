@@ -666,9 +666,10 @@ export default function App() {
       }
     } catch { /* 卡库写不进去不影响文件导出。 */ }
     const saved = await writeLocalFile('card', name, text);
-    if (saved) { notify(`契约卡「${girl.name}」已存进 ${shortPath(saved)}。`); return; }
+    const storyNote = card.storylines?.length ? `（含 ${card.storylines.length} 段故事线）` : '';
+    if (saved) { notify(`契约卡「${girl.name}」已存进 ${shortPath(saved)}。${storyNote}`); return; }
     downloadFile(name, text);
-    notify(`契约卡「${girl.name}」已导出到下载目录。`);
+    notify(`契约卡「${girl.name}」已导出到下载目录。${storyNote}`);
   };
   const importCard = async (file: File) => {
     if (file.size > 8_000_000) { notify('卡片文件超过 8MB，无法导入。', false); return; }
