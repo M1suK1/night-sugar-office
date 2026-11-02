@@ -568,3 +568,10 @@
   - `src/content/traits.ts`：全部 24 条个性与体质特性重构为具备人物执念与怪癖细节的生动描写。
   - `src/content/equipment/`（tier1~tier5）：全 5 阶 76 件装备与道具 description 重塑为具象器物来历、打磨痕迹、材质触感与实战体会；消耗品恢复数值一字不落。
   - 验证：逻辑字段零变动；19 个测试文件 409 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。
+- [x] **阶段五（UI 界面指引与系统说明）**：
+  - `src/rules/labels.ts`：七阶羁绊心声 `stageHints`（从“她不想与你共处一室”升华到“她本能地抗拒与你在同一张桌前停留…”等细腻心理描写）；工种说明 `workDescriptions`（战斗与调查机制叙述更具实战沉浸感）。
+  - `src/components/ClinicPanel.tsx`：诊所底部提示升华，由生硬计费说明重塑为严谨的药浴愈合与抚平心智褶皱指南。
+  - `src/components/MissionDialog.tsx`：派遣编成备忘录、战果判定机制说明（消灭“玩家不介入战斗；结果由规则引擎结算”等代码腔，改为所长执业视角）、过期信号撤回提示。
+  - `src/components/CharacterDialog.tsx`：魔女化警示、四维战斗与心防作用机理、手动/自动加点潜力说明、门诊导引。
+  - `src/components/RoomDialog.tsx`：诊所药浴与睡眠疲劳区别、记忆重塑与灵体复制权能说明。
+  - 验证：纯静态展示字串调整，零交互逻辑变动；19 个测试文件 409 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。

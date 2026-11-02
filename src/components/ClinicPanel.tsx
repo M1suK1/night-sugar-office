@@ -85,7 +85,7 @@ export function ClinicPanel({ state, girls, onTreat, onClear, onGirl }: {
           })}
         </section>
       )}
-      <p className="clinic-note">普通治疗按 30 分钟一档计价，治疗期间无法派遣，也不会恢复疲劳。疲劳请回宿舍休息。癖好护理单独计时 2 小时，不回血。</p>
+      <p className="clinic-note">诊所药浴按半小时为一档逐步弥合外伤；治疗期间肢体深层受创，严禁签发派遣指令，且单纯外伤浸润无法缓解精神疲倦（疲劳请安排回宿舍安歇）。癖好护理需独立静候两小时以抚平心智褶皱，该疗程专精于神经稳固，不会对肉体生命值产生回复效果。</p>
     </div>
   );
 }

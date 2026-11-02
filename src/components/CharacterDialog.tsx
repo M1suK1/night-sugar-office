@@ -203,7 +203,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                   </div>
                 </div>
               ) : <p className="personality-text">{personality}</p>}
-              {girl.witch && <p className="personality-warning">魔女化会把原本的执念放大成偏执、嫉妒与占有欲；恢复普通形态后仍会读取原本的性格记录。</p>}
+              {girl.witch && <p className="personality-warning">显化夜之形将把她内心最深层的执念扭曲放大为偏执、占有与多疑；唯有褪下魔女礼装、重返平静日常，原本温和的人格记忆方能重新主导心智。</p>}
             </section>
             <section className="story-panel" aria-labelledby="story-title">
               <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : girl.storyPlan?.graph ? `${girl.storyPlan.graph.nodes.length} 节点` : '未开启'}</em></div>
@@ -307,8 +307,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 ))}
             </div>
             <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${girl.stats[k]}%` }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
-            <p className="small-note">魔力决定伤害；洞察决定命中；敏捷决定闪避与先手；共情决定心防。</p>
-            <p className="small-note">能力用于战斗结算与委托判定。疤痕会永久改变这些数值。</p>
+            <p className="small-note">魔力主导杀伤爆发；洞察洞悉破绽与命中精度；敏捷掌控身法闪避与行动先手；共情撑起抵御冲击的心防屏障。</p>
+            <p className="small-note">核心四维直接决定委托判定与实战交锋走势；深层疤痕会在灵魂上留下不可逆的钝性削减。</p>
           </>}
           {tab === 'relations' && <>
             <div className="bond-hero">
@@ -343,7 +343,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <strong>{girl.stats[key]}</strong>
                 <button id={`girl-allocate-${key}`} type="button" className="btn small" disabled={!(girl.unspentPoints ?? 0) || girl.stats[key] >= 120 || girl.retired || Boolean(girl.dead)} onClick={() => onAllocate?.(key)}>+1</button>
               </div>)}
-              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 ? `可分配 ${girl.unspentPoints} 点。加点只改四维，心防仍按共情重算。` : state.levelUpMode === 'manual' ? '手动加点模式：每次升级发 10 点。' : '当前是自动加点，可在设置里改成手动。'}</p>
+              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
             </div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
@@ -367,7 +367,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             </div>
             </div>
             <section className="growth-clinic">
-              <div className="modal-section-heading"><h3>月光诊所</h3><small>按缺失血量收费，按小时恢复；治疗期间不能派遣</small></div>
+              <div className="modal-section-heading"><h3>月光诊所</h3><small>按失血创伤程度分阶计价，按小时平稳愈合；治疗期间严禁签发出勤</small></div>
               <ClinicPanel state={state} girls={[girl]} onTreat={(_girlId, kink) => onClinic('treat', kink)} />
               <div className="clinic-grid">
                 <button id="clinic-clear" className="clinic-action" disabled={state.gold < 1200 || girl.status === 'mission' || girl.status === 'expedition' || !girl.scars.some(s => s.kind === 'mental')} onClick={() => onClinic('clear')}><Sparkles size={16} /><b>记忆清除</b><small>1,200 星砂 · 只清一条精神疤痕，不动等级</small></button>

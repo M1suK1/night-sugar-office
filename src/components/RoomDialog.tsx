@@ -140,7 +140,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
     {tab === 'clinic' && (
       <div className="room-function">
         <h3>今夜，先把伤口放下</h3>
-        <p>按缺失的血量收费，按小时慢慢恢复。治疗期间她不能出勤，也不会恢复疲劳——疲劳归宿舍。</p>
+        <p>诊所依据失血创伤程度分阶计价，按小时平稳弥合肉体撕裂；治疗期间严禁签发出勤，且药浴无法代替深度睡眠对神经疲惫的化解。</p>
         <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} onClear={girlId => onClinic(girlId, 'clear')} />
       </div>
     )}
@@ -148,7 +148,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
     {tab === 'surgery' && (
       <div className="room-function">
         <h3>记忆重塑与复制契约</h3>
-        <p>记忆重塑 4,000 星砂（抹除精神疤痕、等级与关系重置）；复制契约 18,000 星砂（Lv.3+ 可生成 1 级镜像体）。</p>
+        <p>记忆重塑耗费 4,000 星砂（彻底剥离全部深层精神疤痕，等级与羁绊因果重归初始）；复制契约耗费 18,000 星砂（Lv.3 及以上资深契约者可凝练 1 级纯净镜像灵体，仅限一次）。</p>
         <div className="girl-card-grid room-card-grid">
           {activeGirls.map(g => (
             <article key={g.id} className="girl-card">

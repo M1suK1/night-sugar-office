@@ -159,7 +159,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           </div>
           <div className="assignment-note">
             <Radio size={14} />
-            <span>{squad.length ? `${squad.map(g => g.name).join('、')}预计于 ${clock((state.minutes + mission.duration) % 1440)} 返回。${mission.work === 'combat' ? '战斗开始后不可撤回。' : '调查以队伍最高相关能力判定。'}${squadChance(squad, mission) < 45 ? ' 队伍契合度偏低，失败概率较高。' : ''}` : '选择 1 至 ' + limit + ' 位待命契约者。血量不足或疲劳过高时请先安排照顾。'}</span>
+            <span>{squad.length ? `${squad.map(g => g.name).join('、')}已受领简报，预计于 ${clock((state.minutes + mission.duration) % 1440)} 携现场记录返回事务所。${mission.work === 'combat' ? '战斗交锋一旦展开不可中途撤回，请审慎确认阵线。' : '调查行动以队伍最高特长综合裁定胜负。'}${squadChance(squad, mission) < 45 ? ' 当前队伍契合度偏低，面临较高失手与负伤风险。' : ''}` : '请自待命名单中指派 1 至 ' + limit + ' 位契约少女组建出勤小队；当成员生命过低或过度疲惫时，请优先安排休整或诊所药浴。'}</span>
           </div>
           <div className="squad-readiness">
             <div><span>队伍契合</span><b className={chanceValue < 45 ? 'low' : chanceValue > 75 ? 'high' : ''}>{squad.length ? `${chanceValue}%` : '—'}</b></div>
@@ -167,7 +167,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
             <div><span>预计轮次</span><b>{mission.work === 'combat' ? `${mission.rounds} 轮` : '判定一次'}</b></div>
           </div>
           <div className="modal-actions">
-            <span>玩家不介入战斗；结果由规则引擎结算。</span>
+            <span>所长不直接介入交锋现场；战果由双方属性与战术规则判定。</span>
             <button id="dispatch-confirm" className="btn primary" disabled={!squadReady} onClick={() => onDispatch(selected, mission.id)}>确认派遣<ArrowUpRight size={17} /></button>
           </div>
         </>
@@ -175,13 +175,13 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <div className="mission-result">
           {mission.status === 'expired' ? <>
             <Hourglass size={30} /><h3>这条信号已经消散。</h3>
-            <p>截止时间已过，委托从今晚的名单里撤下。明晚会再有新的信号。</p>
+            <p>已超过既定接取时限，因果线彻底淡出街区，委托已自动撤销；明夜开门后将重新捕获新的异常信号。</p>
           </> : mission.status === 'active' ? <>
             <Radio size={30} /><h3>{assigned.map(g => g.name).join('、')}正在执行委托</h3>
-            <p>距离返回还有 {Math.min(...assigned.map(g => g.remaining), 999)} 分钟。推进游戏时间即可结算{mission.work === 'combat' ? '并生成战斗报告' : ''}。</p>
+            <p>距离出勤返回还有 {Math.min(...assigned.map(g => g.remaining), 999)} 分钟。推进时间流逝即可完成战况结算{mission.work === 'combat' ? '并归档实战报告' : ''}。</p>
             <div className="result-squad">{assigned.map(g => <button key={g.id} id={`mission-assigned-${g.id}`} className="btn" onClick={() => onGirl(g.id)}><img src={g.portrait} alt="" />{g.name}<Heart size={13} /></button>)}</div>
           </> : <>
-            <Check size={30} /><h3>这个心愿，已经被好好守护。</h3><p>最后一次结果：{mission.lastOutcome === 'victory' ? '战斗胜利' : mission.lastOutcome === 'repelled' ? '暂时击退' : '调查完成'}。{mission.work === 'combat' ? `报酬${mission.lastOutcome === 'repelled' ? '按八成' : '已全额'}计入星砂储备。` : '报酬已计入星砂储备。'}</p>
+            <Check size={30} /><h3>这个心愿，已经被好好守护。</h3><p>最后一次结果：{mission.lastOutcome === 'victory' ? '战斗胜利' : mission.lastOutcome === 'repelled' ? '暂时击退' : '调查完成'}。{mission.work === 'combat' ? `委托报酬${mission.lastOutcome === 'repelled' ? '按八成结算' : '已全额'}入账星砂金库。` : '委托报酬已全额入账星砂金库。'}</p>
             {mission.work === 'combat' && lastBattle && onBattle && <div className="mission-result-actions"><button id="mission-view-battle" className="btn" onClick={() => onBattle(lastBattle.id)}><ScrollText size={15} />查看战斗记录</button></div>}
           </>}
         </div>
