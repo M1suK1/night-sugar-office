@@ -117,6 +117,57 @@ export function starterPicks(state: GameState, cardsOnly: boolean): string[] {
   return [...new Set([...picked, ...fallback])].slice(0, STARTER_COUNT);
 }
 
+/** Fisher-Yates；`random` 可注入，测试里才好复现。 */
+export function shuffleWith<T>(items: T[], random: () => number = Math.random): T[] {
+  const list = [...items];
+  for (let index = list.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(random() * (index + 1));
+    [list[index], list[target]] = [list[target]!, list[index]!];
+  }
+  return list;
+}
+
+export interface StarterAssignment {
+  picked: string[];
+  roster: Record<FactionId, FactionRoster>;
+}
+
+/**
+ * 开局随机分配：名册挑几位、三方各坐一位首领与一位随从。
+ *
+ * 只在池子里有足够的人（≥6）时才接手；否则返回 `null`，让调用方退回默认分配。
+ * 三名首领优先取同势力的人，凑不齐再退到任意人——避免月蚀庭的首领是星灯协会的人这种出戏。
+ */
+export function randomStarterAssignment(
+  pool: RosterSubject[],
+  options: { count?: number; random?: () => number } = {},
+): StarterAssignment | null {
+  const random = options.random ?? Math.random;
+  const count = Math.max(1, options.count ?? STARTER_COUNT);
+  const ids = shuffleWith([...new Set(pool.map(subject => subject.id))], random);
+  if (ids.length < 6) return null;
+  const picked = ids.slice(0, Math.min(count, 6));
+  const rest = ids.slice(picked.length);
+  const byId = new Map(pool.map(subject => [subject.id, subject]));
+
+  const roster = {} as Record<FactionId, FactionRoster>;
+  const taken = new Set<string>();
+  const leaders: string[] = [];
+  for (const faction of FACTION_ORDER) {
+    const preferred = rest.find(id => !taken.has(id) && byId.get(id)?.faction === faction);
+    const leaderId = preferred ?? rest.find(id => !taken.has(id)) ?? '';
+    if (leaderId) { taken.add(leaderId); leaders.push(leaderId); }
+    roster[faction] = { leaderId, memberIds: [] };
+  }
+  for (const faction of FACTION_ORDER) {
+    const memberId = rest.find(id => !taken.has(id));
+    if (!memberId) break;
+    taken.add(memberId);
+    roster[faction].memberIds = [memberId];
+  }
+  return { picked, roster };
+}
+
 /** 面板条目现在坐在哪：`{ faction, role }`；没编进名册就是空。 */
 export function rosterSeatOf(state: GameState, id: string): { faction: FactionId; role: 'leader' | 'member' } | undefined {
   for (const faction of FACTION_ORDER) {

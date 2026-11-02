@@ -516,3 +516,11 @@
 - [x] L1：`importCards` / `refillMarket` 不再逐张 `clone(state)`，改成 `importCardInto(next, card)` 只克隆一次；`hydrate` 对「刚拼好的字面量」支持 `{ clone: false }`，省掉每张卡一次 2–3MB 立绘深拷贝。
 - [x] L2：新增 `src/cardImport.ts` 的分批规划（≤6 张 / ≤4MB 一批），开局与卡库导入都逐批 `cardboxCards` → `importCards`，每批解析完即丢；卡库对话框显示「正在分批读取 3/5 批」，控制台打 `[卡库] 分批读取 i/n`。
 - [x] 新增 2 条测试：导入 20 张卡的 `JSON.parse` 次数 ≤4（锁住「不再逐张深拷贝」）、分批规划的张数/字节/超大单卡边界。
+
+## v37 开局随机分配 / 派遣选人显示职业
+
+- [x] `roster.ts` 新增 `shuffleWith` 与 `randomStarterAssignment(pool, { count, random })`：名册随机挑 2 位，三方各坐一位首领与一位随从，首领优先同势力的人；池子不足 6 人返回 `null` 交回默认分配。
+- [x] 开局编成（`phase === 'roster'`）第一次拿到池子就随机分配一次；从设置页重开编成不随机，避免覆盖玩家已经调好的座位。
+- [x] 编成页加「换一组」按钮（`#starter-reroll`），随时重掷名册与三方座位。
+- [x] 派遣选人列表在名字后面显示职业（输出 / 守护 / 治愈 / 控制 / 侦查，缺省「未定」），样式 `.assignment-role`。
+- [x] 新增 `tests/starter.test.ts` 5 条：座位不重叠、同种子可复现、池子不足回退、首领同势力、洗牌不丢不重。

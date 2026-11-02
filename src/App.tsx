@@ -1036,6 +1036,7 @@ export default function App() {
       <StarterDialog
         state={state}
         forced={phase === 'roster'}
+        randomize={phase === 'roster'}
         cardsOnly={boxUsable >= OPENING_CARDS}
         onConfirm={(girlIds, roster, custom) => {
           if (!perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls })) return;

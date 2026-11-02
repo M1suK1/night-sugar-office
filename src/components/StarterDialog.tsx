@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, RotateCcw, Search, Star, UserRoundPlus, Users, X } from 'lucide-react';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState } from '../types';
 import { factionInfo } from '../content/items';
 import { FACTION_ORDER } from '../territories';
 import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, type RosterSubject } from '../factions';
 import { loadCardBox, type CardBoxEntry } from '../cardbox';
-import { cardFactionRoster, rosterPool, starterPicks } from '../roster';
+import { STARTER_COUNT, cardFactionRoster, randomStarterAssignment, rosterPool, starterPicks } from '../roster';
 import { OPENING_CARDS } from '../opening';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -23,6 +23,8 @@ interface StarterDialogProps {
   cardsOnly?: boolean;
   /** 开场必经：不给关闭按钮，也不显示「稍后再说」。 */
   forced?: boolean;
+  /** 新开一局时先随机分一次名册与三方座位；从设置页重开编成时不随机。 */
+  randomize?: boolean;
 }
 
 const MEMBER_LIMIT = 4;
@@ -42,7 +44,7 @@ interface Pick {
 type SourceFilter = 'all' | 'native' | 'custom';
 
 /** 开局编成：挑自己的少女，再把三方的首领与随从分配好。 */
-export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose, cardsOnly = false, forced = false }: StarterDialogProps) {
+export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose, cardsOnly = false, forced = false, randomize = false }: StarterDialogProps) {
   const poolPicks = useMemo<Pick[]>(() => {
     const own = state.girls.filter(girl => !girl.dead && (!cardsOnly || girl.custom)).map(girl => ({
       id: girl.id, name: girl.name, level: girl.level, color: girl.color, portrait: girl.portrait,
@@ -66,6 +68,24 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     const valid = new Set(poolPicks.map(pick => pick.id));
     return starterPicks(state, cardsOnly).filter(id => valid.has(id));
   });
+  const randomized = useRef(false);
+  /** 重新掷一次：名册 2 位 + 三方首领与随从全换一组。 */
+  const reroll = () => {
+    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT });
+    if (!assignment) return;
+    randomized.current = true;
+    setPicked(assignment.picked);
+    setRoster(assignment.roster);
+  };
+  // 开局编成：等卡库读进来、池子成形后随机分一次；之后玩家自己改，不再覆盖。
+  useEffect(() => {
+    if (!randomize || randomized.current) return;
+    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT });
+    if (!assignment) return;
+    randomized.current = true;
+    setPicked(assignment.picked);
+    setRoster(assignment.roster);
+  }, [randomize, pool]);
   const [roster, setRoster] = useState<Record<FactionId, FactionRoster>>(() => {
     // 卡够 20 张时内置角色不在池子里，默认阵容改用卡先坐满三方。
     if (cardsOnly) {
@@ -267,7 +287,12 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
               ? '卡库还不够 20 张，先用默认阵容补满。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
               : '挑 2 位少女签进事务所（最多 6 位），再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
-        {forced ? null : <button id="starter-close" type="button" className="btn ghost" onClick={onClose}><X size={14} />稍后再说</button>}
+        <div className="starter-head-actions">
+          <button id="starter-reroll" type="button" className="btn ghost" onClick={reroll} title="名册与三方座位重新随机分配">
+            <RotateCcw size={13} />换一组
+          </button>
+          {forced ? null : <button id="starter-close" type="button" className="btn ghost" onClick={onClose}><X size={14} />稍后再说</button>}
+        </div>
       </header>
 
       <nav className="starter-tabs">

@@ -147,7 +147,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
                   onClick={() => toggle(person)}>
                   <img src={person.portrait} alt="" />
                   <span>
-                    <b>{person.name}</b>
+                    <b>{person.name}<i className="assignment-role" title="职业">{person.archetype ?? '未定'}</i></b>
                     <small>{!check.ok ? check.reason : `${statLabels[mission.requirement]} ${person.stats[mission.requirement]} · 疲劳 ${person.fatigue}`}</small>
                   </span>
                   <em>{check.ok ? `${chance(person, mission)}%` : '—'}<small>{check.ok ? '单人契合' : ''}</small></em>

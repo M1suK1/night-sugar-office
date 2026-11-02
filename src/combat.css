@@ -913,3 +913,12 @@
 .enemy-card.elite{border-color:#e9b96a55;background:linear-gradient(120deg,#2a1d18,#15131b)}
 .enemy-card.elite>span>small>em{font-style:normal;color:#e9b96a;letter-spacing:.06em}
 .enemy-card.elite>em{color:#f0c681}
+
+/* v37 派遣选人：名字后面跟职业（输出/守护/治愈/控制/侦查），未定也用同一个占位。 */
+.assignment-girl b { display: inline-flex; align-items: center; gap: 5px; }
+.assignment-girl .assignment-role {
+  font-style: normal; font-size: 8px; letter-spacing: .06em; padding: 1px 5px; border-radius: 4px;
+  border: 1px solid #f3aec94d; background: #f3aec910; color: #e6c2d6; white-space: nowrap;
+}
+.assignment-girl.selected .assignment-role { border-color: #f3aec9aa; color: #ffe4f0; }
+.starter-head-actions { display: flex; align-items: center; gap: 8px; }
