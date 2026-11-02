@@ -18,7 +18,7 @@ import { syncShift } from './time.ts';
 // v35 从 src/game.ts 拆出：开局状态构造。
 
 export function createInitialState(pack: ContentPack = createSeedPack(), seed = pack.hash): GameState {
-  const all = pack.girls.map(hydrate);
+  const all = pack.girls.map(girl => hydrate(girl));
   const hired = all.filter(g => g.id !== 'lu');
   const candidates = all.filter(g => g.id === 'lu');
   if (candidates[0]) candidates[0] = { ...candidates[0], level: 6, cost: 3200, status: 'idle' };

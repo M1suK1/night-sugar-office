@@ -7,6 +7,14 @@ export const OPENING_OPINIONS = 3;
 export const OPENING_INCIDENTS = 3;
 /** 开局从卡库摆出来的选人池上限（没被选中的留在市场）。 */
 export const OPENING_CARDS = 20;
+/**
+ * 开局愿意一次性读进内存的卡面总量。
+ *
+ * 一张带 1024 立绘的卡约 2–3MB，20 张就是 40–60MB：这些立绘会跟着 `GameState`
+ * 一起被 JSON 序列化进存档，低配机器上开局就顶不住。超过预算的卡留在卡库里，
+ * 由市场按缺口逐日补货（`refillMarket` 会按 hash 单张读）。
+ */
+export const OPENING_CARD_BYTES = 12 * 1024 * 1024;
 
 export interface OpeningGaps {
   /** 待处理议案还差几条。 */

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileJson, FolderOpen, Info, Loader2, ScanLine, Search, Trash2, Upload, X } from 'lucide-react';
 import {
-  CARD_BOX_LIMIT, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, loadCardBox,
+  CARD_BOX_LIMIT, cardBoxTagLabel, cardboxAdd, cardboxFilter, cardboxRemove, loadCardBox,
 } from '../cardbox.ts';
 import type { CardBoxEntry } from '../cardbox.ts';
 import { girlFactionColors } from '../factions.ts';
 import { localPaths, shortPath } from '../localfiles.ts';
-import type { GirlCard } from '../types.ts';
 
 type Failure = { name: string; message: string };
 
@@ -20,7 +19,8 @@ interface ScanResult {
 }
 
 export function CardLibraryDialog({ onImport, notify }: {
-  onImport: (cards: GirlCard[]) => void;
+  /** 交给调用方分批读取与写入；`onProgress` 用来显示「第几批」。 */
+  onImport: (entries: CardBoxEntry[], onProgress?: (done: number, total: number) => void) => Promise<void> | void;
   notify: (text: string, ok?: boolean) => void;
 }) {
   const [entries, setEntries] = useState<CardBoxEntry[]>([]);
@@ -124,10 +124,15 @@ export function CardLibraryDialog({ onImport, notify }: {
   };
 
   const importPicked = async () => {
-    const cards = await cardboxCards(picked);
-    if (!cards.length) { notify('选中的卡读不出来了，可能文件被动过。', false); return; }
-    onImport(cards);
-    setPicked([]);
+    const chosen = entries.filter(entry => pickedSet.has(entry.hash));
+    if (!chosen.length) { notify('先选几张卡再导入。', false); return; }
+    setBusy('正在分批读取…');
+    try {
+      await onImport(chosen, (done, total) => setBusy(`正在分批读取 ${done}/${total} 批…`));
+      setPicked([]);
+    } finally {
+      setBusy('');
+    }
   };
 
   const deletePicked = async () => {

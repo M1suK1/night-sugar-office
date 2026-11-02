@@ -142,8 +142,14 @@ export function sanitizeFactionRoster(
   return { roster, leaders: usedLeaders, girls: usedGirls };
 }
 
-export function hydrate(girl: GirlInput): Girl {
-  const g = clone(girl) as Girl;
+/**
+ * 补齐少女的默认字段。
+ *
+ * `clone: false` 给「输入本来就是刚拼好的新字面量」的调用方用（例如契约卡导入）：
+ * 这时再深拷贝一次等于把 2–3MB 的立绘字符串多复制一份，20 张卡就是几十 MB 的瞬时开销。
+ */
+export function hydrate(girl: GirlInput, options: { clone?: boolean } = {}): Girl {
+  const g = (options.clone === false ? { ...girl } : clone(girl)) as Girl;
   g.baseMaxHp ??= g.maxHp;
   g.baseStats ??= { ...g.stats };
   g.skills ??= defaultSkills(g.id);

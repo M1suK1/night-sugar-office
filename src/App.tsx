@@ -57,8 +57,10 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
-import { OPENING_CARDS } from './opening';
-import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
+import { OPENING_CARDS, OPENING_CARD_BYTES } from './opening';
+import { marketCardGap, marketNeedsCards, pickWithinBytes, unusedCards } from './cardMarket';
+import { planCardBatches } from './cardImport';
+import type { CardBoxEntry } from './cardbox';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
@@ -698,18 +700,50 @@ export default function App() {
   const deleteSlot = async (id: SaveSlotId) => { await clearSlot(id); notify(`存档位 ${id} 已清空。`); };
   const restartGame = () => { setAuto(false); setModal(null); perform({ type: 'reset' }); setPhase('roster'); notify('新的一局开始了，先看看开场。'); };
 
+  /**
+   * 分批读卡，再逐批写进 state。
+   *
+   * 每批只把几十 MB 里的几张读进来，解析完立刻交给 `importCards` 并丢掉原文引用，
+   * 峰值只跟一批有关，而不是整库。`onProgress` 给界面显示「第几批」。
+   */
+  const importCardsInBatches = async (
+    base: GameState,
+    entries: CardBoxEntry[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<GameState> => {
+    const batches = planCardBatches(entries);
+    let working = base;
+    for (let index = 0; index < batches.length; index += 1) {
+      const batch = batches[index]!;
+      const cards = await cardboxCards(batch.map(entry => entry.hash));
+      if (cards.length) {
+        const applied = act(working, { type: 'importCards', cards });
+        if (applied.ok) working = applied.state;
+      }
+      onProgress?.(index + 1, batches.length);
+      if (batches.length > 1) {
+        const mb = Math.round(batch.reduce((sum, entry) => sum + entry.bytes, 0) / 1024 / 1024);
+        console.info(`[卡库] 分批读取 ${index + 1}/${batches.length}：${cards.length} 张 · ${mb}MB`);
+      }
+    }
+    return working;
+  };
+
   /** 开始新游戏：标准开局 → 卡库摆出最多 20 张选人池 → 进编成。 */
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
     let next = act(state, { type: 'reset', mode }).state;
     try {
       const box = await loadCardBox();
       setBoxUsable(box.length);
-      const picks = unusedCards(box, next, OPENING_CARDS);
+      // 先按张数取，再按「卡面总量」截一刀：立绘会随存档一起序列化，不能为了摆满 20 个位置全读进来。
+      const picks = pickWithinBytes(unusedCards(box, next, OPENING_CARDS), OPENING_CARDS, OPENING_CARD_BYTES);
+      if (picks.length < Math.min(box.length, OPENING_CARDS)) {
+        console.info(`[卡库] 开局只读 ${picks.length}/${Math.min(box.length, OPENING_CARDS)} 张（约 ${Math.round(picks.reduce((sum, entry) => sum + entry.bytes, 0) / 1024 / 1024)}MB），其余留给市场按需补货。`);
+      }
       if (picks.length) {
         // 卡库开局不摆内置候选：那 20 个位置都留给玩家的卡。
         next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
-        const imported = act(next, { type: 'importCards', cards: await cardboxCards(picks.map(entry => entry.hash)) });
-        if (imported.ok) next = imported.state;
+        next = await importCardsInBatches(next, picks);
       }
     } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ }
     setState(next);
@@ -1165,7 +1199,13 @@ export default function App() {
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'slots' && <SaveSlotsDialog boot={modal.boot} onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} onContinue={modal.boot && hadSave ? () => { setModal(null); enterPlay(); } : undefined} day={hadSave ? state.day : undefined} girls={hadSave ? state.girls.length : undefined} startersPicked={state.startersPicked} />}
-      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={cards => { if (perform({ type: 'importCards', cards })) setModal(null); }} />}
+      {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={async (entries, onProgress) => {
+        const next = await importCardsInBatches(state, entries, onProgress);
+        if (next === state) { notify('选中的卡都已经在名册里了。', false); return; }
+        setState(next);
+        setModal(null);
+        notify(`已导入 ${entries.length} 张契约卡（分 ${planCardBatches(entries).length} 批读取）。`);
+      }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
       {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}

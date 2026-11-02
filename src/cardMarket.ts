@@ -38,8 +38,26 @@ export function unusedCards(box: CardBoxEntry[], state: GameState, limit = Numbe
     .slice(0, Math.max(0, limit));
 }
 
-/** 卡库是不是已经完全用光（没有可补的卡）。 */
-export function cardBoxExhausted(box: CardBoxEntry[], state: GameState): boolean {
+/**
+ * 再按「卡面总量」截一刀：开局不该为了摆满 20 个人把几十 MB 立绘读进内存。
+ *
+ * 至少收一张（第一张哪怕超预算也要收，否则开局没人可选），之后超出预算就停，
+ * 剩下的留在卡库等市场按缺口补货。
+ */
+export function pickWithinBytes(entries: CardBoxEntry[], limit: number, budget: number): CardBoxEntry[] {
+  const picked: CardBoxEntry[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    if (picked.length >= limit) break;
+    const size = Number.isFinite(entry.bytes) ? entry.bytes : 0;
+    if (picked.length && bytes + size > budget) break;
+    picked.push(entry);
+    bytes += size;
+  }
+  return picked;
+}
+
+/** 卡库是不是已经完全用光（没有可补的卡）。 */export function cardBoxExhausted(box: CardBoxEntry[], state: GameState): boolean {
   return unusedCards(box, state, 1).length === 0;
 }
 

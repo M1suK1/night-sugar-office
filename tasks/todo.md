@@ -512,3 +512,7 @@
 - [x] 编成池不再解析卡面：`cardSubject` 直接用索引元数据，立绘留空走程序化剪影；真正编进名册的那几张才在 `importCards` 时读原文。
 - [x] 新增 `tests/cardbox.test.ts` 4 条：索引不带 `raw`、旧库迁移并删键、脏值清理、2MB 卡的索引仍 <2KB。
 - [x] 17 个文件 388 条测试逐文件全过；`tsc --noEmit` 0 错；`npm run check:rules` 通过（29 模块 / 无环 / 无 BOM）。
+- [x] 开局再加一道「卡面总量」预算：`OPENING_CARD_BYTES = 12MB`，超过就少读几张、剩下的留给市场按缺口补货；被截断时控制台打一行 `[卡库] 开局只读 N/M 张（约 XMB）`。
+- [x] L1：`importCards` / `refillMarket` 不再逐张 `clone(state)`，改成 `importCardInto(next, card)` 只克隆一次；`hydrate` 对「刚拼好的字面量」支持 `{ clone: false }`，省掉每张卡一次 2–3MB 立绘深拷贝。
+- [x] L2：新增 `src/cardImport.ts` 的分批规划（≤6 张 / ≤4MB 一批），开局与卡库导入都逐批 `cardboxCards` → `importCards`，每批解析完即丢；卡库对话框显示「正在分批读取 3/5 批」，控制台打 `[卡库] 分批读取 i/n`。
+- [x] 新增 2 条测试：导入 20 张卡的 `JSON.parse` 次数 ≤4（锁住「不再逐张深拷贝」）、分批规划的张数/字节/超大单卡边界。

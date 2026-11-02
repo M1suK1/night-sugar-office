@@ -119,8 +119,8 @@ export function loadState(raw: string | null): GameState {
     state.warHistory = (Array.isArray(state.warHistory) ? state.warHistory : [])
       .filter(record => record && HOSTILITY_PAIRS.includes(record.pair) && Number.isFinite(record.day))
       .slice(-40);
-    state.girls = state.girls.map(hydrate);
-    state.candidates = Array.isArray(state.candidates) ? state.candidates.map(hydrate).slice(0, Math.max(6, state.poolLimits?.candidates ?? 20)) : [];
+    state.girls = state.girls.map(girl => hydrate(girl));
+    state.candidates = Array.isArray(state.candidates) ? state.candidates.map(girl => hydrate(girl)).slice(0, Math.max(6, state.poolLimits?.candidates ?? 20)) : [];
     state.whisperQueue = Array.isArray(state.whisperQueue) ? state.whisperQueue.filter(job => job && typeof job.id === 'string' && typeof job.girlId === 'string').slice(0, 12) : [];
     state.missionRuns = Array.isArray(state.missionRuns)
       ? state.missionRuns.filter(run => run && typeof run.id === 'string' && Array.isArray(run.girlIds) && Number.isFinite(run.day)).slice(0, 120)

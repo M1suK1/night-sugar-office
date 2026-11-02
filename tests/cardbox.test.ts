@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import { __resetKvForTests, kvGet, kvSet } from '../src/store.ts';
 import {
   CARD_BOX_INDEX_KEY, CARD_BOX_KEY, CARD_RAW_PREFIX,
-  cardboxAdd, cardboxCards, loadCardBox, readCardRaw,
+  cardboxAdd, cardboxCards, loadCardBox, readCardRaw, type CardBoxEntry,
 } from '../src/cardbox.ts';
+import { pickWithinBytes } from '../src/cardMarket.ts';
+import { planCardBatches } from '../src/cardImport.ts';
+import { act, createInitialState } from '../src/game.ts';
+import { parseGirlCard } from '../src/cards.ts';
 
 function sampleCard(name: string): string {
   return JSON.stringify({
@@ -84,4 +88,62 @@ test('cardbox：一张 2MB 的卡不会把索引撑大', async () => {
   const indexBytes = JSON.stringify(index).length;
   assert.ok(indexBytes < 2_000, `索引应该只有几百字节，实际 ${indexBytes}`);
   assert.ok((await readCardRaw(added.added[0]!.hash))!.length > 2_000_000);
+});
+
+test('cardbox：开局按卡面总量截断，超大卡不会把 20 个位置全塞满', () => {
+  const entry = (index: number, bytes: number): CardBoxEntry => ({
+    hash: `h${index}`, name: `卡${index}`, level: 1, element: '星光系', factionTag: 'none',
+    color: '#fff', title: '外来者', quote: '', stats: { magic: 50, insight: 50, agility: 50, empathy: 50 },
+    skillIds: [], fileName: `${index}.json`, addedAt: index, bytes,
+  });
+  const MB = 1024 * 1024;
+  const picked = pickWithinBytes([entry(1, 3 * MB), entry(2, 3 * MB), entry(3, 3 * MB), entry(4, 3 * MB), entry(5, 3 * MB)], 20, 10 * MB);
+  assert.equal(picked.length, 3, '10MB 预算只装得下 3 张 3MB 的卡');
+  assert.deepEqual(picked.map(item => item.hash), ['h1', 'h2', 'h3']);
+
+  const tiny = Array.from({ length: 30 }, (_, index) => entry(index, 200 * 1024));
+  assert.equal(pickWithinBytes(tiny, 20, 10 * MB).length, 20, '小卡仍然按张数上限走');
+
+  const huge = pickWithinBytes([entry(1, 30 * MB), entry(2, 30 * MB)], 20, 10 * MB);
+  assert.equal(huge.length, 1, '第一张就算超预算也要收，否则开局没人可选');
+});
+
+test('cardbox：导入 20 张卡只做常数次深拷贝（去嵌套 clone）', () => {
+  const ready = Array.from({ length: 20 }, (_, index) => parseGirlCard(sampleCard(`批量${index}`)))
+    .flatMap(item => (item.ok ? [item.card] : []));
+  assert.equal(ready.length, 20);
+
+  const base = createInitialState();
+  const original = JSON.parse;
+  let parses = 0;
+  (JSON as unknown as { parse: typeof JSON.parse }).parse = (text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+    parses += 1;
+    return original(text, reviver);
+  };
+  let imported = 0;
+  try {
+    const result = act(base, { type: 'importCards', cards: ready });
+    assert.equal(result.ok, true, result.message);
+    imported = result.state.candidates.length;
+  } finally {
+    (JSON as unknown as { parse: typeof JSON.parse }).parse = original;
+  }
+  assert.ok(imported >= 10, `大部分卡应该真的进了候选名册，实际 ${imported}`);
+  assert.ok(parses <= 4, `整批导入只该有常数次深拷贝，实际 JSON.parse ${parses} 次`);
+});
+
+test('cardImport：按张数与字节切批', () => {
+  const entry = (index: number, bytes: number) => ({ hash: `h${index}`, bytes }) as unknown as CardBoxEntry;
+  const MB = 1024 * 1024;
+
+  const big = planCardBatches(Array.from({ length: 10 }, (_, index) => entry(index, 2.3 * MB)));
+  assert.ok(big.every(batch => batch.length <= 2), '4MB 预算下 2.3MB 的卡一批最多两张');
+  assert.equal(big.flat().length, 10, '不丢卡');
+
+  const small = planCardBatches(Array.from({ length: 30 }, (_, index) => entry(index, 100 * 1024)));
+  assert.ok(small.every(batch => batch.length <= 6), '小卡按张数上限 6 张一批');
+  assert.equal(small.flat().length, 30);
+
+  assert.equal(planCardBatches([entry(1, 30 * MB)]).length, 1, '单张超大卡也要单独成批，不能死循环');
+  assert.deepEqual(planCardBatches([]), []);
 });
