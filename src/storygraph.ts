@@ -59,7 +59,7 @@ export function makeNode(kind: StoryNodeKind, x: number, y: number, id: string):
         { id: 'defer', label: '暂缓', effect: '' },
         { id: 'reject', label: '驳回', effect: '' },
       ] } };
-      case 'event': return { kind, title: '', hook: '' };
+      case 'event': return { kind, title: '', hook: '', cast: [], opening: '' };
       case 'reward': return { kind, effect: {} };
       case 'wait': return { kind, days: 0, minutes: 60 };
       default: return { kind: 'scene', narration: '', lines: [] };
@@ -247,7 +247,12 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
       }) : [];
       return { kind, spec: { topic, title: str(spec.title, 30), text: str(spec.text, 300), request: str(spec.request, 120), options } };
     }
-    case 'event': return { kind, title: str(value.title, 30), hook: str(value.hook, 160) };
+    case 'event': {
+      const cast = Array.isArray(value.cast)
+        ? value.cast.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()).slice(0, 3)
+        : [];
+      return { kind, title: str(value.title, 30), hook: str(value.hook, 160), cast, opening: str(value.opening, 600) };
+    }
     case 'reward': return { kind, effect: sanitizeEffect(value.effect) ?? {}, equipmentId: str(value.equipmentId, 60) || undefined, trait: value.trait as { name: string; description: string } | undefined };
     case 'wait': return { kind, days: clampInt(value.days, 0, 14, 0), minutes: clampInt(value.minutes, 0, 1440, 60) };
     default: return { kind: 'start' };

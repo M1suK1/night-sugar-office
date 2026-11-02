@@ -161,7 +161,7 @@ test('v29 同一张卡导出后再导入：更新立绘与表情，不新增第�
   assert.equal(again.ok, false, '没有变化时仍然算重复');
 });
 
-test('v30 战斗摘要不出现技能名与伤害数字，连贯札记要求 6000 字', () => {
+test('v30 战斗摘要保留技能名但去掉数值，连贯札记要求 6000 字', () => {
   const battle = {
     id: 'b-note', missionId: 'm', missionTitle: '旧城配电井', seed: 1,
     startedAt: { day: 1, minutes: 1200 }, round: 2, rounds: 2,
@@ -171,7 +171,7 @@ test('v30 战斗摘要不出现技能名与伤害数字，连贯札记要求 600
     outcome: 'victory', scars: [], createdAt: 'x',
   } as never;
   const digest = battleStoryDigest(battle);
-  assert.equal(digest.includes('星屑穿刺'), false, '摘要不能带技能名');
+  assert.equal(digest.includes('星屑穿刺'), true, '摘要要保留技能名，模型才知道这一手是攻击还是支援');
   assert.equal(/\d+\s*点/.test(digest), false, '摘要不能带伤害数字');
   const lines = Array.from({ length: 4 }, (_, index) => ({ speakerSide: 'ally', speakerId: 'yue', expression: 'calm', text: '别退，呼吸还稳。', after: index }));
   const raw = { format: 'continuous', title: '井底', hook: '灯灭了。', summary: '她最后把门带上。', narration: '夜'.repeat(6000), lines };
@@ -180,6 +180,8 @@ test('v30 战斗摘要不出现技能名与伤害数字，连贯札记要求 600
   assert.equal(checked.note?.format, 'continuous');
   assert.equal(checked.note?.scenes.length, 1);
   assert.deepEqual(checked.note?.scenes[0]?.lines.map(line => line.after), [0, 1, 2, 3]);
+  // v33：技能名可以出现在正文里，只有数值不行。
+  assert.equal(validateBattleNoteDraft({ ...raw, narration: `星屑穿刺${'夜'.repeat(5990)}` }, battle, { createdAt: 'x' }).ok, true);
   const bad = validateBattleNoteDraft({ ...raw, narration: `${'夜'.repeat(5990)}造成 64 点伤害` }, battle, { createdAt: 'x' });
   assert.equal(bad.ok, false, '数字/伤害必须拦住');
 });

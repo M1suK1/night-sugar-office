@@ -176,6 +176,47 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
     [draft.missions],
   );
   const allIncidents = draft.incidents;
+  /** v34：叙事者写进游戏的弹窗也要在工坊里看得到；只读派生，不写进内容库。 */
+  const narratorIncidents = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: { id: string; title: string; body: string; kind: IncidentCard['kind']; options: number }[] = [];
+    for (const item of [...(state.incidentPool ?? []), ...(state.incidents ?? [])]) {
+      if (!item || item.source !== 'llm') continue;
+      if (!item.title || seen.has(item.title)) continue;
+      seen.add(item.title);
+      rows.push({ id: item.id, title: item.title, body: item.body, kind: (item.kind ?? 'faction') as IncidentCard['kind'], options: item.options?.length ?? 0 });
+      if (rows.length >= 20) break;
+    }
+    return rows;
+  }, [state.incidentPool, state.incidents]);
+  const registerNarrator = (entry: { id: string; title: string; body: string; kind: IncidentCard['kind']; options: number }) => {
+    if (draft.incidents.some(item => item.title === entry.title)) {
+      onNotify('内容库里已经有一张同名弹窗了。', false);
+      return;
+    }
+    const source = [...(state.incidentPool ?? []), ...(state.incidents ?? [])].find(item => item.id === entry.id);
+    const card: IncidentCard = {
+      id: `incident-llm-${Date.now().toString(36)}`,
+      title: entry.title.slice(0, 30),
+      body: entry.body.slice(0, 400),
+      kind: entry.kind,
+      trigger: 'pool',
+      weight: 1,
+      oncePerDay: false,
+      source: 'custom',
+      options: (source?.options ?? []).slice(0, 3).map((option, index) => ({
+        id: option.id || `o${index + 1}`,
+        label: (option.label || `选项 ${index + 1}`).slice(0, 24),
+        hint: '',
+        effect: {},
+      })),
+    };
+    if (!card.options.length) card.options = [{ id: 'o1', label: '记下这件事', hint: '', effect: {} }];
+    setDraft(current => ({ ...current, incidents: [...current.incidents, card] }));
+    setKind('incident');
+    setSelected(current => ({ ...current, incident: card.id }));
+    onNotify(`已把「${card.title}」登记到内容库，记得保存。`);
+  };
   const allBosses = useMemo(() => [...bossRegistry.filter(entry => !isCustom(entry.id)), ...draft.bosses], [draft.bosses]);
   const list: { id: string; name: string; note: string }[] = kind === 'skill'
     ? allSkills.map(entry => ({ id: entry.id, name: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}` }))
@@ -537,6 +578,14 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                 </button>
               ))}
             </div>
+            {kind === 'incident' && narratorIncidents.length > 0 && <div className="workshop-narrator" id="workshop-narrator-incidents">
+              <div className="workshop-list-head"><span>叙事者生成</span><small>{narratorIncidents.length}</small></div>
+              {narratorIncidents.map(entry => <div key={entry.id} className="workshop-entry narrator">
+                <span>{entry.title}</span>
+                <em>{INCIDENT_KIND_LABELS[entry.kind]} · {entry.options} 个选项</em>
+                <button id={`workshop-register-${entry.id}`} type="button" className="ghost-btn" onClick={() => registerNarrator(entry)}><Copy size={11} />登记</button>
+              </div>)}
+            </div>}
           </aside>
 
           <main className="workshop-main">

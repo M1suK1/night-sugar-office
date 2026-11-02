@@ -38,6 +38,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                   {unread > 0 && <span className="whisper-badge" aria-label={`有 ${unread} 条新消息`}>{unread}</span>}
                   {g.retired && <span className="retired-stamp">文职</span>}
                   {g.witch && <span className="witch-stamp">魔女</span>}
+                  {(g.unspentPoints ?? 0) > 0 && <span className="point-badge" id={`roster-points-${g.id}`} aria-label={`有 ${g.unspentPoints} 点可分配属性`}>+{g.unspentPoints}</span>}
                 </div>
                 <div className="roster-info">
                   <div className="roster-name"><h3>{g.name}</h3><span>Lv.{g.level.toString().padStart(2, '0')}</span></div>

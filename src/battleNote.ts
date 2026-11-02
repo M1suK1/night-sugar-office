@@ -1,5 +1,6 @@
 import type { BattleNote, BattleNoteLine, BattleNoteScene, BattleState, Expression, MonsterTemplate, PortraitSpec } from './types';
 import { pollutionTierLabel } from './pollution.ts';
+import { findSkill } from './content/skills.ts';
 
 export const BATTLE_NOTE_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
 const EXPRESSION_SET = new Set<string>(BATTLE_NOTE_EXPRESSIONS);
@@ -108,9 +109,10 @@ export function battleDigest(battle: BattleState): string {
 }
 
 /**
- * 连贯札记用的战斗摘要：只讲「谁做了什么、成没成、局势怎么变」，不带回合、伤害、技能名。
+ * 连贯札记用的战斗摘要：讲清「谁用什么做了什么、成没成」，不带回合与数值。
  *
- * 技能名一律换成动作类别；数值只保留「压低了护持 / 削去一截体力 / 稳住阵脚」这种可读结果。
+ * v33 起保留技能名与用途分类：支援/治疗/自身增益不再被误写成「向队友出手」，
+ * 模型也能看出这一手是攻击、护持还是回复。只禁止伤害数值，不再禁止技能名。
  */
 export function battleStoryDigest(battle: BattleState): string {
   const actors = battleActors(battle);
@@ -122,17 +124,33 @@ export function battleStoryDigest(battle: BattleState): string {
     `参战：${actors.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'}${actor.name}${actor.down ? '（倒下了）' : ''}`).join('、') || '没有留下参战记录'}。`,
   ];
   if (battle.pollution !== undefined) parts.push(`环境：辖区污染 ${pollutionTierLabel(battle.pollution)}。`);
-  // 每 3 条事件合成一句，避免把整份战报塞给模型；保留先手与最后几条。
-  const events = battle.events;
+  const describe = (event: BattleState['events'][number]): string => {
+    const actor = name(event.actor);
+    if (event.skillId === 'trait') return `${actor}的特性发动了`;
+    const skill = findSkill(event.skillId);
+    const skillName = event.skillName || skill?.name || '一次出手';
+    const targets = event.targets.map(name);
+    const targetText = targets.length ? targets.join('、') : '空处';
+    // 支援类（治疗、护持、增益、净化）不是攻击，绝不能写成「向队友出手」。
+    const support = skill ? skill.side !== 'enemy' : targets.every(uid => byUid.get(uid)?.side === byUid.get(event.actor)?.side);
+    if (support) {
+      const effect = event.note?.includes('恢复') ? '回复'
+        : event.note?.includes('心防') ? '护持'
+          : skill?.effects?.some(item => item.kind === 'buff') ? '增益'
+            : skill?.effects?.some(item => item.kind === 'shield') ? '护盾'
+              : skill?.effects?.some(item => item.kind === 'purify') ? '净化'
+                : '支援';
+      return `${actor}对${targetText}使用「${skillName}」（${effect}）`;
+    }
+    const hitText = event.hit ? `用「${skillName}」击中${targetText}` : `用「${skillName}」攻向${targetText}，被避开`;
+    const spirit = event.resource === 'spirit' ? '，削去对方的心防' : '';
+    return `${actor}${hitText}${spirit}`;
+  };
+
+  // 每 3 条事件合成一句，避免把整份战报塞给模型；保留开头与最后几条。
   const beats: string[] = [];
-  for (let index = 0; index < events.length; index += 3) {
-    const slice = events.slice(index, index + 3);
-    const lines = slice.map(event => {
-      const target = event.targets.length ? name(event.targets[0]!) : '空处';
-      const action = event.resource === 'spirit' ? '压制了对方的心神' : event.resource === 'hp' ? '逼得对方后退' : '试着稳住阵脚';
-      return `${name(event.actor)}向${target}出手，${event.hit ? `这一下打实了，${action}` : '被对方避开了'}`;
-    });
-    beats.push(lines.join('；'));
+  for (let index = 0; index < battle.events.length; index += 3) {
+    beats.push(battle.events.slice(index, index + 3).map(describe).join('；'));
   }
   const head = beats.slice(0, 26);
   const tail = beats.length > 34 ? beats.slice(-8) : [];
@@ -264,8 +282,7 @@ export function validateBattleNoteDraft(raw: unknown, battle: BattleState, meta:
     if (!narration) errors.push('缺少正文。');
     const numeric = /\d+\s*(点|伤害|回合|%|HP|心防)|第\s*\d+\s*回合/i;
     if (numeric.test(narration) || lines.some(line => numeric.test(line.text))) errors.push('正文或台词里出现了伤害、回合数或数值；改成动作与结果。');
-    const skillsInBattle = [...new Set(battle.events.map(event => event.skillName).filter(name => name.length >= 2))];
-    if (skillsInBattle.some(name => narration.includes(name) || lines.some(line => line.text.includes(name)))) errors.push('正文或台词里出现了技能名；改成动作描写。');
+    // v33：技能名不再被禁止，只拦数值。模型可以引用技能名，但不能写伤害/回合数字。
     const chars = [...(narration + lines.map(line => line.text).join('')).replace(/\s+/g, '')].length;
     if (chars < MIN_CONTINUOUS_CHARS) errors.push(`札记只有 ${chars} 字，至少需要 ${MIN_CONTINUOUS_CHARS} 字。`);
     if (chars > MAX_CONTINUOUS_CHARS) errors.push(`札记有 ${chars} 字，超出 ${MAX_CONTINUOUS_CHARS} 字上限。`);

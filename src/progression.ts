@@ -2,6 +2,26 @@ import type { Archetype, Girl, StatKey } from './types';
 import { effectiveGuard } from './economy.ts';
 
 export const MAX_LEVEL = 10;
+/** 每级可分配的四维点数（手动模式）。 */
+export const POINTS_PER_LEVEL = 10;
+/** 每级提升的最大生命；生命成长不占四维点。 */
+export const HP_PER_LEVEL = 10;
+/** 自动模式按职阶给出的主/副属性，与手动同值，避免两种模式成长速度不同。 */
+export const AUTO_MAIN_POINTS = 6;
+export const AUTO_SECONDARY_POINTS = 4;
+/** 加点上限；战斗内部的临时加成不受这条限制。 */
+export const STAT_ALLOC_CAP = 120;
+
+export type LevelUpMode = 'auto' | 'manual';
+
+export interface LevelUpResult {
+  leveled: boolean;
+  levels: number;
+  from: number;
+  to: number;
+  /** 本次升级新拿到的可分配点数；自动模式为 0。 */
+  points: number;
+}
 
 export function expNeeded(level: number): number {
   if (level >= MAX_LEVEL) return 0;
@@ -28,25 +48,66 @@ export function baseStatsAt(stats: Record<StatKey, number>, level: number, arche
   out[secondary] = Math.max(20, out[secondary] - (level - 1));
   return out;
 }
-export function grantExp(girl: Girl, amount: number): boolean {
-  if (girl.level >= MAX_LEVEL || girl.dead || girl.retired || amount <= 0) return false;
-  const need = expNeeded(girl.level);
-  if (girl.exp + amount < need) {
-    girl.exp += amount;
-    return false;
+
+/**
+ * 结算经验与升级。
+ *
+ * `manual` 只发点数，让玩家自己分配到四维；`auto` 按职阶直接加主/副属性。
+ * 两种模式每级都是 10 点等值成长，最大生命每级 +10。
+ */
+export function grantExp(girl: Girl, amount: number, mode: LevelUpMode = 'auto'): LevelUpResult {
+  const from = girl.level;
+  if (girl.level >= MAX_LEVEL || girl.dead || girl.retired || amount <= 0) {
+    return { leveled: false, levels: 0, from, to: from, points: 0 };
   }
-  const [main, secondary] = growthFor(girl.archetype);
-  girl.exp = Math.max(0, girl.exp + amount - need);
-  girl.level += 1;
-  girl.stats[main] += 2;
-  girl.stats[secondary] += 1;
-  girl.maxHp += 4;
-  girl.hp = Math.min(girl.maxHp, girl.hp + 4);
-  // 心防不是独立数值：共情涨了，心防跟着涨。
-  girl.maxSpirit = effectiveGuard(girl);
-  girl.spirit = girl.maxSpirit;
-  return true;
+  girl.exp += amount;
+  let levels = 0;
+  while (girl.level < MAX_LEVEL) {
+    const need = expNeeded(girl.level);
+    if (need <= 0 || girl.exp < need) break;
+    girl.exp -= need;
+    girl.level += 1;
+    levels += 1;
+    girl.maxHp += HP_PER_LEVEL;
+    girl.hp = Math.min(girl.maxHp, girl.hp + HP_PER_LEVEL);
+    if (mode === 'manual') {
+      girl.unspentPoints = (girl.unspentPoints ?? 0) + POINTS_PER_LEVEL;
+    } else {
+      const [main, secondary] = growthFor(girl.archetype);
+      girl.stats[main] = Math.min(STAT_ALLOC_CAP, girl.stats[main] + AUTO_MAIN_POINTS);
+      girl.stats[secondary] = Math.min(STAT_ALLOC_CAP, girl.stats[secondary] + AUTO_SECONDARY_POINTS);
+    }
+    // 心防不是独立数值：共情涨了，心防跟着涨。
+    girl.maxSpirit = effectiveGuard(girl);
+    girl.spirit = girl.maxSpirit;
+  }
+  if (girl.level >= MAX_LEVEL) girl.exp = 0;
+  return { leveled: levels > 0, levels, from, to: girl.level, points: mode === 'manual' ? levels * POINTS_PER_LEVEL : 0 };
 }
+
+/** 把一点（或几点）可分配点数加到四维上。校验交给调用方给出界面文案。 */
+export function allocatePoint(girl: Girl, stat: StatKey, amount = 1): { ok: boolean; message: string } {
+  const points = Math.max(1, Math.floor(amount));
+  const available = girl.unspentPoints ?? 0;
+  if (girl.dead || girl.retired) return { ok: false, message: '她已经不在值夜名册上了。' };
+  if (available <= 0) return { ok: false, message: '没有可分配的点数，先让她升一级。' };
+  if (points > available) return { ok: false, message: `只剩 ${available} 点可分配。` };
+  if (girl.stats[stat] + points > STAT_ALLOC_CAP) return { ok: false, message: `这项属性最高只能到 ${STAT_ALLOC_CAP}。` };
+  girl.stats[stat] += points;
+  girl.unspentPoints = available - points;
+  girl.maxSpirit = effectiveGuard(girl);
+  girl.spirit = Math.min(girl.spirit, girl.maxSpirit);
+  return { ok: true, message: `已把 ${points} 点加到${statLabel[stat]}。` };
+}
+
+export const statLabel: Record<StatKey, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情' };
+export const statHint: Record<StatKey, string> = {
+  magic: '决定伤害倍率。',
+  insight: '决定命中率。',
+  agility: '决定闪避与先手速度。',
+  empathy: '决定心防与护持。',
+};
+
 export function progressLabel(girl: Girl): string {
   if (girl.level >= MAX_LEVEL) return 'MAX';
   return `${girl.exp} / ${expNeeded(girl.level)}`;

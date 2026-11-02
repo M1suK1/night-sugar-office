@@ -44,7 +44,11 @@ function calcText(event: BattleEvent): string {
   if (calc.hit) {
     const h = calc.hit;
     const bonus = h.bonus ? ` + 修正 ${h.bonus}` : '';
-    parts.push(`命中 ${Math.round(h.chance)}% ＝ 50 + 敏捷 ${h.agility} − 敌敏 ${h.targetAgility}${bonus}；d100 ${h.roll.toFixed(1)} → ${event.hit ? '命中' : '落空'}`);
+    const odds = h.insight === undefined
+      // 旧战报没有洞察，保留原来的敏捷对敏捷说明。
+      ? `基础 ${h.base} + 敏捷 ${h.agility ?? '?'} − 敌敏 ${h.targetAgility}${bonus}`
+      : `基础 ${h.base} + 洞察 ${h.insight} − 敌敏 ${h.targetAgility}${bonus}`;
+    parts.push(`命中 ${Math.round(h.chance)}% ＝ ${odds}；d100 ${h.roll.toFixed(1)} → ${event.hit ? '命中' : '落空'}`);
   }
   if (calc.damage) {
     const d = calc.damage;

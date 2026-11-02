@@ -47,7 +47,7 @@ function portY(node: StoryNode, port: string): number {
   return node.y + 26 + index * 18;
 }
 
-export function StoryGraphDialog({ girl, incidents, notice, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; notice?: string; onSave: (graph: StoryGraph, meta?: { title: string; premise: string; tone: string }) => void; onClose: () => void }) {
+export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; roster?: Girl[]; notice?: string; onSave: (graph: StoryGraph, meta?: { title: string; premise: string; tone: string }) => void; onClose: () => void }) {
   const initial = useMemo(() => {
     if (girl.storyPlan?.graph) return structuredClone(girl.storyPlan.graph);
     if (girl.storyPlan?.beats?.length) return compileBeatsToGraph(girl.storyPlan);
@@ -127,7 +127,11 @@ export function StoryGraphDialog({ girl, incidents, notice, onSave, onClose }: {
       },
     });
   };
-  const patchScene = (narration: string) => { const c = node; if (c?.data.kind === 'scene') patchNode(c.id, { data: { ...c.data, narration } }); };  const patchEvent = (patch: { title?: string; hook?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
+  const patchScene = (narration: string) => { const c = node; if (c?.data.kind === 'scene') patchNode(c.id, { data: { ...c.data, narration } }); };  const patchEvent = (patch: { title?: string; hook?: string; cast?: string[]; opening?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
+  const castPool = useMemo(() => {
+    const seen = new Set<string>();
+    return [girl, ...(roster ?? [])].filter(person => (seen.has(person.id) ? false : (seen.add(person.id), true)));
+  }, [girl, roster]);
   const patchReward = (effect: Partial<StoryEffect>) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, effect: { ...c.data.effect, ...effect } } }); };
   const patchRewardData = (patch: { equipmentId?: string }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchWait = (patch: { days?: number; minutes?: number }) => { const c = node; if (c?.data.kind === 'wait') patchNode(c.id, { data: { ...c.data, ...patch } }); };
@@ -517,16 +521,44 @@ export function StoryGraphDialog({ girl, incidents, notice, onSave, onClose }: {
                     <textarea id="story-graph-inspect-narration" className="av-input" rows={6} value={node.data.narration} onChange={event => patchScene(event.target.value)} />
                   </label>
                 )}
-                {node.kind === 'event' && node.data.kind === 'event' && (
-                  <>
-                    <label className="graph-field"><span>事件标题</span>
-                      <input className="av-input" value={node.data.title} onChange={event => patchEvent({ title: event.target.value.slice(0, 30) })} />
-                    </label>
-                    <label className="graph-field"><span>开场钩子</span>
-                      <textarea className="av-input" rows={4} value={node.data.hook} onChange={event => patchEvent({ hook: event.target.value })} />
-                    </label>
-                  </>
-                )}
+                {node.kind === 'event' && node.data.kind === 'event' && (() => {
+                  const cast = node.data.cast?.length ? node.data.cast : [girl.id];
+                  const full = cast.length >= 3;
+                  return (
+                    <>
+                      <label className="graph-field"><span>事件标题</span>
+                        <input className="av-input" value={node.data.title} onChange={event => patchEvent({ title: event.target.value.slice(0, 30) })} />
+                      </label>
+                      <label className="graph-field"><span>开场钩子</span>
+                        <textarea className="av-input" rows={3} value={node.data.hook} onChange={event => patchEvent({ hook: event.target.value })} />
+                      </label>
+                      <div className="graph-field"><span>参与角色（最多 3 人，必须包含 {girl.name}）</span>
+                        <div className="graph-cast" id="story-graph-cast">
+                          {castPool.map(person => {
+                            const active = cast.includes(person.id);
+                            const locked = person.id === girl.id;
+                            return <button
+                              key={person.id}
+                              id={`story-graph-cast-${person.id}`}
+                              type="button"
+                              className={`graph-cast-chip ${active ? 'active' : ''} ${locked ? 'locked' : ''}`}
+                              disabled={!active && full}
+                              title={locked ? '故事主角必须到场' : active ? '点一下移出这一场' : '加入这一场'}
+                              onClick={() => {
+                                if (active) { if (!locked) patchEvent({ cast: cast.filter(id => id !== person.id) }); return; }
+                                if (!full) patchEvent({ cast: [...cast, person.id] });
+                              }}
+                            >{person.name}</button>;
+                          })}
+                        </div>
+                        <small className="graph-cast-hint">{cast.length} / 3 人 · {cast.map(id => castPool.find(person => person.id === id)?.name ?? id).join('、')}</small>
+                      </div>
+                      <label className="graph-field"><span>开场白（约 300 字，玩家进入剧情前先读这一段）</span>
+                        <textarea id="story-graph-event-opening" className="av-input" rows={7} maxLength={600} value={node.data.opening ?? ''} placeholder="还没写的话，进入事件时会让叙事者现写一段。" onChange={event => patchEvent({ opening: event.target.value.slice(0, 600) })} />
+                      </label>
+                    </>
+                  );
+                })()}
                 {node.kind === 'mission' && node.data.kind === 'mission' && (
                   <>
                     <label className="graph-field"><span>从现有委托导入</span>

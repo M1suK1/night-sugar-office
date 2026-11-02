@@ -1405,7 +1405,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
 请直接写一张「故事蓝图」（StoryGraph），不是四幕手稿。只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","premise":"","tone":"","nodes":[{"id":"n1","kind":"start","title":"开始","data":{"kind":"start"}}],"edges":[{"from":"n1","fromPort":"out","to":"n2"}]}
 节点 kind 只能用：start、scene、choice、mission、event、reward、wait、end。
-硬性结构：8–16 个节点；恰好 1 个 start；**2–3 个 end；且这些 end 的 ending 必须两两不同**（例如「留下」「离开」「带着钥匙走」）；1–2 个 choice；1–2 个 mission；至少 1 个 scene。
+硬性结构：8–16 个节点；恰好 1 个 start；**2–3 个 end；且这些 end 的 ending 必须两两不同**（例如「留下」「离开」「带着钥匙走」）；1–2 个 choice；1–2 个 mission；至少 1 个 scene；事件节点（event）1–3 个，每个事件必须写 cast 与 opening：cast 是 1–3 个名册里的角色 id，必须包含这条故事线的主角，且这些人在同一张图的 scene 里也要出现；opening 必须 250–350 字，不要只写一句。
 连线必须是有向无环图：从 start 能到达每个节点，每条路径最终都能到 end；不允许回环、自环或悬空连线。
 每个非 end 节点都要有出口。choice 的每个选项都要有一条 fromPort 等于该选项 id 的线；mission 必须恰有一条 fromPort="success" 和一条 fromPort="failure" 的线；start 只有一条 fromPort="out" 的线。
 节点的 data 按 kind 填写：
@@ -1413,7 +1413,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
 - scene: {"kind":"scene","narration":"120–260字，写具体地点、动作和她没说出口的话","lines":[{"speaker":"旁白|角色名","text":"一句台词"}]}
 - choice: {"kind":"choice","prompt":"她在等你怎么回应","options":[{"id":"a","label":"选项","intent":"这个选择意味着什么","effect":{"bond":2}},{"id":"b","label":"另一个选项","intent":"","effect":{"corruption":1}}]}，2–4 个选项，id 短且唯一
 - mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","category":"故事委托","difficulty":"简单|常规|棘手|危险","duration":90,"requirement":"magic|insight|agility|empathy"}}
-- event: {"kind":"event","title":"","hook":"一句能触发角色事件的话"}
+- event: {"kind":"event","title":"","hook":"一句引子","cast":["名册里的角色 id"],"opening":"250–350 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档"}
 - reward: {"kind":"reward","effect":{"bond":2,"gold":0}}
 - wait: {"kind":"wait","days":0,"minutes":60}
 - end: {"kind":"end","summary":"这条结局收在哪里","ending":"两三个字的结局名，同一张图里不能重复"}
@@ -1654,6 +1654,157 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
   return { ok: true, data };
 }
 
+const STORY_EXPRESSIONS = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'] as const;
+
+export interface StoryTurnDraft {
+  narration: string;
+  lines: StoryLine[];
+  options: string[];
+  bond: number;
+}
+
+function storyCast(state: GameState, event: CharacterEvent): { id: string; name: string }[] {
+  const ids = (event.cast ?? []).filter(Boolean);
+  const pool = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
+  const people = ids.flatMap(id => {
+    const girl = pool.find(item => item.id === id);
+    return girl ? [{ id: girl.id, name: girl.name }] : [];
+  });
+  if (!people.length) {
+    const girl = pool.find(item => item.id === event.girlId);
+    if (girl) people.push({ id: girl.id, name: girl.name });
+  }
+  return [...people, { id: 'player', name: '所长' }];
+}
+
+function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], limit = 8): StoryLine[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const line = item as Record<string, unknown>;
+    const text = typeof line.text === 'string' ? line.text.trim().slice(0, 220) : '';
+    if (!text) return [];
+    const speakerId = typeof line.speakerId === 'string' ? line.speakerId.trim() : '';
+    const person = cast.find(entry => entry.id === speakerId);
+    // 只有 cast 里的人与玩家能说话；其他人最多在旁白里被提到。
+    if (!person) return [];
+    const expression = STORY_EXPRESSIONS.includes(line.expression as typeof STORY_EXPRESSIONS[number])
+      ? line.expression as Expression : 'calm';
+    return [{ speakerId: person.id, speakerName: person.name, expression, text, mode: line.mode === 'thought' ? 'thought' as const : 'speech' as const }];
+  }).slice(0, limit);
+}
+
+function storyHistory(turns: StoryTurn[], limit = 8): string {
+  const kept = turns.slice(-limit);
+  return kept.map(turn => turn.role === 'player'
+    ? `所长：${turn.text}`
+    : `${turn.text}${turn.lines?.length ? `\n${turn.lines.map(line => `${line.speakerName}：「${line.text}」`).join('\n')}` : ''}`).join('\n\n');
+}
+
+function storyCastBrief(girl: Girl): string {
+  return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。`;
+}
+
+/** 交互剧情的开场白：250–350 字，把在场的人与此刻的场面交代清楚，然后停住。 */
+export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[] } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  const cast = storyCast(state, event);
+  const people = cast.filter(person => person.id !== 'player');
+  const briefs = people.map(person => {
+    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
+    return girl ? storyCastBrief(girl) : person.name;
+  }).join('\n');
+  const body = `【这一段剧情】${event.title}
+${event.hook ? `引子：${event.hook}` : ''}
+【在场的人】
+${briefs || '只有她和你'}
+【你】所长（player），用「你」称呼，可以是说话人。
+只输出一个 JSON 对象，不要 Markdown：
+{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""]}
+要求：narration 250–350 字，写地点、光线、她在做什么、把话头留给你，不要替玩家决定；lines 2–5 句，speakerId 只能取上面的人或 player；options 给 3 条你的第一步参考行动，每条不超过 24 字、用「你……」开头；不要写数值与技能名。`;
+  const result = await callJson(config, preset, 'arc', body, '请写下这段剧情的开场白。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
+    char: briefs, personality: '', scenario: event.hook, story: event.title,
+  });
+  if (!result.ok) {
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
+    return result;
+  }
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, 600) : '';
+  if (narration.length < 40) return { ok: false, message: '开场白太短，没能写出来。' };
+  const lines = parseStoryLines(result.raw.lines, cast, 5);
+  const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
+  const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 24)).filter(Boolean).slice(0, 3);
+  recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
+  return { ok: true, narration, lines, options };
+}
+
+/**
+ * 交互剧情的一轮续写：读玩家这一句，写出她的反应、台词与下一轮的参考行动。
+ *
+ * `rewrite` 为真时要求换一种写法，用于「重写这一段」。
+ */
+export async function generateStoryTurn(
+  config: LlmConfig,
+  state: GameState,
+  event: CharacterEvent,
+  action: string,
+  preset?: PresetRuntime,
+  options: { rewrite?: boolean } = {},
+): Promise<{ ok: true; turn: StoryTurnDraft } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  const cast = storyCast(state, event);
+  const briefs = cast.filter(person => person.id !== 'player').map(person => {
+    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
+    return girl ? storyCastBrief(girl) : person.name;
+  }).join('\n');
+  const turns = event.turns ?? [];
+  const history = storyHistory(turns);
+  const playerLine = action.trim().slice(0, 300);
+  const body = `【这一段剧情】${event.title}
+${event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : ''}
+【在场的人】
+${briefs || '只有她和你'}
+【此前的对话】
+${history || '（这是第一轮）'}
+【所长这一次的行动】
+${playerLine}
+${options.rewrite ? '【要求】把上一轮的旁白与台词换一种写法重写：同样的局面、同样的结果，但换动作、换角度、换她说话的方式。不要复述原文句式。' : ''}
+只输出一个 JSON 对象，不要 Markdown：
+{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}
+要求：
+- narration 900–3000 字，写她与环境的反应、动作细节、气氛变化；不要替玩家做决定，也不要写玩家没做过的动作。
+- lines 2–8 句，speakerId 只能取上面的人或 player；player 的台词只能来自所长这一句行动，不要替他编新话；expression 用六种之一。
+- options 给 3 条下一轮的参考行动，每条不超过 24 字，用「你……」开头；玩家也可以不选，自己写。
+- bond 只能是 -2 到 2 的整数，表示这一轮对羁绊的影响；不要写其他数值、伤害、技能名。`;
+  const result = await callJson(config, preset, 'arc', body, '请接着写下一轮。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
+    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title,
+  });
+  if (!result.ok) {
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
+    return result;
+  }
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
+  if (narration.length < 200) {
+    const message = `叙事者只写了 ${narration.length} 字，太短了，可以再试一次。`;
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const lines = parseStoryLines(result.raw.lines, cast, 8);
+  const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
+  const optionList = rawOptions
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim().slice(0, 24))
+    .filter(Boolean)
+    .slice(0, 3);
+  const bondRaw = Number(result.raw.bond);
+  const bond = Number.isFinite(bondRaw) ? Math.max(-2, Math.min(2, Math.round(bondRaw))) : 0;
+  const turn: StoryTurnDraft = { narration: narration.slice(0, 3000), lines, options: optionList, bond };
+  recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${lines.length} 句）`, request: meta.request, response: meta.response });
+  return { ok: true, turn };
+}
+
 export interface GeneratedOutfit {
   name: string;
   description: string;
@@ -1759,7 +1910,7 @@ ${castText}
 
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}
-要求：一次写完，不分场、不分段标题、不写回合。narration 是一整篇连贯的战斗叙事，6000–10000 字，用动作、环境、停顿推进；narration 不要重复台词，也不要写「某某说」后再把原话抄一遍。台词 6–14 句全部放在 lines，按发生顺序用 after 指定插入位置：after 是该句台词之前已经写完的旁白段落数（0 = 第一段之前，1 = 第一段之后，依此类推），必须随剧情递增，不能把所有台词堆在结尾。只给上表里的角色，必须带 speakerSide、speakerId、表情与 speech/thought；倒下的角色不能在倒下后继续说话。不要写伤害数值、回合数、HP/心防数字、技能名或“第几回合”；技能只写动作（例如“短促的突刺被外壳弹开”“一层薄薄的护持挡住正面冲击”）。魔物没有立绘与名字，只出现在旁白里。不改胜负、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
+要求：一次写完，不分场、不分段标题、不写回合。narration 是一整篇连贯的战斗叙事，6000–10000 字，用动作、环境、停顿推进；narration 不要重复台词，也不要写「某某说」后再把原话抄一遍。台词 6–14 句全部放在 lines，按发生顺序用 after 指定插入位置：after 是该句台词之前已经写完的旁白段落数（0 = 第一段之前，1 = 第一段之后，依此类推），必须随剧情递增，不能把所有台词堆在结尾。只给上表里的角色，必须带 speakerSide、speakerId、表情与 speech/thought；倒下的角色不能在倒下后继续说话。摘要里「」中的技能名可以照原样引用，但要写成一招具体的动作与结果，不要罗列；支援、护持、回复类行动要写成「她替谁挡下」「光落在谁身上」，绝不能写成向同伴出手。唯一的禁令是数值：不要写伤害数字、回合数、HP/心防数值、星砂数字或“第几回合”。魔物没有立绘与名字，只出现在旁白里。不改胜负、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
   const outcome = await chatJson(config, preset, 'battle', body, '请把这场战斗写成札记。', ['共用词条 + 战斗札记词条 + 结构契约', `战斗：${battle.missionTitle}`], meta, {
     story: battle.missionTitle,
     context: `结果：${battle.outcome ?? '未结算'}；参战：${cast.map(actor => actor.name).join('、') || '无'}`,
@@ -1888,7 +2039,7 @@ import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from '.
 import { battleCast, battleStoryDigest, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
-import type { Archetype, BattleNote, BattleState, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryMissionSpec, StoryNodeKind, WhisperJob } from './types';
+import type { Archetype, BattleNote, BattleState, CharacterEvent, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

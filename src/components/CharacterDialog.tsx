@@ -9,7 +9,7 @@ import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, s
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
 import { skillAccuracy } from '../combat';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
-import { expNeeded, progressLabel } from '../progression';
+import { expNeeded, progressLabel, statHint } from '../progression';
 import { GirlPortrait } from './GirlPortrait';
 import { ClinicPanel } from './ClinicPanel';
 import { getItem, items } from '../content/items';
@@ -33,8 +33,9 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocate }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
+  onAllocate?: (stat: 'magic' | 'insight' | 'agility' | 'empathy') => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
@@ -306,6 +307,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 ))}
             </div>
             <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${girl.stats[k]}%` }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
+            <p className="small-note">魔力决定伤害；洞察决定命中；敏捷决定闪避与先手；共情决定心防。</p>
             <p className="small-note">能力用于战斗结算与委托判定。疤痕会永久改变这些数值。</p>
           </>}
           {tab === 'relations' && <>
@@ -334,6 +336,15 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="growth-col">
             <div className="growth-hero"><div><small>当前目标</small><strong>{girl.goal}</strong><span>{girl.goalKind}倾向 · Lv.{girl.level}</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : `Lv.${girl.level}`}</div></div>
             <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>战斗经验按推荐等级结算；连续两次达标战斗或四次调查可提升一级。</small></div>
+            <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small></div>
+            <div className="allocate-block" id="girl-allocate">
+              {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => <div key={key} className="allocate-row">
+                <span>{statLabels[key]}<small>{statHint[key]}</small></span>
+                <strong>{girl.stats[key]}</strong>
+                <button id={`girl-allocate-${key}`} type="button" className="btn small" disabled={!(girl.unspentPoints ?? 0) || girl.stats[key] >= 120 || girl.retired || Boolean(girl.dead)} onClick={() => onAllocate?.(key)}>+1</button>
+              </div>)}
+              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 ? `可分配 ${girl.unspentPoints} 点。加点只改四维，心防仍按共情重算。` : state.levelUpMode === 'manual' ? '手动加点模式：每次升级发 10 点。' : '当前是自动加点，可在设置里改成手动。'}</p>
+            </div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
             </div>

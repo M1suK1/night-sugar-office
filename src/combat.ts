@@ -70,9 +70,29 @@ function statOf(unit: BattleUnit, key: StatKey): number {
 function hitBonus(unit: BattleUnit): number {
   return unit.scarHit + unit.effects.reduce((sum, e) => sum + (e.stat === 'hit' && e.kind === 'buff' ? e.amount : 0) - (e.stat === 'hit' && e.kind === 'debuff' ? e.amount : 0), 0);
 }
-export function initiativeOf(unit: BattleUnit, roll: number): number {
+/**
+ * 命中率：技能基础值 + (攻方洞察 − 守方敏捷) × 0.5 + 命中修正，最低 15%、最高 95%。
+ *
+ * v33 起洞察负责命中、敏捷负责闪避与先手，不再让敏捷同时管三件事；
+ * 不再额外给基础补偿，同属性对拼就是技能的基础命中。
+ */
+export function hitChanceOf(attacker: BattleUnit, target: BattleUnit, skill: Skill): {
+  base: number; insight: number; targetAgility: number; bonus: number; chance: number;
+} {
+  const base = skillAccuracy(skill);
+  const insight = statOf(attacker, 'insight');
+  const targetAgility = statOf(target, 'agility');
+  const bonus = hitBonus(attacker);
+  const chance = clamp(15, 95, Math.round(base + (insight - targetAgility) * 0.5 + bonus));
+  return { base, insight, targetAgility, bonus, chance };
+}
+/** 速度值：敏捷决定先手；洞察不再参与排序。 */
+export function speedOf(unit: BattleUnit): number {
   const bonus = unit.effects.reduce((sum, e) => sum + (e.stat === 'initiative' ? (e.kind === 'buff' ? e.amount : e.kind === 'debuff' ? -e.amount : 0) : 0), 0);
-  return statOf(unit, 'insight') + roll + bonus + (unit.initiativeBonus ?? 0);
+  return clamp(0, 400, statOf(unit, 'agility') + bonus + (unit.initiativeBonus ?? 0));
+}
+export function initiativeOf(unit: BattleUnit, roll: number): number {
+  return speedOf(unit) + roll;
 }
 function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   const maxSpirit = effectiveMaxSpirit(girl);
@@ -436,17 +456,15 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [unit.name], hit: true, resource: skill.selfCost?.resource ?? 'hp', amount: paid, note: `施放代价：自身 ${paid} 点${skill.selfCost?.resource === 'spirit' ? '心防' : '血量'}` });
       }
       const targets = pickTargets(unit, skill, units, rng);
-      const baseAccuracy = skillAccuracy(skill);
       const effectNotes: string[] = [];
+      // 攻击技双方都掷骰；治疗与增益不掷，避免奶妈空手。
+      const offensive = skill.side === 'enemy';
       for (const target of targets) {
         if (target.down && skill.side === 'enemy') continue;
-        const agility = statOf(unit, 'agility');
-        const targetAgility = statOf(target, 'agility');
-        const bonus = hitBonus(unit);
-        const chance = clamp(10, 95, baseAccuracy + agility - targetAgility + bonus);
-        const roll = skill.side === 'enemy' ? rng() * 100 : 0;
-        const hit = skill.side !== 'enemy' || roll <= chance;
-        const hitCalc = { base: baseAccuracy, agility, targetAgility, bonus, chance, roll };
+        const hitRoll = hitChanceOf(unit, target, skill);
+        const roll = offensive ? rng() * 100 : 0;
+        const hit = !offensive || roll <= hitRoll.chance;
+        const hitCalc = { ...hitRoll, roll };
         if (!hit) {
           log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: '攻击落空', calc: { hit: hitCalc } });
           continue;

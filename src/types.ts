@@ -1,4 +1,4 @@
-import type { DistrictEffect, DistrictId } from './districts';
+﻿import type { DistrictEffect, DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 
 export type StatKey = 'magic' | 'insight' | 'agility' | 'empathy';
@@ -400,7 +400,7 @@ export type StoryNodeData =
   | { kind: 'mission'; spec: StoryMissionSpec }
   | { kind: 'incident'; spec: StoryIncidentSpec }
   | { kind: 'opinion'; spec: StoryOpinionSpec }
-  | { kind: 'event'; title: string; hook: string }
+  | { kind: 'event'; title: string; hook: string; cast?: string[]; opening?: string }
   | { kind: 'reward'; effect: StoryEffect; equipmentId?: string; trait?: { name: string; description: string } }
   | { kind: 'wait'; days?: number; minutes?: number }
   | { kind: 'end'; summary?: string; ending?: string };
@@ -551,15 +551,46 @@ export interface StoryPassage {
   lines: { speaker: string; tone?: string; text: string }[];
   choices: { id: string; label: string; intent?: string; effect?: StoryEffect }[];
 }
+
+/** 交互式角色剧情的一条台词：和战斗札记一样，带说话人与表情。 */
+export interface StoryLine {
+  /** 少女 id；玩家固定写 'player'。 */
+  speakerId: string;
+  speakerName: string;
+  expression: Expression;
+  text: string;
+  mode?: 'speech' | 'thought';
+}
+
+/** 一轮剧情：旁白正文，或玩家写下的一句行动。 */
+export interface StoryTurn {
+  id: string;
+  role: 'narrator' | 'player';
+  /** 旁白或玩家输入的原话；单轮上限 3000 字。 */
+  text: string;
+  /** 这一轮里说出口的话；旁白不重复台词。 */
+  lines?: StoryLine[];
+  /** 模型给下一轮的参考选项；玩家仍可自由输入。 */
+  options?: string[];
+  /** 这一轮被重写过几次。 */
+  rewrites?: number;
+  at?: number;
+}
 export interface CharacterEvent {
   id: string; girlId: string; storylineId?: string;
   title: string; hook: string; scenes: EventScene[];
   stage: number; status: 'active' | 'done' | 'abandoned';
   day: number; source: 'llm' | 'template'; badge: boolean;
-  /** scenes = 旧的逐场事件；story = 分幕剧情，按 passageIndex 推进。 */
-  mode?: 'scenes' | 'story';
+  /** scenes = 旧的逐场事件；story = 分幕剧情；session = 你一句我一句的交互剧情。 */
+  mode?: 'scenes' | 'story' | 'session';
   passages?: StoryPassage[];
   passageIndex?: number;
+  /** 交互剧情的回合流：开场白是第一轮 narrator。 */
+  turns?: StoryTurn[];
+  /** 交互剧情允许出场的人（不含玩家）。 */
+  cast?: string[];
+  opening?: string;
+  sessionDone?: boolean;
   chosen?: string[];
   summary?: string;
   pending?: boolean;
@@ -693,6 +724,8 @@ export interface Girl {
   /** 故事线触发的「有话想说」。 */
   pendingTalk?: PendingTalk;
   corruption: number; witch?: boolean; drugUntilDay?: number; withdrawalDays?: number;
+  /** 升级后还没分配的四维点数（手动加点模式）；旧档没有按 0 算。 */
+  unspentPoints?: number;
   equipment: { weapon?: string; charm?: string };
   importedVariants?: Record<string, string>;
   candidateUntilDay?: number; custom?: boolean; cardId?: string;
@@ -859,7 +892,8 @@ export interface BattleUnit {
   spiritBroken?: boolean;
 }
 export interface BattleCalc {
-  hit?: { base: number; agility: number; targetAgility: number; bonus: number; chance: number; roll: number };
+  /** v33 起命中由洞察对敏捷计算；`agility` 只留给旧战报回放。 */
+  hit?: { base: number; insight?: number; agility?: number; targetAgility: number; bonus: number; chance: number; roll: number };
   damage?: { magic: number; power: number; variance: number; mitigation: number; raw: number; shield: number; dealt: number };
   heal?: { magic: number; power: number; raw: number; capped: number };
 }
@@ -933,6 +967,17 @@ export interface TerritoryShift { day: number; minutes: number; district: Distri
 export interface ShiftState { day: number; wave: number }
 /** 九区污染度，0–100。 */
 export type PollutionMap = Record<DistrictId, number>;
+/** 一次值得被看见的结果：委托完成、角色升级。 */
+export interface GameNotice {
+  id: string;
+  kind: 'mission' | 'level';
+  day: number;
+  minutes: number;
+  title: string;
+  text: string;
+  girlId?: string;
+  missionId?: string;
+}
 export interface GameState {
   version: 20; day: number; minutes: number; gold: number; reputation: number;
   girls: Girl[]; candidates: Girl[]; missions: Mission[]; rooms: Room[];
@@ -950,6 +995,10 @@ export interface GameState {
   lastWhisperDay?: Record<string, number>;
   /** 委托参与记录；旧存档没有时从 battles 派生战斗部分。 */
   missionRuns?: MissionRun[];
+  /** 升级成长方式：手动发点 / 按职阶自动加点；旧档按 auto 读。 */
+  levelUpMode?: 'auto' | 'manual';
+  /** 委托完成与升级的提示；新的在前，只留最近 20 条。 */
+  notices?: GameNotice[];
   /** 停战冷却：pair → 到期日。 */
   truceUntil?: Partial<Record<FactionPair, number>>;
   /** 今天真正挂在市场窗口里的候选 id；售出的窗口仍留在数组里，次日重新开窗。 */
@@ -1045,6 +1094,12 @@ export type GameAction =
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }
+  | { type: 'allocateStat'; girlId: string; stat: StatKey; amount?: number }
+  | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
+  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
+  | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
+  | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
+  | { type: 'finishStorySession'; eventId: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
   | { type: 'setPoolLimit'; pool: 'missions' | 'monsters' | 'candidates'; value: number }
   | { type: 'deleteMission'; missionId: string }

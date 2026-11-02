@@ -226,18 +226,23 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
 });
 test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
   const s = createInitialState();
+  // 双方都不会被打倒：我方打不动（魔力极低）、也不会倒（血量拉满），结局必然是「暂时击退」。
+  for (const girl of s.girls) { girl.maxHp = 9999; girl.hp = 9999; girl.stats.magic = 1; girl.stats.insight = 1; }
+  const target = s.missions.find(m => m.id === 'station')!;
+  target.rounds = 1;
   const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'station' }).state;
   const goldBefore = dispatched.gold;
   const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
+  const expected = Math.round(mission.reward * 0.8);
   assert.equal(battle.outcome, 'repelled');
-  assert.equal(result.gold, goldBefore + 736);
+  assert.equal(result.gold, goldBefore + expected);
   assert.equal(mission.status, 'open');
   assert.equal(mission.worsened, true);
   assert.equal(mission.attempts, 1);
   assert.deepEqual(mission.squad, []);
-  assert.ok(battle.rewards && battle.rewards.gold === 736);
+  assert.ok(battle.rewards && battle.rewards.gold === expected);
 });
 test('战斗失败保留事件、施加疤痕并降低血量上限', () => {
   const s = createInitialState();
@@ -262,8 +267,12 @@ test('第五道疤痕导致死亡，释放席位并进入纪念墙', () => {
     const girl = s.girls.find(g => g.id === id)!;
     girl.scars = [oldScar(id), oldScar(id), oldScar(id), oldScar(id)];
     girl.baseMaxHp = girl.maxHp = 50;
+    girl.hp = 25;
+    girl.stats.magic = 1;
     girl.scars = girl.scars.map((scar, index) => ({ ...scar, id: `scar-${id}-${index}` }));
   }
+  const target = s.missions.find(m => m.id === 'station')!;
+  target.rounds = 6;
   const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'station' }).state;
   const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
   assert.equal(result.battles[0].outcome, 'defeat');
@@ -400,9 +409,10 @@ test('经验达到阈值后升级并提升主副属性', () => {
   const s = createInitialState(); const g = s.girls[0]; const level = g.level;
   g.exp = 0; g.retired = false;
   const need = expNeeded(level);
-  assert.equal(grantExp(g, need - 1), false);
+  assert.equal(grantExp(g, need - 1).leveled, false);
   assert.equal(g.exp, need - 1);
-  assert.equal(grantExp(g, 2), true);
+  const up = grantExp(g, 2);
+  assert.equal(up.leveled, true);
   assert.equal(g.level, level + 1);
   assert.equal(g.exp, 1);
   assert.ok(g.maxHp > s.girls[1].baseMaxHp || g.maxHp >= 120);
@@ -2941,14 +2951,14 @@ test('状态模板按种类分组、能读写进技能，并正确计算先手�
   assert.equal(effectText(effect), '锋芒增幅 魔力 3 · 1 轮');
 
   const initiative = {
-    stats: { magic: 0, insight: 50, agility: 0, empathy: 0 },
+    stats: { magic: 0, insight: 90, agility: 50, empathy: 0 },
     effects: [
       { kind: 'buff', stat: 'initiative', amount: 10, duration: 2, source: '先读', remaining: 2 },
       { kind: 'debuff', stat: 'initiative', amount: 4, duration: 2, source: '乱拍', remaining: 2 },
     ],
     initiativeBonus: 5,
   } as unknown as Parameters<typeof initiativeOf>[0];
-  assert.equal(initiativeOf(initiative, 3), 64, '50 洞察 + 3 随机 + 10 增益 − 4 减益 + 5 装备');
+  assert.equal(initiativeOf(initiative, 3), 64, '50 敏捷 + 3 随机 + 10 增益 − 4 减益 + 5 装备；洞察不参与先手');
 });
 
 // ── v19：辖区污染、三方档案、出身标签、拦截战与事务所档案 ───────────────────

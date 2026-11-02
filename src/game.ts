@@ -1,6 +1,6 @@
-import { applyResignationChoice, applyResignations, tickStrain } from './resignations.ts';
+﻿import { applyResignationChoice, applyResignations, tickStrain } from './resignations.ts';
 import type {
-  BossTemplate, ActionResult, BattleNote, FactionGirl, FactionLeader, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack, EquipmentTier, DialogueLine, DialogueReply, Expression } from './types';
+  BossTemplate, ActionResult, BattleNote, FactionGirl, FactionLeader, FactionRoster, BattleState, CharacterEvent, StoryPassage, ChronicleEntry, ContentPack, Equipment, FactionId, GameAction, GameState, GameNotice, Girl, GirlFaction, Incident, IncidentCard, IncidentEffect, Interception, Log, MarketStockEntry, Mission, MissionTemplate, MonsterTemplate, Opinion, OpinionOption, Outfit, Sample, Scar, StatKey, StoryBeat, StoryEffect, StoryPlan, Storyline, StoryTrigger, Trait, Treatment, FactionPair, HostilityTrack, EquipmentTier, DialogueLine, DialogueReply, Expression } from './types';
 import { createSeedPack } from './content/seed-pack.ts';
 import { girlCardHash } from './cards.ts';
 import { cardboxReport } from './cardbox.ts';
@@ -16,7 +16,7 @@ import { ELITE_IDS } from './content/eliteBuffs.ts';
 import { customIncidentCards, customMissionTemplates } from './content/library.ts';
 import { simulateBattle, outcomeLabel, ROUND_MINUTES, MAX_ENEMIES } from './combat.ts';
 import { pickTraits, traitById } from './content/traits.ts';
-import { battleExp, grantExp, investigationExp } from './progression.ts';
+import { AUTO_MAIN_POINTS, AUTO_SECONDARY_POINTS, HP_PER_LEVEL, battleExp, grantExp, investigationExp, allocatePoint, statLabel, type LevelUpMode } from './progression.ts';
 import { CONTRACT_DAYS, REMOTE_CALL_COST, pensionFor, renewalCost, pensionArrears } from './contracts.ts';
 import { factionInfo, getItem, items } from './content/items.ts';
 import { monsters } from './content/monsters.ts';
@@ -66,6 +66,28 @@ export function dateLabel(day: number, minutes: number): string {
 }
 export function capacity(state: GameState): number {
   return state.rooms.filter(r => r.type === 'dorm').reduce((sum, room) => sum + room.capacity, 0);
+}
+/** 推一条提示到通知中心；只留最近 20 条，新的在前。 */
+export function pushNotice(state: GameState, notice: Omit<GameNotice, 'id'>): GameNotice {
+  const entry: GameNotice = {
+    ...notice,
+    id: `notice-${notice.kind}-${notice.day}-${notice.minutes}-${(state.notices?.length ?? 0)}-${Math.random().toString(36).slice(2, 6)}`,
+  };
+  state.notices = [entry, ...(state.notices ?? [])].slice(0, 20);
+  return entry;
+}
+/** 结算经验；升级时写一条通知，并把可分配点数带给玩家。 */
+export function grantExpWithNotice(state: GameState, girl: Girl, amount: number): void {
+  const mode = (state.levelUpMode ?? 'auto') as LevelUpMode;
+  const result = grantExp(girl, amount, mode);
+  if (!result.leveled) return;
+  pushNotice(state, {
+    kind: 'level', day: state.day, minutes: state.minutes, girlId: girl.id,
+    title: `${girl.name}升到 Lv.${result.to}`,
+    text: mode === 'manual'
+      ? `获得 ${result.points} 点可分配属性，现在还有 ${girl.unspentPoints ?? 0} 点没分配。去她的档案里决定成长方向。`
+      : `按职阶自动成长：主属性 +${AUTO_MAIN_POINTS}、副属性 +${AUTO_SECONDARY_POINTS}，最大生命 +${HP_PER_LEVEL}。`,
+  });
 }
 /** 每天能摆到议事桌上的议题上限：会客厅 2 级 3 条，3 级 4 条，4 级 5 条。 */
 export function opinionLimit(state: GameState): number {
@@ -309,6 +331,8 @@ export function itemPrice(state: GameState, item: Equipment): number {
   return Math.round(factionPrice(item, standing) * rebate);
 }
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+/** 交互剧情最多走几轮玩家行动；到上限后只允许结束事件。 */
+export const STORY_SESSION_TURNS = 12;
 
 function defaultSkills(id: string): string[] {
   const map: Record<string, string[]> = {
@@ -891,7 +915,7 @@ function settleExpedition(state: GameState, expeditionId: string, at: { day: num
   for (const girl of members) {
     girl.fatigue = Math.min(100, girl.fatigue + 5);
     girl.bond = Math.min(100, girl.bond + 1);
-    grantExp(girl, 2);
+    grantExpWithNotice(state, girl, 2);
     if (found) gainTrait(state, girl, '星象台远行', 0.12);
   }
   state.logs.unshift({ id: `log-exp-${expedition.id}-${expedition.cyclesDone}`, time: dateLabel(at.day, at.minutes), kind: 'expedition', text: `星象台远行第 ${expedition.cyclesDone} 轮：${members.map(g => g.name).join('、')}带回 ${gain} 星砂${found ? '和一段可以写进档案的见闻' : '，但没有发现异常'}。`, delta: gain });
@@ -1557,6 +1581,14 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     if (node.kind === 'event') {
       const event = addEvent(state, girl, node.data.kind === 'event' ? node.data.title || node.title : node.title, node.data.kind === 'event' ? node.data.hook : '', 'story', story.id);
       event.storyNodeId = node.id;
+      if (node.data.kind === 'event') {
+        // 蓝图事件改成你一句我一句：先记下在场的人与开场白，进游戏后再补成会话。
+        event.mode = 'session';
+        event.cast = (node.data.cast?.length ? node.data.cast : [girl.id]).slice(0, 3);
+        event.opening = node.data.opening?.slice(0, 600);
+        event.turns = [];
+        event.sessionDone = false;
+      }
       run.waiting = { kind: 'event', ref: event.id };
       return;
     }
@@ -2085,6 +2117,8 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     version: 20, day: 14, minutes: SHIFT_START, gold: 12840, reputation: 76,
     prologueSeen: false,
     openingFilledAt: 0,
+    levelUpMode: 'manual',
+    notices: [],
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],
@@ -2111,6 +2145,8 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     version: 20, day: 14, minutes: SHIFT_START, gold: 6000, reputation: 0, blank: true,
     prologueSeen: false,
     openingFilledAt: 0,
+    levelUpMode: 'manual',
+    notices: [],
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],
@@ -2274,6 +2310,7 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     }
     if (mission.boss && state.boss) defeatBoss(state, at.day);
     state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗胜利：${mission.title}。魔物已被清除，事件移出委托池。${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
+    pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `委托完成 · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}打赢了这一场，报酬 ${rewards.gold} 星砂。` });
   } else if (battle.outcome === 'defeat') {
     state.reputation = Math.max(0, state.reputation - 3);
     if (mission.faction) state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
@@ -2307,7 +2344,7 @@ function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { d
     girl.hp = Math.max(1, unit.hp);
     girl.spirit = effectiveGuard(girl);
     if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
-      grantExp(girl, battleExp(mission.recommendedLevel));
+      grantExpWithNotice(state, girl, battleExp(mission.recommendedLevel));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
     }
     girl.bond = Math.max(0, Math.min(100, girl.bond + rewards.bond));
@@ -2539,8 +2576,9 @@ function settleInvestigation(state: GameState, mission: Mission, squad: Girl[], 
     completeStoryMission(state, mission);
     grantTemplateRewards(state, mission, at);
     state.logs.unshift({ id: `log-inv-${mission.id}-${mission.attempts}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `调查完成：${mission.title}。${squad.map(g => g.name).join('、')}带回了可以写进档案的答案。${region.name}的环境让这次行动${region.effect.rewardPct && region.effect.rewardPct > 0 ? '额外顺利' : '格外磨人'}。`, delta: mission.reward });
+    pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `调查完成 · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}带回了答案，报酬 ${mission.reward} 星砂。` });
     for (const girl of squad) {
-      grantExp(girl, investigationExp(mission.recommendedLevel));
+      grantExpWithNotice(state, girl, investigationExp(mission.recommendedLevel));
       girl.bond = Math.min(100, girl.bond + 1);
       girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 15));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
@@ -3401,6 +3439,21 @@ export function act(state: GameState, action: GameAction): ActionResult {
       else girl.personality = text;
       return { state: next, ok: true, message: girl.witch ? `${girl.name}的魔女化性格记录已更新。` : `${girl.name}的性格记录已更新。` };
     }
+    case 'allocateStat': {
+      const next = clone(state); const girl = findRosterGirl(next, action.girlId);
+      if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const result = allocatePoint(girl, action.stat, action.amount ?? 1);
+      if (!result.ok) return { state, ok: false, message: result.message };
+      const stat = statLabel[action.stat];
+      return { state: next, ok: true, message: `${girl.name}的${stat}提升到 ${girl.stats[action.stat]}，还剩 ${girl.unspentPoints ?? 0} 点。` };
+    }
+    case 'setLevelUpMode': {
+      if (state.levelUpMode === action.mode) return { state, ok: false, message: '已经是这个模式了。' };
+      const next = clone(state);
+      next.levelUpMode = action.mode;
+      next.logs.unshift({ id: `log-level-mode-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `升级成长方式改为${action.mode === 'manual' ? '手动加点：升级只发 10 点，由你分配' : '自动加点：按职阶直接成长'}。` });
+      return { state: next, ok: true, message: action.mode === 'manual' ? '以后升级会发可分配点数。' : '以后升级按职阶自动加属性。' };
+    }
     case 'endNight': return endNight(state);
     case 'importWardrobe': {
       const next = clone(state); const girl = findRosterGirl(next, action.girlId);
@@ -3998,6 +4051,58 @@ export function act(state: GameState, action: GameAction): ActionResult {
       event.badge = false;
       return { state: next, ok: true, message: '剧情开幕。' };
     }
+    case 'startStorySession': {
+      const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
+      if (!event) return { state, ok: false, message: '找不到这段剧情。' };
+      if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      const cast = (action.cast?.length ? action.cast : event.cast?.length ? event.cast : [event.girlId]).slice(0, 3);
+      const opening = (action.opening ?? event.opening ?? event.hook ?? '').trim().slice(0, 600) || event.hook;
+      event.mode = 'session';
+      event.cast = cast;
+      event.opening = opening;
+      event.sessionDone = false;
+      event.status = 'active';
+      event.badge = false;
+      event.turns = [{ id: `turn-${Date.now().toString(36)}`, role: 'narrator', text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at: Date.now() }];
+      const girl = findGirl(next, event.girlId);
+      if (girl) girl.eventBadge = '!';
+      return { state: next, ok: true, message: '剧情开始。' };
+    }
+    case 'appendStoryTurn': {
+      const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
+      if (!event || event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      if (event.mode !== 'session') return { state, ok: false, message: '这段剧情不是交互模式。' };
+      const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+      if (rounds >= STORY_SESSION_TURNS) return { state, ok: false, message: `这段剧情已经走了 ${STORY_SESSION_TURNS} 轮，先结束事件吧。` };
+      event.turns = [...(event.turns ?? []), action.turn];
+      return { state: next, ok: true, message: '' };
+    }
+    case 'replaceStoryTurn': {
+      const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
+      if (!event || event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      const index = (event.turns ?? []).findIndex(turn => turn.id === action.turnId);
+      if (index < 0) return { state, ok: false, message: '找不到要重写的那一段。' };
+      if (event.turns?.[index]?.role !== 'narrator') return { state, ok: false, message: '只能重写旁白那一段。' };
+      const previous = event.turns[index];
+      const turns = [...event.turns];
+      turns[index] = { ...action.turn, id: previous.id, rewrites: (previous.rewrites ?? 0) + 1 };
+      event.turns = turns;
+      return { state: next, ok: true, message: '这一段已经重写。' };
+    }
+    case 'finishStorySession': {
+      const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
+      if (!event) return { state, ok: false, message: '找不到这段剧情。' };
+      if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      event.status = 'done'; event.badge = false; event.sessionDone = true;
+      const girl = findGirl(next, event.girlId);
+      const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+      const gain = Math.min(4, Math.max(0, Math.round(rounds * 0.8)));
+      if (girl) { girl.eventBadge = undefined; girl.bond = Math.min(100, girl.bond + gain); }
+      next.logs.unshift({ id: `log-story-session-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl?.name ?? '她'}的剧情「${event.title}」结束，走了 ${rounds} 轮${gain ? `，羁绊 +${gain}` : ''}。` });
+      archive(next, '关系', event.title, `${girl?.name ?? '她'}的这段剧情收束了。`);
+      finishStoryEvent(next, event);
+      return { state: next, ok: true, message: gain ? `事件结束，羁绊 +${gain}。` : '事件结束。' };
+    }
     case 'chooseStoryPort': {
       const next = clone(state);
       const story = next.storylines.find(item => item.id === action.storylineId && item.status === 'active');
@@ -4305,6 +4410,12 @@ export function loadState(raw: string | null): GameState {
     state.missionRuns = Array.isArray(state.missionRuns)
       ? state.missionRuns.filter(run => run && typeof run.id === 'string' && Array.isArray(run.girlIds) && Number.isFinite(run.day)).slice(0, 120)
       : [];
+    // v33：旧档没有这套成长设置时按自动加点读，不追溯退点。
+    state.levelUpMode = state.levelUpMode === 'manual' ? 'manual' : 'auto';
+    state.notices = Array.isArray(state.notices)
+      ? state.notices.filter(notice => notice && typeof notice.id === 'string' && typeof notice.title === 'string').slice(0, 20)
+      : [];
+    for (const girl of state.girls) girl.unspentPoints = Math.max(0, Math.min(999, Number.isFinite(girl.unspentPoints) ? Number(girl.unspentPoints) : 0));
     state.whisperUnread = state.whisperUnread && typeof state.whisperUnread === 'object' ? state.whisperUnread : {};
     state.lastWhisperDay = state.lastWhisperDay && typeof state.lastWhisperDay === 'object' ? state.lastWhisperDay : {};
     state.truceUntil = state.truceUntil && typeof state.truceUntil === 'object' ? state.truceUntil : {};
