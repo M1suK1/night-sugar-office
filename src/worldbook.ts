@@ -179,8 +179,9 @@ export function syncOfficeWorldbook(
 }
 
 /**
- * 常驻词条是「游戏的说明书」，玩家改过世界书之后老档不会自动获得新写的条目，
- * 所以每次启动都把缺失的常驻词条补进去；已有同名条目一律不动。
+ * 常驻词条是「游戏的说明书」：
+ * 每次启动时不仅补齐缺失的常驻条目，若内置常驻条目有新版文本也会同步更新，
+ * 避免老玩家浏览器 localStorage 里一直死锁着旧版文案；玩家自定义的词条绝不触动。
  */
 export function syncBuiltinWorldbook(): boolean {
   let entries: WorldbookEntry[];
@@ -195,11 +196,27 @@ export function syncBuiltinWorldbook(): boolean {
   } catch {
     return false;
   }
-  const exist = new Set(entries.map(item => item.id));
+  const builtins = new Map(builtinWorldbook().map(item => [item.id, item]));
+  let changed = false;
+  const updated = entries.map(item => {
+    // 事务所档案单独由 syncOfficeWorldbook 处理，此处跳过
+    if (item.id === OFFICE_WORLDBOOK_ID) return item;
+    const fresh = builtins.get(item.id);
+    if (fresh && fresh.builtin && fresh.constant && item.content !== fresh.content) {
+      changed = true;
+      return { ...item, content: fresh.content };
+    }
+    return item;
+  });
+  const exist = new Set(updated.map(item => item.id));
   const missing = builtinWorldbook().filter(item => item.constant && !exist.has(item.id));
-  if (!missing.length) return false;
-  const merged = [...entries, ...missing].sort((a, b) => b.priority - a.priority || a.order - b.order);
-  const ok = saveWorldbook(merged);
+  if (missing.length) {
+    updated.push(...missing);
+    changed = true;
+  }
+  if (!changed) return false;
+  updated.sort((a, b) => b.priority - a.priority || a.order - b.order);
+  const ok = saveWorldbook(updated);
   if (ok && typeof window !== 'undefined') {
     try {
       window.dispatchEvent(new CustomEvent(WORLDBOOK_EVENT));

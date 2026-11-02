@@ -4991,3 +4991,31 @@ test('v40 城市态势里的三方首领跟随开局指派，不再写死内置�
   assert.equal(prompt.includes('编号不会哭，城市才睡得着'), false, '旧首领的台词不能安到新首领头上');
   assert.ok(prompt.includes('城市不需要英雄，需要可替换的班次'), '势力信条还在');
 });
+
+test('v41 世界书同步：内置常驻词条更新文本时自动刷新已有条目，保留玩家自定义词条', () => {
+  withMemoryStorage(() => {
+    // 模拟老玩家的 localStorage 里存了旧版的生命词条与自定义词条
+    const legacyEntry: WorldbookEntry = {
+      id: 'wound', name: '生命与受伤', content: '旧版极短文案：血量低于25不能派遣。',
+      keys: [], enabled: true, constant: true, priority: 95, order: 1, builtin: true,
+    };
+    const customEntry: WorldbookEntry = {
+      id: 'user-wb-01', name: '所长的备忘录', content: '自己的手写条目。',
+      keys: ['备忘'], enabled: true, constant: false, priority: 30, order: 99,
+    };
+    saveWorldbook([legacyEntry, customEntry]);
+
+    // 同步：内置条目应当自动刷出新润色文本，自定义条目不动
+    assert.equal(syncBuiltinWorldbook(), true);
+    const updated = loadWorldbook();
+    const wound = updated.find(item => item.id === 'wound');
+    assert.ok(wound);
+    assert.ok(wound!.content.includes('契约者的肉体终究无法无休止承载法蚀撕扯'));
+    const user = updated.find(item => item.id === 'user-wb-01');
+    assert.ok(user);
+    assert.equal(user!.content, '自己的手写条目。');
+
+    // 内容已是最新，再次调用应当空转
+    assert.equal(syncBuiltinWorldbook(), false);
+  });
+});
