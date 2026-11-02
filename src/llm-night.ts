@@ -8,13 +8,13 @@ import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
 import { MAX_ENEMIES } from './combat.ts';
 import { factionInfo, listItems } from './content/items.ts';
-import { findSkill, skills } from './content/skills.ts';
-import { bossSkills } from './content/bossSkills.ts';
+import { findSkill } from './content/skills.ts';
 import { factionRepresentativeOf, type FactionRepresentative } from './factions.ts';
 import { HOSTILITY_PAIRS, pairLabel } from './hostility.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { findAnySkill, isBossSkill } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
+import { spawnableMonsters } from './rules/encounters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
 import { factionBrief, factionTagLabel } from './factions.ts';
 import { representativeOf } from './office.ts';
@@ -46,7 +46,6 @@ export interface NightCatalog {
   representatives: { id: string; name: string; title: string; faction: FactionId; level: number }[];
   girls: { id: string; name: string; title?: string; element: Element; archetype?: Archetype; level: number; bond: number; fatigue: number; corruption: number; origin?: string; personality?: string; appearance?: string; quote?: string }[];
   items: { id: string; name: string; slot: string }[];
-  skills: { id: string; name: string; school: string; side: string; tier?: string }[];
   monsters: { id: string; name: string; rank: string }[];
   pool: { missions: number; monsters: number; candidates: number };
   /** 城市态势：三方态度与首领主张、最脏的两个辖区、辖区当主。数值仍由本地结算。 */
@@ -362,7 +361,7 @@ function parseMission(ctx: Ctx, value: unknown, path: string): NightMissionSpec 
   };
 }
 
-function parseChange(ctx: Ctx, value: unknown, path: string): OpinionChange | undefined {
+function parseChange(ctx: Ctx, value: unknown, path: string, fallbackGirlId?: string): OpinionChange | undefined {
   const body = record(ctx, value, path);
   const kind = body.kind;
   if (kind === 'gold') return { kind, amount: integer(ctx, body.amount, `${path}.amount`, -9000, 1500, 0) };
@@ -391,8 +390,18 @@ function parseChange(ctx: Ctx, value: unknown, path: string): OpinionChange | un
   }
   if (kind === 'girl') {
     const field = choice(ctx, body.field, ['bond', 'fatigue', 'corruption', 'hp'] as const, `${path}.field`, 'bond');
-    const girlId = typeof body.girlId === 'string' ? body.girlId : '';
-    if (!ctx.activeGirls.some(girl => girl.id === girlId)) error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上；可用：${ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`).join('、')}`);
+    let girlId = typeof body.girlId === 'string' ? body.girlId : '';
+    if (!ctx.activeGirls.some(girl => girl.id === girlId)) {
+      // 模型常把「三方首领」的 id 写进 girlId（名册里只有少女）。这时改成提出者：
+      // defer/reject 本来就要求改提出者的羁绊，改写比整份提案作废更接近它的本意。
+      const fallback = [fallbackGirlId, ctx.activeGirls[0]?.id].find(id => id && ctx.activeGirls.some(girl => girl.id === id));
+      if (!fallback) {
+        error(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上；可用：${ctx.activeGirls.map(girl => `${girl.id}（${girl.name}）`).join('、')}`);
+        return undefined;
+      }
+      warn(ctx, `${path}.girlId`, `角色「${girlId}」不在值夜名册上，已改写为「${fallback}」`);
+      girlId = fallback;
+    }
     const range: Record<typeof field, [number, number]> = { bond: [-5, 5], fatigue: [-20, 20], corruption: [-5, 5], hp: [-30, 30] };
     return { kind, girlId, field, amount: integer(ctx, body.amount, `${path}.amount`, range[field][0], range[field][1], 0) };
   }
@@ -400,12 +409,12 @@ function parseChange(ctx: Ctx, value: unknown, path: string): OpinionChange | un
   return undefined;
 }
 
-function parseChanges(ctx: Ctx, value: unknown, path: string): OpinionChange[] {
+function parseChanges(ctx: Ctx, value: unknown, path: string, fallbackGirlId?: string): OpinionChange[] {
   if (!Array.isArray(value)) {
     error(ctx, path, '必须是数组');
     return [];
   }
-  return value.map((entry, index) => parseChange(ctx, entry, `${path}[${index}]`)).filter((entry): entry is OpinionChange => Boolean(entry));
+  return value.map((entry, index) => parseChange(ctx, entry, `${path}[${index}]`, fallbackGirlId)).filter((entry): entry is OpinionChange => Boolean(entry));
 }
 
 function parseOutcome(ctx: Ctx, value: unknown, path: string): OpinionOutcome | undefined {
@@ -515,7 +524,7 @@ function parseOption(ctx: Ctx, value: unknown, path: string, faction: FactionId,
     id: body.id,
     label: text(ctx, body.label, `${path}.label`, 10, body.id === 'accept' ? '批准' : body.id === 'defer' ? '暂缓' : '驳回'),
     effect: text(ctx, body.effect, `${path}.effect`, 160),
-    changes: parseChanges(ctx, body.changes, `${path}.changes`),
+    changes: parseChanges(ctx, body.changes, `${path}.changes`, authorId),
     outcomes: parseOutcomes(ctx, body.outcomes, `${path}.outcomes`),
   };
   validateOption(ctx, option, path, faction, authorId);
@@ -778,12 +787,8 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       ...listItems().map(item => ({ id: item.id, name: item.name, slot: item.slot })),
       ...state.generatedItems.map(item => ({ id: item.id, name: item.name, slot: item.slot })),
     ],
-    // 一个池子，少女与魔物共用；`boss-` 开头的是 Boss 专属，只有王座/灾厄能带。
-    skills: [...skills, ...bossSkills].map(skill => ({ id: skill.id, name: skill.name, school: skill.school, side: skill.side, tier: skill.tier })),
-    monsters: [
-      ...state.customMonsters.filter(monster => !state.removedMonsters.includes(monster.id)).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),
-      ...monsters.filter(monster => !state.removedMonsters.includes(monster.id)).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),
-    ],
+    // enemyRefs 只认这张表：真实魔物 + 自制魔物，去掉 Boss 专属、剧情专属与旧池子副本。
+    monsters: spawnableMonsters(state).map(monster => ({ id: monster.id, name: monster.name, rank: monster.rank })),
     pool: {
       missions: Math.max(0, state.poolLimits.missions - state.missions.filter(mission => mission.status !== 'done').length),
       monsters: Math.max(0, state.poolLimits.monsters - state.customMonsters.filter(monster => !monster.id.startsWith('boss-mon-')).length),

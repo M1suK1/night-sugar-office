@@ -535,3 +535,10 @@
 - [x] 新增 `tests/pool.test.ts` 6 条：12 条且模板不重复、完成后补回、换日仍 12、老档清副本、超限淘汰顺序、幂等。
 - [x] 19 个文件 402 条测试逐文件全过；`tsc --noEmit` 0 错；`npm run check:rules` 通过。
 - [x] 地图坐标不再挤在辖区标签点：`districtPin` 改成按多边形外接框拒绝采样（落别区就重抽），并给每条委托选「当前委托最少」的辖区；新增 2 条测试断言坐标落在本区多边形内、同区点也不重叠。
+
+## v39 每日提案提示词瘦身 / girlId 改写
+
+- [x] 目录里删掉 `skills`：v32 之后不再生成技能，60 多条技能只是把提示词撑长；`NightCatalog` 同步删字段。
+- [x] 魔物表改用 `spawnableMonsters(state)`：只列真实可上场的魔物（去重、去掉 Boss/剧情专属与旧 `pool-mon-*` 副本），`enemyRefs` 校验照旧。
+- [x] `changes[].girlId` 写成名册外的 id（常见是三方首领 id）时，改写为提出者并记一条 warning，不再让整份提案作废；defer/reject 本来要求改提出者羁绊，改写比作废更接近本意。
+- [x] 新增 2 条测试：目录不含 skills 且魔物表无重复/无旧副本、girlId 误用后被改写为提出者且带 warning。

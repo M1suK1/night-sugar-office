@@ -19,7 +19,7 @@ import { subjectOfCustom } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
-import { buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
+import { buildNightCatalog, buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
 import { readWardrobePackage } from '../src/wardrobeImport.ts';
@@ -4946,4 +4946,29 @@ test('议会提案写错作者或说话人时，报错里列出可用的 id 与�
   const checked = validateNightProposal(broken, state);
   assert.equal(checked.ok, false);
   assert.ok(checked.errors.some(error => error.includes('g_card_cafebabe') && error.includes('白洲梓')), checked.errors.join('；'));
+});
+
+test('v39 每日提案目录不再塞技能表，魔物只列真实可上场的', () => {
+  const state = createInitialState();
+  const catalog = buildNightCatalog(state);
+  assert.equal('skills' in catalog, false, '不再生成技能，就不该把 60 多个技能塞进提示词');
+  const ids = catalog.monsters.map(monster => monster.id);
+  assert.equal(new Set(ids).size, ids.length, '魔物表不能有重复 id');
+  assert.equal(ids.some(id => id.startsWith('pool-mon-')), false, '旧池子副本不该再出现在提示词里');
+  assert.equal(catalog.monsters.every(monster => monster.name && monster.rank), true);
+});
+
+test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整份提案作废', () => {
+  const state = createInitialState();
+  const raw = nightProposal();
+  raw.opinion.options[1].changes[0] = { kind: 'girl', girlId: 'g_card_78ad3835', field: 'bond', amount: -1 };
+  raw.opinion.options[2].changes[0] = { kind: 'girl', girlId: 'g_card_78ad3835', field: 'bond', amount: -2 };
+  const checked = validateNightProposal(raw, state);
+  assert.equal(checked.ok, true, checked.errors.join('；'));
+  assert.ok(checked.warnings.some(text => text.includes('已改写')), '应该留下一条改写提示');
+  for (const option of checked.proposal!.opinion.options) {
+    const change = option.changes.find(item => item.kind === 'girl');
+    if (!change) continue;
+    assert.equal(change.girlId, raw.opinion.authorId, '写错的目标要改成提出者');
+  }
 });
