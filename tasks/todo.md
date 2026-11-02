@@ -603,3 +603,11 @@
 - [x] `src/rules/cardOps.ts`：`signature()` 改为图片指纹（长度 + 首尾 64 字符），不再把整张卡的 Base64 拼进 `JSON.stringify`。
 - [x] `src/imageSlim.ts` 新增 `slimGirlImages` / `slimStateImages`：老存档读入后在后台清洗名册、候选与纪念墙里的超大图，确有改动才替换状态；`App.tsx` 的启动与三条读档路径都已接入。
 - [x] 测试：新增「2.5MB 立绘卡片重复导入仍判重且指纹 < 4000 字符」「optimizeCardImages 保持结构」「无 Canvas 时 slimStateImages 原样返回」三条；19 个测试文件 413 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过，无 BOM。
+
+## v43 修复：自定义登记后立绘不显示
+
+- [x] 根因：v43 把 `CustomGirlDialog.pickFile` 改用 `URL.createObjectURL` 提速，而提交时仍取 `source?.src` 当立绘——存进去的是 `blob:` 地址，弹窗一关就被 revoke，刷新后更是彻底失效，于是自定义登记出来的人只有剪影或破图。
+- [x] 修复：新增 `portraitData` 状态，图片加载后立刻另存一份长边 ≤1024 的 WebP dataURL 作为真正的立绘；提交改用 `portraitData → preview → 衣柜包立绘` 的顺序，并在加载时同步落一张预览，杜绝「刚导完就点确认」的空档。
+- [x] 加固：`src/image.ts` 新增 `isPersistablePortrait` / `sanitizePortraitSrc`，只承认 `data:image/…` 与内置 `/art/…`；`applyCreateGirl` 与自定义登记的提交口都过这一道，`blob:` / `http:` 一律挡掉。
+- [x] 自愈：`slimGirlImages` 顺带清掉存档里遗留的 `blob:` 立绘（纯字符串判断，没有 Canvas 也能跑），老存档读入后不再留一张永远加载不出来的破图。
+- [x] 测试：新增「立绘地址只收 data:image 与 /art/」「遗留 blob: 立绘读取后被清掉」两条；19 个测试文件 415 项全绿，`tsc` 0 错，`check:rules` 通过。

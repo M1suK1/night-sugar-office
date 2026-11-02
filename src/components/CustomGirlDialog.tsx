@@ -10,7 +10,7 @@ import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
 import { factionTagFor, factionTagLabel, girlFactionColors, girlFactionLabels } from '../factions';
 import type { GirlFaction } from '../types';
-import { loadImage, removeImageBackground, safeOptimizedImageDataUrl, yieldToGC } from '../image';
+import { loadImage, removeImageBackground, safeOptimizedImageDataUrl, sanitizePortraitSrc, yieldToGC } from '../image';
 import { readWardrobePackage, type WardrobePackage } from '../wardrobeImport';
 import { fileDropProps } from '../drop';
 import { CutoutPreview } from './CutoutPreview';
@@ -77,6 +77,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [skillTier, setSkillTier] = useState<'all' | 'basic' | 'signature' | 'ultimate'>('all');
   const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());  const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
+  /** 可持久化的立绘（长边 ≤1024 的 WebP dataURL）。`source.src` 是临时的 blob:，绝对不能进存档。 */
+  const [portraitData, setPortraitData] = useState('');
   const [message, setMessage] = useState('');
   const [hint, setHint] = useState('');
   /** 同人角色的出处 / 名字：只在开启联网考据时用来查资料。 */
@@ -123,9 +125,14 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     const url = URL.createObjectURL(file);
     sourceUrlRef.current = url;
     const image = new Image();
-    image.onload = () => {
+    image.onload = async () => {
       if (image.naturalWidth < 320 || image.naturalHeight < 400) { setMessage('图片至少需要 320×400；尺寸不足会明显模糊。'); return; }
       setSource(image); setZoom(1); setX(0); setY(0); setMessage('');
+      // 先同步落一张预览，避免「刚导完就点确认」时立绘还是空的。
+      setPreview(cropToDataUrl(image, 1, 0, 0));
+      // blob: 不能进存档，读进来之后立刻另存一份降维过的 dataURL 作为真正的立绘。
+      try { setPortraitData(await safeOptimizedImageDataUrl(file)); }
+      catch { setMessage('立绘读取失败，请换一张图片。'); }
     };
     image.onerror = () => setMessage('这张图片无法读取。');
     image.src = url;
@@ -187,8 +194,8 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
-      // 存原图，取景另存：不再把立绘压成 768×960 的 WebP。
-      portrait: source?.src || preview || wardrobe?.portrait || undefined,
+      // 存可持久化的原图（长边 ≤1024 的 WebP），取景另存为相对比例；blob: 一律挡在门外。
+      portrait: sanitizePortraitSrc(portraitData) ?? sanitizePortraitSrc(preview) ?? sanitizePortraitSrc(wardrobe?.portrait),
       portraitCrop: source ? { zoom, x, y } : undefined,
       factionTag: tagOf(name),
       wardrobe: wardrobe?.outfits,
@@ -258,7 +265,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   };
   const applyCut = () => {
     if (!cut) return;
-    setPreview(cut.after); setSource(null); setCut(null);
+    setPreview(cut.after); setSource(null); setPortraitData(cut.after); setCut(null);
     setCutNote('已应用去背景版本。');
   };
   const discardCut = () => { setCut(null); setCutNote('已保留原图。'); };
@@ -364,7 +371,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     {step === 4 && <div className="custom-step-body">
       <h2>最后，让她有一个能被认出的轮廓。</h2><p className="muted">当前阶段使用剪影验证功能。可以导入 PNG 立绘，按 4:5 实时裁剪，也可以把图片直接拖到左边的预览框；不导入则使用代表色剪影。</p>
       <div className="custom-portrait-layout">
-        <div><div className={`custom-crop-preview ${overPortrait ? 'is-drop-over' : ''}`} {...fileDropProps(setOverPortrait, files => { if (files[0]) void pickFile(files[0]); })}><canvas ref={canvas => { if (canvas && preview) { const ctx = canvas.getContext('2d'); const img = new Image(); img.onload = () => ctx?.drawImage(img, 0, 0, canvas.width, canvas.height); img.src = preview; } }} width={240} height={300} /><span>{preview ? '导入立绘' : '代表色剪影'}</span></div>{preview && <button id="custom-portrait-remove" type="button" className="av-btn av-btn-small" onClick={() => { setSource(null); setPreview(''); }}><Trash2 size={12} />移除导入</button>}</div>
+        <div><div className={`custom-crop-preview ${overPortrait ? 'is-drop-over' : ''}`} {...fileDropProps(setOverPortrait, files => { if (files[0]) void pickFile(files[0]); })}><canvas ref={canvas => { if (canvas && preview) { const ctx = canvas.getContext('2d'); const img = new Image(); img.onload = () => ctx?.drawImage(img, 0, 0, canvas.width, canvas.height); img.src = preview; } }} width={240} height={300} /><span>{preview ? '导入立绘' : '代表色剪影'}</span></div>{preview && <button id="custom-portrait-remove" type="button" className="av-btn av-btn-small" onClick={() => { revokeSourceUrl(); setSource(null); setPreview(''); setPortraitData(''); }}><Trash2 size={12} />移除导入</button>}</div>
         <div className="custom-portrait-fields">
           <button type="button" className="av-btn" onClick={() => fileRef.current?.click()}><ImagePlus size={14} />导入 PNG / JPEG</button>
           {source && <><label>缩放<input aria-label="立绘缩放" type="range" min={1} max={3} step={0.05} value={zoom} onChange={e => setZoom(Number(e.target.value))} /></label><label>水平<input aria-label="立绘水平位置" type="range" min={-50} max={50} value={x} onChange={e => setX(Number(e.target.value))} /></label><label>垂直<input aria-label="立绘垂直位置" type="range" min={-50} max={50} value={y} onChange={e => setY(Number(e.target.value))} /></label></>}

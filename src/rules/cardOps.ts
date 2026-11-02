@@ -10,6 +10,7 @@ import { hydrate, makeCandidate } from '../rules/candidate.ts';
 import { normalizeMarketWindow, unshiftMarketWindow } from '../rules/market.ts';
 import { advancedCost, marketSize, marketUpgradeCost } from '../economy.ts';
 import { factionInfo } from '../content/items.ts';
+import { sanitizePortraitSrc } from '../image.ts';
 import { factionTask } from '../rules/missions.ts';
 import { archive, book, clone, dateLabel, hashText } from '../rules/core.ts';
 import type { ActionResult, GameAction, GameState, Girl, GirlCard, Trait } from '../types.ts';
@@ -249,7 +250,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
       }
       const girl = hydrate({
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
-        portrait: draft.portrait ?? wardrobe.find(outfit => outfit.portrait)?.portrait ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
+        portrait: sanitizePortraitSrc(draft.portrait) ?? sanitizePortraitSrc(wardrobe.find(outfit => outfit.portrait)?.portrait) ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
         skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: 1800 + Math.max(0, sum - 260) * 40 + extra,
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,

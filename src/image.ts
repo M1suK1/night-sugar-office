@@ -5,6 +5,23 @@
  * 主体内部的同色区域（白衬衫、白猫）不会被误伤。发丝与复杂背景不保证干净。
  */
 
+/**
+ * 能进存档的立绘地址只有两种：内嵌的 `data:image/…`，和内置的 `/art/…` 静态资源。
+ *
+ * `blob:` 只在当前页面活着、`http(s):` 会随外链失效，把它们写进角色身上，
+ * 刷新之后就是一张永远加载不出来的破图。v43 引入 object URL 提速时踩过这个坑，
+ * 所以这里留一个唯一的判定口，任何要落库的立绘都先过它。
+ */
+export function isPersistablePortrait(src: unknown): src is string {
+  if (typeof src !== 'string' || !src) return false;
+  return src.startsWith('data:image/') || (src.startsWith('/art/') && src.length < 200);
+}
+
+/** 不能持久化的立绘一律丢掉，宁可回落到剪影，也不留一张坏图。 */
+export function sanitizePortraitSrc(src: unknown): string | undefined {
+  return isPersistablePortrait(src) ? src : undefined;
+}
+
 export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();

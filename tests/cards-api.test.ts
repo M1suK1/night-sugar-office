@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { MAX_BYTES, readCardFile, scanCardDir } from '../scripts/cards-api.mjs';
 import { optimizeCardImages, parseGirlCard } from '../src/cards.ts';
 import { createInitialState } from '../src/game.ts';
+import { isPersistablePortrait, sanitizePortraitSrc } from '../src/image.ts';
 import { slimStateImages } from '../src/imageSlim.ts';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -95,4 +96,25 @@ test('防 OOM：没有 Canvas 的环境里 slimStateImages 原样返回，且不
   const result = await slimStateImages(state);
   assert.equal(result.changed, false, 'node 里没有 document，不该报告改动');
   assert.equal(result.state, state, '必须原样返回同一个对象，避免无谓的状态替换');
+});
+
+test('立绘地址只收 data:image 与内置 /art/，blob: 与 http: 一律不收', () => {
+  assert.equal(isPersistablePortrait('data:image/webp;base64,AAAA'), true);
+  assert.equal(isPersistablePortrait('/art/yue.png'), true);
+  assert.equal(isPersistablePortrait('blob:http://127.0.0.1:3080/6a1c'), false, 'blob: 活不过刷新');
+  assert.equal(isPersistablePortrait('https://example.com/a.png'), false, '外链会失效');
+  assert.equal(isPersistablePortrait(''), false);
+  assert.equal(isPersistablePortrait(undefined), false);
+  assert.equal(sanitizePortraitSrc('blob:http://127.0.0.1:3080/6a1c'), undefined);
+  assert.equal(sanitizePortraitSrc('data:image/webp;base64,AAAA'), 'data:image/webp;base64,AAAA');
+});
+
+test('立绘自愈：存档里遗留的 blob: 立绘在读取后被清掉，回落到剪影', async () => {
+  const state = createInitialState();
+  const broken = { ...state.girls[0]!, portrait: 'blob:http://127.0.0.1:3080/deadbeef' };
+  const result = await slimStateImages({ ...state, girls: [broken, ...state.girls.slice(1)] });
+  assert.equal(result.changed, true, '发现不能持久化的立绘就该报告改动');
+  const healed = result.state.girls[0]!;
+  assert.equal(healed.portrait, '', 'blob: 地址必须被清掉，不能留一张破图');
+  assert.equal(result.state.girls.length, state.girls.length, '不能少人');
 });
