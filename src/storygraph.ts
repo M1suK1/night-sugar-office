@@ -3,18 +3,20 @@ import type {
   StoryNode, StoryNodeData, StoryNodeKind, StoryPlan, StoryMissionSpec,
 } from './types.ts';
 import type { DistrictId } from './districts.ts';
+import { getItem } from './content/items.ts';
+import { tierOf } from './items.ts';
 
 export const GRAPH_MAX_NODES = 80;
 export const GRAPH_MAX_EDGES = 160;
 
 export const NODE_LABELS: Record<StoryNodeKind, string> = {
-  start: '开始', scene: '场景', choice: '选择', mission: '阶段委托',
+  start: '开始', choice: '选择', mission: '阶段委托',
   incident: '强制弹窗', opinion: '议会提案', event: '角色事件',
   reward: '奖励', wait: '等待', end: '结束',
 };
 
 export const NODE_ACCENT: Record<StoryNodeKind, string> = {
-  start: '#8fd3c7', scene: '#c9b6d8', choice: '#f3aec9', mission: '#e0a15f',
+  start: '#8fd3c7', choice: '#f3aec9', mission: '#e0a15f',
   incident: '#e08a8a', opinion: '#9fb7e8', event: '#d8a0d0',
   reward: '#e8cf8a', wait: '#9aa4b2', end: '#8fd3c7',
 };
@@ -44,25 +46,24 @@ export function makeNode(kind: StoryNodeKind, x: number, y: number, id: string):
     switch (kind) {
       case 'start': return { kind };
       case 'end': return { kind, summary: '', ending: '' };
-      case 'scene': return { kind, narration: '', lines: [] };
       case 'choice': return { kind, prompt: '', options: [
         { id: 'a', label: '选项 A', intent: '', effect: { bond: 2 } },
         { id: 'b', label: '选项 B', intent: '', effect: { bond: 1, corruption: 1 } },
       ] };
-      case 'mission': return { kind, spec: { title: '', goal: '', category: '故事委托', difficulty: '常规', duration: 90 } };
+      case 'mission': return { kind, spec: { title: '', goal: '', category: '故事委托', difficulty: '常规', work: 'investigation', duration: 90 } };
       case 'incident': return { kind, spec: { kind: 'faction', title: '', body: '', options: [
         { label: '答应', hint: '', effect: { reputation: 2 } },
         { label: '拒绝', hint: '', effect: { reputation: -3 } },
       ] } };
+      // v46：议会提案只给两个分支（批准 / 驳回）；暂缓由程序补，不占端口。
       case 'opinion': return { kind, spec: { topic: '私人心愿', title: '', text: '', request: '', options: [
         { id: 'accept', label: '批准', effect: '' },
-        { id: 'defer', label: '暂缓', effect: '' },
         { id: 'reject', label: '驳回', effect: '' },
       ] } };
       case 'event': return { kind, title: '', hook: '', cast: [], opening: '' };
       case 'reward': return { kind, effect: {} };
       case 'wait': return { kind, days: 0, minutes: 60 };
-      default: return { kind: 'scene', narration: '', lines: [] };
+      default: return { kind: 'start' };
     }
   })();
   return { id, kind, x, y, title: NODE_LABELS[kind], data };
@@ -84,14 +85,20 @@ export function compileBeatsToGraph(plan: StoryPlan): StoryGraph {
   };
 
   plan.beats.forEach((beat, index) => {
+    // v46：场景节点取消，每一幕的旁白改成一张「看一眼」的强制弹窗（无选项，点「知道了」继续）。
     const sceneId = nextNode();
+    const title = (beat.title || `第 ${index + 1} 幕`).slice(0, 30);
     nodes.push({
-      id: sceneId, kind: 'scene', x: column * 250, y: 60,
-      title: beat.title || `第 ${index + 1} 幕`,
+      id: sceneId, kind: 'incident', x: column * 250, y: 60,
+      title,
       data: {
-        kind: 'scene',
-        narration: [beat.scene, beat.summary].filter(Boolean).join('\n\n'),
-        lines: beat.hook ? [{ speaker: '旁白', text: beat.hook }] : [],
+        kind: 'incident',
+        spec: {
+          kind: 'girl',
+          title,
+          body: [beat.scene, beat.summary, beat.hook].filter(Boolean).join('\n\n').slice(0, 400),
+          options: [],
+        },
       },
     });
     link(previous, sceneId);
@@ -192,13 +199,6 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
   switch (kind) {
     case 'start': return { kind };
     case 'end': return { kind, summary: str(value.summary, 300), ending: str(value.ending, 24) };
-    case 'scene': {
-      const lines = Array.isArray(value.lines) ? value.lines.slice(0, 8).map((line) => {
-        const item = (line ?? {}) as Record<string, unknown>;
-        return { speaker: str(item.speaker, 20, '旁白'), tone: str(item.tone, 12) || undefined, text: str(item.text, 300) };
-      }) : [];
-      return { kind, narration: str(value.narration, 2400), lines };
-    }
     case 'choice': {
       const options = Array.isArray(value.options) ? value.options.slice(0, 4).map((option, index) => {
         const item = (option ?? {}) as Record<string, unknown>;
@@ -243,11 +243,19 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
       const spec = (value.spec ?? {}) as Record<string, unknown>;
       const topics: Opinion['topic'][] = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'];
       const topic = topics.includes(spec.topic as Opinion['topic']) ? spec.topic as Opinion['topic'] : '私人心愿';
-      const options = Array.isArray(spec.options) ? spec.options.slice(0, 3).map((option, index) => {
-        const item = (option ?? {}) as Record<string, unknown>;
-        const ids = ['accept', 'defer', 'reject'] as const;
-        return { id: ids.includes(item.id as never) ? item.id as typeof ids[number] : ids[index] ?? 'defer', label: str(item.label, 20, '选项'), effect: str(item.effect, 120), shift: item.shift as { district: DistrictId; faction: FactionId } | undefined };
-      }) : [];
+      // v46：只保留批准 / 驳回两个分支；暂缓由程序在运行时补，不占端口。
+      const options = Array.isArray(spec.options)
+        ? (spec.options as unknown[])
+          .map(option => (option ?? {}) as Record<string, unknown>)
+          .filter(option => option.id === 'accept' || option.id === 'reject')
+          .slice(0, 2)
+          .map(option => ({
+            id: option.id as 'accept' | 'reject',
+            label: str(option.label, 20, option.id === 'accept' ? '批准' : '驳回'),
+            effect: str(option.effect, 120),
+            shift: option.shift as { district: DistrictId; faction: FactionId } | undefined,
+          }))
+        : [];
       return { kind, spec: { topic, title: str(spec.title, 30), text: str(spec.text, 300), request: str(spec.request, 120), options } };
     }
     case 'event': {
@@ -256,7 +264,23 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
         : [];
       return { kind, title: str(value.title, 30), hook: str(value.hook, 160), cast, opening: str(value.opening, 600) };
     }
-    case 'reward': return { kind, effect: sanitizeEffect(value.effect) ?? {}, equipmentId: str(value.equipmentId, 60) || undefined, trait: value.trait as { name: string; description: string } | undefined };
+    case 'reward': {
+      const effect = sanitizeEffect(value.effect) ?? {};
+      // v46：奖励不再发技能；装备只收阶级，具体哪一件由程序按阶级抽。
+      delete effect.skill;
+      let tier = clampInt(value.equipmentTier, 0, 5, 0);
+      // 旧图写的是具体装备：按那件装备的阶级折算，认不出就当成不给。
+      if (!tier && typeof value.equipmentId === 'string' && value.equipmentId) {
+        const legacy = getItem(value.equipmentId);
+        tier = legacy ? clampInt(tierOf(legacy), 0, 5, 0) : 0;
+      }
+      return {
+        kind,
+        effect,
+        equipmentTier: tier > 0 ? tier : undefined,
+        trait: value.trait as { name: string; description: string } | undefined,
+      };
+    }
     case 'wait': return { kind, days: clampInt(value.days, 0, 14, 0), minutes: clampInt(value.minutes, 0, 1440, 60) };
     default: return { kind: 'start' };
   }
@@ -323,13 +347,37 @@ export function sanitizeGraph(raw: unknown): StoryGraph | null {
     const item = (node ?? {}) as Partial<StoryNode>;
     const id = str(item.id, 12);
     if (!id || seen.has(id)) return null;
-    const kind = kinds.includes(item.kind as StoryNodeKind) ? item.kind as StoryNodeKind : null;
+    // v46 迁移：旧蓝图里的「场景」就地转成一张纯通报弹窗，id / 坐标 / 连线全部保留。
+    const legacyScene = (item.kind as string) === 'scene';
+    const kind: StoryNodeKind | null = legacyScene
+      ? 'incident'
+      : kinds.includes(item.kind as StoryNodeKind) ? item.kind as StoryNodeKind : null;
     if (!kind) return null;
     seen.add(id);
+    const rawData = (item.data ?? {}) as Record<string, unknown>;
+    const migrated = legacyScene
+      ? {
+        kind: 'incident',
+        spec: {
+          kind: 'girl',
+          title: str(item.title, 30, '旧场景'),
+          body: [
+            typeof rawData.narration === 'string' ? rawData.narration : '',
+            Array.isArray(rawData.lines)
+              ? rawData.lines.map(line => (line ?? {}) as Record<string, unknown>)
+                .map(line => `${str(line.speaker, 20, '旁白')}：${str(line.text, 300)}`)
+                .filter(text => !text.endsWith('：'))
+                .join('\n')
+              : '',
+          ].filter(Boolean).join('\n\n').slice(0, 400),
+          options: [],
+        },
+      }
+      : rawData;
     nodes.push({
       id, kind, x: clampInt(item.x, 0, 4000, 60), y: clampInt(item.y, 0, 3000, 60),
       title: str(item.title, 40, NODE_LABELS[kind]), note: str(item.note, 200) || undefined,
-      data: sanitizeData(kind, item.data),
+      data: sanitizeData(kind, migrated),
     });
   }
   const edgeIds = new Set<string>();
@@ -473,6 +521,8 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
     const promote = issue.level === 'warning' && (
       (issue.message.startsWith('有 ') && issue.message.includes('无法到达'))
       || issue.message.includes('没有「失败」出口')
+      // 手写草稿允许弹窗 / 提案先空着，模型生成的蓝图不行。
+      || issue.message.includes('强制弹窗缺少') || issue.message.includes('议会提案缺少')
     );
     return { ...issue, level: promote ? 'error' : issue.level };
   });
@@ -481,7 +531,9 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
   const ends = graph.nodes.filter(node => node.kind === 'end');
   const choices = graph.nodes.filter(node => node.kind === 'choice');
   const missions = graph.nodes.filter(node => node.kind === 'mission');
-  const scenes = graph.nodes.filter(node => node.kind === 'scene');
+  const incidents = graph.nodes.filter(node => node.kind === 'incident');
+  const events = graph.nodes.filter(node => node.kind === 'event');
+  const opinions = graph.nodes.filter(node => node.kind === 'opinion');
   if (graph.nodes.length < 8) issues.push({ level: 'error', message: '蓝图至少需要 8 个节点。' });
   if (graph.nodes.length > 16) issues.push({ level: 'error', message: '蓝图最多 16 个节点，请把支线收束。' });
   if (graph.edges.length > graph.nodes.length + 8) issues.push({ level: 'error', message: '蓝图连线过多，可能出现了重复分支。' });
@@ -493,10 +545,55 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
   }
   if (choices.length < 1 || choices.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个选择节点。' });
   if (missions.length < 1 || missions.length > 2) issues.push({ level: 'error', message: '蓝图需要 1–2 个阶段委托。' });
-  if (!scenes.length) issues.push({ level: 'error', message: '蓝图至少需要一个场景节点。' });
-  for (const node of graph.nodes) {
-    if (node.kind === 'incident' || node.kind === 'opinion') {
-      issues.push({ level: 'error', message: `生成蓝图不能包含「${NODE_LABELS[node.kind]}」节点，请改用手动编辑。`, nodeId: node.id });
+  // v46：场景节点取消，旁白交给强制弹窗与角色事件；这两类至少要有一个。
+  if (!events.length && !incidents.length) issues.push({ level: 'error', message: '蓝图至少需要一个角色事件或强制弹窗。' });
+  if (events.length > 2) issues.push({ level: 'error', message: '角色事件最多 2 个，多出来的请改成强制弹窗。' });
+  if (incidents.length > 2) issues.push({ level: 'error', message: '强制弹窗最多 2 个，多出来的请改成角色事件。' });
+  if (opinions.length > 1) issues.push({ level: 'error', message: '议会提案最多 1 个。' });
+  if (events.length && incidents.length && events.length + incidents.length > 2) {
+    issues.push({ level: 'warning', message: '事件与弹窗加起来超过两个，玩家会被连着叫住好几次，注意节奏。' });
+  }
+  // v46：强制弹窗与议会提案现在由模型生成，端口各按自己的选项走。
+  for (const node of incidents) {
+    if (node.data.kind !== 'incident') continue;
+    const options = node.data.spec.options;
+    if (!options.length) {
+      const out = graph.edges.filter(edge => edge.from === node.id);
+      if (out.length !== 1 || out[0].fromPort !== 'out') {
+        issues.push({ level: 'error', message: `强制弹窗「${node.title}」没有选项，只能有一条 fromPort="out" 的线。`, nodeId: node.id });
+      }
+      continue;
+    }
+    if (options.length > 3) issues.push({ level: 'error', message: `强制弹窗「${node.title}」最多 3 个选项。`, nodeId: node.id });
+    options.forEach((option, index) => {
+      const port = `o${index + 1}`;
+      const hits = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === port);
+      if (hits.length !== 1) {
+        issues.push({ level: 'error', message: `强制弹窗「${node.title}」的选项「${option.label}」必须且只能连一条线（fromPort="${port}"）。`, nodeId: node.id });
+      }
+    });
+    for (const edge of graph.edges.filter(item => item.from === node.id)) {
+      if (!/^o[1-3]$/.test(edge.fromPort)) {
+        issues.push({ level: 'error', message: `强制弹窗「${node.title}」的出口只能是 o1 / o2 / o3。`, nodeId: node.id });
+      }
+    }
+  }
+  for (const node of opinions) {
+    if (node.data.kind !== 'opinion') continue;
+    for (const port of ['accept', 'reject']) {
+      const hits = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === port);
+      if (hits.length !== 1) {
+        issues.push({
+          level: 'error',
+          message: `议会提案「${node.title}」必须有一条 fromPort="${port}" 的线——批准与驳回各走一条剧情。`,
+          nodeId: node.id,
+        });
+      }
+    }
+    for (const edge of graph.edges.filter(item => item.from === node.id)) {
+      if (edge.fromPort !== 'accept' && edge.fromPort !== 'reject') {
+        issues.push({ level: 'error', message: `议会提案「${node.title}」的出口只能是 accept 或 reject（暂缓不推进剧情，不需要连线）。`, nodeId: node.id });
+      }
     }
   }
 
@@ -537,7 +634,7 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
       if (hits.length !== 1) issues.push({ level: 'error', message: `选择节点「${node.title}」的选项「${option.label}」必须且只能连一条线。`, nodeId: node.id });
     }
     for (const edge of graph.edges.filter(item => item.from === node.id)) {
-      if (!known.has(edge.fromPort)) issues.push({ level: 'error', message: `选择节点「${node.title}」有无法识别的出口「${edge.fromPort}」。`, nodeId: node.id });
+      if (!known.has(edge.fromPort)) issues.push({ level: 'error', message: `选择节点「${node.title}」有无法识别的出口「${edge.fromPort}」：fromPort 必须是该节点真实存在的出口（选项 id 或 out）。`, nodeId: node.id });
     }
   }
   for (const node of missions) {
@@ -547,6 +644,15 @@ export function blueprintIssues(graph: StoryGraph): GraphIssue[] {
     if (failure.length !== 1) issues.push({ level: 'error', message: `阶段委托「${node.title}」必须有且只有一条失败线。`, nodeId: node.id });
     for (const edge of graph.edges.filter(item => item.from === node.id)) {
       if (edge.fromPort !== 'success' && edge.fromPort !== 'failure') issues.push({ level: 'error', message: `阶段委托「${node.title}」的出口只能是成功或失败。`, nodeId: node.id });
+    }
+  }
+  // 通用白名单：start / event / reward / wait 只认 out 一个出口。
+  for (const node of graph.nodes) {
+    if (node.kind !== 'start' && node.kind !== 'event' && node.kind !== 'reward' && node.kind !== 'wait') continue;
+    for (const edge of graph.edges.filter(item => item.from === node.id)) {
+      if (edge.fromPort !== 'out') {
+        issues.push({ level: 'error', message: `「${NODE_LABELS[node.kind]}」节点「${node.title}」的出口只能写 out。`, nodeId: node.id });
+      }
     }
   }
 
@@ -626,10 +732,19 @@ export function validateGraph(graph: StoryGraph): GraphIssue[] {
   for (const node of graph.nodes) {
     if (node.kind === 'end') continue;
     if (node.kind === 'choice') {
-      const ports = new Set(graph.edges.filter(edge => edge.from === node.id).map(edge => edge.fromPort));
-      const missing = (node.data.kind === 'choice' ? node.data.options : []).filter(option => !ports.has(option.id));
-      if (missing.length) issues.push({ level: 'error', message: `选择节点「${node.title}」有 ${missing.length} 个选项没连线。`, nodeId: node.id });
-      if (node.data.kind === 'choice' && node.data.options.length < 2) issues.push({ level: 'warning', message: '选择节点建议至少两个选项。', nodeId: node.id });
+      const options = node.data.kind === 'choice' ? node.data.options : [];
+      for (const option of options) {
+        const hits = graph.edges.filter(edge => edge.from === node.id && edge.fromPort === option.id);
+        if (hits.length !== 1) {
+          issues.push({ level: 'error', message: `选择节点「${node.title}」的选项「${option.label}」必须且只能连一条线（fromPort="${option.id}"）。`, nodeId: node.id });
+        }
+      }
+      for (const edge of graph.edges.filter(edge => edge.from === node.id)) {
+        if (!options.some(option => option.id === edge.fromPort)) {
+          issues.push({ level: 'error', message: `选择节点「${node.title}」有无法识别的出口「${edge.fromPort}」：fromPort 必须是该节点真实存在的出口（选项 id 或 out）。`, nodeId: node.id });
+        }
+      }
+      if (options.length < 2) issues.push({ level: 'warning', message: '选择节点建议至少两个选项。', nodeId: node.id });
     } else if (!outgoing(graph, node.id).length) {
       issues.push({ level: 'error', message: `「${node.title}」没有出口连线。`, nodeId: node.id });
     }
@@ -642,10 +757,10 @@ export function validateGraph(graph: StoryGraph): GraphIssue[] {
       if (!ports.has('failure')) issues.push({ level: 'warning', message: `阶段委托「${node.title}」没有「失败」出口，失败时故事会直接收束。`, nodeId: node.id });
     }
     if (node.data.kind === 'incident' && (!node.data.spec.title || !node.data.spec.body)) {
-      issues.push({ level: 'error', message: '强制弹窗缺少标题或正文。', nodeId: node.id });
+      issues.push({ level: 'warning', message: '强制弹窗缺少标题或正文。', nodeId: node.id });
     }
     if (node.data.kind === 'opinion' && (!node.data.spec.title || !node.data.spec.text)) {
-      issues.push({ level: 'error', message: '议会提案缺少标题或正文。', nodeId: node.id });
+      issues.push({ level: 'warning', message: '议会提案缺少标题或正文。', nodeId: node.id });
     }
   }
 
@@ -671,17 +786,17 @@ export function ensureGraph(plan: StoryPlan | null | undefined): StoryGraph {
 }
 
 export function graphBeats(graph: StoryGraph): StoryBeat[] {
-  // 幕列表视图：把场景节点按 x 排序压平成列表。
+  // 幕列表视图：把事件与弹窗节点按 x 排序压平成列表（v46 起没有场景节点）。
   return graph.nodes
-    .filter(node => node.kind === 'scene' || node.kind === 'event')
+    .filter(node => node.kind === 'event' || node.kind === 'incident')
     .sort((a, b) => a.x - b.x || a.y - b.y)
     .map((node, index) => ({
       id: `plan-${index + 1}`,
       index,
       title: node.title,
-      summary: '',
-      scene: node.data.kind === 'scene' ? node.data.narration : '',
-      hook: node.data.kind === 'scene' ? node.data.lines[0]?.text ?? '' : node.data.kind === 'event' ? node.data.hook : '',
+      summary: node.data.kind === 'incident' ? node.data.spec.body : '',
+      scene: '',
+      hook: node.data.kind === 'event' ? node.data.hook : '',
       choices: [],
       status: index === 0 ? 'open' : 'locked',
     }));

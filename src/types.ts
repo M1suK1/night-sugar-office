@@ -304,6 +304,8 @@ export interface Opinion {
   authorFaction?: FactionId;
   title: string; text: string; request: string; status: 'pending' | 'accepted' | 'deferred' | 'rejected' | 'expired' | 'shelved';
   options: OpinionOption[]; assistantNote?: string; storylineId?: string;
+  /** 由故事图节点提出时记下的节点 id，决议后靠它找回出口。 */
+  storyNodeId?: string;
   /** 提出者的逐段对白；旧议题没有时按主题生成默认对白。 */
   dialogue?: OpinionDialogueLine[];
   /** 议题所属势力；暂缓与驳回会同步影响它的态度。 */
@@ -381,7 +383,7 @@ export interface Storyline {
 }
 
 export type StoryNodeKind =
-  | 'start' | 'scene' | 'choice' | 'mission' | 'incident'
+  | 'start' | 'choice' | 'mission' | 'incident'
   | 'opinion' | 'event' | 'reward' | 'wait' | 'end';
 
 export interface StoryIncidentSpec {
@@ -399,13 +401,13 @@ export interface StoryOpinionSpec {
 
 export type StoryNodeData =
   | { kind: 'start' }
-  | { kind: 'scene'; narration: string; lines: { speaker: string; tone?: string; text: string }[] }
   | { kind: 'choice'; prompt?: string; options: { id: string; label: string; intent?: string; effect?: StoryEffect }[] }
   | { kind: 'mission'; spec: StoryMissionSpec }
   | { kind: 'incident'; spec: StoryIncidentSpec }
   | { kind: 'opinion'; spec: StoryOpinionSpec }
   | { kind: 'event'; title: string; hook: string; cast?: string[]; opening?: string }
-  | { kind: 'reward'; effect: StoryEffect; equipmentId?: string; trait?: { name: string; description: string } }
+  /** v46：装备只给阶级，具体哪一件由程序按阶级抽；技能不再由奖励节点发放。 */
+  | { kind: 'reward'; effect: StoryEffect; equipmentTier?: number; trait?: { name: string; description: string } }
   | { kind: 'wait'; days?: number; minutes?: number }
   | { kind: 'end'; summary?: string; ending?: string };
 
@@ -491,6 +493,8 @@ export interface Incident {
   source: 'llm' | 'rule' | 'custom'; title: string; body: string;
   faction?: FactionId; girlId?: string; district?: DistrictId;
   options: IncidentOption[]; status: 'pending' | 'resolved' | 'expired'; storylineId?: string;
+  /** 由故事图节点投放时记下的节点 id，解决后靠它找回出口。 */
+  storyNodeId?: string;
   choiceId?: string; resolvedAt?: string; cardId?: string;
   category?: IncidentCategory;
   trigger?: IncidentTrigger;

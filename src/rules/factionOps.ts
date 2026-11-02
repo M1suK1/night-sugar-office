@@ -41,7 +41,7 @@ export function applyDecideOpinion(state: GameState, action: Extract<GameAction,
       const detail = applied.tags.length ? ` ${applied.tags.join('，')}。` : '';
       const revisit = decision === 'defer' ? ` 下个议事日（第 ${next.day + 1} 日）重新提出。` : '';
       working.logs.unshift({ id: `log-decide-${opinion?.id ?? action.opinionId}`, time: dateLabel(working.day, working.minutes), kind: 'council', text: `${verb}议题「${opinion?.title ?? ''}」。${detail}${revisit}`, delta: applied.gold });
-      if (opinion?.storylineId && decision !== 'defer') resolveStoryWait(working, opinion.storylineId, 'opinion', opinion.id);
+      if (opinion?.storylineId && decision !== 'defer') resolveStoryWait(working, opinion.storylineId, 'opinion', opinion.id, 'success', decision);
       return { state: working, ok: true, message: `已处理「${opinion?.title ?? ''}」。` };
 }
 
@@ -106,7 +106,7 @@ export function applyResolveIncident(state: GameState, action: Extract<GameActio
       incident.resolvedAt = dateLabel(next.day, next.minutes);
       applyIncidentEffect(next, incident, option?.effect ?? incident.scene?.effect ?? {});
       if (incident.templateId?.startsWith('resign-')) applyResignationChoice(next, incident);
-      if (incident.storylineId) resolveStoryWait(next, incident.storylineId, 'incident', incident.id);
+      if (incident.storylineId) resolveStoryWait(next, incident.storylineId, 'incident', incident.id, 'success', option?.id);
       return { state: next, ok: true, message: option ? `已决定：${option.label}。` : `「${incident.title}」看过了。` };
 }
 

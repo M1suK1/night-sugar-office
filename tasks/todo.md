@@ -651,3 +651,14 @@
 - [x] `llm.ts` 蓝图提示词：城市态势那一行改由 `blueprintFactionLine(state)` 生成，按当前存档解析三方首领；没有 state 时只写势力名，绝不写死内置首领。
 - [x] `prologue.ts`：开场三幕的领袖台词改由 `leaderNames` 生成，台词保留、名字换成当前首领。
 - [x] 测试：新增 `tests/v48.test.ts` 四条（默认代表、换人后名字与头衔、开场三幕台词、蓝图提示词不残留旧名）；23 个测试文件 436 项全绿，`tsc` 0 错，`check:rules` 通过。
+
+## v46 故事蓝图重做：删场景、奖励改阶级、补弹窗与提案、端口规则写进提示词
+
+- [x] **① 删掉场景节点**：`StoryNodeKind` 去掉 `scene`；`NODE_LABELS` / `NODE_ACCENT` / `makeNode` / 编辑器调色板与检查器同步删除；`compileBeatsToGraph` 把每一幕的旁白 + summary + hook 压成一张**强制弹窗**（`spec.kind 'girl'`、`options: []`），幕与幕的连线不变；`graphBeats()` 改为按 event + incident 压平。
+- [x] **② 奖励节点**：`StoryNodeData` 的 reward 改 `equipmentTier?: number`（1–5，0 = 不给），`sanitizeData` 按阶级收、旧 `equipmentId` 用 `tierOf(getItem())` 折算、`effect.skill` 直接剥掉；`advanceStoryGraph` 用 `pickEquipmentOfTier({tier, seed: story:id})` 抽一件非消耗品放进背包并写日志；编辑器删掉「装备」「技能」两个下拉，换成「装备阶级 1–5」数字输入。
+- [x] **③ 弹窗与提案可生成**：`blueprintKinds` 加 `incident` / `opinion` 并去掉 `scene`；提示词补两段完整 data 形状（弹窗的 `IncidentEffect` 字段与幅度、提案的六种 topic 与 accept / reject 两项）；校验器删掉「禁止生成 incident / opinion」，改为 `event 1–2`、`incident 1–2`、`opinion ≤1`、至少一个 event 或 incident。
+- [x] **④ 端口规则进初始提示词**：choice 只能是 `a/b/c/d`、每个选项恰好一条同名边、`trust_calc` / `defy_fate` 这类语义化端口名一律非法、弹窗用 `o1`–`o3`、提案固定 accept + reject、start 只有一条 out、end 无出边；末尾 8 条提交前自检；返修提示词补三条修正策略（补边而不改 id、把语义化 fromPort 改成真实出口、不删节点）。
+- [x] **校验器**：`validateGraph` 的选择端口改为「每个选项必须且只能连一条线」并补「无法识别的出口」新文案，「弹窗 / 提案缺标题正文」降为 warning；`blueprintIssues` 对这两条仍按 error 处理，并新增弹窗（`o1`–`o3` 或单条 `out`）、提案（accept / reject 各一条，写 defer 报错）与 `start / event / reward / wait 只认 out` 三套端口规则。
+- [x] **运行时接线**：`Incident` / `Opinion` 各加 `storyNodeId`，`resolveStoryWait` 新增 `chosenPort` 参数并按它找边；`applyResolveIncident` 传选项 id、`applyDecideOpinion` 传 accept / reject；提案节点在运行时只带 accept / reject，`advanceStoryGraph` 补一条固定的 defer（界面仍是三个按钮，暂缓不推进剧情）。
+- [x] 测试：新增 `tests/v46.test.ts` 九条（读档迁移、奖励清洗、按阶级发放与确定性、结构校验、choice 端口、弹窗端口、提案端口、提案运行三分支、生成时 scene 静默转换与提示词内容）；24 个测试文件 445 项全绿，`tsc` 0 错，`check:rules` 通过。
+- [x] `npm test` 脚本补进 v44–v48 五个文件；README 更新蓝图 / 内容工坊 / 回归规模与文件清单。

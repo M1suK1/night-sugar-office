@@ -10,7 +10,7 @@ import { deployIncidentCard } from '../rules/encounters.ts';
 import { customIncidentCards } from '../content/library.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
 import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
-import { pickMissionTemplate } from '../nightPick.ts';
+import { pickEquipmentOfTier, pickMissionTemplate } from '../nightPick.ts';
 import type { CharacterEvent, GameState, Girl, Incident, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
 // v35 从 src/game.ts 拆出：故事蓝图的推进与故事委托（两者互相调用，合成一个模块）。
 
@@ -61,17 +61,23 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     };
 
     if (node.kind === 'start') { if (!step()) return; continue; }
-    if (node.kind === 'scene') {
-      if (node.data.kind === 'scene' && node.data.narration) {
-        state.logs.unshift({ id: 'log-graph-' + story.id + '-' + run.steps, time: dateLabel(state.day, state.minutes), kind: 'story', text: node.data.narration.slice(0, 240) });
-      }
-      if (!step()) return;
-      continue;
-    }
     if (node.kind === 'reward') {
       if (node.data.kind === 'reward') {
         applyStoryEffect(state, girl, node.data.effect ?? {}, '剧情「' + story.title + '」');
-        if (node.data.equipmentId) state.inventory[node.data.equipmentId] = (state.inventory[node.data.equipmentId] ?? 0) + 1;
+        // v46：装备只按阶级抽一件成品，不再由蓝图指定具体物品。
+        const tier = node.data.equipmentTier;
+        if (tier) {
+          const item = pickEquipmentOfTier({ tier, seed: `${story.id}:${node.id}` });
+          if (item) {
+            state.inventory[item.id] = (state.inventory[item.id] ?? 0) + 1;
+            state.logs.unshift({
+              id: 'log-graph-reward-' + story.id + '-' + node.id,
+              time: dateLabel(state.day, state.minutes),
+              kind: 'story',
+              text: `「${story.title}」的奖励发下了一件${tier} 阶装备：${item.name}。已放进事务所背包。`,
+            });
+          }
+        }
         const trait = node.data.trait;
         if (trait?.name && !girl.traits.some(item => item.name === trait.name)) {
           girl.traits.push({ id: 'trait-' + hashText(trait.name), name: trait.name, polarity: 'neutral', tags: ['剧情'], description: trait.description });
@@ -111,6 +117,7 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
           status: 'pending', storylineId: story.id,
         };
       state.incidents.unshift(incident);
+      incident.storyNodeId = node.id;
       run.waiting = { kind: 'incident', ref: incident.id };
       return;
     }
@@ -118,11 +125,19 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
       if (node.data.kind !== 'opinion') return;
       const spec = node.data.spec;
       const faction = spec.options.find(option => option.shift)?.shift?.faction;
+      // v46：蓝图只写批准 / 驳回两个分支；「暂缓」由程序固定补在中间，界面仍是三个按钮。
+      const decided: Opinion['options'] = spec.options
+        .filter(option => option.id === 'accept' || option.id === 'reject')
+        .map(option => ({ id: option.id, label: option.label, effect: option.effect, shift: option.shift }));
+      if (!decided.some(option => option.id === 'defer')) {
+        decided.splice(Math.min(1, decided.length), 0, { id: 'defer', label: '暂缓', effect: '把这条议题推到下个议事日再谈。' });
+      }
       const opinion: Opinion = {
         id: 'op-' + story.id + '-' + node.id, day: state.day, authorId: girl.id, topic: spec.topic,
         title: spec.title || node.title, text: spec.text, request: spec.request, status: 'pending', faction,
-        options: spec.options.map((option) => ({ id: option.id, label: option.label, effect: option.effect, shift: option.shift, changes: [], outcomes: [] })),
+        options: decided.map((option) => ({ id: option.id, label: option.label, effect: option.effect, shift: option.shift, changes: [], outcomes: [] })),
         storylineId: story.id,
+        storyNodeId: node.id,
       };
       state.opinions.unshift(opinion);
       run.waiting = { kind: 'opinion', ref: opinion.id };
@@ -167,14 +182,17 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
   }
 }
 
-export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string, result: 'success' | 'failure' = 'success'): void {
+export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string, result: 'success' | 'failure' = 'success', chosenPort?: string): void {
   const story = state.storylines.find(item => item.id === storylineId && item.status === 'active');
   if (!story?.run || !story.graph) return;
   if (story.run.waiting?.kind !== kind || story.run.waiting.ref !== ref) return;
   let fromNode = ref;
   if (kind === 'mission') fromNode = story.beats.find(beat => beat.missionId === ref)?.id ?? ref;
   if (kind === 'event') fromNode = state.events.find(event => event.id === ref)?.storyNodeId ?? ref;
-  const port = kind === 'mission' ? (result === 'failure' ? 'failure' : 'success') : 'out';
+  if (kind === 'incident') fromNode = state.incidents.find(item => item.id === ref)?.storyNodeId ?? ref;
+  if (kind === 'opinion') fromNode = state.opinions.find(item => item.id === ref)?.storyNodeId ?? ref;
+  // v46：提案走 accept / reject，带选项的弹窗走 o1–o3，其余一律走 out。
+  const port = chosenPort ?? (kind === 'mission' ? (result === 'failure' ? 'failure' : 'success') : 'out');
   const edge = storyGraphEdge(story, fromNode, port);
   story.run.waiting = undefined;
   if (!edge) {

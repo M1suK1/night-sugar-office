@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, AlignLeft, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Pencil, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Pencil, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Girl, IncidentCard, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
 import { NODE_LABELS, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph } from '../storygraph.ts';
 import { storyPlanTemplate } from '../storyplan.ts';
 import { missionTemplates, statLabels, type MissionTemplateOption } from '../game.ts';
-import { skills } from '../content/skills.ts';
-import { items } from '../content/items.ts';
 
 const NODE_W = 190;
 const NODE_H = 74;
-const PALETTE: StoryNodeKind[] = ['scene', 'choice', 'mission', 'incident', 'opinion', 'event', 'reward', 'wait', 'end'];
+const PALETTE: StoryNodeKind[] = ['choice', 'mission', 'incident', 'opinion', 'event', 'reward', 'wait', 'end'];
 const NODE_COLOR: Record<StoryNodeKind, string> = {
-  start: '#7fc8c0', scene: '#c9b6d8', choice: '#f3aec9', mission: '#e8c08a',
+  start: '#7fc8c0', choice: '#f3aec9', mission: '#e8c08a',
   incident: '#e28f8f', opinion: '#a8c8e8', event: '#d8a8c8', reward: '#e8d88a', wait: '#9aa8b8', end: '#8fb89a',
 };
 
 const NODE_ICON: Record<StoryNodeKind, LucideIcon> = {
-  start: Play, scene: AlignLeft, choice: GitBranch, mission: Target, incident: AlertTriangle,
+  start: Play, choice: GitBranch, mission: Target, incident: AlertTriangle,
   opinion: MessageSquare, event: Sparkles, reward: Gift, wait: Clock3, end: Flag,
 };
 
@@ -36,10 +34,15 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
 function portsOf(node: StoryNode): string[] {
   if (node.kind === 'choice' && node.data.kind === 'choice') return node.data.options.map(option => option.id);
   if (node.kind === 'mission') return ['success', 'failure'];
+  if (node.kind === 'opinion') return ['accept', 'reject'];
+  if (node.kind === 'incident' && node.data.kind === 'incident') {
+    const count = Math.min(3, node.data.spec.options.length);
+    return count ? Array.from({ length: count }, (_, index) => `o${index + 1}`) : ['out'];
+  }
   return node.kind === 'end' ? [] : ['out'];
 }
 
-const PORT_LABELS: Record<string, string> = { success: '成功', failure: '失败', out: '默认' };
+const PORT_LABELS: Record<string, string> = { success: '成功', failure: '失败', out: '默认', accept: '批准', reject: '驳回', o1: '选项 1', o2: '选项 2', o3: '选项 3' };
 
 function portY(node: StoryNode, port: string): number {
   const ports = portsOf(node);
@@ -127,13 +130,13 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
       },
     });
   };
-  const patchScene = (narration: string) => { const c = node; if (c?.data.kind === 'scene') patchNode(c.id, { data: { ...c.data, narration } }); };  const patchEvent = (patch: { title?: string; hook?: string; cast?: string[]; opening?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
+  const patchEvent = (patch: { title?: string; hook?: string; cast?: string[]; opening?: string }) => { const c = node; if (c?.data.kind === 'event') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const castPool = useMemo(() => {
     const seen = new Set<string>();
     return [girl, ...(roster ?? [])].filter(person => (seen.has(person.id) ? false : (seen.add(person.id), true)));
   }, [girl, roster]);
   const patchReward = (effect: Partial<StoryEffect>) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, effect: { ...c.data.effect, ...effect } } }); };
-  const patchRewardData = (patch: { equipmentId?: string }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, ...patch } }); };
+  const patchRewardData = (patch: { equipmentTier?: number }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchWait = (patch: { days?: number; minutes?: number }) => { const c = node; if (c?.data.kind === 'wait') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchEnd = (summary: string) => { const c = node; if (c?.data.kind === 'end') patchNode(c.id, { data: { ...c.data, summary } }); };
   const patchOptions = (options: { id: string; label: string; intent?: string; effect?: StoryEffect }[]) => { const c = node; if (c?.data.kind === 'choice') patchNode(c.id, { data: { ...c.data, options } }); };
@@ -452,8 +455,8 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
                 {item.kind !== 'start' && (
                   <span className="graph-port in" aria-hidden="true" title="入口：多条连线可以汇入这里" />
                 )}
-                {item.kind === 'mission' && portsOf(item).map(port => (
-                  <span key={`tag-${port}`} className="graph-port-tag" aria-hidden="true" style={{ top: portY(item, port) - item.y - 6 }}>{PORT_LABELS[port]}</span>
+                {portsOf(item).some(port => port !== 'out') && portsOf(item).map(port => (
+                  <span key={`tag-${port}`} className="graph-port-tag" aria-hidden="true" style={{ top: portY(item, port) - item.y - 6 }}>{PORT_LABELS[port] ?? port}</span>
                 ))}
                 {portsOf(item).map(port => (
                   <button
@@ -465,7 +468,7 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
                     onPointerDown={event => beginLink(event, item, port)}
                     onPointerMove={moveLink}
                     onPointerUp={endLink}
-                    title={port === 'success' ? '成功出口：拖到目标节点' : port === 'failure' ? '失败出口：拖到目标节点' : port === 'out' ? '按住拖到目标节点连线' : `选项 ${port}：拖到目标节点`}
+                    title={port === 'success' ? '成功出口：拖到目标节点' : port === 'failure' ? '失败出口：拖到目标节点' : port === 'out' ? '按住拖到目标节点连线' : `${PORT_LABELS[port] ?? port}：拖到目标节点`}
                   />
                 ))}
               </div>
@@ -484,12 +487,12 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
               <div className="graph-beats" onClick={event => event.stopPropagation()}>
                 <header><b>幕概览</b><button type="button" id="story-graph-beats-close" onClick={() => setBeatsOpen(false)}>关闭</button></header>
                 <ol>
-                  {graph.nodes.filter(item => item.kind === 'scene' || item.kind === 'event').sort((a, b) => a.x - b.x || a.y - b.y).map((item, index) => (
+                  {graph.nodes.filter(item => item.kind === 'event' || item.kind === 'incident').sort((a, b) => a.x - b.x || a.y - b.y).map((item, index) => (
                     <li key={item.id}>
                       <button type="button" onClick={() => { setSelected(item.id); setSelection([item.id]); setBeatsOpen(false); }}>
                         <i>{String(index + 1).padStart(2, '0')}</i>
                         <span>{item.title}</span>
-                        <em>{item.kind === 'scene' ? '场景' : '角色事件'}</em>
+                        <em>{item.kind === 'incident' ? '强制弹窗' : '角色事件'}</em>
                       </button>
                     </li>
                   ))}
@@ -516,11 +519,6 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
                   <input id="story-graph-inspect-title" className="av-input" value={node.title} onChange={event => patchNode(node.id, { title: event.target.value.slice(0, 40) })} />
                 </label>
                 {node.kind === 'start' && <p className="story-graph-tip">入口节点，运行时从这里开始。</p>}
-                {node.kind === 'scene' && node.data.kind === 'scene' && (
-                  <label className="graph-field"><span>旁白</span>
-                    <textarea id="story-graph-inspect-narration" className="av-input" rows={6} value={node.data.narration} onChange={event => patchScene(event.target.value)} />
-                  </label>
-                )}
                 {node.kind === 'event' && node.data.kind === 'event' && (() => {
                   const cast = node.data.cast?.length ? node.data.cast : [girl.id];
                   const full = cast.length >= 3;
@@ -655,22 +653,19 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
                       <label className="graph-field"><span>侵蚀</span>
                         <input type="number" className="av-input" value={reward.effect.corruption ?? 0} onChange={event => patchReward({ corruption: Number(event.target.value) || 0 })} />
                       </label>
-                      <label className="graph-field"><span>装备</span>
-                        <select id="story-graph-reward-equipment" className="av-input" value={reward.equipmentId ?? ''} onChange={event => patchRewardData({ equipmentId: event.target.value || undefined })}>
-                          <option value="">无</option>
-                          {items.filter(item => item.slot !== 'consumable').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
+                      <label className="graph-field"><span>装备阶级</span>
+                        <input
+                          id="story-graph-reward-tier"
+                          type="number"
+                          min={0}
+                          max={5}
+                          className="av-input"
+                          value={reward.equipmentTier ?? 0}
+                          onChange={event => patchRewardData({ equipmentTier: Math.max(0, Math.min(5, Number(event.target.value) || 0)) || undefined })}
+                        />
                       </label>
                     </div>
-                    <label className="graph-field"><span>技能</span>
-                      <select id="story-graph-reward-skill" className="av-input" value={reward.effect.skill?.id ?? ''} onChange={event => {
-                        const skill = skills.find(item => item.id === event.target.value);
-                        patchReward({ skill: skill ? { id: skill.id, name: skill.name } : undefined });
-                      }}>
-                        <option value="">无</option>
-                        {skills.map(skill => <option key={skill.id} value={skill.id}>{skill.name} · {skill.school}</option>)}
-                      </select>
-                    </label>
+                    <p className="story-graph-tip">装备阶级 1–5，0 表示不给；具体哪一件由程序按阶级随机抽，武器与饰品都可。</p>
                     <div className="graph-row">
                       <label className="graph-field"><span>特性名称</span>
                         <input className="av-input" value={reward.effect.trait?.name ?? ''} onChange={event => patchReward({ trait: { name: event.target.value.slice(0, 16), description: reward.effect.trait?.description ?? '' } })} />

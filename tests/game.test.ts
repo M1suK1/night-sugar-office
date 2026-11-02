@@ -52,10 +52,23 @@ import { emptyItem } from '../src/content/library.ts';
 import { items } from '../src/content/items.ts';
 import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, readCardRaw, saveCardBox } from '../src/cardbox.ts';
 
+/** v46：场景改成强制弹窗后，故事线会先停在 incident 上；测试里顺手点掉，走到下一个岔口。 */
+const settleIncidents = (state: GameState): GameState => {
+  let current = state;
+  for (let guard = 0; guard < 12; guard += 1) {
+    const waiting = current.storylines.find(item => item.status === 'active')?.run?.waiting;
+    if (!waiting || waiting.kind !== 'incident') break;
+    const resolved = act(current, { type: 'resolveIncident', incidentId: waiting.ref });
+    if (!resolved.ok) break;
+    current = resolved.state;
+  }
+  return current;
+};
+
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
     { id: 'n1', kind: 'start', title: '开始', data: { kind: 'start' } },
-    { id: 'n2', kind: 'scene', title: '夜班门口', data: { kind: 'scene', narration: '门铃响了两下，她站在雨里，没有先开口。' } },
+    { id: 'n2', kind: 'incident', title: '夜班门口', data: { kind: 'incident', spec: { kind: 'girl', title: '夜班门口', body: '门铃响了两下，她站在雨里，没有先开口。', options: [] } } },
     {
       id: 'n3', kind: 'choice', title: '她停在门口', data: {
         kind: 'choice', prompt: '让她进来，还是先把门关上？',
@@ -65,7 +78,7 @@ const blueprintDraft = (): StoryGraphDraft => ({
         ],
       },
     },
-    { id: 'n4', kind: 'scene', title: '热水', data: { kind: 'scene', narration: '热水冒着白气，她把杯子握得很紧。' } },
+    { id: 'n4', kind: 'incident', title: '热水', data: { kind: 'incident', spec: { kind: 'girl', title: '热水', body: '热水冒着白气，她把杯子握得很紧。', options: [] } } },
     {
       id: 'n5', kind: 'mission', title: '旧城区', data: {
         kind: 'mission', spec: { title: '送信', goal: '陪她把信送到旧城区。', category: '故事委托', difficulty: '常规', duration: 90, requirement: 'empathy' },
@@ -1998,8 +2011,10 @@ test('手写剧本随契约卡导出导入，并可直接按手稿开场', () =>
 
   const ready = structuredClone(saved.state);
   ready.girls[0].bond = 60;
-  const started = act(ready, { type: 'startStoryline', girlId: yue.id });
-  assert.equal(started.ok, true);
+  const opening = act(ready, { type: 'startStoryline', girlId: yue.id });
+  assert.equal(opening.ok, true);
+  assert.equal(opening.state.storylines[0].run?.waiting?.kind, 'incident', '第一幕是一张强制弹窗');
+  const started = { ...opening, state: settleIncidents(opening.state) };
   const story = started.state.storylines[0];
   assert.equal(story.source, 'manual');
   assert.ok(story.graph && story.run);
@@ -2028,7 +2043,7 @@ test('LLM 蓝图草稿会补齐 id、连线与布局，且严格校验只放行�
   const messy = buildGraphFromDraft({
     nodes: [
       { id: 'start 1', kind: 'start', data: { kind: 'start' } },
-      { id: 'scene 1', kind: 'scene', data: { kind: 'scene' } },
+      { id: 'scene 1', kind: 'incident', data: { kind: 'incident', spec: { kind: 'girl', title: '旧场景', body: '', options: [] } } },
       { id: 'end 1', kind: 'end', data: { kind: 'end' } },
     ],
     edges: [
@@ -2082,16 +2097,18 @@ test('只有图的蓝图可以保存、随卡导出并直接开场推进', () =>
 
   const ready = structuredClone(saved.state);
   ready.girls[0].bond = 60;
-  const started = act(ready, { type: 'startStoryline', girlId: girl.id });
-  assert.equal(started.ok, true);
+  const opening = act(ready, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(opening.ok, true);
+  const started = { state: settleIncidents(opening.state), ok: opening.ok } as typeof opening;
   const story = started.state.storylines[0];
   assert.ok(story.graph);
-  assert.ok(story.beats.length > 0, '图里的场景应补成 UI 可读的幕');
+  assert.ok(story.beats.length > 0, '图里的弹窗应补成 UI 可读的幕');
   assert.equal(story.run?.waiting?.kind, 'choice');
   const moved = act(started.state, { type: 'chooseStoryPort', storylineId: story.id, port: 'a' });
   assert.equal(moved.ok, true);
-  assert.equal(moved.state.storylines[0].status, 'done');
-  assert.ok(moved.state.girls[0].bond > ready.girls[0].bond);
+  const settled = settleIncidents(moved.state);
+  assert.equal(settled.storylines[0].status, 'done');
+  assert.ok(settled.girls[0].bond > ready.girls[0].bond);
 });
 
 test('有结构错误的蓝图可以存成草稿，但不能开场', () => {
@@ -2391,7 +2408,7 @@ test('蓝图故事线按图推进：逐幕分岔、奖励结算后收束', () =>
   ready.girls[0].bond = 60;
   const started = act(ready, { type: 'startStoryline', girlId: girl.id });
   assert.equal(started.ok, true);
-  let state = started.state;
+  let state = settleIncidents(started.state);
   const storyId = state.storylines[0].id;
   const bondBefore = state.girls[0].bond;
   for (let step = 0; step < 8; step += 1) {
@@ -2405,7 +2422,7 @@ test('蓝图故事线按图推进：逐幕分岔、奖励结算后收束', () =>
     assert.ok(option);
     const moved = act(state, { type: 'chooseStoryPort', storylineId: storyId, port: option.id });
     assert.equal(moved.ok, true);
-    state = moved.state;
+    state = settleIncidents(moved.state);
   }
   const finished = state.storylines.find(item => item.id === storyId);
   assert.equal(finished?.status, 'done');
