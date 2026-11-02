@@ -1,5 +1,6 @@
 import type { MonsterTemplate } from '../types';
 import { extraMonsters } from './monsters-extra.ts';
+import { magicalMonsters } from './monsters-magical.ts';
 
 export const monsters: MonsterTemplate[] = [
   {
@@ -83,6 +84,7 @@ export const monsters: MonsterTemplate[] = [
     rules: [{ trigger: 'roundStart', effect: 'heal', amount: 12 }],
   },
   ...extraMonsters,
+  ...magicalMonsters,
 ];
 export const monsterById = new Map(monsters.map(m => [m.id, m]));
 /** 严格查询：找不到就返回 undefined，调用方可以把这条引用当作失效内容处理。 */

@@ -70,9 +70,9 @@ test('v24 消耗品的治疗与净化随阶级单调递增', () => {
   }
 });
 
-test('v24 魔物池 20 只普通怪，都有 spec 与 codex，元素覆盖七系', () => {
+test('v24 魔物池 40 只普通怪，都有 spec 与 codex，元素覆盖七系', () => {
   const normal = monsters.filter(monster => !monster.storyOnly && !monster.bossOnly);
-  assert.equal(normal.length, 20);
+  assert.equal(normal.length, 40);
   assert.equal(new Set(monsters.map(monster => monster.id)).size, monsters.length, 'id 不能重复');
   for (const monster of normal) {
     assert.ok(monster.spec, `${monster.id} 缺 spec`);

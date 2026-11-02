@@ -1,4 +1,7 @@
 import type { Mission } from '../types.ts';
+import { combatMissionsLow } from './missions-combat-low.ts';
+import { combatMissionsHigh } from './missions-combat-high.ts';
+import { extraInvestigationMissions } from './missions-investigation.ts';
 
 /**
  * 委托模板池的第二批（战斗 6 + 调查 3），与 seed-pack 的 7 条合起来是战斗 10 + 调查 6。
@@ -63,4 +66,7 @@ export const extraMissions: Mission[] = [
     x: 50, y: 50, difficulty: '中危', duration: 60, reward: 820, requirement: 'magic', target: 77, color: '#C0B0D8',
     status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 4,
   },
+  ...combatMissionsLow,
+  ...combatMissionsHigh,
+  ...extraInvestigationMissions,
 ];

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState, loadState } from '../src/game.ts';
 import { MISSION_POOL_SIZE, ensureMissionPools, trimMissionPools } from '../src/rules/pools.ts';
-import { districtPin } from '../src/rules/missions.ts';
+import { districtPin, baseCommissionPool } from '../src/rules/missions.ts';
+import { monsters } from '../src/content/monsters.ts';
 import { districtAt } from '../src/districts.ts';
 import type { GameState } from '../src/types.ts';
 
@@ -117,4 +118,33 @@ test('v41 老档留存的内置委托在读取时自动升级为充实的怪谈�
   assert.ok(candy);
   assert.ok(candy!.description.length > 50, '描述应当被更新为数十上百字的充实简报');
   assert.ok(candy!.description.includes('高压变压器发出尖锐啸叫'));
+});
+
+test('v42 委托池 96 条（战斗 80 条覆盖 1-6 只魔物，调查 16 条）与魔物池 40 只普通怪', () => {
+  assert.equal(baseCommissionPool.length, 96, '委托池总数应为 96 条');
+  const combat = baseCommissionPool.filter(m => m.work === 'combat');
+  const invest = baseCommissionPool.filter(m => m.work === 'investigation');
+  assert.equal(combat.length, 80, '战斗委托应为 80 条');
+  assert.equal(invest.length, 16, '调查委托应为 16 条');
+
+  const enemyCounts = new Set(combat.map(m => (m.enemyIds ? m.enemyIds.length : (m.enemyCount || 1))));
+  for (let n = 1; n <= 6; n++) {
+    assert.ok(enemyCounts.has(n), `战斗委托必须包含 ${n} 只魔物的配置`);
+  }
+
+  const normalMonsters = monsters.filter(m => !m.storyOnly && !m.bossOnly);
+  assert.equal(normalMonsters.length, 40, '普通魔物池必须达到 40 只');
+  const monsterIdSet = new Set(monsters.map(m => m.id));
+  for (const c of combat) {
+    if (c.enemyIds) {
+      for (const id of c.enemyIds) {
+        assert.ok(monsterIdSet.has(id), `战斗委托 ${c.id} 引用的敌人 ${id} 必须在魔物库中存在`);
+      }
+    }
+  }
+
+  const investDiffs = new Set(invest.map(m => m.difficulty));
+  for (const d of ['低危', '中危', '高危', '绝望']) {
+    assert.ok(investDiffs.has(d), `调查委托必须覆盖难度 ${d}`);
+  }
 });
