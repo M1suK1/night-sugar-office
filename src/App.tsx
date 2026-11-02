@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
+import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
@@ -30,7 +30,9 @@ import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { FactionDialog } from './components/FactionDialog';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
-import { buildGirlCard, girlCardFileName, parseGirlCard } from './cards';
+import { buildGirlCard, girlCardFileName, optimizeCardImages, parseGirlCard } from './cards';
+import { slimStateImages } from './imageSlim';
+import { yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
@@ -149,6 +151,15 @@ export default function App() {
   const enterPlay = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setPhase('play'); };
   /** 载入存档后的分流：没编成过的老档先补编成，空白档直接进正片。 */
   const afterLoad = (next: GameState) => { if (!next.startersPicked && !next.blank) setPhase('roster'); else enterPlay(); };
+  /**
+   * 读档后的后台降维：老存档里可能躺着几百 MB 的原图差分，
+   * 这里在不打断操作的前提下把它们逐张压到 200KB 上下，再回写一次状态。
+   */
+  const slimLoadedImages = (next: GameState) => {
+    void slimStateImages(next)
+      .then(({ state: slim }) => { if (slim !== next) setState(slim); })
+      .catch(() => { /* 降维失败不影响正常游玩，图保持原样。 */ });
+  };
   const [generating, setGenerating] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
@@ -186,6 +197,7 @@ export default function App() {
       if (!alive) return;
       setState(boot.state);
       setHadSave(boot.hadSave);
+      slimLoadedImages(boot.state);
       // 有存档也停在标题页：老板该先决定是接着那一夜还是重开一场。
       // 但会话里已经进过正片、读到的又是一份没编成过的旧档时，先补编成。
       try {
@@ -659,10 +671,11 @@ export default function App() {
     notify(`契约卡「${girl.name}」已导出到下载目录。`);
   };
   const importCard = async (file: File) => {
-    if (file.size > 4_000_000) { notify('卡片文件超过 4MB，无法导入。', false); return; }
+    if (file.size > 8_000_000) { notify('卡片文件超过 8MB，无法导入。', false); return; }
     const parsed = parseGirlCard(await file.text());
     if (!parsed.ok) { notify(`导入失败：${parsed.message}`, false); return; }
-    perform({ type: 'importCard', card: parsed.card });
+    const optimized = await optimizeCardImages(parsed.card);
+    perform({ type: 'importCard', card: optimized });
   };
   const exportSave = async () => {
     const name = `夜糖事务所-第${state.day}日存档.json`;
@@ -685,7 +698,7 @@ export default function App() {
     const next = importState(text);
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
     setPendingSave(next);
   };
 
@@ -694,7 +707,7 @@ export default function App() {
     const next = await readSlot(id);
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
     setPendingSave(next);
   };
   const deleteSlot = async (id: SaveSlotId) => { await clearSlot(id); notify(`存档位 ${id} 已清空。`); };
@@ -717,7 +730,13 @@ export default function App() {
       const batch = batches[index]!;
       const cards = await cardboxCards(batch.map(entry => entry.hash));
       if (cards.length) {
-        const applied = act(working, { type: 'importCards', cards });
+        // 批次内卡片逐张进行安全瘦身，防止外部大图突发撑爆内存
+        const sanitizedCards: GirlCard[] = [];
+        for (const c of cards) {
+          sanitizedCards.push(await optimizeCardImages(c));
+          await yieldToGC(8);
+        }
+        const applied = act(working, { type: 'importCards', cards: sanitizedCards });
         if (applied.ok) working = applied.state;
       }
       onProgress?.(index + 1, batches.length);
@@ -725,6 +744,8 @@ export default function App() {
         const mb = Math.round(batch.reduce((sum, entry) => sum + entry.bytes, 0) / 1024 / 1024);
         console.info(`[卡库] 分批读取 ${index + 1}/${batches.length}：${cards.length} 张 · ${mb}MB`);
       }
+      // 批次之间让出微任务，促发垃圾回收
+      await yieldToGC(24);
     }
     return working;
   };
@@ -1332,7 +1353,7 @@ export default function App() {
           <span>星砂<b>{pendingSave.gold.toLocaleString('zh-CN')}</b></span>
         </div>
         <div className="settings-data-actions">
-          <button id="import-save-confirm" className="btn primary" onClick={() => { const next = pendingSave; setState(next); setPendingSave(null); afterLoad(next); notify(`已载入第 ${next.day} 日的存档。`); }}>确认覆盖并继续</button>
+          <button id="import-save-confirm" className="btn primary" onClick={() => { const next = pendingSave; setState(next); setPendingSave(null); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); }}>确认覆盖并继续</button>
           <button id="import-save-cancel" className="btn" onClick={() => setPendingSave(null)}>取消</button>
         </div>
       </div>

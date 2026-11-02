@@ -10,7 +10,7 @@ import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
 import { factionTagFor, factionTagLabel, girlFactionColors, girlFactionLabels } from '../factions';
 import type { GirlFaction } from '../types';
-import { loadImage, removeImageBackground } from '../image';
+import { loadImage, removeImageBackground, safeOptimizedImageDataUrl, yieldToGC } from '../image';
 import { readWardrobePackage, type WardrobePackage } from '../wardrobeImport';
 import { fileDropProps } from '../drop';
 import { CutoutPreview } from './CutoutPreview';
@@ -42,6 +42,26 @@ function cropToDataUrl(image: HTMLImageElement, zoom: number, x: number, y: numb
 
 const EMPTY_TRAIT = (): DraftTrait => ({ name: '', description: '', polarity: 'neutral' });
 const emptyDraftTraits = () => [EMPTY_TRAIT(), EMPTY_TRAIT(), EMPTY_TRAIT()];
+
+/** 只对体积明显超标或非 WebP 的 base64 图做降维，串行处理并让出事件循环，防止一次性撑爆内存。 */
+async function slimImage(src: string | undefined): Promise<string | undefined> {
+  if (typeof src !== 'string' || !src.startsWith('data:image/') || src.length <= 250_000) return src;
+  const next = await safeOptimizedImageDataUrl(src);
+  await yieldToGC(8);
+  return next;
+}
+
+/** 衣柜包入库前的深度瘦身：主立绘、各套服装、魔女化立绘与全部表情差分逐张降维。 */
+async function slimWardrobePackage(pack: WardrobePackage): Promise<WardrobePackage> {
+  if (typeof document === 'undefined') return pack;
+  const outfits: WardrobePackage['outfits'] = [];
+  for (const outfit of pack.outfits) outfits.push({ ...outfit, portrait: await slimImage(outfit.portrait) });
+  const witchForm = pack.witchForm ? { ...pack.witchForm, portrait: await slimImage(pack.witchForm.portrait) } : undefined;
+  const importedVariants: Record<string, string> = {};
+  for (const [key, value] of Object.entries(pack.importedVariants)) importedVariants[key] = (await slimImage(value)) ?? value;
+  const portrait = await slimImage(pack.portrait);
+  return { ...pack, outfits, witchForm, importedVariants, portrait };
+}
 
 export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: GirlDraft) => void; onGenerate?: (portrait?: string, hint?: string, research?: string) => Promise<{ ok: boolean; message: string; profile?: GeneratedGirlProfile }> }) {
   const [step, setStep] = useState(0);
@@ -75,9 +95,19 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [wardrobeNote, setWardrobeNote] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const wardrobeRef = useRef<HTMLInputElement>(null);
+  /** 原始立绘的 object URL：换图或关窗时立刻 revoke，不让它一直占着解码后的位图。 */
+  const sourceUrlRef = useRef<string>('');
+  const revokeSourceUrl = () => {
+    if (sourceUrlRef.current) {
+      URL.revokeObjectURL(sourceUrlRef.current);
+      sourceUrlRef.current = '';
+    }
+  };
   const total = Object.values(stats).reduce((sum, value) => sum + value, 0);
   const remaining = 260 - total;
   const pickerSkills = filterSkills({ school: skillSchool, tier: skillTier });
+
+  useEffect(() => revokeSourceUrl, []);
 
   useEffect(() => {
     if (!source) return;
@@ -88,12 +118,16 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     if (!file) return;
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { setMessage('只支持 PNG、JPEG 或 WebP。'); return; }
     if (file.size > 12 * 1024 * 1024) { setMessage('图片超过 12MB，请先压缩。'); return; }
-    const url = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+    // 用 object URL 而不是 dataURL：省掉一份 33% 放大的长字符串，换图或关窗时立刻 revoke。
+    revokeSourceUrl();
+    const url = URL.createObjectURL(file);
+    sourceUrlRef.current = url;
     const image = new Image();
     image.onload = () => {
       if (image.naturalWidth < 320 || image.naturalHeight < 400) { setMessage('图片至少需要 320×400；尺寸不足会明显模糊。'); return; }
       setSource(image); setZoom(1); setX(0); setY(0); setMessage('');
     };
+    image.onerror = () => setMessage('这张图片无法读取。');
     image.src = url;
   };
 
@@ -105,12 +139,14 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     }
     if (file.size > 12 * 1024 * 1024) { setWardrobeNote('衣柜包超过 12MB，请先压缩图片。'); return; }
     try {
-      const parsed = readWardrobePackage(JSON.parse(await file.text()), color);
-      if (!parsed.ok) { setWardrobeNote(parsed.message); return; }
+      const raw = readWardrobePackage(JSON.parse(await file.text()), color);
+      if (!raw.ok) { setWardrobeNote(raw.message); return; }
+      setWardrobeNote('正在优化衣柜包里的立绘与差分…');
+      const parsed = await slimWardrobePackage(raw);
       setWardrobe(parsed);
       if (parsed.portrait && !preview) setPreview(parsed.portrait);
       const variantCount = Object.keys(parsed.importedVariants).length;
-      setWardrobeNote(`已读取 ${parsed.outfits.length} 套服装${parsed.witchForm ? '、魔女化立绘' : ''}和 ${variantCount} 张表情差分。`);
+      setWardrobeNote(`已读取并优化 ${parsed.outfits.length} 套服装${parsed.witchForm ? '、魔女化立绘' : ''}和 ${variantCount} 张表情差分。`);
       setMessage('');
     } catch {
       setWardrobeNote('衣柜包不是有效的 JSON，请检查文件。');

@@ -4,6 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MAX_BYTES, readCardFile, scanCardDir } from '../scripts/cards-api.mjs';
+import { optimizeCardImages, parseGirlCard } from '../src/cards.ts';
+import { createInitialState } from '../src/game.ts';
+import { slimStateImages } from '../src/imageSlim.ts';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const base = path.join(root, '.tmp', `cards-api-${process.pid}`);
@@ -72,4 +75,24 @@ test('单张读取：文件不存在时给出可读的失败', async () => {
   assert.equal(result.ok, false);
   assert.equal(result.status, 404);
   assert.match(result.message, /读不到这个文件/);
+});
+
+test('防 OOM：optimizeCardImages 能安全处理并保留合法契约卡结构', async () => {
+  const raw = card('瘦身测试卡', {
+    portrait: 'data:image/webp;base64,AAAA',
+    importedVariants: { 'uniform:smile': 'data:image/webp;base64,BBBB' },
+  });
+  const parsed = parseGirlCard(raw);
+  assert.equal(parsed.ok, true);
+  const optimized = await optimizeCardImages(parsed.card);
+  assert.equal(optimized.girl.name, '瘦身测试卡');
+  assert.equal(optimized.girl.portrait, 'data:image/webp;base64,AAAA');
+  assert.equal(optimized.girl.importedVariants?.['uniform:smile'], 'data:image/webp;base64,BBBB');
+});
+
+test('防 OOM：没有 Canvas 的环境里 slimStateImages 原样返回，且不改动引用', async () => {
+  const state = createInitialState();
+  const result = await slimStateImages(state);
+  assert.equal(result.changed, false, 'node 里没有 document，不该报告改动');
+  assert.equal(result.state, state, '必须原样返回同一个对象，避免无谓的状态替换');
 });

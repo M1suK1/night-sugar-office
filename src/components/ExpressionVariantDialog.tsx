@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Check, ImagePlus, Info, Loader2, Shirt, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { Expression, Girl } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionFromFileName, expressionOutfits, expressionVariantKey } from '../expressions';
-import { originalImageDataUrl } from '../image';
+import { safeOptimizedImageDataUrl, yieldToGC } from '../image';
 import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -33,10 +33,10 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
     if (!file.type.startsWith('image/')) { setNote({ ok: false, text: '请选择 PNG、JPG 或 WebP 图片。' }); return; }
     setBusy(expression);
     try {
-      const dataUrl = await originalImageDataUrl(file);
+      const dataUrl = await safeOptimizedImageDataUrl(file);
       const key = expressionVariantKey(activeOutfitId, expression);
       const ok = onSave(key, dataUrl);
-      setNote({ ok, text: ok ? `「${EXPRESSION_META[expression].label}」表情差分已保存到这套服装。` : '这张差分没有保存成功，请检查存档空间。' });
+      setNote({ ok, text: ok ? `「${EXPRESSION_META[expression].label}」表情差分已优化并保存。` : '这张差分没有保存成功，请检查存档空间。' });
     } catch (error) {
       setNote({ ok: false, text: error instanceof Error ? error.message : '图片读取失败。' });
     } finally {
@@ -50,11 +50,16 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
     const variants: Record<string, string> = {};
     const skipped: string[] = [];
     try {
+      let countProcessed = 0;
       for (const file of files) {
         const expression = expressionFromFileName(file.name);
         if (!file.type.startsWith('image/') || !expression) { skipped.push(file.name); continue; }
         try {
-          variants[expressionVariantKey(activeOutfitId, expression)] = await originalImageDataUrl(file);
+          countProcessed += 1;
+          setNote({ ok: true, text: `正在优化转码第 ${countProcessed} 张表情差分…` });
+          variants[expressionVariantKey(activeOutfitId, expression)] = await safeOptimizedImageDataUrl(file);
+          // 每张处理完让出事件循环，使浏览器垃圾回收器及时回收中间图像缓冲
+          await yieldToGC(16);
         } catch {
           skipped.push(file.name);
         }
@@ -68,7 +73,7 @@ export function ExpressionVariantDialog({ girl, onSave, onSaveMany, onRemove, on
       setNote({
         ok,
         text: ok
-          ? `这套服装已保存 ${count} 张表情差分${skipped.length ? `，跳过 ${skipped.length} 张无法识别或读取失败的文件` : ''}。`
+          ? `这套服装已优化并保存 ${count} 张表情差分${skipped.length ? `，跳过 ${skipped.length} 张无法识别或读取失败的文件` : ''}。`
           : `这批差分没有保存成功，每套服装最多保留 ${EXPRESSION_VARIANT_LIMIT} 张。`,
       });
     } finally {

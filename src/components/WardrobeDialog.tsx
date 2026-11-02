@@ -3,7 +3,7 @@ import { Upload, FileJson, ImagePlus, ClipboardPaste, Sparkles, Scissors, Trash2
 import type { Girl, GameState, Outfit } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { CutoutPreview } from './CutoutPreview';
-import { loadImage, removeImageBackground, originalImageDataUrl } from '../image';
+import { loadImage, removeImageBackground, safeOptimizedImageDataUrl, yieldToGC } from '../image';
 import { fileDropProps } from '../drop';
 
 type Mode = 'merge' | 'replace';
@@ -32,6 +32,21 @@ function paletteFrom(color: string, extra?: unknown): string[] {
 }
 
 /** 从 SillyTavern 角色卡、衣柜包或裸数组里读出服装。 */
+/** 衣柜 JSON 里带进来的立绘逐张降维，防止一份塞了十几张原图的包把内存顶爆。 */
+async function slimOutfits(outfits: Outfit[]): Promise<Outfit[]> {
+  if (typeof document === 'undefined') return outfits;
+  const next: Outfit[] = [];
+  for (const outfit of outfits) {
+    if (outfit.portrait && outfit.portrait.startsWith('data:image/') && outfit.portrait.length > 250_000) {
+      next.push({ ...outfit, portrait: await safeOptimizedImageDataUrl(outfit.portrait) });
+      await yieldToGC(8);
+    } else {
+      next.push(outfit);
+    }
+  }
+  return next;
+}
+
 function readOutfits(raw: unknown, fallbackColor: string): { outfits: Outfit[]; note: string } {
   const list: unknown[] = Array.isArray(raw)
     ? raw
@@ -99,14 +114,14 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     setBusy(true);
     try {
       if (file.type.startsWith('image/')) {
-        const portrait = await originalImageDataUrl(file);
+        const portrait = await safeOptimizedImageDataUrl(file);
         const name = file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 16) || '导入立绘';
         addStaged([{ id: `import-${Date.now().toString(36)}`, name, description: '还没有描述。可以先去掉背景，再让叙事者看图补全。', palette: paletteFrom(girl.color), layerKey: layerFrom(file.name), portrait, imported: true }], `已读取立绘「${name}」`);
         return;
       }
       const parsed = JSON.parse(await file.text()) as unknown;
       const { outfits, note: message } = readOutfits(parsed, girl.color);
-      addStaged(outfits, message);
+      addStaged(await slimOutfits(outfits), message);
     } catch (error) {
       setNote({ ok: false, text: error instanceof Error ? error.message : '文件无法解析' });
     } finally {
@@ -115,11 +130,11 @@ export function WardrobeDialog({ girl, state, onImport, onRemove, onDescribe, on
     }
   };
 
-  const importPaste = () => {
+  const importPaste = async () => {
     if (!paste.trim()) { setNote({ ok: false, text: '先粘贴衣柜 JSON。' }); return; }
     try {
       const { outfits, note: message } = readOutfits(JSON.parse(paste), girl.color);
-      addStaged(outfits, message);
+      addStaged(await slimOutfits(outfits), message);
       if (outfits.length) setPaste('');
     } catch {
       setNote({ ok: false, text: '这段文本不是合法的 JSON。' });

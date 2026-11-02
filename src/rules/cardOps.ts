@@ -66,14 +66,40 @@ export function applyAdvancedRecruit(state: GameState, action: Extract<GameActio
  * `applyImportCard`，而后者每次进门都 `clone(state)`，N 张带立绘的卡就是 O(N²)
  * 次深拷贝（20 张 2.3MB ≈ 480MB 瞬时分配）。
  */
+function imageFingerprint(src: unknown): string {
+  if (typeof src !== 'string' || !src) return '';
+  if (src.length <= 128) return src;
+  // 提取长度 + 首尾指纹，杜绝将数千万字符的 Base64 拼入 JSON.stringify 造成 OOM
+  return `${src.length}:${src.slice(0, 64)}:${src.slice(-64)}`;
+}
+
+function variantsFingerprint(variants: Record<string, string> | undefined): string {
+  if (!variants || typeof variants !== 'object') return '';
+  const entries = Object.entries(variants).sort(([a], [b]) => a.localeCompare(b));
+  return entries.map(([k, v]) => `${k}=${imageFingerprint(v)}`).join(';');
+}
+
+function wardrobeFingerprint(wardrobe: unknown): string {
+  if (!Array.isArray(wardrobe)) return '';
+  return wardrobe.map(item => `${item?.id ?? ''}:${imageFingerprint(item?.portrait)}`).join(';');
+}
+
 function importCardInto(next: GameState, card: GirlCard): { ok: true; name: string; message: string } | { ok: false; message: string } {
   const key = girlCardHash(card);
   const g = card.girl;
   const signature = (value: typeof g | Girl) => JSON.stringify([
-    value.portrait ?? '', value.portraitSpec ?? null, value.wardrobe ?? null, value.outfitId ?? '',
-    ('expression' in value ? value.expression : undefined) ?? 'calm', value.importedVariants ?? {},
-    value.witchForm ?? null, value.witchPersonality ?? '', value.appearance ?? '', value.personality ?? '',
-    value.outfitDescription ?? '', value.color ?? '',
+    imageFingerprint(value.portrait),
+    value.portraitSpec ?? null,
+    wardrobeFingerprint(value.wardrobe),
+    value.outfitId ?? '',
+    ('expression' in value ? value.expression : undefined) ?? 'calm',
+    variantsFingerprint(value.importedVariants),
+    imageFingerprint(value.witchForm?.portrait),
+    value.witchPersonality ?? '',
+    value.appearance ?? '',
+    value.personality ?? '',
+    value.outfitDescription ?? '',
+    value.color ?? '',
   ]);
   const roster = [...next.girls, ...next.candidates];
   // 同一张卡在详情里换过立绘/表情后再导出：按卡号或（自定义卡）名字+代号认人，直接更新，而不是拒收或再养一个。

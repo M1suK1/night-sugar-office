@@ -132,6 +132,27 @@ test('cardbox：导入 20 张卡只做常数次深拷贝（去嵌套 clone）', 
   assert.ok(parses <= 4, `整批导入只该有常数次深拷贝，实际 JSON.parse ${parses} 次`);
 });
 
+test('v43 防 OOM：带数 MB 立绘的契约卡重复导入仍能瞬间判重，不把全文塞进签名', () => {
+  const bigPortrait = `data:image/webp;base64,${'A'.repeat(2_500_000)}`;
+  const text = JSON.stringify({
+    ...JSON.parse(sampleCard('大图判重')),
+    girl: { ...JSON.parse(sampleCard('大图判重')).girl, portrait: bigPortrait },
+  });
+  const parsed = parseGirlCard(text);
+  assert.equal(parsed.ok, true, parsed.ok ? '' : parsed.message);
+  const card = (parsed as { card: unknown }).card as Parameters<typeof act>[1] extends { card: infer C } ? C : never;
+
+  const once = act(createInitialState(), { type: 'importCard', card });
+  assert.equal(once.ok, true, once.message);
+  const twice = act(once.state, { type: 'importCard', card });
+  assert.equal(twice.ok, false, '同一张卡重复导入必须被拦下');
+  assert.match(twice.message, /已经导入过|重复/);
+
+  const revision = once.state.candidates.find(girl => girl.name === '大图判重')?.cardRevision;
+  assert.ok(revision, '卡片改版指纹应当写入');
+  assert.ok((revision as string).length < 4000, `指纹不能把整张 2.5MB 立绘抄进去，实际 ${(revision as string).length} 字符`);
+});
+
 test('cardImport：按张数与字节切批', () => {
   const entry = (index: number, bytes: number) => ({ hash: `h${index}`, bytes }) as unknown as CardBoxEntry;
   const MB = 1024 * 1024;

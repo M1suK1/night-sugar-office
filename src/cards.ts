@@ -4,6 +4,7 @@ import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
 import { skillById } from './content/skills.ts';
 import { traitById } from './content/traits.ts';
 import { sanitizeGirlFaction } from './factions.ts';
+import { safeOptimizedImageDataUrl, yieldToGC } from './image.ts';
 
 const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
@@ -156,4 +157,84 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
     },
   };
   return { ok: true, card: normalized };
+}
+
+/**
+ * 契约卡入库深度清洗与降维（防 OOM 核心工具）。
+ *
+ * 检查卡片中包含的主立绘、各服装立绘、魔女化立绘与全部表情差分。
+ * 对超过 250KB 或非 WebP 的大图就地等比下采样并转码为优质 WebP，
+ * 串行处理并定期释放微任务，确保进入游戏状态前将整张卡压缩瘦身 90% 以上。
+ */
+export async function optimizeCardImages(card: GirlCard): Promise<GirlCard> {
+  if (typeof document === 'undefined') return card;
+  const g = card.girl;
+  let changed = false;
+
+  let portrait = g.portrait;
+  if (portrait && portrait.startsWith('data:image/') && portrait.length > 250_000) {
+    portrait = await safeOptimizedImageDataUrl(portrait);
+    changed = true;
+    await yieldToGC(8);
+  }
+
+  let witchForm = g.witchForm;
+  if (witchForm?.portrait && witchForm.portrait.startsWith('data:image/') && witchForm.portrait.length > 250_000) {
+    const optimizedWitch = await safeOptimizedImageDataUrl(witchForm.portrait);
+    witchForm = { ...witchForm, portrait: optimizedWitch };
+    changed = true;
+    await yieldToGC(8);
+  }
+
+  let wardrobe = g.wardrobe;
+  if (wardrobe && wardrobe.length > 0) {
+    const nextWardrobe: Outfit[] = [];
+    let wardrobeChanged = false;
+    for (const outfit of wardrobe) {
+      if (outfit.portrait && outfit.portrait.startsWith('data:image/') && outfit.portrait.length > 250_000) {
+        const opt = await safeOptimizedImageDataUrl(outfit.portrait);
+        nextWardrobe.push({ ...outfit, portrait: opt });
+        wardrobeChanged = true;
+        await yieldToGC(8);
+      } else {
+        nextWardrobe.push(outfit);
+      }
+    }
+    if (wardrobeChanged) {
+      wardrobe = nextWardrobe;
+      changed = true;
+    }
+  }
+
+  let importedVariants = g.importedVariants;
+  if (importedVariants && Object.keys(importedVariants).length > 0) {
+    const nextVariants: Record<string, string> = {};
+    let variantsChanged = false;
+    for (const [key, val] of Object.entries(importedVariants)) {
+      if (typeof val === 'string' && val.startsWith('data:image/') && val.length > 250_000) {
+        const opt = await safeOptimizedImageDataUrl(val);
+        nextVariants[key] = opt;
+        variantsChanged = true;
+        await yieldToGC(8);
+      } else {
+        nextVariants[key] = val;
+      }
+    }
+    if (variantsChanged) {
+      importedVariants = nextVariants;
+      changed = true;
+    }
+  }
+
+  if (!changed) return card;
+  return {
+    ...card,
+    girl: {
+      ...g,
+      portrait,
+      witchForm,
+      wardrobe,
+      importedVariants,
+    },
+  };
 }

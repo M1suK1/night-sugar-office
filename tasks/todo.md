@@ -591,3 +591,15 @@
 - [x] **阶段四（委托大池接入与测试验证）**：
   - `src/content/missions-extra.ts` 聚合并展开全部新增战斗与调查委托，委托大池无缝扩充至 96 条；`tests/v24.test.ts` 断言更新为 40 只普通魔物；`tests/pool.test.ts` 新增 96 条委托与 1~6 只魔物梯队专项测试。
   - 19 个测试文件共 410 项测试全绿，`tsc --noEmit` 0 错，`check:rules` 通过，无 UTF-8 BOM。
+
+## v43 角色卡载入 / 表情差分导入 OOM 根治
+
+- [x] 方案与复盘 `tasks/plan-v43-oom.md`：定位「原图直读 → 并发解码 → 状态树大字符串 → 全量签名」四条放大链路。
+- [x] `src/image.ts` 新增 `safeOptimizedImageDataUrl`：长边 ≤1024 等比下采样、转 WebP(0.82)，已轻量的 WebP 直通，finally 里 revoke object URL 并把 canvas 宽高清零；新增 `yieldToGC` 让出事件循环；`originalImageDataUrl` 直接转发到安全版本，旧调用点自动受益。
+- [x] `ExpressionVariantDialog`：单张与批量导入改走安全版本，批量串行处理并在每张之后让出 GC，界面显示「正在优化第 N 张」。
+- [x] `WardrobeDialog` / `WitchFormDialog`：立绘与衣柜 JSON 里带进来的图逐张降维（新增 `slimOutfits`）。
+- [x] `CustomGirlDialog`：衣柜包导入后整体瘦身（`slimWardrobePackage`）；立绘选择改用 object URL 并在换图/卸载时 revoke。
+- [x] `src/cards.ts` 新增 `optimizeCardImages`：卡片落库前对主立绘、各套服装、魔女化立绘与全部差分逐张降维。
+- [x] `src/rules/cardOps.ts`：`signature()` 改为图片指纹（长度 + 首尾 64 字符），不再把整张卡的 Base64 拼进 `JSON.stringify`。
+- [x] `src/imageSlim.ts` 新增 `slimGirlImages` / `slimStateImages`：老存档读入后在后台清洗名册、候选与纪念墙里的超大图，确有改动才替换状态；`App.tsx` 的启动与三条读档路径都已接入。
+- [x] 测试：新增「2.5MB 立绘卡片重复导入仍判重且指纹 < 4000 字符」「optimizeCardImages 保持结构」「无 Canvas 时 slimStateImages 原样返回」三条；19 个测试文件 413 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过，无 BOM。
