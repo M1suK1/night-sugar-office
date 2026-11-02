@@ -86,6 +86,10 @@
 .wb-balance-head b { display: block; font-family: var(--font-display); font-size: 18px; font-weight: 400; color: #f5e7ee; }
 .wb-balance-head small { font-size: 10px; color: var(--muted); }
 .wb-balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.wb-balance-section + .wb-balance-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid #ffffff12; }
+.wb-balance-section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.wb-balance-section-head b { font-size: 12px; letter-spacing: .08em; color: #f5e7ee; }
+.wb-balance-section-head small { font-size: 10px; color: var(--muted); line-height: 1.6; }
 .wb-balance-field { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid #ffffff0f; border-radius: 5px; }
 .wb-balance-field > span { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text); }
 .wb-balance-field em { font-style: normal; font-size: 9px; color: var(--muted); }

@@ -234,7 +234,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
           {assistant ? (
             <>
               <button id="council-assistant" type="button" className="council-assistant-figure" onClick={() => onGirl(assistant.id)}>
-                <GirlPortrait girl={assistant} variant="full" />
+                <GirlPortrait girl={assistant} variant="bust" />
               </button>
               <b>{assistant.name}</b>
               <p>{current?.assistantNote ?? '她把档案按顺序排好，等你开口。'}</p>

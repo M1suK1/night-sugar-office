@@ -611,3 +611,16 @@
 - [x] 加固：`src/image.ts` 新增 `isPersistablePortrait` / `sanitizePortraitSrc`，只承认 `data:image/…` 与内置 `/art/…`；`applyCreateGirl` 与自定义登记的提交口都过这一道，`blob:` / `http:` 一律挡掉。
 - [x] 自愈：`slimGirlImages` 顺带清掉存档里遗留的 `blob:` 立绘（纯字符串判断，没有 Canvas 也能跑），老存档读入后不再留一张永远加载不出来的破图。
 - [x] 测试：新增「立绘地址只收 data:image 与 /art/」「遗留 blob: 立绘读取后被清掉」两条；19 个测试文件 415 项全绿，`tsc` 0 错，`check:rules` 通过。
+
+## v44 阶段一 / 二：私语概率进数值规则 + 议会助手席
+
+- [x] **阶段一（灯下私语概率可调 + 故事线保底）**：
+  - `src/balance.ts`：`BalanceRules` 新增 `whisperVictoryPct` / `whisperDefeatPct` / `whisperBondMaxPct` / `whisperStoryPct` / `whisperMaxPct` / `whisperDailyCap` 六项，默认 30 / 45 / 20 / 100 / 85 / 3，正好复刻旧公式；`BalanceField` 补 `group`，数值页按「运营与诊所」「灯下私语」分组显示。
+  - `src/rules/whisper.ts`（新）：把判定从 `battle.ts` 抽出，新增纯函数 `whisperChance()`；故事线角色直接取专用档（默认 100%）且不吃疲劳/侵蚀修正，并优先占用当晚名额；每晚上限改读数值规则。
+  - `src/rules/battle.ts`：改为再导出，`investigation.ts` 等调用方无需改 import；文件回落到 450 行红线内。
+  - `src/views/WorldbookView.tsx`：数值页按分组渲染，私语组附带「故事线角色优先占位」的说明。
+- [x] **阶段二（议会助手席 1.5 倍 + 半身立绘）**：
+  - `GirlPortrait` 新增 `bust` 半身取景：导入立绘走 `object-fit: cover` + 1.38 倍放大与上移取景，程序化剪影用 CSS 放大到上半身。
+  - `CouncilView` 助手席改用 `variant="bust"`；`styles.css` 立绘框 240 → 360px，名字 13 → 15px、说明 11 → 12px，内边距 16 → 18px。
+  - 窄屏（≤1080px）不再 `display: none`，改成「120×160 缩略图 + 名字与说明」的两栏窄条。
+- [x] 测试：新增 `tests/v44.test.ts` 六条（字段默认与夹取、老配置兼容、基准/羁绊/封顶、故事线专用档、优先占位、每晚上限、同日去重）；`game.test.ts` 的数值字段计数同步为 16。20 个测试文件 421 项全绿，`tsc --noEmit` 0 错，`check:rules` 30 模块无环无 BOM。

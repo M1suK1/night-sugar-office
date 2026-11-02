@@ -5,7 +5,7 @@ import {
   loadWorldbook, saveWorldbook, worldbookContext, type WorldbookEntry,
 } from '../worldbook';
 import { OFFICE_WORLDBOOK_ID } from '../office';
-import { BALANCE_FIELDS, loadBalance, resetBalance, saveBalance, type BalanceRules } from '../balance';
+import { BALANCE_FIELDS, BALANCE_GROUPS, loadBalance, resetBalance, saveBalance, type BalanceRules } from '../balance';
 import './worldbook.css';
 
 type Tab = 'entries' | 'balance';
@@ -168,32 +168,41 @@ export function WorldbookView({ onOpenOffice }: { onOpenOffice?: () => void }) {
       </section>
     </div> : <div className="wb-balance">
       <div className="wb-balance-head">
-        <div><b>平衡数值</b><small>随存档保存；已接入结算的位置立即生效。</small></div>
+        <div><b>平衡数值</b><small>存在本地设置里，改完立即生效；不进存档，换存档也沿用同一套。</small></div>
         <button id="balance-reset" className="wb-mini" onClick={() => { const next = resetBalance(); setBalance(next); setNote('已恢复默认数值。'); }}><RotateCcw size={12} />恢复默认</button>
       </div>
-      <div className="wb-balance-grid">
-        {BALANCE_FIELDS.map(field => <label key={field.key} className="wb-balance-field">
-          <span>{field.label}<em>{field.hint}</em></span>
-          <div>
-            <input
-              id={`balance-${field.key}`}
-              type="number"
-              className="wb-input"
-              value={balance[field.key]}
-              min={field.min}
-              max={field.max}
-              step={field.step}
-              onChange={event => {
-                const next = { ...balance, [field.key]: Number(event.target.value) };
-                setBalance(next);
-                saveBalance(next);
-                setNote('数值已保存。');
-              }}
-            />
-            <small>{field.unit}</small>
+      {BALANCE_GROUPS.map(group => {
+        const fields = BALANCE_FIELDS.filter(field => field.group === group);
+        if (!fields.length) return null;
+        return <section key={group} className="wb-balance-section" aria-label={group}>
+          <div className="wb-balance-section-head"><b>{group}</b>
+            {group === '灯下私语' && <small>正在走故事线的角色取「故事线角色」这一档，默认 100%，并优先占用当晚名额。</small>}
           </div>
-        </label>)}
-      </div>
+          <div className="wb-balance-grid">
+            {fields.map(field => <label key={field.key} className="wb-balance-field">
+              <span>{field.label}<em>{field.hint}</em></span>
+              <div>
+                <input
+                  id={`balance-${field.key}`}
+                  type="number"
+                  className="wb-input"
+                  value={balance[field.key]}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
+                  onChange={event => {
+                    const next = { ...balance, [field.key]: Number(event.target.value) };
+                    setBalance(next);
+                    saveBalance(next);
+                    setNote('数值已保存；下一次结算就会用新的值。');
+                  }}
+                />
+                <small>{field.unit}</small>
+              </div>
+            </label>)}
+          </div>
+        </section>;
+      })}
     </div>}
   </div>;
 }

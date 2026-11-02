@@ -1,5 +1,4 @@
 import { outcomeLabel, simulateBattle } from '../combat.ts';
-import { mulberry32 } from '../content/archetypes.ts';
 import { currentBoss, pickBoss } from '../content/bosses.ts';
 import { items } from '../content/items.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
@@ -256,43 +255,11 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
   });
   return battle;
 }
-/**
- * 结算后决定「她会不会主动说话」。
- *
- * 只入队、不发消息：真正的内容由 App 调模型生成，成功后才写未读。
- * 用 day/girl/mission 做确定性随机，同一天同一场不会重复抽。
- */
-
-/**
- * 结算后决定「她会不会主动说话」。
- *
- * 只入队、不发消息：真正的内容由 App 调模型生成，成功后才写未读。
- * 用 day/girl/mission 做确定性随机，同一天同一场不会重复抽。
- */
-export function maybeQueueWhisper(state: GameState, mission: Mission, squad: Girl[], outcome: 'victory' | 'defeat' | 'success' | 'failure', battleId?: string): void {
-  const queue = state.whisperQueue ?? [];
-  if (queue.filter(job => job.day === state.day).length >= 3) return;
-  const lastDay = state.lastWhisperDay ?? {};
-  for (const girl of squad) {
-    if (girl.dead || girl.retired) continue;
-    if (lastDay[girl.id] === state.day) continue;
-    if ((state.whisperUnread?.[girl.id] ?? 0) > 0) continue;
-    if (queue.some(job => job.girlId === girl.id && job.day === state.day)) continue;
-    const success = outcome === 'victory' || outcome === 'success';
-    const roll = mulberry32(hashText(`${state.day}:${girl.id}:${mission.id}`))();
-    const base = success ? 0.3 : 0.45;
-    const bondAdjust = success ? girl.bond / 500 : (100 - girl.bond) / 1000;
-    const tired = girl.fatigue >= 70 ? 0.1 : 0;
-    const hurt = (girl.corruption ?? 0) >= 60 || girl.hp <= girl.maxHp * 0.4 ? 0.15 : 0;
-    const chance = Math.min(0.85, base + bondAdjust + tired + hurt);
-    if (roll >= chance) continue;
-    queue.push({ id: `${state.day}-${mission.id}-${girl.id}`, girlId: girl.id, missionId: mission.id, day: state.day, outcome, battleId, createdAt: Date.now() });
-    lastDay[girl.id] = state.day;
-    if (queue.filter(job => job.day === state.day).length >= 3) break;
-  }
-  state.whisperQueue = queue;
-  state.lastWhisperDay = lastDay;
-}
+/** 私语判定已抽到 `rules/whisper.ts`；这里只保留再导出，避免调用方改 import。 */
+import { maybeQueueWhisper } from './whisper.ts';
+export { whisperChance, WHISPER_TIRED_AT, WHISPER_HURT_CORRUPTION, WHISPER_HURT_HP_RATIO } from './whisper.ts';
+export type { WhisperChanceInput } from './whisper.ts';
+export { maybeQueueWhisper };
 
 export function killGirl(state: GameState, girl: Girl, battle: BattleState, mission: Mission): void {
   if (girl.dead) return;

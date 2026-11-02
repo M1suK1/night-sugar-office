@@ -828,11 +828,14 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .council-dialogue-foot button.primary { border-color: #f3aec970; background: #f3aec91c; color: #f7d5e2; }
 .council-dialogue-foot button:hover { border-color: #f3aec980; }
 .council-empty { margin: auto; text-align: center; color: var(--muted); }
-.council-assistant { text-align: center; }
-.council-assistant-figure { width: 100%; height: 240px; overflow: hidden; border-radius: 12px; border: 1px solid var(--border); background: #1a1520; }
-.council-assistant-figure .girl-portrait.full { width: 100%; height: 100%; }
-.council-assistant b { display: block; margin: 10px 0 4px; font-size: 13px; }
-.council-assistant p { font-size: 11px; color: var(--muted); line-height: 1.7; }
+.council-assistant { text-align: center; padding: 18px; }
+.council-assistant-figure { width: 100%; height: 360px; overflow: hidden; border-radius: 12px; border: 1px solid var(--border); background: #1a1520; }
+.council-assistant-figure .girl-portrait.full,
+.council-assistant-figure .girl-portrait.bust { width: 100%; height: 100%; overflow: hidden; }
+.council-assistant-figure .girl-portrait.bust > img { object-fit: cover; }
+.council-assistant-figure .girl-portrait.bust > svg { transform: scale(1.42); transform-origin: 50% 16%; }
+.council-assistant b { display: block; margin: 12px 0 5px; font-size: 15px; }
+.council-assistant p { font-size: 12px; color: var(--muted); line-height: 1.8; }
 .council-next { display: block; margin-top: 10px; font-size: 10px; color: var(--pink); }
 
 .incident-overlay { position: fixed; inset: 0; z-index: 980; display: grid; place-items: center; padding: 20px; background: rgba(8, 6, 12, .78); backdrop-filter: blur(8px); }
@@ -912,7 +915,17 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .wardrobe-tile.witch .wardrobe-tag { background: rgba(196, 120, 184, .2); color: #d8a5e6; }
 .council-enter { margin-left: auto; }
 
-@media (max-width: 1080px) { .council-stage-inner { grid-template-columns: 1fr; } .council-side, .council-assistant { display: none; } .council-stage { min-height: 560px; } }
+@media (max-width: 1080px) {
+  .council-stage-inner { grid-template-columns: 1fr; }
+  .council-side { display: none; }
+  /* 助手席不再整块隐藏：改成横向窄条，半身缩略图 + 名字与说明。 */
+  .council-assistant { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 14px; align-items: start; text-align: left; }
+  .council-assistant .council-kicker { grid-column: 1 / -1; }
+  .council-assistant-figure { grid-row: span 3; width: 120px; height: 160px; }
+  .council-assistant b { margin: 0; }
+  .council-next { margin-top: 2px; }
+  .council-stage { min-height: 560px; }
+}
 @media (max-width: 720px) { .start-options { grid-template-columns: 1fr; } .event-body { grid-template-columns: 1fr; } .event-figure { max-height: 200px; } .council-topic h2 { font-size: 20px; } }
 /* v6 议会布局微调：立绘不压住选项，议题与选项保持呼吸 */
 .council-speaker { justify-content: flex-start; gap: 14px; position: relative; }

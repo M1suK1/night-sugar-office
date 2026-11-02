@@ -1862,7 +1862,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 10);
+  assert.equal(BALANCE_FIELDS.length, 16, 'v44 起在运营十项之外多了六个灯下私语字段');
   clearBalanceCache();
 });
 
