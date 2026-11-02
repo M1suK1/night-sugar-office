@@ -4,7 +4,7 @@ import { createSeedPack } from '../content/seed-pack.ts';
 import { customMissionTemplates } from '../content/library.ts';
 import { extraMissions } from '../content/missions-extra.ts';
 import { spawnableMonsters } from './encounters.ts';
-import { deployMissionTemplate, districtOrderFor } from './missions.ts';
+import { deployMissionTemplate, districtOrderFor, districtRotation } from './missions.ts';
 // v35 从 src/game.ts 拆出：委托池与魔物池的维护。
 
 export function missionKey(mission: Pick<Mission, 'title' | 'description'>): string {
@@ -47,12 +47,21 @@ export function ensureMissionPools(state: GameState): number {
       recommendedLevel: template.recommendedLevel ?? 3,
     })) as unknown as MissionTemplate[];
   let added = 0;
+  // 辖区按「当前谁家最少」铺：同一片不会挤上三四条，地图上看起来才散得开。
+  const load = new Map<DistrictId, number>();
+  for (const mission of state.missions) {
+    if (mission.status !== 'open' && mission.status !== 'active') continue;
+    load.set(mission.district as DistrictId, (load.get(mission.district as DistrictId) ?? 0) + 1);
+  }
   for (const template of templates) {
     if (liveCount + added >= cap) break;
-    const district = (template.district ?? districtOrderFor(state.day, state.shift.wave, added)) as DistrictId;
+    const start = districtOrderFor(state.day, state.shift.wave, added);
+    const district = (template.district ?? [start, ...districtRotation.filter(id => id !== start)]
+      .reduce((best, id) => ((load.get(id) ?? 0) < (load.get(best) ?? 0) ? id : best), start)) as DistrictId;
     const mission = deployMissionTemplate(state, template, { district, fromPool: true });
     if (state.missions.some(existing => existing.id === mission.id)) continue;
     state.missions.push(mission);
+    load.set(district, (load.get(district) ?? 0) + 1);
     added += 1;
   }
   state.poolLimits.missions = cap;

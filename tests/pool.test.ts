@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState, loadState } from '../src/game.ts';
 import { MISSION_POOL_SIZE, ensureMissionPools, trimMissionPools } from '../src/rules/pools.ts';
+import { districtPin } from '../src/rules/missions.ts';
+import { districtAt } from '../src/districts.ts';
 import type { GameState } from '../src/types.ts';
 
 const live = (state: GameState) => state.missions.filter(mission => mission.status === 'open' || mission.status === 'active');
@@ -79,4 +81,23 @@ test('v38 ensureMissionPools 幂等：已经 12 条时不再补', () => {
   const before = state.missions.length;
   assert.equal(ensureMissionPools(state), 0);
   assert.equal(state.missions.length, before);
+});
+
+test('v38 委托坐标落在自己的辖区多边形里，不再全挤在标签点', () => {
+  const state = createInitialState();
+  const live = state.missions.filter(mission => mission.status === 'open' || mission.status === 'active');
+  for (const mission of live) {
+    assert.equal(districtAt(mission.x, mission.y), mission.district, `${mission.title} 的坐标应该落在 ${mission.district} 里`);
+  }
+  const districtsUsed = new Set(live.map(mission => mission.district));
+  assert.ok(districtsUsed.size >= 6, `12 条委托应该铺到至少 6 个辖区，实际 ${districtsUsed.size}`);
+});
+
+test('v38 districtPin 在同一辖区内也散得开', () => {
+  const points = Array.from({ length: 8 }, (_, index) => districtPin('oldtown', `salt-${index}`));
+  for (const point of points) assert.equal(districtAt(point.x, point.y), 'oldtown');
+  const unique = new Set(points.map(point => `${point.x},${point.y}`));
+  assert.equal(unique.size, points.length, '同一辖区里的坐标不能重复');
+  const spread = Math.max(...points.map(a => Math.min(...points.filter(b => b !== a).map(b => Math.hypot(a.x - b.x, a.y - b.y)))));
+  assert.ok(spread > 8, `同一辖区内的点应该铺开，实际最大最近距离 ${spread.toFixed(1)}%`);
 });

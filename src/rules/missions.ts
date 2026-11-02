@@ -172,19 +172,44 @@ export function missionTemplates(): MissionTemplateOption[] {
   }));
 }
 
-/** 把辖区标签换算成委托坐标，并对落在河里的抖动做回退。 */
+/** 地图像素尺寸：由辖区多边形顶点推出来，避免和 districts.ts 里的常量各写一份。 */
+const mapScale = (() => {
+  let w = 0;
+  let h = 0;
+  for (const region of Object.values(districts)) {
+    for (const pair of region.points.trim().split(/\s+/)) {
+      const [x, y] = pair.split(',').map(Number);
+      if (Number.isFinite(x)) w = Math.max(w, x);
+      if (Number.isFinite(y)) h = Math.max(h, y);
+    }
+  }
+  return { w: w || 1100, h: h || 780 };
+})();
 
-/** 把辖区标签换算成委托坐标，并对落在河里的抖动做回退。 */
+/**
+ * 把辖区标签换算成委托坐标。
+ *
+ * v38 之前是在辖区**标签点**附近抖 ±2%：一张地图上同一辖区的委托全挤成一小团。
+ * 现在按多边形外接框做拒绝采样（落在别区就重抽），委托才会均匀铺在自己那一片里。
+ */
 export function districtPin(districtId: DistrictId, salt: string): { x: number; y: number } {
   const region = districts[districtId];
-  const baseX = (region.label.x / 1100) * 100;
-  const baseY = (region.label.y / 780) * 100;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const seed = hashText(`${districtId}:${salt}:${attempt}`);
-    const x = Math.max(3, Math.min(97, baseX + ((seed % 61) - 30) / 14));
-    const y = Math.max(4, Math.min(96, baseY + ((Math.floor(seed / 61) % 61) - 30) / 16));
+  const points = region.points.trim().split(/\s+/).map(pair => pair.split(',').map(Number));
+  const xs = points.map(([x]) => (x / mapScale.w) * 100);
+  const ys = points.map(([, y]) => (y / mapScale.h) * 100);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const seedX = hashText(`${districtId}:${salt}:x:${attempt}`);
+    const seedY = hashText(`${districtId}:${salt}:y:${attempt}`);
+    const x = Math.max(2, Math.min(98, minX + ((seedX % 4096) / 4096) * (maxX - minX)));
+    const y = Math.max(3, Math.min(97, minY + ((seedY % 4096) / 4096) * (maxY - minY)));
     if (districtAt(x, y) === districtId) return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
   }
+  const baseX = (region.label.x / mapScale.w) * 100;
+  const baseY = (region.label.y / mapScale.h) * 100;
   return { x: Math.round(baseX * 10) / 10, y: Math.round(baseY * 10) / 10 };
 }
 
