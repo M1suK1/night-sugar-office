@@ -105,37 +105,44 @@ export const seedGirls: Girl[] = seedGirlData.map(hydrateGirl);
 
 export const seedMissions: Mission[] = [
   {
-    id: 'candy', title: '糖果街的失眠电波', category: '异象调查', description: '糖果街的霓虹灯连续七晚在凌晨三点同时变成灰白色。居民说，灯灭的瞬间会听见有人轻声数糖。',
+    id: 'candy', title: '糖果街的失眠电波', category: '异象调查',
+    description: '糖果街繁华的霓虹招牌与落地橱窗，在凌晨三点整会突兀失色、化作一片惨淡死寂的灰白杂波。沿街多户失眠居民证实，在灯丝骤暗、高压变压器发出尖锐啸叫的数秒钟内，空气中会回荡起冰冷尖细的童声在低语数糖，随后枕边便会凝结出难以下咽的苦涩糖霜。必须追踪这道干扰全区配电网的失眠回声，恢复街区的夜间防护灯场。',
     x: 24, y: 27, difficulty: '低危', duration: 45, reward: 680, requirement: 'empathy', target: 70, color: '#F49ABD',
     status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 3,
   },
   {
-    id: 'station', title: '末班车上的第十三人', category: '紧急委托', description: '末班电车每晚多载一名乘客。司机不敢回头，只在到站时听见第十三声脚步。',
+    id: 'station', title: '末班车上的第十三人', category: '紧急委托',
+    description: '驶往星见川盲端的深夜末班电车每逢越过旧铁桥，车厢仪表盘便会凭空多显示出一名乘客的重量。后视镜中始终只能映出十二位昏昏欲睡的面孔，然而每当车辆靠站开门时，车厢连接处便会清晰踩下属于第十三人的潮湿泥泞足印，且该阴影正逐夜向车头驾驶室悄然挪动。受惊的司机已拒绝出车，急需精锐战斗小队登车肃清车尾异类。',
     x: 66, y: 25, difficulty: '高危', duration: 60, reward: 920, requirement: 'agility', target: 80, color: '#E86A8A',
     status: 'open', squad: [], work: 'combat', enemyIds: ['night-tram', 'echo-cat'], rounds: 4, attempts: 0, recommendedLevel: 4,
   },
   {
-    id: 'mirror', title: '镜中的另一轮月亮', category: '结界修复', description: '旧教堂的镜厅里出现了第二个夜空。镜中的月亮比真实的更圆，也更近。',
+    id: 'mirror', title: '镜中的另一轮月亮', category: '结界修复',
+    description: '旧教堂废弃镜厅的穹顶天窗上空，在倒影里凭空折射出了另一处深邃可怖的冷色夜空。镜中所映照出的月轮比现世穹顶上的天体更为硕大、皎洁且带有令人晕眩的压迫引力；多名踏入该区域的流浪者在注视镜面后丧失方向感、险些跌入水银般的镜中长廊。必须击溃盘踞在主神龛前的镜厅守卫，斩断这层虚妄结界的空间折射。',
     x: 42, y: 51, difficulty: '中危', duration: 90, reward: 1240, requirement: 'insight', target: 75, color: '#9FB4E8',
     status: 'open', squad: [], work: 'combat', enemyIds: ['mirror-nun'], rounds: 6, attempts: 0, recommendedLevel: 5,
   },
   {
-    id: 'cat', title: '寻找走失的星尾猫', category: '市民求助', description: '一只尾巴上有星形斑纹的三花猫走失了。委托人没有留下姓名，只留下一小袋猫薄荷。',
+    id: 'cat', title: '寻找走失的星尾猫', category: '市民求助',
+    description: '一只尾巴尖端带有天然星芒状淡金斑纹的三花猫自玻璃温室附近走失。匿名委托人通过事务所门缝递进了一小袋沾着清晨露水的高纯度星纹薄荷与一张手绘路线图，字迹微颤却报酬给得极为干脆。温室守卫声称夜间曾目睹类似身形的灵动光影在带电铁丝网间敏捷跳跃，需派遣身手轻捷的队员循着香气轨迹排查寻回。',
     x: 76, y: 62, difficulty: '低危', duration: 30, reward: 420, requirement: 'agility', target: 65, color: '#B9D8A8',
     status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 2,
   },
   {
-    id: 'tower', title: '旧钟楼的未寄信', category: '心愿回收', description: '旧钟楼每天傍晚都会多出一封没有收件人的信。信纸很旧，邮戳却是明天。',
+    id: 'tower', title: '旧钟楼的未寄信', category: '心愿回收',
+    description: '旧钟楼顶层堆积废旧缆绳的门廊角落，每天黄昏日落时都会凭空出现一封未写收件人地址的牛皮纸信函。信封边缘虽已严重磨损泛黄，但邮戳上火漆印着的日期却不可思议地显示为次日拂晓，信笺内更隐约传出微弱如飞蛾振翅的求助心声。此种扭曲时间轴的心愿残留正不断吸引畸变灵体聚集，需以高度共情手段介入抚平因果。',
     x: 27, y: 76, difficulty: '中危', duration: 60, reward: 760, requirement: 'empathy', target: 78, color: '#C7A7E8',
     status: 'open', squad: [], work: 'investigation', attempts: 0, recommendedLevel: 4,
   },
   {
-    id: 'arcade', title: '糖果王座上的蛀牙', category: '紧急委托', description: '废弃游乐场的糖王雕像开始进食。它把整条街的甜味吸进王座，再吐出没有味道的雾。',
+    id: 'arcade', title: '糖果王座上的蛀牙', category: '紧急委托',
+    description: '废弃游乐场最深处那尊原用于节日庆典的巨型糖王雕像正在复苏进食。它如巨大的真空泵般将整条商业街排气口中的香精与甜味因子强行吸入斑驳王座，随即自裂开的颌骨巨口中喷吐出足以剥夺常人味觉与温度感知的苍白浓雾；游乐场回廊周围已有多名拾荒者因接触雾气而出现神经麻痹，必须以高阶魔力直击王座核心将其彻底击碎。',
     x: 58, y: 72, difficulty: '高危', duration: 90, reward: 1420, requirement: 'magic', target: 82, color: '#D98A94',
     status: 'open', squad: [], work: 'combat', enemyIds: ['candy-king', 'sugar-moth'], rounds: 6, attempts: 0, recommendedLevel: 6,
   },
   {
-    id: 'hollow', title: '空月悬在钟楼上', category: '结界修复', description: '月亮缺席的第七夜，旧钟楼上方出现了一个没有背面的天体。仰望它的人会忘记自己为什么抬头。',
+    id: 'hollow', title: '空月悬在钟楼上', category: '结界修复',
+    description: '在月亮彻底缺席、夜空如浓墨般的第七个长夜，旧钟楼高耸的尖顶上方诡异悬停起了一个完全不具备背面的苍白未知天体。任何在街道上驻足仰望其轮廓的市民与守卫，都会在数秒内瞳孔失焦、彻底遗忘自己为何抬头以及自身当下的处境；城市的理性防线正面临被高维蚀核无声擦除的绝境，唯有最老练的观测者带队方能接近镇压。',
     x: 12, y: 52, difficulty: '绝望', duration: 90, reward: 2000, requirement: 'insight', target: 90, color: '#C9C4FF',
     status: 'open', squad: [], work: 'combat', enemyIds: ['hollow-moon'], rounds: 6, attempts: 0, recommendedLevel: 8,
   },

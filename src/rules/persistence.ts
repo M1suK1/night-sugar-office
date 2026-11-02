@@ -2,6 +2,7 @@ import { bossTemplateOf } from '../content/bosses.ts';
 import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
 import { getItem, items, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
+import { extraMissions } from '../content/missions-extra.ts';
 
 import { districtAt, districts } from '../districts.ts';
 import { effectiveGuard } from '../economy.ts';
@@ -337,5 +338,16 @@ export function stripPoolPadding(state: GameState): number {
   const before = state.missions.length;
   state.missions = state.missions.filter(mission => !/ · .+记录\d{3}$/.test(mission.title) && !/第 \d+ 次现场记录/.test(mission.description));
   state.customMonsters = (state.customMonsters ?? []).filter(monster => !/^pool-mon-\d+-\d+$/.test(monster.id));
+  // 留存下来的内置未完成委托，自动刷新为最新的完整叙事简报，避免老档依然显示过去的一句话硬译。
+  const templates = [...createSeedPack().missions, ...extraMissions];
+  const templateMap = new Map(templates.map(m => [m.id, m]));
+  for (const m of state.missions) {
+    if (m.status !== 'open' && m.status !== 'active') continue;
+    const baseId = m.templateId ?? m.id.split('-').pop() ?? m.id;
+    const fresh = templateMap.get(baseId) ?? templateMap.get(m.id);
+    if (fresh && fresh.description && fresh.description.length > m.description.length) {
+      m.description = fresh.description;
+    }
+  }
   return before - state.missions.length;
 }

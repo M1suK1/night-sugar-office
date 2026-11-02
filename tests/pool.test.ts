@@ -101,3 +101,20 @@ test('v38 districtPin 在同一辖区内也散得开', () => {
   const spread = Math.max(...points.map(a => Math.min(...points.filter(b => b !== a).map(b => Math.hypot(a.x - b.x, a.y - b.y)))));
   assert.ok(spread > 8, `同一辖区内的点应该铺开，实际最大最近距离 ${spread.toFixed(1)}%`);
 });
+
+test('v41 老档留存的内置委托在读取时自动升级为充实的怪谈简报', () => {
+  const state = createInitialState();
+  const legacyMission: Mission = {
+    ...state.missions[0]!,
+    id: 'candy',
+    title: '糖果街的失眠电波',
+    description: '旧版极短文案：灯灭了有人数糖。',
+  };
+  state.missions = [legacyMission];
+
+  const loaded = loadState(JSON.stringify(state));
+  const candy = loaded.missions.find(m => m.id === 'candy');
+  assert.ok(candy);
+  assert.ok(candy!.description.length > 50, '描述应当被更新为数十上百字的充实简报');
+  assert.ok(candy!.description.includes('高压变压器发出尖锐啸叫'));
+});
