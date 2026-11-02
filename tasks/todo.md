@@ -542,3 +542,8 @@
 - [x] 魔物表改用 `spawnableMonsters(state)`：只列真实可上场的魔物（去重、去掉 Boss/剧情专属与旧 `pool-mon-*` 副本），`enemyRefs` 校验照旧。
 - [x] `changes[].girlId` 写成名册外的 id（常见是三方首领 id）时，改写为提出者并记一条 warning，不再让整份提案作废；defer/reject 本来要求改提出者羁绊，改写比作废更接近本意。
 - [x] 新增 2 条测试：目录不含 skills 且魔物表无重复/无旧副本、girlId 误用后被改写为提出者且带 warning。
+
+## v40 城市态势跟随开局指派的首领
+
+- [x] `factionBrief` 接受当前首领：提示词的「城市态势」不再写死内置首领，改用 `factionRepresentativeOf(state, faction)`；换人时不沿用旧首领的台词（避免把雨宫澄的话安到维里奈头上）。
+- [x] 新增 1 条测试：指派卡面首领后，城市态势里出现新首领、不出现内置首领与他的台词，势力信条保留。

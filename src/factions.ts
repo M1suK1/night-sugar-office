@@ -294,17 +294,25 @@ export function factionCollapsed(state: Pick<GameState, 'territories'>, faction:
   return Object.values(owned).filter(owner => owner === faction).length === 0;
 }
 
-/** 2–3 行的势力提要，供 LLM prompt 使用，不塞整篇档案。 */
-export function factionBrief(faction: FactionId, standing: number): string {
+/**
+ * 2–3 行的势力提要，供 LLM prompt 使用，不塞整篇档案。
+ *
+ * `leader` 传当前在场的首领（玩家开局指派的那位）：不传才退回静态内置首领，
+ * 否则提示词里的「城市态势」会一直写着开局前的老首领，和编成界面自相矛盾。
+ */
+export function factionBrief(faction: FactionId, standing: number, leader?: { id?: string; name: string; title: string; quote?: string }): string {
   const dossier = factionDossiers[faction];
   const info = factionInfo[faction];
-  const leader = factionLeaders[faction];
+  const base = factionLeaders[faction];
+  const current = leader ?? base;
+  // 静态首领自带一句台词；换成本局指派的卡面首领时，档案里那句就作废，不要张冠李戴。
+  const quote = leader && leader.id !== base.id ? leader.quote ?? '' : base.quote;
   const attitude = factionAttitude(standing).label;
   return [
-    `${info.name}（${dossier.epithet}）· 首领 ${leader.name}（${leader.title}）· 当前态度 ${attitude}`,
-    leader.quote,
+    `${info.name}（${dossier.epithet}）· 首领 ${current.name}（${current.title}）· 当前态度 ${attitude}`,
+    quote,
     dossier.doctrine,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export function factionRelationLine(from: FactionId, to: FactionId): string {

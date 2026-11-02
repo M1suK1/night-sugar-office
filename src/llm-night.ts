@@ -795,7 +795,7 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       candidates: Math.max(0, state.poolLimits.candidates - state.candidates.length),
     },
     city: {
-      briefs: NIGHT_FACTIONS.map(id => factionBrief(id, state.factions[id].standing)),
+      briefs: NIGHT_FACTIONS.map(id => factionBrief(id, state.factions[id].standing, factionRepresentativeOf(state, id))),
       dirtiest: dumpest.map(({ district, pollution }) => ({
         district,
         name: districts[district as DistrictId].name,

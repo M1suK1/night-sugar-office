@@ -4972,3 +4972,22 @@ test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整�
     assert.equal(change.girlId, raw.opinion.authorId, '写错的目标要改成提出者');
   }
 });
+
+test('v40 城市态势里的三方首领跟随开局指派，不再写死内置首领', () => {
+  const state = createInitialState();
+  state.customFactionLeaders = [{
+    id: 'g_card_78ad3835', name: '维里奈', title: '生息培育者', faction: 'government', level: 1,
+    color: '#8fd3c7', portrait: '', portraitSpec: undefined, quote: '', note: '',
+    stats: { magic: 50, insight: 50, agility: 50, empathy: 50 }, skills: [], skillIds: [],
+  } as never];
+  state.factionRoster = {
+    witch: { leaderId: '', memberIds: [] },
+    association: { leaderId: '', memberIds: [] },
+    government: { leaderId: 'g_card_78ad3835', memberIds: [] },
+  };
+  const prompt = buildNightPrompt(state);
+  assert.ok(prompt.includes('首领 维里奈'), '城市态势应该用本局指派的首领');
+  assert.equal(prompt.includes('雨宫澄'), false, '不该继续写内置的市役所首领');
+  assert.equal(prompt.includes('编号不会哭，城市才睡得着'), false, '旧首领的台词不能安到新首领头上');
+  assert.ok(prompt.includes('城市不需要英雄，需要可替换的班次'), '势力信条还在');
+});
