@@ -94,7 +94,14 @@ const blueprintKinds: StoryNodeKind[] = ['start', 'choice', 'mission', 'event', 
 并在提示词里补两段 data 说明（完整文本见第五节）：
 
 - **incident（强制弹窗）**：`spec.kind` 三选一（`faction` / `environment` / `girl`）、`title` ≤14 字、`body` 60–160 字、`options` 0–3 个，`effect` 用 `IncidentEffect` 的字段（gold / reputation / faction / girl / district / hostility），幅度克制。
-- **opinion（议会提案）**：`topic` 六选一、`title`、`text` 60–140 字、`request` 一句话、固定三个选项 `accept` / `defer` / `reject`，每个带一句 `effect` 说明。
+- **opinion（议会提案）**：`topic` 六选一、`title`、`text` 60–140 字、`request` 一句话，**只写 `accept`（批准）与 `reject`（驳回）两个选项**，每个带一句 `effect`。这两个选项就是节点上的两条出线，决定剧情往哪边走；`defer`（暂缓）由程序固定补，**不推进剧情**，只是把议题推到下个议事日。
+
+**运行时接线（提案节点 = 两条分支）**
+1. `portsOf(opinion)` 返回 `['accept', 'reject']`，画布上直接显示两个出口，从哪个口拉线就代表那个分支。
+2. `resolveStoryWait` 增加 `port` 参数（默认 `'out'`）；处理提案时传**玩家实际选的那个决定**（`accept` / `reject`）。
+3. `factionOps` 处理议题时把 decision 带过去；`decision === 'defer'` 时**不调用** `resolveStoryWait`（现状已如此），剧情停在原节点，议题下个议事日重新提出。
+4. `advanceStoryGraph` 生成议题时，`spec.options` 只有 accept / reject，程序按 v47 同一套规则补一条固定 defer，**服务厅界面仍是三个按钮**，只是暂缓不接剧情线。
+5. 校验：accept 与 reject 各恰好一条边；出现 `defer` 或其它 `fromPort` 一律报错。
 
 ---
 
@@ -127,7 +134,7 @@ choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；op
    例：options 是 a、b，则 edges 里必须同时存在 {from:"该节点",fromPort:"a",to:…} 与 {from:"该节点",fromPort:"b",to:…}。
 6. 全图不允许出现「起点节点里没有声明过的 fromPort」。写边之前先回头看那个节点的出口清单。
 7. incident 的选项 id 固定写 o1、o2、o3；每个选项对应一条 fromPort 相同的边。incident 不写选项时，用一条 fromPort="out"。
-8. opinion 固定三个选项 accept / defer / reject，三条边 fromPort 分别是这三个 id。
+8. opinion 固定两个分支：**accept 与 reject 各一条出边**，`fromPort` 分别写 accept / reject。这两条线就是「批准」和「驳回」之后各自的剧情。不要写 defer，暂缓由系统处理、不走剧情线。
 
 【各节点 data 的写法】
 - start: {"kind":"start"}
@@ -141,8 +148,10 @@ choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；op
   · spec.kind 只能是 faction / environment / girl。
   · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。
   · 不给选项就是一张纯通报卡，玩家点「知道了」继续。
-- opinion（议会提案：摆到会客厅让玩家批准 / 暂缓 / 驳回）:
-  {"kind":"opinion","spec":{"topic":"私人心愿","title":"不超过 14 字","text":"60–140 字，写清她要什么、为什么现在提","request":"一句话说明她要你答应什么","options":[{"id":"accept","label":"批准","effect":"代价与收益，一句话"},{"id":"defer","label":"暂缓","effect":"…"},{"id":"reject","label":"驳回","effect":"…"}]}}
+- opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:
+  {"kind":"opinion","spec":{"topic":"私人心愿","title":"不超过 14 字","text":"60–140 字，写清她要什么、为什么现在提","request":"一句话说明她要你答应什么","options":[{"id":"accept","label":"批准","effect":"批准之后会发生什么，一句话"},{"id":"reject","label":"驳回","effect":"驳回之后会发生什么，一句话"}]}}
+  · options 只能有 accept 与 reject 两项；节点上对应两条出边，fromPort 分别是 accept 与 reject。
+  · 暂缓（defer）由程序固定补，不占端口、不推进剧情——不要写。
   · topic 只能是 经费 / 排班 / 设施 / 同伴 / 城市 / 私人心愿。
 - reward（一次结算：数值 + 可能的特性 + 可能的一件装备）: {"kind":"reward","effect":{"bond":2,"gold":0},"equipmentTier":3}
   · effect 可用：bond −12…12、gold −800…800、reputation −10…10、corruption −10…10、growth{四维各 −3…3}、trait{name≤16字, description≤60字}、buff{name, stat, amount≤6, days 1…5}。
@@ -160,7 +169,7 @@ choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；op
 3. edges 里每条的 fromPort，都能在 from 指向的节点里找到同名出口；出现 trust_calc、defy_fate 这类名字就说明写错了。
 4. 每个 mission 恰好一条 success、一条 failure。
 5. 每个 incident：有选项就每个 o1/o2/o3 各一条同名边，没选项就一条 out。
-6. 每个 opinion 恰好 accept / defer / reject 三条边。
+6. 每个 opinion 恰好 accept 与 reject 两条边——批准走一条，驳回走另一条。
 7. start 只有一条 out；end 没有任何出边；其余非 end 节点至少一条出边。
 8. 从 start 出发能走到每一个节点，且每条路径都能到某个 end；没有环。
 ```
@@ -185,7 +194,7 @@ choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；op
 | `storygraph.ts:481/493` | 统计 scenes、要求 ≥1 个 scene | 删除；改为「至少一个 event 或 incident」 |
 | `storygraph.ts:494-498` | 生成蓝图禁止 incident / opinion | 删除；改为数量上限（event 1–2、incident 1–2、opinion ≤1） |
 | 新增 | — | incident 端口：每个选项恰好一条同名边；无选项时必须恰好一条 `out`；其它端口报错 |
-| 新增 | — | opinion 端口：`accept` / `defer` / `reject` 各恰好一条 |
+| 新增 | — | opinion 端口：`accept` / `reject` **各恰好一条**；多写 defer 或其它端口报错 |
 | 新增 | — | 通用白名单：start / event / reward / wait 只允许 `out`，多出即报错 |
 | `storygraph.ts:536-538` | 「无法识别的出口」文案 | 补一句提示：「fromPort 必须是该节点真实存在的出口（选项 id 或 out）」，与提示词措辞一致 |
 
@@ -215,7 +224,8 @@ choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；op
 | 校验·结构 | 只有 start/end 的图报「至少一个角色事件或强制弹窗」；3 个 incident 报超量 |
 | 校验·端口 | 选项 `a` 少一条边 → 报「必须且只能连一条线」；出现 `fromPort="trust_calc"` → 报「无法识别的出口」 |
 | 校验·弹窗 | 有选项 `o1`/`o2` 的 incident 缺一条边 → 报错；无选项的 incident 缺 `out` → 报错 |
-| 校验·提案 | opinion 缺 `reject` 边 → 报错 |
+| 校验·提案 | opinion 缺 `accept` 或 `reject` 边 → 报错；多出 `defer` 端口 → 报错 |
+| 运行·提案分支 | 批准走 `accept` 那条线、驳回走 `reject` 那条线；选「暂缓」时剧情原地不动，议题回到下个议事日 |
 | 生成 | 模型给出 scene 节点时按 incident 静默转换，不让整份作废 |
 | 回归 | 21 个测试文件 426 项全绿 + 新增用例 |
 

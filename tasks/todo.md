@@ -643,3 +643,11 @@
 - [x] **蓝图阶段委托支持战斗**：`StoryMissionSpec` 加 `work`，`storyMissionForBeat` 在只写 work 时抽模板、沿用魔物组合、用模型写的 goal 覆盖描述；难度在「简单/常规/棘手/危险」与「低危/中危/高危/绝望」之间映射。
 - [x] **角色事件 cast**：蓝图提示词写清「cast 1–3 人、必须含主角、每个人都要在 opening 里出场并有台词或动作」。
 - [x] 测试：新增 `tests/v47.test.ts` 六条；22 个测试文件 432 项全绿，`tsc --noEmit` 0 错，`check:rules` 通过。
+
+## v48 清除残留的内置首领名字
+
+- [x] 新增 `representativeNameOf(state, faction)` / `representativeTitleOf(state, faction)`（`src/factions.ts`）：统一解析「现在这一方的代表是谁」，缺 state 时退回内置默认。
+- [x] 替换的调用点：`App.tsx` 势力卡「代表：」、`FactionDialog` 来使名、`IncidentDialog` 弹窗势力行、`RoomDialog` 使者委托、`Shell` 顶栏势力提示、`AuxViews` 退休/势力面板、`MarketView` 物资分组头、`tasks.ts` 任务提示、`rules/cardOps` 接取代表委托的日志与消息、`incidents.ts` 的 `{envoy}` 占位、工坊事件预览。
+- [x] `llm.ts` 蓝图提示词：城市态势那一行改由 `blueprintFactionLine(state)` 生成，按当前存档解析三方首领；没有 state 时只写势力名，绝不写死内置首领。
+- [x] `prologue.ts`：开场三幕的领袖台词改由 `leaderNames` 生成，台词保留、名字换成当前首领。
+- [x] 测试：新增 `tests/v48.test.ts` 四条（默认代表、换人后名字与头衔、开场三幕台词、蓝图提示词不残留旧名）；23 个测试文件 436 项全绿，`tsc` 0 错，`check:rules` 通过。

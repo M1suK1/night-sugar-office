@@ -231,7 +231,7 @@ export function FactionDialog({ state, faction, onBase, onHire, onClose }: Facti
             <div className="faction-envoy">
               <ClipboardList size={15} />
               <div>
-                <b>{info.envoy} · {info.title}</b>
+                <b>{leader.name} · {leader.title}</b>
                 <small>{envoyDone ? '今日代表委托已接取' : '来使待命，可在会客厅接取代表委托'}</small>
               </div>
             </div>

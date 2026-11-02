@@ -1,5 +1,6 @@
 import type { FactionId, GameState } from './types.ts';
 import { factionInfo } from './content/items.ts';
+import { representativeNameOf } from './factions.ts';
 import { incidentPending } from './incidents.ts';
 import { hottestPair, hostilityTier, pairMembers } from './hostility.ts';
 import { factionName } from './territories.ts';
@@ -84,7 +85,7 @@ export function taskInbox(state: GameState): TaskEntry[] {
       id: `task-faction-${faction}`,
       kind: 'faction',
       title: `${factionInfo[faction].name}：${mission.title}`,
-      hint: mission.status === 'active' ? '已经在跑' : `${factionInfo[faction].envoy} 还在等回话`,
+      hint: mission.status === 'active' ? '已经在跑' : `${representativeNameOf(state, faction)} 还在等回话`,
       urgent: Boolean(mission.deadlineAt && mission.deadlineAt - now < 60),
       dueAt: mission.deadlineAt,
       target: { modal: 'mission', id: mission.id },

@@ -1355,6 +1355,17 @@ export interface GeneratedStoryBlueprint {
 
 const blueprintKinds: StoryNodeKind[] = ['start', 'scene', 'choice', 'mission', 'event', 'reward', 'wait', 'end'];
 
+/** 城市态势那一行：首领名字按当前存档解析，绝不写死开局前的老首领。 */
+export function blueprintFactionLine(state?: GameState): string {
+  const parts = (['association', 'government', 'witch'] as const)
+    // 没有存档时不写死名字，只说势力——写死就等于把开局前的内置首领塞回提示词。
+    .map(faction => state
+      ? `${factionInfo[faction].name}（现任首领 ${representativeNameOf(state, faction)}）`
+      : factionInfo[faction].name)
+    .join('、');
+  return `樱雾市由${parts}三方拉扯；协会排斥克隆与抑制剂，市役所把量产少女当勤务编号，月蚀庭净血派与普通魔法少女敌对；夜糖事务所是重开的中立委托机构，收留三方与无所属的少女。辖区污染会改变委托与魔物。`;
+}
+
 /** 把模型的语义 JSON 收成 draft；ID 合并、连线和布局都交给 storygraph。 */
 function parseStoryBlueprintDraft(raw: Record<string, unknown>): StoryGraphDraft {
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
@@ -1393,14 +1404,14 @@ function parseStoryBlueprintGraph(raw: Record<string, unknown>): { graph: StoryG
  * 让模型直接写一张完整故事蓝图。
  * 只允许一次修复；两次都不合格就返回失败，绝不写半张图到存档里。
  */
-export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
+export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
   const body = `先读她的档案：${girlBrief(girl)}
-樱雾市由星灯协会、市役所、月蚀庭三方拉扯；协会会长白鹭千秋保守并排斥克隆与抑制剂，市役所课长雨宫澄把量产少女当勤务编号，月蚀庭净血派领袖夜枭政变后与普通魔法少女敌对；夜糖事务所是重开的中立委托机构，收留三方与无所属的少女。辖区污染会改变委托与魔物。
+${blueprintFactionLine(state)}
 ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
 请直接写一张「故事蓝图」（StoryGraph），不是四幕手稿。只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","premise":"","tone":"","nodes":[{"id":"n1","kind":"start","title":"开始","data":{"kind":"start"}}],"edges":[{"from":"n1","fromPort":"out","to":"n2"}]}
@@ -2036,7 +2047,7 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
-import { EMPLOYER_LABEL, factionTagLabel } from './factions.ts';
+import { EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { skills, tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';

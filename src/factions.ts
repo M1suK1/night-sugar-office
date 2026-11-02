@@ -315,6 +315,22 @@ export function factionBrief(faction: FactionId, standing: number, leader?: { id
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * 界面与日志里要写「代表是谁」的地方，一律走这两个函数。
+ *
+ * 玩家开局指派的首领可能与内置首领不是同一个人；写死 `factionInfo[x].envoy`
+ * 会在换人之后继续显示老名字（v48 修的就是这一类残留）。
+ */
+export function representativeNameOf(state: Pick<GameState, 'assistantId' | 'girls'> | undefined | null, faction: FactionId): string {
+  const name = state ? factionRepresentativeOf(state as GameState, faction)?.name : undefined;
+  return name?.trim() || factionInfo[faction].envoy;
+}
+
+export function representativeTitleOf(state: Pick<GameState, 'assistantId' | 'girls'> | undefined | null, faction: FactionId): string {
+  const title = state ? factionRepresentativeOf(state as GameState, faction)?.title : undefined;
+  return title?.trim() || factionInfo[faction].title;
+}
+
 export function factionRelationLine(from: FactionId, to: FactionId): string {
   if (from === to) return factionDossiers[from].relations[from];
   return factionDossiers[from].relations[to];

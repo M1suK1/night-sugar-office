@@ -1,6 +1,7 @@
 import { AlertTriangle, Clock3, Heart, MapPin, MessageSquareQuote, ShieldCheck, Sparkles } from 'lucide-react';
 import type { GameState, Incident } from '../types';
 import { factionInfo } from '../content/items';
+import { representativeNameOf } from '../factions';
 import { districts } from '../districts';
 import { incidentCategoryOf, incidentRemaining } from '../incidents';
 
@@ -28,7 +29,7 @@ export function IncidentDialog({ incident, state, onChoose, onGirl }: { incident
           <span className="incident-ttl" id="incident-ttl"><Clock3 size={12} />{Math.max(0, Math.round(remaining))} 分钟内不处理会自己过去</span>
         </header>
         <h2>{incident.title}</h2>
-        {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {factionInfo[incident.faction].envoy}</p>}
+        {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {representativeNameOf(state, incident.faction)}</p>}
         {district && <p className="incident-meta"><MapPin size={12} />{district.name}</p>}
         {girl && <p className="incident-meta"><Heart size={12} /><button type="button" className="incident-girl" onClick={() => onGirl?.(girl.id)}>{girl.name}</button> · 疲劳 {girl.fatigue} / 侵蚀 {girl.corruption}</p>}
         <p className="incident-body">{incident.body}</p>

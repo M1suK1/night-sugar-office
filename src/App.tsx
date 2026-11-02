@@ -6,6 +6,7 @@ import { kvSet, storeAvailable } from './store';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
+import { representativeNameOf } from './factions';
 import { Navigation, PageHeading, Topbar } from './components/Shell';
 import type { Page } from './components/Shell';
 import { DispatchMap } from './components/DispatchMap';
@@ -957,7 +958,7 @@ export default function App() {
     setStoryBusy(girlId);
     setStoryNotice(null);
     try {
-      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, taskRuntime(boundPreset('storyline', presets, binding), 'storyline'));
+      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, taskRuntime(boundPreset('storyline', presets, binding), 'storyline'), latestState.current ?? state);
       if (result.ok) {
         const plan: StoryPlan = { title: result.data.title, premise: result.data.premise, tone: result.data.tone, beats: [], graph: result.data.graph };
         if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
@@ -1115,7 +1116,7 @@ export default function App() {
                     <span className="world-faction-seal">{info.short}</span>
                     <div>
                       <strong>{info.name}</strong>
-                      <small>代表：{info.envoy}</small>
+                      <small>代表：{representativeNameOf(state, fid)}</small>
                     </div>
                     <span className="world-faction-attitude">{att.label}</span>
                     {hottest && <span className="world-faction-war" id={`faction-war-${fid}`}>临战 {hottest.track.value}</span>}

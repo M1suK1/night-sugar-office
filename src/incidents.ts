@@ -4,6 +4,7 @@ import type {
 } from './types.ts';
 import type { DistrictId } from './districts.ts';
 import { factionInfo } from './content/items.ts';
+import { representativeNameOf } from './factions.ts';
 import { districts } from './districts.ts';
 import { builtinIncidents, warSignalTemplates } from './content/incidents.ts';
 import { dirtiestDistrict } from './pollution.ts';
@@ -115,7 +116,7 @@ export function fillIncidentText(state: GameState, template: IncidentTemplate, a
   const replace = (text: string) => text
     .replaceAll('{girl}', girl?.name ?? '当班的少女')
     .replaceAll('{faction}', factionInfo[factionId].name)
-    .replaceAll('{envoy}', factionInfo[factionId].envoy)
+    .replaceAll('{envoy}', representativeNameOf(state, factionId))
     .replaceAll('{district}', districts[districtId]?.name ?? '辖区');
 
   return {

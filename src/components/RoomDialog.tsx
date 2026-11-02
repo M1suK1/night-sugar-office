@@ -3,6 +3,7 @@ import { ArrowUpRight, Brain, Building2, Check, Compass, Copy, MessageCircle, Mo
 import type { FactionId, GameState } from '../types';
 import { buildCost, capacity, inWithdrawal, statusLabels } from '../game';
 import { factionInfo } from '../content/items';
+import { representativeNameOf } from '../factions';
 import { factionAttitude } from '../economy';
 import { GirlPortrait } from './GirlPortrait';
 import { ClinicPanel } from './ClinicPanel';
@@ -99,7 +100,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
             return (
               <div key={fid}>
                 <span>
-                  <b>{info.name} · {info.envoy}</b>
+                  <b>{info.name} · {representativeNameOf(state, fid)}</b>
                   <small>声望 {standing}/100（{att.label}） · {info.motto}</small>
                 </span>
                 <button id={`room-envoy-${fid}`} type="button" className="av-btn av-btn-small" disabled={done || !onAcceptTask} onClick={() => onAcceptTask?.(fid)}>

@@ -4,7 +4,7 @@ import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal, previewFactionTask } from '../game';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
-import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf } from '../factions';
+import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf, representativeNameOf, representativeTitleOf } from '../factions';
 import { pensionFor } from '../contracts';
 import { PrologueDialog } from '../components/PrologueDialog';
 import { prologueFor } from '../prologue.ts';
@@ -829,7 +829,7 @@ export function RecordsView({ state, onBattle, onBattleNote, onCodex, onChronicl
                   <span className="av-envoy-seal">{info.short}</span>
                   <div>
                     <h3>{info.name}</h3>
-                    <small>代表：{info.envoy}（{info.title}）</small>
+                    <small>代表：{representativeNameOf(state, fid)}（{representativeTitleOf(state, fid)}）</small>
                   </div>
                   <span className={`av-attitude-badge tone-${att.tone}`}>{att.label} · {att.discount}</span>
                 </header>

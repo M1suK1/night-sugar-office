@@ -1,4 +1,4 @@
-import type { GameState } from './types.ts';
+import type { FactionId, GameState } from './types.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { rosterLeader } from './factions.ts';
 import { representativeOf } from './office.ts';
@@ -33,6 +33,22 @@ const LEADERS: PrologueLine[] = [
   { speaker: '雨宫澄', color: '#c9b36a', text: '「编号不会哭，城市才睡得着。」', side: 'left' },
   { speaker: '蚀医·夜鸮', color: '#9b6bc4', text: '「城市不把女巫当人，我们就自己写人的定义。」', side: 'right' },
 ];
+
+/** 换成本局指派的卡面首领时，台词保留、名字换成那位首领。 */
+const LEADER_QUOTES: { faction: FactionId; color: string; text: string; side: 'left' | 'right' }[] = [
+  { faction: 'association', color: '#8fd3c7', text: '「名录之外，没有灯。」', side: 'left' },
+  { faction: 'government', color: '#c9b36a', text: '「编号不会哭，城市才睡得着。」', side: 'left' },
+  { faction: 'witch', color: '#9b6bc4', text: '「城市不把女巫当人，我们就自己写人的定义。」', side: 'right' },
+];
+
+function leaderLines(names: Record<string, string>): PrologueLine[] {
+  const lines: PrologueLine[] = [];
+  for (const item of LEADER_QUOTES) {
+    const name = names[item.faction]?.trim();
+    if (name) lines.push({ speaker: name, color: item.color, text: item.text, side: item.side });
+  }
+  return lines.length ? lines : LEADERS;
+}
 
 /** 没有存档时的兜底：和 v26 之前完全一致，重播与静态渲染都能用。 */
 export const PROLOGUE: PrologueBeat[] = [
@@ -101,7 +117,7 @@ export function prologueFrom(options: PrologueOptions): PrologueBeat[] {
         '这座城市由三方分着管：星灯协会登记少女、发委托；市役所管夜禁、管辖区；月蚀庭不问出身，只问价钱。',
         '三方都在这张桌上留了位置，谁也没打算先走。',
       ],
-      lines: LEADERS,
+      lines: leaderLines(leaderNames),
     },
     {
       id: 'roster',

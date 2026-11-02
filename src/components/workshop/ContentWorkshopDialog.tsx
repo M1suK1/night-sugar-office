@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Copy, Download, FlaskConical, Heart, Lock, MapPin, Play, Plus, Save, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import type { BossTemplate, Equipment, GameState, IncidentCard, IncidentCardEffect, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, StatKey } from '../../types';
 import { items as itemRegistry, factionInfo } from '../../content/items';
+import { representativeNameOf } from '../../factions';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
 import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
@@ -661,7 +662,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                       <span className="incident-source">工坊投放</span>
                     </header>
                     <h2>{incident.title}</h2>
-                    {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {factionInfo[incident.faction].envoy}</p>}
+                    {incident.faction && <p className="incident-meta"><ShieldCheck size={12} />{factionInfo[incident.faction].name} · {representativeNameOf(state, incident.faction)}</p>}
                     {incident.district && <p className="incident-meta"><MapPin size={12} />{districts[incident.district].name}</p>}
                     {incident.girlId && <p className="incident-meta"><Heart size={12} />{state.girls.find(girl => girl.id === incident.girlId)?.name ?? incident.girlId}</p>}
                     <p className="incident-body">{incident.body || '还没有写正文。'}</p>

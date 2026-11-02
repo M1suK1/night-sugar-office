@@ -3,7 +3,7 @@ import { cardboxReport } from '../cardbox.ts';
 import { customOutfitFor } from '../rules/outfits.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
 import { getSkill } from '../content/skills.ts';
-import { sanitizeGirlFaction } from '../factions.ts';
+import { representativeNameOf, sanitizeGirlFaction } from '../factions.ts';
 import { traitById } from '../content/traits.ts';
 import { girlCardHash } from '../cards.ts';
 import { hydrate, makeCandidate } from '../rules/candidate.ts';
@@ -25,8 +25,8 @@ export function applyAcceptFactionTask(state: GameState, action: Extract<GameAct
       const mission = factionTask(next, faction);
       next.missions.unshift(mission);
       info.envoyTaskId = mission.id;
-      next.logs.unshift({ id: `log-envoy-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `接下${factionInfo[faction].name}代表${factionInfo[faction].envoy}的委托「${mission.title}」。` });
-      return { state: next, ok: true, message: `${factionInfo[faction].envoy}把任务书推了过来。` };
+      next.logs.unshift({ id: `log-envoy-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `接下${factionInfo[faction].name}代表${representativeNameOf(next, faction)}的委托「${mission.title}」。` });
+      return { state: next, ok: true, message: `${representativeNameOf(next, faction)}把任务书推了过来。` };
 }
 
 /** upgradeMarket 的动作处理器（v35 从 act 拆出）。 */

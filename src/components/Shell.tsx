@@ -3,6 +3,7 @@ import type { FactionId, GameState } from '../types';
 import { clock } from '../game';
 import { cityStage, factionAttitude } from '../economy';
 import { factionInfo } from '../content/items';
+import { representativeNameOf } from '../factions';
 import { currentBoss } from '../content/bosses';
 
 export type Page = 'dispatch' | 'base' | 'market' | 'records' | 'council' | 'worldbook';
@@ -87,7 +88,7 @@ export function Topbar({ state, onNotifications, onCommand, saved, filling }: { 
           const standing = state.factions?.[id]?.standing ?? 0;
           const att = factionAttitude(standing);
           return (
-            <div key={id} className={`top-faction-pill tone-${att.tone}`} title={`${info.name}（代表：${info.envoy}）· 声望 ${standing}/100 · 态度：${att.label}（${att.discount}）`}>
+            <div key={id} className={`top-faction-pill tone-${att.tone}`} title={`${info.name}（代表：${representativeNameOf(state, id)}）· 声望 ${standing}/100 · 态度：${att.label}（${att.discount}）`}>
               <small>{info.short}</small>
               <b>{standing}</b>
               <em>{att.label}</em>
