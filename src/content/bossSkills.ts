@@ -12,13 +12,13 @@ export const bossSkills: Skill[] = [
     id: 'boss-hollow-veil', name: '空月纱', school: 'Boss', resource: 'spirit', power: 0.4,
     targets: 6, side: 'enemy', cooldown: 3, tier: 'boss', accuracy: 60,
     effects: [{ kind: 'debuff', stat: 'hit', amount: 10, duration: 2 }],
-    description: '月光被纺成纱，罩下来的时候所有人都看不清自己在打哪里。',
+    description: '冰冷月光被无形巨手纺织为飘忽垂落的薄纱迷雾，笼罩战场时视线与感知全遭折射，令受困其中的攻势彻底失去准星。',
   },
   {
     id: 'boss-tide-of-names', name: '名字的潮', school: 'Boss', resource: 'spirit', power: 0.9,
     targets: 3, side: 'enemy', cooldown: 2, tier: 'boss', accuracy: 40,
     effects: [{ kind: 'dot', amount: 16, duration: 2 }],
-    description: '被念过太多次的名字浮上来，像涨潮一样漫过脚踝。',
+    description: '长夜中被无数次绝望呼唤过的牺牲者名册化为深黑灵潮，自废墟地表汩汩翻涌漫过脚踝，持续腐蚀着活人的意志。',
   },
   {
     id: 'boss-second-moon', name: '第二个月亮', school: 'Boss', resource: 'hp', power: 0.35,
@@ -28,14 +28,14 @@ export const bossSkills: Skill[] = [
       { kind: 'debuff', stat: 'agility', amount: 10, duration: 2 },
     ],
     selfEffects: [{ kind: 'buff', stat: 'magic', amount: 20, duration: 3 }],
-    description: '天上明明只有一个月亮，可它翻过来的时候，另一面也在发光。',
+    description: '夜幕顶端赫然翻转出另一轮不应存在的惨白倒影月相，两重天体引力交错撕扯，引爆大范围的重力失衡与精神震荡。',
   },
   {
     id: 'boss-collapse', name: '塌缩', school: 'Boss', resource: 'hp', power: 2,
     targets: 1, side: 'enemy', cooldown: 3, tier: 'boss', accuracy: 66,
     selfCost: { resource: 'hp', pct: 20 },
     effects: [],
-    description: '把身边的一小块空间按进去，代价是自己也少了一块。',
+    description: '强行以暴烈的自残威能塌缩身侧的虚空坐标，将整片空间生硬凹折凿穿，将敌方核心撕扯出毁灭性的重压创口。',
   },
   {
     id: 'boss-sugar-crown', name: '糖冠诏书', school: 'Boss', resource: 'spirit', power: 0,
@@ -44,26 +44,26 @@ export const bossSkills: Skill[] = [
       { kind: 'buff', stat: 'empathy', amount: 18, duration: 2 },
       { kind: 'shield', amount: 24, duration: 2 },
     ],
-    description: '王座上的糖宣读自己的加冕词，读到哪一句，哪一句就变成真的。',
+    description: '端坐王座之上的天灾以喑哑共鸣宣读属于自己的加冕辞令，咒文流淌之处，翻滚的糖晶自愈护幕与共情激荡随之强行具现。',
   },
   {
     id: 'boss-mirror-litany', name: '镜面连祷', school: 'Boss', resource: 'spirit', power: 1.4,
     targets: 2, side: 'enemy', cooldown: 2, tier: 'boss', accuracy: 52,
     effects: [{ kind: 'debuff', stat: 'insight', amount: 16, duration: 2 }],
-    description: '每一面碎镜都在念同一段祷词，念到第二遍时你已经分不清哪句是自己想的。',
+    description: '周遭无数散落的碎镜面同时回荡起重叠交错的低沉圣咏，在来回反射的音浪冲击下，受击者的洞察神智陷入剧烈混乱。',
   },
   {
     id: 'boss-clock-hands', name: '钟针倒转', school: 'Boss', resource: 'spirit', power: 0.5,
     targets: 6, side: 'enemy', cooldown: 3, tier: 'boss', accuracy: 24,
     effects: [{ kind: 'dot', amount: 14, duration: 2 }],
-    description: '钟楼的指针往回走了一格，所有人身上多出一段本来已经过去的伤。',
+    description: '旧钟楼那柄斑驳锈蚀的铜质指针突兀向后逆行弹跳一格，在时间回流的错乱法则下，此前已被愈合的旧创被强行重新撕裂。',
   },
   {
     id: 'boss-name-erasure', name: '名字抹除', school: 'Boss', resource: 'spirit', power: 2.05,
     targets: 1, side: 'enemy', cooldown: 4, tier: 'boss', accuracy: 40,
     effects: [],
     selfEffects: [{ kind: 'debuff', stat: 'insight', amount: 12, duration: 2 }],
-    description: '它把你的名字从这一夜的名册上划掉，划完自己也忘了一部分。',
+    description: '调动深渊最残酷的因果剪除权柄，将目标的存在痕迹强行自当夜名册抹去，以自身视界短时模糊为代价重创其灵魂本源。',
   },
 ];
 
