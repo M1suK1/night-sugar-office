@@ -7,31 +7,33 @@
  */
 import type { FactionId, FactionRoster, GameState, Girl } from './types.ts';
 import type { CardBoxEntry } from './cardbox.ts';
-import { parseGirlCard } from './cards.ts';
 import { factionGirls } from './content/factionGirls.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
 import { customRosterOf, subjectOfCustom, subjectOfGirl, subjectOfLeader, type RosterSubject } from './factions.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { usedCardIds } from './cardMarket.ts';
 
-/** 契约卡库里的卡 → 面板条目；卡已经存了全量数据，解析失败就当没有这张。 */
-export function cardSubject(entry: CardBoxEntry): RosterSubject | undefined {
-  const parsed = parseGirlCard(entry.raw);
-  if (!parsed.ok) return undefined;
-  const girl = parsed.card.girl;
+/**
+ * 契约卡库里的卡 → 面板条目。
+ *
+ * v36 起卡库索引里就带着名字、等级、属性、出身等元数据，所以这里**不再解析卡面原文**：
+ * 60 张带立绘的卡逐个 `JSON.parse` 就是开局 OOM 的来源。立绘留空，`GirlPortrait`
+ * 会退回程序化剪影；真正被编进名册的那几张会在 `importCards` 时按 hash 单独读原文。
+ */
+export function cardSubject(entry: CardBoxEntry): RosterSubject {
   return subjectOfCustom({
     id: `card-${entry.hash}`,
-    name: girl.name,
-    factionTag: girl.factionTag ?? 'none',
-    level: girl.level,
-    color: girl.color,
-    portrait: girl.portrait ?? '',
-    portraitSpec: girl.portraitSpec,
-    stats: girl.stats,
-    skillIds: girl.skillIds,
-    codename: girl.codename,
-    quote: girl.quote,
-    title: girl.title,
+    name: entry.name,
+    factionTag: entry.factionTag,
+    level: entry.level,
+    color: entry.color,
+    portrait: '',
+    portraitSpec: entry.portraitSpec,
+    stats: { ...entry.stats },
+    skillIds: [...entry.skillIds],
+    codename: entry.codename,
+    quote: entry.quote,
+    title: entry.title,
     cardId: entry.hash,
   });
 }
@@ -87,8 +89,7 @@ export function rosterPool(state: GameState, library: CardBoxEntry[] = [], optio
   const used = usedCardIds(state);
   for (const entry of library) {
     if (used.has(entry.hash)) continue;
-    const subject = cardSubject(entry);
-    if (subject) push(subject);
+    push(cardSubject(entry));
   }
   for (const subject of customRosterOf(state)) push(subject);
   if (!options.cardsOnly) {

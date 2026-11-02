@@ -50,7 +50,7 @@ import { MEMORY_CLEAR_COST } from '../src/game.ts';
 import { effectiveGuard } from '../src/economy.ts';
 import { emptyItem } from '../src/content/library.ts';
 import { items } from '../src/content/items.ts';
-import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, saveCardBox } from '../src/cardbox.ts';
+import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, readCardRaw, saveCardBox } from '../src/cardbox.ts';
 
 const blueprintDraft = (): StoryGraphDraft => ({
   nodes: [
@@ -4392,12 +4392,13 @@ test('卡库：删库只动文件柜，不碰名册', async () => {
   __resetKvForTests();
   const added = await cardboxAdd([{ name: 'a.json', text: JSON.stringify(sampleCard('卡库己')) }], []);
   const hash = added.added[0].hash;
-  assert.equal(cardboxCards(added.entries, [hash]).length, 1);
+  assert.equal((await cardboxCards([hash])).length, 1);
   const kept = await cardboxRemove([hash], added.entries);
   assert.equal(kept.length, 0);
   assert.equal((await loadCardBox()).length, 0);
-  // 原始文本还在手上时仍能解析，说明「删的是库，不是卡」。
-  assert.equal(cardboxCards(added.entries, [hash]).length, 1);
+  // 删掉的是库里的记录与原文；已经解析出来的卡不受影响（名册/存档里那份还在）。
+  assert.equal(await readCardRaw(hash), undefined);
+  assert.equal((await cardboxCards([hash])).length, 0);
 });
 
 test('卡库：2.3MB 立绘的契约卡收得进来，进存档位再读回字节不变', async () => {
@@ -4421,7 +4422,7 @@ test('卡库：2.3MB 立绘的契约卡收得进来，进存档位再读回字�
   assert.ok(loaded);
   assert.equal(loaded.girls[0].portrait.length, bigPortrait.length);
   assert.deepEqual(loaded.girls[0].portraitCrop, { zoom: 1.4, x: 12, y: -8 });
-  assert.equal((await loadCardBox())[0].raw.length, text.length);
+  assert.equal((await readCardRaw((await loadCardBox())[0]!.hash))!.length, text.length);
 });
 
 test('立绘取景：portraitCrop 会随自定义少女一起建档并读回', () => {

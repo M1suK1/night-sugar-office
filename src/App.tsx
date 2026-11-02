@@ -708,7 +708,7 @@ export default function App() {
       if (picks.length) {
         // 卡库开局不摆内置候选：那 20 个位置都留给玩家的卡。
         next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
-        const imported = act(next, { type: 'importCards', cards: cardboxCards(box, picks.map(entry => entry.hash)) });
+        const imported = act(next, { type: 'importCards', cards: await cardboxCards(picks.map(entry => entry.hash)) });
         if (imported.ok) next = imported.state;
       }
     } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ }
@@ -767,7 +767,7 @@ export default function App() {
       if (gap > 0) {
         const picks = unusedCards(box, state, gap);
         if (picks.length) {
-          const applied = act(state, { type: 'refillMarket', cards: cardboxCards(box, picks.map(entry => entry.hash)) });
+          const applied = act(state, { type: 'refillMarket', cards: await cardboxCards(picks.map(entry => entry.hash)) });
           if (applied.ok) setState(applied.state);
         }
       }

@@ -19,7 +19,10 @@ function entryOf(card: GirlCard, addedAt: number): CardBoxEntry {
   const name = card.girl.name;
   return {
     hash: girlCardHash(card), name, level: card.girl.level, element: card.girl.element,
-    factionTag: card.girl.factionTag ?? 'none', fileName: `${name}.json`, addedAt, raw: JSON.stringify(card),
+    factionTag: card.girl.factionTag ?? 'none', fileName: `${name}.json`, addedAt,
+    color: card.girl.color, title: card.girl.title, codename: card.girl.codename, quote: card.girl.quote,
+    stats: { ...card.girl.stats }, skillIds: [...card.girl.skillIds], portraitSpec: card.girl.portraitSpec,
+    bytes: JSON.stringify(card).length,
   };
 }
 

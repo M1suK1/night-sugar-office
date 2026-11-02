@@ -502,3 +502,13 @@
 - [x] `src/game.ts` 只剩 25 行显式 barrel，84 个导出名与类型一字不差；20 个 UI 文件与 11 个测试的 import 没改。
 - [x] 最终规模：`src/rules/` 29 个模块，最大 429 行（battle），无循环依赖；`tsc --noEmit` 0 错。
 - [x] v35 新增 1 条导出名快照测试；16 个文件 384 条逐文件全过（game 254 / v24 25 / v26 15 / v29 11 / budget 10 / vertex 10 / v27 10 / store 9 / market-window 7 / v33 6 / cards-api 5 / research 5 / v31 5 / v32 4 / v34 7 / game-api 1）。
+
+## v36 卡库拆库：开局读卡库不再 OOM
+
+- [x] 复现思路：整库存在一个 kv 键里（`night-sugar:cardbox:v1`，每条带 `raw` 全文），60 张带 2–3MB 立绘的卡 ≈ 一条 130MB+ 的记录；`loadCardBox()` 一次反序列化、`rosterPool` 再逐张 `JSON.parse`，开局就顶到内存上限。
+- [x] 存储拆成「索引 + 单卡原文」：`night-sugar:cardbox:v2` 只存名字 / 等级 / 属性 / 出身 / 技能 / 字节数（几百字节），原文放 `night-sugar:cardbox:card:<hash>`，`readCardRaw(hash)` 按需读。
+- [x] 自动迁移旧库：第一次 `loadCardBox()` 读到 v1 就逐张 `pop()` 拆开写入新结构（处理过的长文本可尽早回收），写完删掉旧键；读不动的旧值也一并清掉。
+- [x] `cardboxCards(hashes)` 改为异步按 hash 取原文：开局导入 20 张、市场补货按缺口取，都不再把 60 张全读进来。
+- [x] 编成池不再解析卡面：`cardSubject` 直接用索引元数据，立绘留空走程序化剪影；真正编进名册的那几张才在 `importCards` 时读原文。
+- [x] 新增 `tests/cardbox.test.ts` 4 条：索引不带 `raw`、旧库迁移并删键、脏值清理、2MB 卡的索引仍 <2KB。
+- [x] 17 个文件 388 条测试逐文件全过；`tsc --noEmit` 0 错；`npm run check:rules` 通过（29 模块 / 无环 / 无 BOM）。

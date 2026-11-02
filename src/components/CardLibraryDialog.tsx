@@ -123,8 +123,8 @@ export function CardLibraryDialog({ onImport, notify }: {
     }
   };
 
-  const importPicked = () => {
-    const cards = cardboxCards(entries, picked);
+  const importPicked = async () => {
+    const cards = await cardboxCards(picked);
     if (!cards.length) { notify('选中的卡读不出来了，可能文件被动过。', false); return; }
     onImport(cards);
     setPicked([]);
