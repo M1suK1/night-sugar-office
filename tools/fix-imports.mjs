@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * v35 辅助工具：按最近一次 `tsc --noEmit` 的输出修正 import。
  *

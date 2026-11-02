@@ -10,7 +10,7 @@
  *   3. rules 模块不得反向 import ../game.ts（barrel 只能被 UI/测试使用）。
  *   4. persistence.ts 是终点：除了 act 之外没有模块可以 import 它。
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -72,9 +72,31 @@ const walk = name => {
 };
 for (const name of files) walk(name);
 
+/**
+ * BOM 检查：PowerShell 5.1 的 Set-Content -Encoding utf8 会写入 BOM，
+ * package.json 带 BOM 时 Vite 解析 PostCSS 配置会直接失败（v35 踩过）。
+ */
+const bomTargets = ['package.json', 'tsconfig.json', 'README.md', '.gitignore'];
+const bomWalk = (dir, ext) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) { bomWalk(full, ext); continue; }
+    if (ext.test(entry.name)) bomTargets.push(relative(root, full));
+  }
+};
+for (const dir of ['src', 'tools', 'tests', 'tasks']) {
+  if (existsSync(join(root, dir))) bomWalk(join(root, dir), /\.(ts|tsx|mjs|js|json|md|css)$/);
+}
+for (const name of bomTargets) {
+  const full = join(root, name);
+  if (!statSync(full, { throwIfNoEntry: false })?.isFile()) continue;
+  const buffer = readFileSync(full);
+  if (buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) problems.push(`${name} 带 UTF-8 BOM，会让 JSON.parse / PostCSS 配置加载失败`);
+}
+
 if (problems.length) {
   console.error(`check-imports 失败（${problems.length} 项）：`);
   for (const problem of problems) console.error(`  - ${problem}`);
   process.exit(1);
 }
-console.log(`check-imports 通过：${files.length} 个模块、无环、体积达标。`);
+console.log(`check-imports 通过：${files.length} 个模块、无环、体积达标、无 BOM。`);

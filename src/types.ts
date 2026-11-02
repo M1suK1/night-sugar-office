@@ -1,4 +1,4 @@
-﻿import type { DistrictEffect, DistrictId } from './districts';
+import type { DistrictEffect, DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 
 export type StatKey = 'magic' | 'insight' | 'agility' | 'empathy';

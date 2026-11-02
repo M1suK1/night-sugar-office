@@ -1,4 +1,4 @@
-﻿import { registerItem } from '../content/items.ts';
+import { registerItem } from '../content/items.ts';
 import { annotateMission } from '../rules/missions.ts';
 import { missionKeyTaken, trimMissionPools } from '../rules/pools.ts';
 import { canAcceptGeneratedContent, validBattleNote, validGeneratedItem } from '../rules/validate.ts';

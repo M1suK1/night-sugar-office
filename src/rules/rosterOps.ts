@@ -1,4 +1,4 @@
-﻿import { effectiveGuard, effectiveMaxHp } from '../economy.ts';
+import { effectiveGuard, effectiveMaxHp } from '../economy.ts';
 import { absoluteMinutes } from '../shift.ts';
 import { statusLabels } from '../rules/labels.ts';
 import { MEMORY_CLEAR_COST, capacity, clinicQuote, inWithdrawal, seatsTaken, treatmentFor } from '../rules/roster.ts';
