@@ -713,3 +713,9 @@
 - [x] **提示词搬进预设**：`promptSections.ts` 新增 `bt-brief`（scope `battle`）与 `battleContract()`；六个变量 `{{battlePlace}}` / `{{battleTime}}` / `{{battleGirls}}` / `{{battleMonsters}}` / `{{battleCast}}` / `{{battleReport}}` 由 `generateBattleNote` 现算后注入，代码只留 JSON 骨架、台词上限与数值禁令。
 - [x] **接线**：`generateBattleNote(config, battle, preset?, state?)` 多收一个存档参数（App 传 `latestState.current ?? state`），修复请求同样带上下文；`chatJson` 用 `{ state }` 作为宏上下文。
 - [x] 测试：新增 `tests/v53.test.ts` 五条（场地与时间、我方档案、敌方档案、契约与分区、拼装顺序）；28 个测试文件 472 项全绿，`tsc` 0 错，`check:rules` 通过。
+## v54 分区补齐与完整剧情提示词暴露
+
+- [x] **修迁移漏洞**：`PRESET_SCHEMA = 6`，`ensurePromptScopes` 对 schema ≥ 4 的预设只补缺失的 `SECTION_PROMPTS`（不重复加 `DEFAULT_PROMPTS` 里已有的），并同步写入 `promptOrder`；`builtinPresets()` 直接标最新 schema。v50 的城市新闻分区与 v53 的札记分区因此能在老预设里出现——之前运行时靠兜底注入，编辑器列表里看不到。
+- [x] **完整剧情分区**：新增 `arc-brief`（scope `arc`）：只写本场主角的故事、三段上限、选项要分岔、tone / expression 规则、不写数值，并说明「这一次是写章节 / 开场白 / 续写」看数据段。
+- [x] **三份契约**：`arcContract(targets)` / `arcOpeningContract()` / `arcTurnContract()` 保留 JSON 骨架、段落与台词数量、字数与 bond 上限等硬性要求；三处调用点改成「数据段 + 契约」，开场与续写不再互相污染。
+- [x] 测试：新增 `tests/v54.test.ts` 四条（schema 5 → 6 补装分区与 promptOrder、默认词条里两块分区在、三份契约、拼装顺序与互不污染）；29 个测试文件 476 项全绿，`tsc` 0 错，`check:rules` 通过。

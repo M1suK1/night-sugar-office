@@ -137,6 +137,8 @@ export interface PresetRuntime {
   api?: PresetApi;
 }
 
+/** 词条结构版本：每加一批默认可编辑的分区就 +1，读档时按版本补齐。 */
+export const PRESET_SCHEMA = 6;
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
 /** 一次性把旧的三档/共用副本拆成每个任务一份的标记；v2 补上战斗札记。 */
@@ -335,19 +337,19 @@ export function builtinPresets(): ChatPreset[] {
   const stamp = '2026-01-01T00:00:00.000Z';
   return [
     {
-      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
+      id: 'builtin-balanced', name: '均衡叙事', description: '默认选项：温度略高，适合日常对话与叙事提案。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: PRESET_SCHEMA,
       settings: { temp_openai: 0.85, top_p_openai: 0.95, openai_max_tokens: 8000, openai_max_context: 12000, pres_pen_openai: 0.2, freq_pen_openai: 0.2, main: '', jailbreak: '' },
       prompts: defaultPromptCopies(),
     },
     {
-      id: 'builtin-strict', name: '严格 JSON', description: '低温、结构化输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
+      id: 'builtin-strict', name: '严格 JSON', description: '低温、结构化输出，给每日提案与角色起草用。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: PRESET_SCHEMA,
       settings: { temp_openai: 0.35, top_p_openai: 0.8, openai_max_tokens: 10000, openai_max_context: 12000, pres_pen_openai: 0, freq_pen_openai: 0, main: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。', jailbreak: '' },
       prompts: defaultPromptCopies([
         { id: 'json', name: 'JSON 约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '只输出合法的 JSON 对象，不要 Markdown、不要解释、不要在 JSON 前后加任何文字。' },
       ]),
     },
     {
-      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: 4,
+      id: 'builtin-restrained', name: '克制夜谈', description: '更冷、更慢的对话：压低温度，附一段语气约束。', createdAt: stamp, updatedAt: stamp, builtin: true, schema: PRESET_SCHEMA,
       settings: { temp_openai: 0.65, top_p_openai: 0.9, openai_max_tokens: 6000, openai_max_context: 9000, pres_pen_openai: 0.1, freq_pen_openai: 0.35, main: '', jailbreak: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
       prompts: defaultPromptCopies([
         { id: 'restraint', name: '克制约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
@@ -358,24 +360,24 @@ export function builtinPresets(): ChatPreset[] {
 
 /**
  * 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。
- * schema 2 补齐全部任务词条；schema 3 只补战斗札记；schema 4 不再改动；
- * schema 5 补齐 v49 的结构分区（只补缺、不动已有的同 id 词条）。
+ * schema 2 补齐全部任务词条；3 只补战斗札记；4/5 只补结构分区；6 起每加一批分区都会按版本补齐。
  */
 export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   const schema = preset.schema ?? 2;
-  if (schema >= 5) return preset;
+  if (schema >= PRESET_SCHEMA) return preset;
   const prompts = presetPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
   const ids = new Set(prompts.map(entry => entry.id));
+  // 4 以后只补「结构分区」：v50 的新闻分区、v53 的札记分区都是这样补进来的。
   const wanted = schema <= 2
     ? DEFAULT_PROMPTS
     : schema === 3
-      ? DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle')
-      : DEFAULT_PROMPTS.filter(entry => SECTION_PROMPTS.some(section => section.id === entry.id));
+      ? [...DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle'), ...SECTION_PROMPTS]
+      : SECTION_PROMPTS;
   const added = wanted.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
   const all = [...prompts, ...added];
   const order = (preset.promptOrder ?? prompts.map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
     .concat(added.map(entry => ({ identifier: entry.id, enabled: entry.enabled })));
-  return { ...preset, schema: 5, prompts: all, promptOrder: order };
+  return { ...preset, schema: PRESET_SCHEMA, prompts: all, promptOrder: order };
 }
 
 function sanitizePreset(raw: unknown): ChatPreset | null {

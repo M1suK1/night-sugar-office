@@ -227,6 +227,13 @@ ${OOC_GUARD}`),
 - 每条 30–80 字，像深夜电台的短讯；可以引用一处具体地点、一个时间、一个正在发生的小动作。
 - 只写城市此刻的状态与别人的反应，不要替所长做决定，不要写成议会提案或委托简报。
 - 不编造名单外的人与不存在的辖区；污染与敌意的数值必须和上面的读数一致。`),
+  section('arc-brief', 'arc', '剧情·这一幕的写法', `【这一幕的写法】
+- 只写本场主角自己的故事：其他契约少女可以出场当同事、对手或见证者，但亲密与告白只能落在她身上，不要替别人推进关系。
+- 这条故事线最多三段；同一个人第二、三段要接住上一段留下的东西，别当作全新开场。
+- 选项之间要能走向不同的结局，别让所有选择都汇到同一个收尾；每条选项写清「这一步意味着什么」。
+- speaker 只能是角色名或「你」；tone 用「轻声」「停顿」「笑」这类表演提示；expression 只能取 calm / smile / surprise / sad / angry / shy。
+- 用动作、环境与停顿推进，不写数值、伤害、技能名与回合数，也不替玩家决定。
+- 这是「写一段剧情 / 写开场白 / 接着写下一轮」三种请求共用的口径：这一次要写哪一种，看下面数据段里的【这一次】。`),
   section('bt-brief', 'battle', '札记·这一战的现场', `【场地】
 {{battlePlace}}
 
@@ -268,6 +275,36 @@ ${OOC_GUARD}`),
 ];
 
 export const SECTION_IDS = SECTION_PROMPTS.map(entry => entry.id);
+
+/** 完整剧情的锁定契约：JSON 骨架、段落与选项数量、数值上限。 */
+export function arcContract(targets: string): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"title":"","hook":"","summary":"","passages":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}],"choices":[{"label":"","intent":"","effect":{"bond":2}}]}]}',
+    `篇幅：${targets}；summary 用 60–120 字概括这一段剧情。`,
+    'effect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6。',
+  ].join('\n');
+}
+
+/** 交互式开场的锁定契约。 */
+export function arcOpeningContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
+    '{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""]}',
+    'narration 250–350 字；lines 2–5 句，speakerId 只能取在场的人或 player；options 恰好 3 条，每条不超过 24 字、用「你……」开头。',
+    '不要写数值与技能名。',
+  ].join('\n');
+}
+
+/** 交互式续写的锁定契约。 */
+export function arcTurnContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
+    '{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}',
+    'narration 900–3000 字；lines 2–8 句，speakerId 只能取在场的人或 player；options 恰好 3 条、每条不超过 24 字、用「你……」开头。',
+    'bond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；player 的台词只能来自所长这一次的行动，不要替他编新话。',
+  ].join('\n');
+}
 
 /** 战斗札记的锁定契约：JSON 骨架、台词上限与「不写数值」的硬规则。 */
 export function battleContract(): string {

@@ -1623,13 +1623,14 @@ const ARC_TARGETS = '至少 4 段，每段旁白 260–520 字、2–4 行对话
 export async function generateStoryArc(config: LlmConfig, girl: Girl, input: StoryArcInput, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedStoryArc } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `${input.storylineTitle ? `故事线：${input.storylineTitle}${input.premise ? `——${input.premise}` : ''}` : ''}
-${input.beatTitle ? `这一幕：${input.beatTitle}${input.beatHook ? `——${input.beatHook}` : ''}` : ''}
-${input.memory ? `前情（必须与之一致，不要重复原文）：${input.memory.slice(0, 1600)}` : ''}
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","hook":"","summary":"","passages":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}],"choices":[{"label":"","intent":"","effect":{"bond":2}}]}]}
-要求：${ARC_TARGETS}；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」这类表演提示；effect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6；summary 用 60–120 字概括这一段剧情。
-边界：只写${girl.name}自己的故事；其他契约少女可以出场当同事、对手或见证者，但亲密与告白只能发生在她身上，不要替别人推进关系。这条故事线最多三段，同一个人第二、三段要接住上一段留下的东西；选项之间要能走向不同的结局，别让所有选择都汇到同一个收尾。`;
+  // v54：写法要求在预设的「剧情·这一幕的写法」分区里，代码只留数据段与锁定契约。
+  const body = [
+    input.storylineTitle ? `故事线：${input.storylineTitle}${input.premise ? `——${input.premise}` : ''}` : '',
+    input.beatTitle ? `这一幕：${input.beatTitle}${input.beatHook ? `——${input.beatHook}` : ''}` : '',
+    input.memory ? `前情（必须与之一致，不要重复原文）：${input.memory.slice(0, 1600)}` : '',
+    '【这一次】写这一段剧情的完整章节，不是开场白、也不是续写。',
+    arcContract(ARC_TARGETS),
+  ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', body, `请写下${girl.name}的这段剧情。`, ['共用词条 + 完整剧情词条 + 结构契约', `角色：${girl.name}`, '前情与这一幕'], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
@@ -1737,14 +1738,15 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
     return girl ? storyCastBrief(girl) : person.name;
   }).join('\n');
-  const body = `【这一段剧情】${event.title}
-${event.hook ? `引子：${event.hook}` : ''}
-【在场的人】
-${briefs || '只有她和你'}
-【你】所长（player），用「你」称呼，可以是说话人。
-只输出一个 JSON 对象，不要 Markdown：
-{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""]}
-要求：narration 250–350 字，写地点、光线、她在做什么、把话头留给你，不要替玩家决定；lines 2–5 句，speakerId 只能取上面的人或 player；options 给 3 条你的第一步参考行动，每条不超过 24 字、用「你……」开头；不要写数值与技能名。`;
+  const body = [
+    `【这一段剧情】${event.title}`,
+    event.hook ? `引子：${event.hook}` : '',
+    '【在场的人】',
+    briefs || '只有她和你',
+    '【你】所长（player），用「你」称呼，可以是说话人。',
+    '【这一次】写这一幕的开场白，把话头留给所长。',
+    arcOpeningContract(),
+  ].filter(Boolean).join('\n');
   const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
   const result = await callJson(config, preset, 'arc', body, '请写下这段剧情的开场白。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook, story: event.title,
@@ -1785,22 +1787,19 @@ export async function generateStoryTurn(
   const turns = event.turns ?? [];
   const history = storyHistory(turns);
   const playerLine = action.trim().slice(0, 300);
-  const body = `【这一段剧情】${event.title}
-${event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : ''}
-【在场的人】
-${briefs || '只有她和你'}
-【此前的对话】
-${history || '（这是第一轮）'}
-【所长这一次的行动】
-${playerLine}
-${options.rewrite ? '【要求】把上一轮的旁白与台词换一种写法重写：同样的局面、同样的结果，但换动作、换角度、换她说话的方式。不要复述原文句式。' : ''}
-只输出一个 JSON 对象，不要 Markdown：
-{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}
-要求：
-- narration 900–3000 字，写她与环境的反应、动作细节、气氛变化；不要替玩家做决定，也不要写玩家没做过的动作。
-- lines 2–8 句，speakerId 只能取上面的人或 player；player 的台词只能来自所长这一句行动，不要替他编新话；expression 用六种之一。
-- options 给 3 条下一轮的参考行动，每条不超过 24 字，用「你……」开头；玩家也可以不选，自己写。
-- bond 只能是 -2 到 2 的整数，表示这一轮对羁绊的影响；不要写其他数值、伤害、技能名。`;
+  const body = [
+    `【这一段剧情】${event.title}`,
+    event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : '',
+    '【在场的人】',
+    briefs || '只有她和你',
+    '【此前的对话】',
+    history || '（这是第一轮）',
+    '【所长这一次的行动】',
+    playerLine,
+    options.rewrite ? '【要求】把上一轮的旁白与台词换一种写法重写：同样的局面、同样的结果，但换动作、换角度、换她说话的方式。不要复述原文句式。' : '',
+    '【这一次】接着写下一轮，不要重写开场。',
+    arcTurnContract(),
+  ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', body, '请接着写下一轮。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
     char: briefs, personality: '', scenario: event.hook ?? '', story: event.title,
   });
@@ -2063,7 +2062,7 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { battleContract, newsContract, storylineContract } from './promptSections.ts';
+import { arcContract, arcOpeningContract, arcTurnContract, battleContract, newsContract, storylineContract } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

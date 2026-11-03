@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/game.ts';
-import { DEFAULT_PROMPTS, composeTaskSystem, ensurePromptScopes, presetPrompts, presetRuntime, promptHasMechanicBan, promptTokens, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PROMPTS, PRESET_SCHEMA, composeTaskSystem, ensurePromptScopes, presetPrompts, presetRuntime, promptHasMechanicBan, promptTokens, type ChatPreset } from '../src/presets.ts';
 import { SECTION_PROMPTS, STORY_LIMITS, storylineContract } from '../src/promptSections.ts';
 import { MACRO_GROUPS, resolveMacros } from '../src/promptMacros.ts';
 import { battleHistoryText, chatHistoryText, dossierOf, missionHistoryText, storylineHistoryText } from '../src/girlDossier.ts';
@@ -14,24 +14,24 @@ function withRuntime(entries = DEFAULT_PROMPTS) {
   return { ...presetRuntime(undefined), entries };
 }
 
-test('v49 分区：十五条新词条都在默认词条里，且不会误报「禁止数值」', () => {
-  assert.equal(SECTION_PROMPTS.length, 15);
+test('v49 分区：十六条新词条都在默认词条里，且不会误报「禁止数值」', () => {
+  assert.equal(SECTION_PROMPTS.length, 16);
   for (const section of SECTION_PROMPTS) {
     const found = DEFAULT_PROMPTS.find(entry => entry.id === section.id);
     assert.ok(found, `缺少分区 ${section.id}`);
     assert.equal(found?.scope, section.scope);
     assert.equal(promptHasMechanicBan(section.content), false, `${section.id} 被误判成禁止数值`);
   }
-  assert.equal(DEFAULT_PROMPTS.length, 30);
+  assert.equal(DEFAULT_PROMPTS.length, 31);
 });
 
-test('v49 迁移：旧预设补到 schema 5，只补缺、不覆盖同 id 的自定义词条', () => {
+test('v49 迁移：旧预设补到最新 schema，只补缺、不覆盖同 id 的自定义词条', () => {
   const preset: ChatPreset = {
     id: 'custom', name: '老预设', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', schema: 4,
     settings: {}, prompts: [{ id: 'sl-ports', name: '我改过的连线', content: '只走 out。', role: 'system', enabled: true, scope: 'storyline' }],
   };
   const migrated = ensurePromptScopes(preset);
-  assert.equal(migrated.schema, 5);
+  assert.equal(migrated.schema, PRESET_SCHEMA);
   assert.equal(migrated.prompts?.find(entry => entry.id === 'sl-ports')?.content, '只走 out。');
   const ids = presetPrompts(migrated).map(entry => entry.id);
   for (const section of SECTION_PROMPTS) assert.ok(ids.includes(section.id), `没补上 ${section.id}`);
