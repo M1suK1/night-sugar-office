@@ -124,7 +124,7 @@ export function loadState(raw: string | null): GameState {
       .filter(record => record && HOSTILITY_PAIRS.includes(record.pair) && Number.isFinite(record.day))
       .slice(-40);
     state.girls = state.girls.map(girl => hydrate(girl));
-    state.candidates = Array.isArray(state.candidates) ? state.candidates.map(girl => hydrate(girl)).slice(0, Math.max(6, state.poolLimits?.candidates ?? 20)) : [];
+    state.candidates = Array.isArray(state.candidates) ? state.candidates.map(girl => hydrate(girl)).slice(0, Math.max(6, state.poolLimits?.candidates ?? 30)) : [];
     state.whisperQueue = Array.isArray(state.whisperQueue) ? state.whisperQueue.filter(job => job && typeof job.id === 'string' && typeof job.girlId === 'string').slice(0, 12) : [];
     state.missionRuns = Array.isArray(state.missionRuns)
       ? state.missionRuns.filter(run => run && typeof run.id === 'string' && Array.isArray(run.girlIds) && Number.isFinite(run.day)).slice(0, 120)
@@ -187,8 +187,8 @@ export function loadState(raw: string | null): GameState {
     if (previousVersion < 18) migrateTierFields(state);
     // v27：市场池改由卡库补货，容量抬到 20，装得下开局那批卡；之后仍可在设置里调。
     if (previousVersion < 20) {
-      state.poolLimits ??= { missions: 140, monsters: 50, candidates: 20, combatMissions: 120, investigationMissions: 20 };
-      state.poolLimits.candidates = Math.max(state.poolLimits.candidates, 20);
+      state.poolLimits ??= { missions: 140, monsters: 50, candidates: 30, combatMissions: 120, investigationMissions: 20 };
+      state.poolLimits.candidates = Math.max(state.poolLimits.candidates, 30);
     }
     // v38：委托池固定 12 条，做完/超时由模板补回；不再用编号副本凑数。
     state.poolLimits.missions = 12;
@@ -251,9 +251,11 @@ export function loadState(raw: string | null): GameState {
     state.nextBossDay = firstCycle ? Math.max(Number(state.nextBossDay) || 0, FIRST_BOSS_DAY) : (Number(state.nextBossDay) || state.day + 2);
     state.customSkills ??= [];
     state.customMonsters ??= [];
-    state.poolLimits ??= { missions: 140, monsters: 50, candidates: 20, combatMissions: 120, investigationMissions: 20 };
+    state.poolLimits ??= { missions: 140, monsters: 50, candidates: 30, combatMissions: 120, investigationMissions: 20 };
     state.poolLimits.combatMissions ??= 120;
     state.poolLimits.investigationMissions ??= 20;
+    // v98：候选池上限提到 30，开局选人池才摆得满；老档里存着 20 的也一并抬上来。
+    state.poolLimits.candidates = Math.max(state.poolLimits.candidates, 30);
     state.removedMonsters ??= [];
     state.chronicle = Array.isArray(state.chronicle)
       ? state.chronicle.filter((entry): entry is ChronicleEntry => Boolean(entry) && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && Number.isFinite(entry.day)).slice(0, 200)

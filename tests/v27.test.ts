@@ -34,18 +34,18 @@ function importedCards(count: number): { state: GameState; cards: GirlCard[]; bo
   return { state: result.state, cards, box: cards.map((card, index) => entryOf(card, 1000 + index)) };
 }
 
-test('v27 新档 version 20，市场池容量 20', () => {
+test('v27 新档 version 20，市场池容量 30（v98 起与开局选人池同宽）', () => {
   const state = base();
   assert.equal(state.version, 20);
-  assert.equal(state.poolLimits.candidates, 20);
-  assert.equal(createBlankState().poolLimits.candidates, 20);
+  assert.equal(state.poolLimits.candidates, 30);
+  assert.equal(createBlankState().poolLimits.candidates, 30);
 });
 
-test('v27 老档迁移：低于 20 的市场池抬到 20，已经更大的不动', () => {
+test('v27 老档迁移：低于 30 的市场池抬到 30，已经更大的不动', () => {
   const legacy = base();
   legacy.version = 19;
   legacy.poolLimits = { ...legacy.poolLimits, candidates: 6 };
-  assert.equal(loadState(JSON.stringify(legacy)).poolLimits.candidates, 20);
+  assert.equal(loadState(JSON.stringify(legacy)).poolLimits.candidates, 30);
 
   const roomy = base();
   roomy.version = 19;
