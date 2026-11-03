@@ -725,3 +725,11 @@
 - [x] **根因二（洗不出内容就删整块）**：`applySetCityNews` 原来在 `sanitizeCityNews` 返回 undefined 时 `delete next.cityNews`；模型偶尔给出半截条目就直接把播报删掉。现在只有显式传 `null` 才清空，洗不出来时返回 `ok:false` 并保留上一条。
 - [x] **界面兜底**：新闻开关开着时这块就一直渲染，没有条目时显示「今晚的播报还在写」与一行占位，不再出现「先出现再消失」；第一夜重播开场前也比对标题与正文，避免同一条被反复写。
 - [x] 测试：`tests/v50.test.ts` 的存取用例改为断言「洗不出来时保留旧播报、只有 null 才清空」；29 个测试文件 476 项全绿，`tsc` 0 错。
+## 修：突发事件「模型没有给出可用的事件条目」
+
+- [x] **根因**：`incident` 没有自己的输出预算，跟着统一值 2048 走，三条带选项的事件写不完 → 回复被 `length` 截断；`extractJsonObject` 在括号没闭合时会继续往里找 `{`，于是把**第一个选项对象**当成整份 JSON 返回，`raw.entries` 自然不存在，最终报「没有给出可用的事件条目」。
+- [x] `extractJsonObject`：外层没闭合就只试剩下的尾巴，失败即判定「这次没给出 JSON」，不再滑进内层对象。
+- [x] `chatJson`：识别到 `finish_reason: length` 就重试，**即使勉强解析出了对象**也重来；上一次被截断的结果不再当兜底，避免把半截数据交给调用方。
+- [x] 预算：`DEFAULT_TASK_BUDGETS.incident = 3000`，批量事件调用再给 `tokenFloor 3000`（用户存的统一预算 / 预设额度偏低时也能拿到够用的额度）。
+- [x] `incidentEntriesFrom`：容忍 `entries` / `incidents` / `items` / `events` / `data.*` 与「只给一条对象」的壳子，非对象条目丢掉。
+- [x] 测试：新增 `tests/v55.test.ts`（截断不再返回半截、换壳子都能取到、突发事件预算 3000）；30 个文件 479 项全绿，`tsc` 与 `check:rules` 均通过。

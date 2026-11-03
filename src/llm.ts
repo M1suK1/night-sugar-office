@@ -510,7 +510,7 @@ export interface LlmBudget {
 }
 const BUDGET_KEY = 'night-sugar:llm-budget';
 /** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
-export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, storyline: 3000, whisper: 1200 };
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, incident: 3000, storyline: 3000, whisper: 1200 };
 
 function clampBudget(value: unknown, fallback: number): number {
   const num = Math.round(Number(value));
@@ -999,15 +999,15 @@ function parseJsonObject(candidate: string): Record<string, unknown> | null {
  * 模型常会先说一句、包一层代码块，或者把同一个对象写两遍；这里按「配对括号」逐个候选试，
  * 而不是从第一个 { 直接切到最后一个 }——那会把两段 JSON 连同中间的说明一起交给 JSON.parse。
  */
-function extractJsonObject(text: string): Record<string, unknown> | null {
+export function extractJsonObject(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```(?:json)?/gi, '').replace(/^\uFEFF/, '').trim();
   for (let start = cleaned.indexOf('{'); start >= 0; start = cleaned.indexOf('{', start + 1)) {
     const end = matchBrace(cleaned, start);
     if (end < 0) {
-      // 括号没闭合，多半是被 length 截断了：把剩下的都交给解析器试一次，失败就继续找下一个 {
-      const tail = parseJsonObject(cleaned.slice(start));
-      if (tail) return tail;
-      continue;
+      // 括号没闭合，多半是被 length 截断了：把剩下的都交给解析器试一次，失败就当这次没给出 JSON。
+      // 这里不能继续往内层找 {——截断的回复里内层的选项对象是完整的，
+      // 滑过去就会返回一个语法合法、内容残缺的对象（表现成「没有给出可用的条目」）。
+      return parseJsonObject(cleaned.slice(start));
     }
     const parsed = parseJsonObject(cleaned.slice(start, end + 1));
     if (parsed) return parsed;
@@ -1065,13 +1065,17 @@ async function chatJson(
   let attempts = 1;
   let truncated = Boolean(result.ok && result.finish === 'length');
   const budget = params.maxTokens ?? DEFAULT_TOKEN_BUDGET;
-  if (!raw && result.ok && (truncated || !result.text.trim()) && budget < RETRY_TOKEN_CEILING) {
+  if (result.ok && (truncated || !raw) && budget < RETRY_TOKEN_CEILING) {
+    const firstRaw = raw;
+    const firstTruncated = truncated;
     attempts = 2;
     params = { ...params, maxTokens: Math.min(32768, Math.max(DEFAULT_TOKEN_BUDGET, budget * 2)) };
     messages = [...messages, { role: 'user', content: JSON_RETRY_MESSAGE }];
     result = await chat(cfg, messages, { params });
     captureCall(meta, messages, labels, cfg, params, result);
-    raw = result.ok ? extractJsonObject(result.text) : null;
+    const retryRaw = result.ok ? extractJsonObject(result.text) : null;
+    // 上一次是被截断的就别拿它兜底：那半截数据交给调用方只会变成更难懂的报错。
+    raw = retryRaw ?? (firstTruncated ? null : firstRaw);
     truncated = Boolean(result.ok && result.finish === 'length');
   }
   return { result, raw, maxTokens: params.maxTokens, truncated, attempts };
@@ -1263,9 +1267,9 @@ function parseIncidentEffect(raw: unknown): IncidentEffect {
 }
 
 async function callJson(
-  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>, ctx: MacroContext = {},
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>, ctx: MacroContext = {}, tokenFloor = 0,
 ): Promise<{ ok: true; raw: Record<string, unknown> } | { ok: false; message: string }> {
-  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra, 0, ctx);
+  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra, tokenFloor, ctx);
   if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('', outcome) };
   return { ok: true, raw: outcome.raw };
@@ -2088,6 +2092,27 @@ export function promptVars(extra: Record<string, string | undefined> = {}): Reco
  * 一次调用补一批还没摆上桌的弹窗（v20 §2）。
  * 只产出“条目”，进待用池由 game 侧洗数据、夹上限。
  */
+/** 批量事件的回复常换壳子：entries / incidents / items / events / data.entries，偶尔干脆只给一条对象。 */
+export function incidentEntriesFrom(raw: Record<string, unknown> | null | undefined): Record<string, unknown>[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const keys = ['entries', 'incidents', 'items', 'events', 'list'];
+  const found: unknown[] = [];
+  const take = (box: Record<string, unknown>) => {
+    for (const key of keys) {
+      const value = box[key];
+      if (Array.isArray(value)) found.push(...value);
+    }
+  };
+  take(raw);
+  const data = raw.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) take(data as Record<string, unknown>);
+  const objects = found.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  if (objects.length) return objects;
+  // 没给数组：raw 本身像不像一条事件
+  if (typeof raw.category === 'string' && (typeof raw.title === 'string' || typeof raw.body === 'string')) return [raw];
+  return [];
+}
+
 export async function generateIncidentBatch(config: LlmConfig, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: { entries: unknown[] } } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
@@ -2102,15 +2127,14 @@ export async function generateIncidentBatch(config: LlmConfig, state: GameState,
 要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。title 2–14 字，body 30–120 字，写出具体的人、地点与时间压力；数值幅度克制（gold 不超过 800，reputation 不超过 ±4，faction.standing 不超过 ±4）。不要出现需要额外数值系统的效果。`;
   const result = await callJson(config, preset, 'incident', body, '请把这几件事攒下来，留给以后的夜晚。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，补充待用事件池`,
-  });
+  }, undefined, 3000);
   if (!result.ok) {
     recordLlmLog({ kind: '突发事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
-  const raw = result.raw;
-  const entries = Array.isArray(raw.entries) ? raw.entries.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 3) : [];
+  const entries = incidentEntriesFrom(result.raw).slice(0, 3);
   if (entries.length === 0) {
-    const message = '模型没有给出可用的事件条目。';
+    const message = '模型没有给出可用的事件条目（回复里既没有条目数组，也不像单条事件）。';
     recordLlmLog({ kind: '突发事件', ok: false, model: config.model.trim(), status: statusOf(message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
