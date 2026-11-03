@@ -37,7 +37,7 @@ import { yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
 import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
-import { localCityNews, newsIsStale } from './cityNews';
+import { localCityNews, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
 import { loadBalance } from './balance';
 import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './research';
 import { activePersonality } from './personality';
@@ -284,6 +284,10 @@ export default function App() {
     void generateContent('auto');
   }, [state.day, autoGenerate, loaded]);
   const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual') => {
+    if ((latestState.current ?? state).day <= OPENING_NEWS_DAY) {
+      perform({ type: 'setCityNews', news: openingCityNews() });
+      return;
+    }
     if (newsBusyRef.current) return;
     if (loadBalance().cityNewsEnabled !== 1) {
       if (mode === 'manual') notify('城市新闻已在「世界书 → 数值」里关掉了。', false);
@@ -307,6 +311,11 @@ export default function App() {
   };
   useEffect(() => {
     if (!loaded) return;
+    // 接手的第一夜固定播开场那一条，不请叙事者；旧档在这一天缺播报时也补上。
+    if (state.day <= OPENING_NEWS_DAY) {
+      if (!state.cityNews) void refreshCityNews('auto');
+      return;
+    }
     if (loadBalance().cityNewsEnabled !== 1) return;
     if (!newsIsStale(state.cityNews, state.day)) return;
     void refreshCityNews('auto');

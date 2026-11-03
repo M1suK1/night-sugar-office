@@ -5,7 +5,10 @@ import { FACTION_ORDER } from './territories.ts';
 import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel } from './hostility.ts';
 import { pollutionTierLabel } from './pollution.ts';
 
-export const CITY_NEWS_ITEMS = 4;
+export const CITY_NEWS_MAX = 3;
+export const CITY_NEWS_MIN = 1;
+/** 玩家接手的第一夜：不请叙事者，只播这一条。 */
+export const OPENING_NEWS_DAY = 14;
 
 const TONES: CityNewsItem['tone'][] = ['faction', 'pollution', 'stability', 'street'];
 
@@ -19,7 +22,7 @@ export function sanitizeCityNews(raw: unknown, day: number): CityNews | undefine
   if (!raw || typeof raw !== 'object') return undefined;
   const value = raw as Record<string, unknown>;
   const itemsRaw = Array.isArray(value.items) ? value.items : [];
-  const items: CityNewsItem[] = itemsRaw.slice(0, CITY_NEWS_ITEMS).flatMap(item => {
+  const items: CityNewsItem[] = itemsRaw.slice(0, CITY_NEWS_MAX).flatMap(item => {
     if (!item || typeof item !== 'object') return [];
     const entry = item as Record<string, unknown>;
     const text = typeof entry.text === 'string' ? clip(entry.text, 90) : '';
@@ -88,12 +91,27 @@ export function localCityNews(state: GameState, day = state.day): CityNews {
     day,
     generatedAt: new Date().toISOString(),
     headline: `${day} 日 · 夜色照样会准时到站`,
-    items: items.slice(0, CITY_NEWS_ITEMS),
+    items: items.slice(0, CITY_NEWS_MAX),
     source: 'rule',
   };
 }
 
-/** 今天的播报有没有过期（换了业务日就要重写）。 */
+/** 玩家接手的第一夜：不生成，只播这一条。 */
+export function openingCityNews(day = OPENING_NEWS_DAY): CityNews {
+  return {
+    day,
+    generatedAt: new Date().toISOString(),
+    headline: '夜糖事务所，今夜重新开张',
+    items: [{
+      tone: 'street',
+      text: '你继承了事务所——它在多年沉寂后重新开张。今夜明灯已亮，城市是否会在你的领导下变得更好？',
+    }],
+    source: 'rule',
+  };
+}
+
+/** 今天的播报有没有过期（换了业务日就要重写；第一夜固定用开场那一条）。 */
 export function newsIsStale(news: CityNews | undefined, day: number): boolean {
+  if (day <= OPENING_NEWS_DAY) return false;
   return !news || news.day !== day || !news.items.length;
 }

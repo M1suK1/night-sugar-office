@@ -688,4 +688,6 @@
 - [x] **生成任务**：`generateCityNews()` 走新 scope `news`（预设词条「城市新闻」+ 分区 `nw-brief` + 锁定契约 `newsContract()`），提示词里的城市数据全部来自 `{{night}}` / `{{factions}}` / `{{districts}}` / `{{hostility}}` / `{{council}}`；输出额度默认 1200；`LLM_BUDGET_TASKS` / `PROMPT_TASK_SCOPES` / `DEFAULT_PRESET_BINDING` / 设置页用途入口都补上这一档。
 - [x] **派遣页**：`PageHeading` 右侧新增 `.heading-side`，装「城市播报」卡与原来的夜班徽标；卡上有标题、来源（叙事者 / 本地快讯）、4 条带色点的短讯与「刷新」按钮；窄屏自动堆到标题下方。
 - [x] **自动生成**：换日时若开关开着且播报过期，先试叙事者，失败或没 Key 就用本地快讯落库；刷新按钮同一入口，失败时给出提示。
-- [x] 测试：新增 `tests/v50.test.ts` 六条（开关与夹取、本地快讯内容、清洗规则、过期判定、存取与清空、预设档位齐全）；26 个测试文件 462 项全绿，`tsc` 0 错，`check:rules` 通过。
+- [x] **每天 1–3 条**：契约、分区写法与清洗上限统一成 3 条（`CITY_NEWS_MAX`），本地快讯同样截到 3 条，只有标题没有条目的播报当作没生成。
+- [x] **第一夜用开场那一条**：`OPENING_NEWS_DAY = 14`，`openingCityNews()` 给出「你继承了事务所——它在多年沉寂后重新开张……」，新档开局即带这条；`newsIsStale` 在第一夜恒为 false，`refreshCityNews` 在第一天只补开场、不请求模型。
+- [x] 测试：新增 `tests/v50.test.ts` 八条（开关与夹取、本地快讯内容、第一夜开场、1–3 条上限、清洗规则、过期判定、存取与清空、预设档位齐全）；26 个测试文件 464 项全绿，`tsc` 0 错，`check:rules` 通过。

@@ -222,7 +222,7 @@ ${OOC_GUARD}`),
 {{council}}
 
 【写法】
-- 3–4 条，一条只讲一件事：势力动向、辖区污染、城市安定度、街头小事各挑着写。
+- 1–3 条，一条只讲一件事：势力动向、辖区污染、城市安定度、街头小事各挑着写。
 - 每条 30–80 字，像深夜电台的短讯；可以引用一处具体地点、一个时间、一个正在发生的小动作。
 - 只写城市此刻的状态与别人的反应，不要替所长做决定，不要写成议会提案或委托简报。
 - 不编造名单外的人与不存在的辖区；污染与敌意的数值必须和上面的读数一致。`),
@@ -247,7 +247,7 @@ export function newsContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
     '{"headline":"不超过 20 字的标题","items":[{"text":"一条播报","tone":"faction|pollution|stability|street"}]}',
-    'items 给 3–4 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。',
+    'items 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。',
   ].join('\n');
 }
 

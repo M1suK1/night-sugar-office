@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, sanitizeBalance } from '../src/balance.ts';
-import { localCityNews, newsIsStale, sanitizeCityNews } from '../src/cityNews.ts';
+import { localCityNews, newsIsStale, openingCityNews, sanitizeCityNews, OPENING_NEWS_DAY, CITY_NEWS_MAX } from '../src/cityNews.ts';
 import { districts } from '../src/districts.ts';
 import { DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES } from '../src/presets.ts';
 import { SECTION_PROMPTS, newsContract } from '../src/promptSections.ts';
@@ -39,6 +39,35 @@ test('v50 本地快讯：只讲当前存档里真的发生的事', () => {
   assert.ok(stabilityLine?.text.includes('宵禁') || stabilityLine?.text.includes('告示'), '低安定度要写出城市的反应');
 });
 
+test('v50 第一夜：不生成，只用开场那一条', () => {
+  const opening = openingCityNews();
+  assert.equal(opening.day, OPENING_NEWS_DAY);
+  assert.equal(opening.items.length, 1);
+  assert.ok(opening.headline.includes('重新开张'));
+  assert.ok(opening.items[0]!.text.includes('继承'));
+  assert.ok(opening.items[0]!.text.includes('明灯已亮'));
+  assert.equal(newsIsStale(undefined, OPENING_NEWS_DAY), false, '第一夜没有播报也不算过期，直接补开场');
+  assert.equal(newsIsStale(opening, OPENING_NEWS_DAY), false);
+  assert.equal(newsIsStale(undefined, OPENING_NEWS_DAY + 1), true, '第二天起才需要生成');
+  const seeded = createInitialState();
+  assert.ok(seeded.cityNews, '新档一开局就该有开场播报');
+  assert.equal(seeded.cityNews?.items.length, 1);
+});
+
+test('v50 每条播报 1–3 条：多了截掉，少了也照常', () => {
+  const five = sanitizeCityNews({
+    headline: '五条',
+    items: Array.from({ length: 5 }, (_, index) => ({ text: `第 ${index + 1} 条`, tone: 'street' })),
+  }, 20);
+  assert.equal(five?.items.length, CITY_NEWS_MAX);
+  assert.equal(CITY_NEWS_MAX, 3);
+  const one = sanitizeCityNews({ headline: '一条', items: [{ text: '只有这一条。', tone: 'faction' }] }, 20);
+  assert.equal(one?.items.length, 1);
+  const state = createInitialState();
+  const local = localCityNews(state);
+  assert.ok(local.items.length <= CITY_NEWS_MAX && local.items.length >= 1);
+});
+
 test('v50 播报清洗：坏条目丢掉、空 tone 回落街头、没有内容就整条不留', () => {
   const clean = sanitizeCityNews({
     headline: '超长标题'.repeat(10),
@@ -60,16 +89,16 @@ test('v50 播报清洗：坏条目丢掉、空 tone 回落街头、没有内容�
 
 test('v50 换日就要重写：当日不算过期，隔夜或空播报算过期', () => {
   const state = createInitialState();
-  const news = localCityNews(state);
-  assert.equal(newsIsStale(news, state.day), false);
-  assert.equal(newsIsStale(news, state.day + 1), true);
-  assert.equal(newsIsStale(undefined, state.day), true);
-  assert.equal(newsIsStale({ ...news, items: [] }, state.day), true);
+  const news = { ...localCityNews(state), day: 20 };
+  assert.equal(newsIsStale(news, 20), false);
+  assert.equal(newsIsStale(news, 21), true);
+  assert.equal(newsIsStale(undefined, 20), true);
+  assert.equal(newsIsStale({ ...news, items: [] }, 20), true);
 });
 
 test('v50 播种报：存进存档、可清空，读档字段是可选的', () => {
   const state = createInitialState();
-  assert.equal(state.cityNews, undefined, '新档默认没有播报');
+  assert.equal(state.cityNews?.day, OPENING_NEWS_DAY, '新档带着开场播报');
   const news = localCityNews(state);
   const saved = act(state, { type: 'setCityNews', news });
   assert.equal(saved.ok, true);
