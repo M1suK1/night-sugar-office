@@ -16,3 +16,16 @@ export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean): 
   const generated = typeof state.generatedDay === 'number' ? state.generatedDay : state.day;
   return state.day > generated;
 }
+
+/**
+ * 读档时把「最近一次自动生成」的日号收口。
+ *
+ * 旧档没有这个字段：以前 shouldAutoGenerate 把缺字段当成「就是今天」，
+ * 于是那些存档永远不会自动补提案——无论过多少天。这里把它记成今天，
+ * 读档当下不生成，下一次换日照旧触发。
+ */
+export function normalizeGeneratedDay(day: number, value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return day;
+  return Math.max(1, Math.min(Math.round(day), Math.round(numeric)));
+}

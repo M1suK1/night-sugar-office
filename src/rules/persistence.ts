@@ -1,4 +1,5 @@
 import { bossTemplateOf } from '../content/bosses.ts';
+import { normalizeGeneratedDay } from '../autoGenerate.ts';
 import { sanitizeCityNews } from '../cityNews.ts';
 import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
 import { getItem, items, registerItem } from '../content/items.ts';
@@ -135,6 +136,8 @@ export function loadState(raw: string | null): GameState {
       ? state.notices.filter(notice => notice && typeof notice.id === 'string' && typeof notice.title === 'string').slice(0, 20)
       : [];
     for (const girl of state.girls) girl.unspentPoints = Math.max(0, Math.min(999, Number.isFinite(girl.unspentPoints) ? Number(girl.unspentPoints) : 0));
+    // v89：旧档没有 generatedDay 时记成今天，否则每日提案永远不会自动补。
+    state.generatedDay = normalizeGeneratedDay(state.day, state.generatedDay);
     state.whisperUnread = state.whisperUnread && typeof state.whisperUnread === 'object' ? state.whisperUnread : {};
     state.lastWhisperDay = state.lastWhisperDay && typeof state.lastWhisperDay === 'object' ? state.lastWhisperDay : {};
     state.truceUntil = state.truceUntil && typeof state.truceUntil === 'object' ? state.truceUntil : {};

@@ -304,6 +304,8 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
   useEffect(() => {
     if (!loaded) return;
+    // 存档里没有这个日号（旧档、或被读档清洗掉）：先补一个今天的值，不生成。
+    if (typeof state.generatedDay !== 'number') { setState(prev => ({ ...prev, generatedDay: prev.day })); return; }
     if (!shouldAutoGenerate(state, autoGenerate)) return;
     if (generatingRef.current || !llmHasKey()) return;
     // 先把「今天已经补过」记进存档，再发请求：失败也不会在读档时反复重放。
