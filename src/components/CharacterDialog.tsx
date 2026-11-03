@@ -487,7 +487,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                   <input id="dossier-voice-tone" maxLength={30} value={voiceToneDraft} placeholder="短句，先反问再回答"
                     onChange={event => setVoiceToneDraft(event.target.value)}
                     onBlur={() => { if (voiceToneDraft !== (girl.voice?.tone ?? '')) onProfileText?.('voiceTone', voiceToneDraft); }} />
-                  <small>{voiceToneDraft.length}/30</small>
+                  <small>{voiceToneDraft.length}/40</small>
                 </label>
                 <div className="text-pair">
                   <label className="text-panel">

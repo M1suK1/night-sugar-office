@@ -1,12 +1,14 @@
 import type { Girl, GirlVoice } from './types.ts';
 
 /** 语料各段的上限：进提示词，所以要短。 */
-export const VOICE_TONE_MAX = 30;
-export const VOICE_HABIT_MAX = 18;
-export const VOICE_SAMPLE_MAX = 40;
+export const VOICE_TONE_MAX = 40;
+/** 一条口头习惯本来就要说完一句话（自称 + 语气 + 回避什么），18 字会把它砍在半句上。 */
+export const VOICE_HABIT_MAX = 60;
+/** 例话是她说出口的一整句，按 80 字放行。 */
+export const VOICE_SAMPLE_MAX = 80;
 export const VOICE_HABITS_LIMIT = 3;
 export const VOICE_SAMPLES_LIMIT = 3;
-export const VOICE_LINE_MAX = 240;
+export const VOICE_LINE_MAX = 420;
 
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';

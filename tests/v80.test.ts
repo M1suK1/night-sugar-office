@@ -12,7 +12,9 @@ test('v80 语料收口：长度、条数、去重，全空当作没有语料', (
     habits: ['自称「我」', '自称「我」', '答不上来就沉默两秒', '第四条该被丢掉', '第五条也该被丢掉'],
     samples: ['这条街我走了十年。', '这条街我走了十年。', '别问了。', '第四句多余', '第五句多余'],
   })!;
-  assert.equal(cleaned.tone.length, 30);
+  assert.equal(cleaned.tone.length, 40, 'tone 放到 40 字');
+  const longHabit = sanitizeVoice({ habits: ['习惯先质问对方的站位是否端正对称，极认真时会把手指并起来比划'] })!;
+  assert.equal(longHabit.habits[0]!.length, 30, '一条习惯可以是一整句话，不再被 18 字砍断');
   assert.deepEqual(cleaned.habits, ['自称「我」', '答不上来就沉默两秒', '第四条该被丢掉']);
   assert.equal(cleaned.samples.length, 3);
   assert.equal(cleaned.samples[0], '这条街我走了十年。');
