@@ -21,6 +21,8 @@ interface StarterDialogProps {
   onAddCustom: () => void;
   onClose: () => void;
   /** 卡库够 TOP 张：只显示卡与自定义，内置角色不出现。 */
+  /** 把某张卡从这次开局的名册里去掉（卡还留在卡库，下次还能用）。 */
+  onDisableCard?: (girlId: string) => void;
   cardsOnly?: boolean;
   /** 开场必经：不给关闭按钮，也不显示「稍后再说」。 */
   forced?: boolean;
@@ -45,7 +47,7 @@ interface Pick {
 type SourceFilter = 'all' | 'native' | 'custom';
 
 /** 开局编成：挑自己的少女，再把三方的首领与随从分配好。 */
-export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose, cardsOnly = false, forced = false, randomize = false }: StarterDialogProps) {
+export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClose, onDisableCard, cardsOnly = false, forced = false, randomize = false }: StarterDialogProps) {
   const poolPicks = useMemo<Pick[]>(() => {
     const own = state.girls.filter(girl => !girl.dead && (!cardsOnly || girl.custom)).map(girl => ({
       id: girl.id, name: girl.name, level: girl.level, color: girl.color, portrait: girl.portrait,
@@ -323,14 +325,17 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
             {poolPicks.map(pick => {
               const on = picked.includes(pick.id);
               const seat = seatOf(pick.id);
+              const cardId = pick.source === '契约卡' ? pick.id : undefined;
               return (
-                <button
+                <div
                   key={pick.id}
                   id={`starter-card-${pick.id}`}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={`starter-card ${on ? 'on' : ''} ${seat ? 'seated' : ''}`}
                   aria-pressed={on}
                   onClick={() => toggle(pick.id)}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(pick.id); } }}
                 >
                   <span id={`starter-pick-${pick.id}`} className="starter-card-art">
                     <GirlPortrait girl={{ id: pick.id, name: pick.name, color: pick.color, portrait: pick.portrait }} variant="avatar" />
@@ -344,7 +349,17 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
                     </span>
                   </span>
                   {on && <Check size={16} className="starter-check" />}
-                </button>
+                  {cardId && onDisableCard && (
+                    <button
+                      id={`starter-disable-${pick.id}`}
+                      type="button"
+                      className="starter-disable"
+                      title="这张卡这次不用；卡还在卡库里，下次开局还能选"
+                      aria-label={`这次不用 ${pick.name}`}
+                      onClick={event => { event.stopPropagation(); if (on) toggle(pick.id); onDisableCard(cardId); }}
+                    >✕</button>
+                  )}
+                </div>
               );
             })}
           </div>

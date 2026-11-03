@@ -1178,7 +1178,7 @@ export default function App() {
       />
     )}
     {(phase === 'roster' || modal?.type === 'starter') && (
-      <StarterDialog
+      <StarterDialog onDisableCard={girlId => perform({ type: 'deleteCandidate', girlId }, true)}
         state={state}
         forced={phase === 'roster'}
         randomize={phase === 'roster'}

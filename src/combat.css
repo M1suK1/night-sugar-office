@@ -1022,3 +1022,10 @@
 .mission-facts>div.mission-fact-wide{grid-column:1/-1;display:flex;align-items:baseline;gap:8px;padding-top:10px;border-top:1px solid #ffffff0d}
 .mission-facts>div.mission-fact-wide b{font-size:14px}
 .mission-facts>div.mission-fact-wide .mission-fact-note{font-size:8px;letter-spacing:.03em;color:#887582}
+
+/* v99 编成：每张卡可以「这次不用」，卡仍留在卡库 */
+.starter-card{position:relative;cursor:pointer}
+.starter-card:focus-visible{outline:1px solid #d996ad88;outline-offset:2px}
+.starter-disable{position:absolute;top:6px;right:6px;width:18px;height:18px;padding:0;display:grid;place-items:center;border-radius:50%;border:1px solid #ffffff24;background:#0d0a14cc;color:#a992a6;font-size:9px;line-height:1;cursor:pointer;opacity:0;transition:opacity .2s,border-color .2s,color .2s}
+.starter-card:hover .starter-disable,.starter-disable:focus-visible{opacity:1}
+.starter-disable:hover{border-color:#e08e9b88;color:#f3cdd8;background:#e08e9b1a}
