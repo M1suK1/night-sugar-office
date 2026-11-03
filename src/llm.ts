@@ -1760,6 +1760,8 @@ function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], lim
     const text = typeof line.text === 'string' ? line.text.trim().slice(0, 220) : '';
     if (!text) return [];
     const speakerId = typeof line.speakerId === 'string' ? line.speakerId.trim() : '';
+    // 所长这一轮说了什么/做了什么，界面里已经有他自己的行动气泡；模型再写一遍就是两条一样的。
+    if (speakerId === 'player') return [];
     const person = cast.find(entry => entry.id === speakerId);
     // 只有 cast 里的人与玩家能说话；其他人最多在旁白里被提到。
     if (!person) return [];

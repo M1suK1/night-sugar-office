@@ -885,3 +885,9 @@
 - [x] 新增 `src/storyFocus.ts`：`focusGirlOf(state, event)` 统一判定主角（事件主人 → cast 第一位 → 名册里第一个能出勤的人）。
 - [x] `generateStoryTurn` 补 `{ state, focus: focusGirlOf(state, event) }`；`generateStoryline` 补 `{ focus: girl }`（它没有 state 形参，且当前没有调用方；真要启用得先加 state）。
 - [x] 测试：新增 `tests/v73.test.ts` 三条（优先级、兜底、带 focus 时渲染真名 / 缺 focus 时才是截图里那句）。
+## 修：玩家行动在剧情里出现两次
+
+- [x] **原因**：契约允许模型写 `speakerId: "player"` 的台词（原话是「player 的台词只能来自所长这一次的行动」），而界面本来就会把玩家这一轮的行动渲染成右侧气泡——于是同一句话出现两条：一条是模型复述的（常带【一边说着一边…】这类旁注），一条是系统记录的原文。
+- [x] `parseStoryLines` 直接丢掉 `speakerId === "player"` 的台词：玩家说什么由他自己的行动气泡承担。
+- [x] 契约改成「speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）」，并把原来那句「不要替他编新话」改成「也不要把所长这一轮的动作复述成一句台词」。
+- [x] 测试：新增 `tests/v74.test.ts` 三条（player 台词被丢、少女台词与 after/心声照旧、契约措辞）；`v34`/`v54` 两处旧断言跟着更新。

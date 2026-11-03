@@ -48,7 +48,7 @@ test('v54 完整剧情的三份契约：JSON 骨架与硬性上限留在代码�
   assert.ok(opening.includes('恰好 3 条'));
   const turn = arcTurnContract();
   assert.ok(turn.includes('900–3000 字') && turn.includes('−2 到 2'));
-  assert.ok(turn.includes('不要替他编新话'));
+  assert.ok(turn.includes('也不要把所长这一轮的动作复述成一句台词'));
 });
 
 test('v54 拼装：arc 分区在前、契约在最后，开场与续写的契约不互相污染', () => {

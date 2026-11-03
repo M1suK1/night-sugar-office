@@ -151,7 +151,7 @@ test('v34 续写只让在场的人说话，旁白截到 3000 字，选项最多 
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.turn.narration.length, 3000);
-    assert.deepEqual(result.turn.lines.map(line => line.speakerId), [girl.id, 'player']);
+    assert.deepEqual(result.turn.lines.map(line => line.speakerId), [girl.id], 'player 的台词会被丢掉，避免与行动气泡重复');
     assert.equal(result.turn.lines[0]?.expression, 'shy');
     assert.equal(result.turn.options.length, 3);
     assert.equal(result.turn.bond, 2, '羁绊只取 -2..2');
