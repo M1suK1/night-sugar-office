@@ -1,5 +1,5 @@
 import type {
-  FactionId, IncidentEffect, Opinion, StatKey, StoryBeat, StoryEdge, StoryEffect, StoryGraph,
+  FactionId, Incident, IncidentEffect, Opinion, StatKey, StoryBeat, StoryEdge, StoryEffect, StoryGraph,
   StoryNode, StoryNodeData, StoryNodeKind, StoryPlan, StoryMissionSpec,
 } from './types.ts';
 import type { DistrictId } from './districts.ts';
@@ -218,12 +218,16 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
           duration: clampInt(spec.duration, 30, 180, 90),
           district: spec.district as DistrictId | undefined, requirement: spec.requirement,
           requiredGirlId: spec.requiredGirlId, companion: spec.companion, monsters: spec.monsters,
-          rewardEquipment: spec.rewardEquipment, followUpIncident: spec.followUpIncident, followUpEvent: spec.followUpEvent,
+          rewardEquipment: spec.rewardEquipment,
+          // 委托收尾后的追加弹窗：以前是原样透传，字段与幅度都没审过。
+          followUpIncident: sanitizeIncidentPayload(spec.followUpIncident),
+          followUpEvent: spec.followUpEvent,
         },
       };
     }
     case 'incident': {
       const spec = (value.spec ?? {}) as Record<string, unknown>;
+      void sanitizeIncidentPayload;
       const incidentKind = ['faction', 'environment', 'girl'].includes(String(spec.kind)) ? spec.kind as StoryIncidentSpecKind : 'faction';
       const options = Array.isArray(spec.options) ? spec.options.slice(0, 3).map((option) => {
         const item = (option ?? {}) as Record<string, unknown>;
@@ -336,6 +340,37 @@ function sanitizeEffect(raw: unknown): StoryEffect | undefined {
   }
   if (value.trigger && typeof value.trigger === 'object') effect.trigger = value.trigger as StoryEffect['trigger'];
   return effect;
+}
+
+/**
+ * 洗一张弹窗（蓝图节点与「委托收尾后的追加弹窗」共用）。
+ *
+ * 只认 title / body / kind / faction / district / options / trigger / ttlMinutes / blocking；
+ * 幅度按蓝图规则夹住，缺 title 或 body 直接丢掉，不让一张空卡进存档。
+ */
+export function sanitizeIncidentPayload(raw: unknown): Incident | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+  const title = str(value.title, 30);
+  const body = str(value.body, 400);
+  if (!title || !body) return undefined;
+  const kind: Incident['kind'] = value.kind === 'environment' || value.kind === 'girl' ? value.kind : 'faction';
+  const options = Array.isArray(value.options)
+    ? value.options.slice(0, 3).map((option, index) => {
+      const item = (option ?? {}) as Record<string, unknown>;
+      return { id: `o${index + 1}`, label: str(item.label, 30, '回应'), hint: str(item.hint, 80), effect: (item.effect ?? {}) as IncidentEffect };
+    })
+    : [];
+  return {
+    id: '', day: 0, status: 'pending', source: 'rule',
+    kind, title, body,
+    faction: value.faction as FactionId | undefined,
+    district: value.district as DistrictId | undefined,
+    options,
+    trigger: value.trigger === 'dayStart' ? { kind: 'dayStart' } : value.trigger === 'wave' ? { kind: 'wave', wave: Math.min(2, Math.max(0, Math.round(Number(value.wave ?? 1)) || 1)) } : undefined,
+    ttlMinutes: Math.max(30, Math.min(480, Math.round(Number(value.ttlMinutes ?? 240)) || 240)),
+    blocking: value.blocking === false ? false : true,
+  };
 }
 
 export function sanitizeGraph(raw: unknown): StoryGraph | null {

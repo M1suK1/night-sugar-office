@@ -91,6 +91,9 @@ ${'没有 scene 节点：需要一段旁白时，用 incident 写一张「看一
 - mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","work":"${ENUM_TEXT.works}","difficulty":"简单|常规|棘手|危险"}}
   · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；
     战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。
+  · 可选 followUpIncident：委托结算后紧接着弹出来的那张卡，写法和 incident 节点**完全一样**（kind / title / body / options / trigger / ttlMinutes / blocking），
+    只是没有出边——玩家处理后直接进这一幕的后续事件。只在「她的委托刚放下、桌上立刻多一件事」时才写，
+    不要用它替代 incident 节点（剧情需要玩家先做选择就用节点）。纯通报加 blocking:false，不要给选项。
 - event: {"kind":"event","title":"","hook":"一句引子","cast":["名册里的角色 id"],"opening":"250–350 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档"}
   · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。
   · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。

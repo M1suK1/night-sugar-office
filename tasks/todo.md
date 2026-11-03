@@ -830,3 +830,10 @@
 - [x] 工坊蓝图编辑器（`StoryGraphDialog`）补三个控件：触发时机下拉、超时分钟、拦住打烊开关（`story-graph-incident-trigger` / `-ttl` / `-blocking`）。
 - [x] 测试：新增 `tests/v67.test.ts` 四条（默认值、手写值夹范围、blocking=false 不拦时间、新节点默认字段）。
 - [ ] 已知边界：dayStart / wave 的弹窗先进池子，池子条目本身没有过期计时，靠被投放时才开始计时；若那条故事线一直等不到对应时段，会停在那张卡上（下次同触发点会继续）。
+## 修：故事线里第二种强制弹窗（委托收尾追加卡）没写进提示词
+
+- [x] **缺口**：蓝图里其实有两种强制弹窗——`incident` 节点（上一轮已补 trigger/ttl/blocking）与 `mission.followUpIncident`（委托结算后紧接着弹出来的那张卡）。后者提示词里**一个字没提**，而且 `sanitizeGraph` 是原样透传，字段与幅度都没审过。
+- [x] 新增 `sanitizeIncidentPayload(raw)`（`storygraph.ts`）：节点与追加卡共用一套洗白——title/body 缺一即丢，kind 三选一，options 最多三条且 id 固定 o1–o3，ttl 夹 30–480，blocking 缺省 true，trigger 认 dayStart / wave（wave 夹 0–2）。
+- [x] mission spec 的 `followUpIncident` 改为走这套洗白；`storyRun` 投放时补上 `ttlMinutes` / `expiresAt` / `blocking`，超时同样沿剧情继续。
+- [x] 提示词（`sl-draft` 的 mission 段）补 `followUpIncident`：写法和 incident 节点完全一样、没有出边、只在「委托刚放下桌上就多一件事」时写；纯通报加 `blocking:false` 且不给选项；需要玩家先做选择就用 incident 节点。
+- [x] 测试：新增 `tests/v68.test.ts` 五条（标题正文缺一即丢、trigger 与 ttl 夹住、选项最多三条、委托节点上的追加卡能洗出来、坏卡整张丢弃不影响蓝图）。

@@ -398,7 +398,13 @@ export function completeStoryMission(state: GameState, mission: Mission): Charac
     state.logs.unshift({ id: `log-story-relic-${beat.id}`, time: dateLabel(state.day, state.minutes), kind: 'story', text: `委托带回了一件只属于她的东西：${item.name}。已放进事务所背包。` });
   }
   if (spec?.followUpIncident) {
-    const incident: Incident = { ...spec.followUpIncident, id: `inc-story-${beat.id}-${state.day}`, day: state.day, status: 'pending', source: spec.followUpIncident.source ?? 'rule' };
+    const followUp = spec.followUpIncident;
+    const ttl = Math.max(30, Math.min(480, followUp.ttlMinutes ?? 240));
+    const incident: Incident = {
+      ...followUp,
+      id: `inc-story-${beat.id}-${state.day}`, day: state.day, status: 'pending', source: followUp.source ?? 'rule',
+      ttlMinutes: ttl, expiresAt: nowAbs(state) + ttl, blocking: followUp.blocking ?? true,
+    };
     state.incidents.unshift(incident);
     state.incidents = state.incidents.slice(0, 5);
     state.logs.unshift({ id: `log-story-incident-${beat.id}`, time: dateLabel(state.day, state.minutes), kind: 'incident', text: `${girl.name}的事刚放下，桌上又多了一件必须现在决定的事。` });
