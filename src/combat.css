@@ -922,3 +922,10 @@
 }
 .assignment-girl.selected .assignment-role { border-color: #f3aec9aa; color: #ffe4f0; }
 .starter-head-actions { display: flex; align-items: center; gap: 8px; }
+
+/* v78 立绘重载：档案外观页的工具条 */
+.profile-tools{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+.profile-tools-note{font-size:8px;letter-spacing:.04em;color:#d8a06a}
+.mini-action{padding:4px 10px;border:1px solid #ffffff1f;border-radius:6px;font-size:9px;color:#e7cdd9;cursor:pointer;user-select:none}
+.mini-action:hover{border-color:#d996ad66;color:#f7e6ee}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

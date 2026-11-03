@@ -36,10 +36,14 @@ function gearSummary(item: Equipment) {
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
   onProfileText?: (field: 'appearance' | 'outfitDescription', text: string) => void;
+  /** 立绘缺失时手动补一张：读成 data URL 后由 setPortrait 落地。 */
+  onPortraitFile?: (file: File) => void;
+  /** 这人的立绘是不是缺了（存档瘦身后会出现）。 */
+  portraitBroken?: boolean;
   /** 滑条一次提交四项：由 allocateStats 一次落地，避免连续 +1 互相盖掉。 */
   onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
@@ -421,6 +425,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="appearance-page">
               <section className="appearance-section" aria-labelledby="profile-text-title">
                 <div className="appearance-head"><span className="appearance-index">00</span><div><h3 id="profile-text-title">她的样子与这身衣服</h3><small>这两段会进提示词；从契约卡带进来的也能改。</small></div></div>
+                <div className="profile-tools">
+                  {portraitBroken ? <span className="profile-tools-note">立绘缺失，补一张就好。</span> : null}
+                  <label className="mini-action" htmlFor="dossier-portrait-reload">重新载入立绘</label>
+                  <input id="dossier-portrait-reload" className="sr-only" type="file" accept="image/*"
+                    onChange={event => {
+                      const file = event.target.files?.[0];
+                      event.currentTarget.value = '';
+                      if (file) onPortraitFile?.(file);
+                    }} />
+                </div>
                 <label className="field"><span>外貌</span>
                   <textarea id="dossier-appearance-input" className="av-input" rows={4} maxLength={240} value={appearanceDraft}
                     onChange={event => setAppearanceDraft(event.target.value)}

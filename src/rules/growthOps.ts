@@ -1,3 +1,4 @@
+import { sanitizePortraitSrc } from '../image.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { loadBalance } from '../balance.ts';
 import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
@@ -256,4 +257,20 @@ export function applyClearWitchForm(state: GameState, action: Extract<GameAction
       girl.witchForm = undefined;
       girl.witch = false;
       return { state: next, ok: true, message: `${girl.name}的魔女化立绘已撤下，第五格重新空出。` };
+}
+
+/** setPortrait 的动作处理器：立绘坏了就换一张能用的。 */
+export function applySetPortrait(state: GameState, action: Extract<GameAction, { type: 'setPortrait' }>): ActionResult {
+  const next = clone(state);
+  const girl = findRosterGirl(next, action.girlId);
+  if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+  const portrait = action.portrait === '' ? '' : sanitizePortraitSrc(action.portrait);
+  if (portrait === undefined) return { state, ok: false, message: '这张图存不进存档：换一张 JPG / PNG。' };
+  girl.portrait = portrait;
+  next.logs.unshift({
+    id: `log-portrait-${girl.id}-${Date.now()}`,
+    time: dateLabel(next.day, next.minutes), kind: 'base',
+    text: portrait ? `${girl.name}的立绘重新载入。` : `${girl.name}的立绘被清空。`,
+  });
+  return { state: next, ok: true, message: portrait ? '立绘已重新载入。' : '立绘已清空。' };
 }
