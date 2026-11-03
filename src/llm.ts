@@ -306,7 +306,18 @@ export function dialogueReplyText(lines: DialogueLine[]): string {
 
 const DIALOGUE_FORMAT_HINT = `【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：
 {"lines":[{"text":"说出口的台词","action":"可省略的动作或神态","expression":"calm|smile|surprise|sad|angry|shy"}]}
-一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 420 字。`;
+一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。`;
+
+/** 回复被截断（额度用完）：OpenAI 系给 length，Vertex 归一后也是 length，保险起见再认一次 max_tokens。 */
+export function isTruncatedFinish(finish: string | undefined): boolean {
+  return Boolean(finish && (finish.toLowerCase() === 'length' || finish.toLowerCase().includes('max_tokens')));
+}
+
+/** 截断后重试的额度：至少翻倍，且不低于 2400；封顶 32768。 */
+export function truncatedRetryBudget(maxTokens: number | undefined): number {
+  const base = Math.max(maxTokens ?? 0, 1200);
+  return Math.min(32768, Math.max(2400, base * 2));
+}
 
 function missionMemory(state: GameState, girl: Girl, excludeMissionId?: string): string {
   const runs = recentMissionRuns(state, girl.id, 6).filter(run => run.missionId !== excludeMissionId).slice(0, 4);
@@ -357,13 +368,21 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     { role: 'user', content: applyRegexScripts(text, runtime.regex, 'input', 'prompt') },
   ], runtime.regex);
   const params = presetParams(runtime);
-  const request: LlmRequestSnapshot = { ...requestSnapshot(messages, requestParams(cfg, params), [
-    '世界观与角色卡（含预设）',
+  const labels = [
     '世界观与角色卡（含预设）',
     ...recentHistory.map((_, index) => `对话历史 ${index + 1}`),
     '玩家这句话',
-  ]), slots: slotList(runtime) };
-  const result = await chat(cfg, messages, { params });
+  ];
+  let request: LlmRequestSnapshot = { ...requestSnapshot(messages, requestParams(cfg, params), labels), slots: slotList(runtime) };
+  let result = await chat(cfg, messages, { params });
+  if (result.ok && isTruncatedFinish(result.finish)) {
+    const retryParams = { ...params, maxTokens: truncatedRetryBudget(params?.maxTokens) };
+    const retried = await chat(cfg, messages, { params: retryParams });
+    if (retried.ok && retried.text.trim()) {
+      result = retried;
+      request = { ...requestSnapshot(messages, requestParams(cfg, retryParams), labels), slots: slotList(runtime) };
+    }
+  }
   const parsedLines = result.ok
     ? parseDialogueReply(result.text, { maxLines: 3, perLine: 120, totalLimit: 420, actionLimit: 60 })
       .map(line => ({
@@ -436,8 +455,17 @@ ${recentWithActions}`;
     { role: 'user', content: '写她此刻发给所长的消息，1–3 条，可以有动作和表情；只输出 JSON。' },
   ];
   const params = presetParams(runtime);
-  const request = requestSnapshot(messages, requestParams(cfg, params), ['角色卡（含预设）', '战报与最近对话']);
-  const result = await chat(cfg, messages, { params });
+  let request = requestSnapshot(messages, requestParams(cfg, params), ['角色卡（含预设）', '战报与最近对话']);
+  let result = await chat(cfg, messages, { params });
+  // 灯下私语 / 角色对话不走 JSON 重试通道，截断时自己提额再来一次。
+  if (result.ok && isTruncatedFinish(result.finish)) {
+    const retryParams = { ...params, maxTokens: truncatedRetryBudget(params?.maxTokens) };
+    const retried = await chat(cfg, messages, { params: retryParams });
+    if (retried.ok && retried.text.trim()) {
+      result = retried;
+      request = requestSnapshot(messages, requestParams(cfg, retryParams), ['角色卡（含预设）', '战报与最近对话']);
+    }
+  }
   const parsedLines = result.ok
     ? parseDialogueReply(result.text, { maxLines: 3, perLine: 90, totalLimit: 300, actionLimit: 50 })
       .map(line => ({
@@ -510,7 +538,7 @@ export interface LlmBudget {
 }
 const BUDGET_KEY = 'night-sugar:llm-budget';
 /** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
-export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, incident: 3000, storyline: 3000, whisper: 1200 };
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, incident: 3000, storyline: 3000, whisper: 2400 };
 
 function clampBudget(value: unknown, fallback: number): number {
   const num = Math.round(Number(value));
