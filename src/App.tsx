@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Check, Clock3, FastForward, Heart, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
+import { Check, Clock3, FastForward, Pause, Play, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
@@ -1149,10 +1149,6 @@ export default function App() {
         <div className="dispatch-layout">
           <DispatchMap state={state} onMission={id => setModal({ type: 'mission', id })} onFront={id => setModal({ type: 'front', id })} onDropGirl={(girlId, id) => setModal({ type: 'mission', id, girlId })} />
           <Roster state={state} onGirl={girl} onMarket={() => navigate('market')} />
-        </div>
-        <div className="night-notes">
-          <button id="story-open-conversation" className="story-note" onClick={() => talk('yue')}><span className="note-icon"><Heart size={21} /></span><div><span className="eyebrow">留给你的话</span><h3>「任务结束后，要一起看星星吗？」</h3><p>{state.girls.find(g => g.id === 'yue')?.status === 'mission' ? '这句话，留给她归来后的夜晚。' : '月见桃在基地等你，想听听今晚的故事。'}</p></div><ArrowUpRight size={20} /></button>
-          <button id="open-night-brief" className="brief-note" onClick={() => setModal({ type: 'codex' })}><span className="note-icon"><Radio size={21} /></span><div><span className="eyebrow">夜间速报 · 城市心跳</span><h3>末班列车，即将离站。</h3><p>{state.missions.find(m => m.id === 'station')?.status === 'open' ? '月台出现异常信号与两只魔物。查看图鉴，再决定编队。' : '最新委托进展已同步到感应地图与魔物图鉴。'}</p></div><ArrowRight size={18} /></button>
         </div>
       </> : page === 'base' ? (
         <>
