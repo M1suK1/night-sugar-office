@@ -62,6 +62,7 @@ import { blockingIncidents, openIncidentFor } from './incidents';
 import { pendingChoiceOf } from './rules/storyChoice';
 import { finishedSessionEvents } from './rules/storyEvent';
 import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } from './points';
+import { dismissToast, expireToasts, pushToast } from './toasts';
 import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
@@ -141,7 +142,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('dispatch');
   const [modal, setModal] = useState<Modal | null>(null);
   const [library, setLibrary] = useState<ContentLibrary>(loadLibrary);
-  const [toasts, setToasts] = useState<{ message: string; ok: boolean; id: number }[]>([]);
+  const [toasts, setToasts] = useState<{ message: string; ok: boolean; id: number; createdAt: number }[]>([]);
   const toastSeq = useRef(0);
   const [auto, setAuto] = useState(false);
   const [saved, setSaved] = useState(true);
@@ -284,7 +285,7 @@ export default function App() {
       setSaved(true);
     } catch {
       setSaved(false);
-      setToasts(list => [...list, { message: '浏览器存储写入失败，本次进度没有保存。请导出存档并清理站点数据。', ok: false, id: Date.now() }].slice(-8));
+      setToasts(list => pushToast(list, { message: '浏览器存储写入失败，本次进度没有保存。请导出存档并清理站点数据。', ok: false, id: Date.now(), createdAt: Date.now() }));
     } finally {
       savingRef.current = false;
       const queued = queuedSave.current;
@@ -365,8 +366,13 @@ export default function App() {
   }, [state.day, loaded]);
   useEffect(() => {
     // 提示排队逐条出现：一次推进里可能同时完成多个委托、多人升级，不能互相覆盖。
+    // 过期按 createdAt 判断——链式 setTimeout 一旦被打断（重渲染、切标签页），
+    // 那条提示就会永远留在屏幕上。
     if (!toasts.length) return;
-    const timer = window.setTimeout(() => setToasts(list => list.slice(1)), 4500);
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      setToasts(list => expireToasts(list, now));
+    }, 1200);
     return () => clearTimeout(timer);
   }, [toasts]);
   useEffect(() => {
@@ -528,19 +534,23 @@ export default function App() {
   const notify = (message: string, ok = true) => {
     if (!message) return;
     toastSeq.current += 1;
-    setToasts(list => [...list, { message, ok, id: Date.now() + toastSeq.current }].slice(-8));
+    const now = Date.now();
+    setToasts(list => pushToast(list, { message, ok, id: now + toastSeq.current, createdAt: now }));
   };
 
   // 委托完成 / 升级：新通知逐条进提示队列，不覆盖彼此。
-  const seenNoticeCount = useRef<number | null>(null);
+  const seenNoticeIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!loaded) return;
     const list = state.notices ?? [];
-    const previous = seenNoticeCount.current;
-    seenNoticeCount.current = list.length;
-    if (previous === null || list.length <= previous) return;
-    const fresh = list.slice(0, list.length - previous).reverse();
-    for (const notice of fresh) notify(`${notice.title} —— ${notice.text}`, notice.kind !== 'level');
+    if (!list.length) return;
+    const seen = seenNoticeIds.current;
+    // 第一次同步只记账不补发：读档时不该把二十条历史通知全弹一遍。
+    if (!seen.size || seen.size > 200) { for (const notice of list) seen.add(notice.id); return; }
+    const fresh = list.filter(notice => !seen.has(notice.id));
+    for (const notice of list) seen.add(notice.id);
+    if (fresh.length > 4) return;
+    for (const notice of fresh.reverse()) notify(`${notice.title} —— ${notice.text}`, notice.kind !== 'level');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.notices, loaded]);
 
@@ -1329,7 +1339,7 @@ export default function App() {
         <button id="end-night" className="end-night-btn" onClick={() => setModal({ type: 'end-night' })}>前往下一天<ChevronsRight size={15} /></button>
       </div>
     </div>
-    <div className="toast-region" role="status" aria-live="polite" aria-atomic="false">{toasts.slice(0, 3).map(entry => <div className={`game-toast ${entry.ok ? '' : 'warning'}`} key={entry.id}>{entry.ok ? <Check size={18} /> : <Info size={18} />}<p>{entry.message}</p><button id={`dismiss-toast-${entry.id}`} onClick={() => setToasts(list => list.filter(item => item.id !== entry.id))} aria-label="关闭提示"><X size={15} /></button></div>)}</div>
+    <div className="toast-region" role="status" aria-live="polite" aria-atomic="false">{toasts.slice(0, 3).map(entry => <div className={`game-toast ${entry.ok ? '' : 'warning'}`} key={entry.id}>{entry.ok ? <Check size={18} /> : <Info size={18} />}<p>{entry.message}</p><button id={`dismiss-toast-${entry.id}`} onClick={() => setToasts(list => dismissToast(list, entry.id))} aria-label="关闭提示"><X size={15} /></button></div>)}</div>
     {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && modal.type !== 'starter' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form' || modal.type === 'faction' || modal.type === 'office' || modal.type === 'cardbox'}>
       {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onWitchFile={file => setModal({ type: 'witch-form', id: selectedGirl.id, portraitFile: file })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onProfileText={(field, text) => perform({ type: 'setProfileText', girlId: selectedGirl.id, field, text })} memories={finishedSessionEvents(state, selectedGirl.id).map(event => ({ id: event.id, title: event.title, day: event.day, rounds: (event.turns ?? []).filter(turn => turn.role === 'player').length }))} onMemory={eventId => setModal({ type: 'event', id: eventId })} portraitBroken={portraitMissing(selectedGirl)} onPortraitFile={async file => {
