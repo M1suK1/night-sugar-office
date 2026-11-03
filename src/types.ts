@@ -389,6 +389,12 @@ export type StoryNodeKind =
 export interface StoryIncidentSpec {
   kind: Incident['kind'];
   title: string; body: string;
+  /** 触发时机：immediate 走到就上桌 / dayStart 留到下一夜开门 / wave 留到下一个时段。 */
+  trigger?: 'immediate' | 'dayStart' | 'wave';
+  /** 超时分钟（30–480）：到点按「没人处理」结算，剧情沿 out 继续。 */
+  ttlMinutes?: number;
+  /** 是否拦住打烊；纯通报写 false 就不挡时间。 */
+  blocking?: boolean;
   /** 从内容工坊的弹窗卡导入时记录来源；运行时优先按卡结算，找不到再回退手填内容。 */
   cardId?: string;
   faction?: FactionId; district?: DistrictId;
@@ -498,6 +504,8 @@ export interface Incident {
   choiceId?: string; resolvedAt?: string; cardId?: string;
   category?: IncidentCategory;
   trigger?: IncidentTrigger;
+  /** 为 false 时不拦时间推进（纯通报/可延后处理）。 */
+  blocking?: boolean;
   /** 存活时长，缺省 240 分钟。 */
   ttlMinutes?: number;
   /** 绝对分钟（day * 1440 + minutes），到了还没处理就是过期。 */

@@ -95,8 +95,11 @@ ${'没有 scene 节点：需要一段旁白时，用 incident 写一张「看一
   · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。
   · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。
 - incident（强制弹窗：必须现在拿主意，或必须先看一眼的事）:
-  {"kind":"incident","spec":{"kind":"faction","title":"不超过 14 字","body":"60–160 字，写清谁在施压、要什么、不答应会怎样","faction":"${ENUM_TEXT.factionIds}","district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","options":[{"label":"答应","hint":"一句代价","effect":{"gold":-200,"reputation":2}},{"label":"拒绝","hint":"一句代价","effect":{"reputation":-3,"faction":{"id":"government","standing":-2}}}]}}
+  {"kind":"incident","spec":{"kind":"faction","title":"不超过 14 字","body":"60–160 字，写清谁在施压、要什么、不答应会怎样","trigger":"immediate","ttlMinutes":240,"blocking":true,"faction":"${ENUM_TEXT.factionIds}","district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","options":[{"label":"答应","hint":"一句代价","effect":{"gold":-200,"reputation":2}},{"label":"拒绝","hint":"一句代价","effect":{"reputation":-3,"faction":{"id":"government","standing":-2}}}]}}
   · spec.kind 只能是 faction / environment / girl。
+  · trigger 三选一：immediate（剧情走到这一步就当场摆在桌上，默认）/ dayStart（压到下一夜开门前）/ wave（压到下一个时段）。要「她现在就得给个答复」用 immediate。
+  · ttlMinutes 30–480（默认 240）：到点没人处理按「没管」结算，剧情沿 out 继续。别把必须处理的卡写成 30。
+  · blocking 决定它拦不拦打烊：要拿主意的写 true；只是「让她听到这件事」的纯通报写 false 并给 0 个选项。
   · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。
   · 不给选项就是一张纯通报卡，玩家点「知道了」继续。
 - opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:

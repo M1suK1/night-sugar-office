@@ -341,6 +341,8 @@ export function settleExpiredIncidents(state: GameState): GameState {
   const next = clone(state);
   for (const expired of expireIncidents(next, { day: next.day, minutes: next.minutes })) {
     applyIncidentEffect(next, expired, { reputation: -1 });
+    // 蓝图里的弹窗超时也要把剧情放过去，否则一条故事线会永远卡在这张卡上。
+    if (expired.storylineId) resolveStoryWait(next, expired.storylineId, 'incident', expired.id, 'failure');
     next.logs.unshift({ id: `log-incident-expire-${expired.id}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `「${expired.title}」没有人处理，就这样过去了。夜里少了一点信任。` });
   }
   return next;

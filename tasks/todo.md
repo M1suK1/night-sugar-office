@@ -819,3 +819,14 @@
 - [x] `dailyContract()` 补一条硬规则：同一作者不要重复最近提过的议题，同题重提会被本地校验拦下。
 - [x] 校验层兜底：`parseOpinion` 里同作者同名议题直接判错 → 修复轮会把历史清单再发一遍，逼它换角度或换人提。
 - [x] 测试：新增 `tests/v66.test.ts` 五条（历史格式、窗口与条数、喂给模型的那块、撞题判定、宏展开）。
+## 修：蓝图强制弹窗缺少触发条件
+
+- [x] **问题**：蓝图 incident 节点的 spec 只有 kind/title/body/faction/district/options，**没有触发时机、没有超时、没有「拦不拦打烊」**；运行时（`rules/storyRun.ts`）走到节点就 `unshift` 一张无 trigger 的卡，按 `blockingIncidents` 的规则永远拦时间、永不自动过期。提示词里也没写这一层，模型只能猜。
+- [x] `StoryIncidentSpec` 新增 `trigger`（immediate / dayStart / wave）、`ttlMinutes`（30–480，默认 240）、`blocking`（默认 true）；`Incident` 新增 `blocking`。
+- [x] `sanitizeGraph` 收下三个字段并夹住范围；`makeNode` 的新节点默认 `immediate / 240 / true`，工坊新建即可见。
+- [x] `storyRun` 投放：immediate 立刻上桌；dayStart / wave 先进待用池，由开门与时段两条路径投放；都带上 `ttlMinutes` 与 `expiresAt`。
+- [x] `blockingIncidents` 认 `blocking === false`（纯通报不挡时间）；弹窗超时后若属于某条故事线，会 `resolveStoryWait(..., 'failure')` 让剧情沿 out 继续，不再永久卡死。
+- [x] 提示词（`sl-draft` 的 incident 段）补上三个字段与写法建议：要当场答复用 immediate；纯通报写 blocking=false 且不给选项；ttl 别把必须处理的卡写成 30。
+- [x] 工坊蓝图编辑器（`StoryGraphDialog`）补三个控件：触发时机下拉、超时分钟、拦住打烊开关（`story-graph-incident-trigger` / `-ttl` / `-blocking`）。
+- [x] 测试：新增 `tests/v67.test.ts` 四条（默认值、手写值夹范围、blocking=false 不拦时间、新节点默认字段）。
+- [ ] 已知边界：dayStart / wave 的弹窗先进池子，池子条目本身没有过期计时，靠被投放时才开始计时；若那条故事线一直等不到对应时段，会停在那张卡上（下次同触发点会继续）。

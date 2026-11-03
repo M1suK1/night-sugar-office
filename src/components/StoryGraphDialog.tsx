@@ -623,6 +623,18 @@ export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onCl
                     <label className="graph-field"><span>正文</span>
                       <textarea className="av-input" rows={5} value={node.data.spec.body} onChange={event => patchSpec({ body: event.target.value })} />
                     </label>
+                    <label className="graph-field"><span>触发时机</span>
+                      <select id="story-graph-incident-trigger" className="av-input" value={node.data.spec.trigger ?? 'immediate'} onChange={event => patchSpec({ trigger: event.target.value as 'immediate' | 'dayStart' | 'wave' })}>
+                        <option value="immediate">走到就上桌</option>
+                        <option value="dayStart">下一夜开门</option>
+                        <option value="wave">下一个时段</option>
+                      </select>
+                    </label>
+                    <label className="graph-field"><span>超时（分钟）</span>
+                      <input id="story-graph-incident-ttl" type="number" min={30} max={480} step={30} className="av-input" value={node.data.spec.ttlMinutes ?? 240} onChange={event => patchSpec({ ttlMinutes: Math.max(30, Math.min(480, Math.round(Number(event.target.value) || 240))) })} />
+                    </label>
+                    <label className="graph-check"><input id="story-graph-incident-blocking" type="checkbox" checked={node.data.spec.blocking ?? true} onChange={event => patchSpec({ blocking: event.target.checked })} />拦住打烊（关掉＝纯通报，可延后处理）</label>
+                    <p className="graph-hint">触发时机与超时都会写进这张卡：到点没人处理就按「没管」结算，剧情沿 out 继续。</p>
                   </>
                 )}
                 {node.kind === 'opinion' && node.data.kind === 'opinion' && (

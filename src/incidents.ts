@@ -37,6 +37,7 @@ export function incidentPending(state: GameState) {
 export function blockingIncidents(state: GameState) {
   return incidentPending(state).filter(item => {
     if (incidentCategoryOf(item) === 'report') return false;
+    if (item.blocking === false) return false;   // 蓝图里显式标成「可延后」的弹窗
     if (!item.trigger) return true;              // 工坊投放与模型拟稿：一直拦住
     return item.trigger.kind === 'dayStart';     // 只有开门前摆上桌的那种必须当场决定
   });

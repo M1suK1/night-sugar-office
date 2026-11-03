@@ -116,9 +116,23 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
           options: spec.options.map((option, index) => ({ id: 'o' + (index + 1), label: option.label, hint: option.hint, effect: option.effect })),
           status: 'pending', storylineId: story.id,
         };
-      state.incidents.unshift(incident);
-      incident.storyNodeId = node.id;
-      run.waiting = { kind: 'incident', ref: incident.id };
+      // 蓝图里可以写触发时机：immediate 走到就上桌；dayStart / wave 先进待用池，由那两处投放。
+      const trigger = spec.trigger ?? 'immediate';
+      const ttl = Math.max(30, Math.min(480, spec.ttlMinutes ?? 240));
+      const blocking = spec.blocking ?? true;
+      const ready: Incident = {
+        ...incident,
+        id: incident.id,
+        storyNodeId: node.id,
+        ttlMinutes: ttl,
+        blocking,
+        expiresAt: nowAbs(state) + ttl,
+        ...(trigger === 'dayStart' ? { trigger: { kind: 'dayStart' as const } } : {}),
+        ...(trigger === 'wave' ? { trigger: { kind: 'wave' as const, wave: Math.min(2, state.shift.wave) } } : {}),
+      };
+      run.waiting = { kind: 'incident', ref: ready.id };
+      if (trigger === 'immediate') state.incidents.unshift(ready);
+      else state.incidentPool.push(ready);
       return;
     }
     if (node.kind === 'opinion') {
@@ -180,6 +194,11 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     }
     return;
   }
+}
+
+/** 当夜绝对分钟，给超时用。 */
+function nowAbs(state: GameState): number {
+  return state.day * 1440 + state.minutes;
 }
 
 export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string, result: 'success' | 'failure' = 'success', chosenPort?: string): void {

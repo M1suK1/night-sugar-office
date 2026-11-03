@@ -51,7 +51,7 @@ export function makeNode(kind: StoryNodeKind, x: number, y: number, id: string):
         { id: 'b', label: '选项 B', intent: '', effect: { bond: 1, corruption: 1 } },
       ] };
       case 'mission': return { kind, spec: { title: '', goal: '', category: '故事委托', difficulty: '常规', work: 'investigation', duration: 90 } };
-      case 'incident': return { kind, spec: { kind: 'faction', title: '', body: '', options: [
+      case 'incident': return { kind, spec: { kind: 'faction', title: '', body: '', trigger: 'immediate', ttlMinutes: 240, blocking: true, options: [
         { label: '答应', hint: '', effect: { reputation: 2 } },
         { label: '拒绝', hint: '', effect: { reputation: -3 } },
       ] } };
@@ -235,6 +235,9 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
           kind: incidentKind, title: str(spec.title, 30), body: str(spec.body, 400),
           faction: spec.faction as FactionId | undefined, district: spec.district as DistrictId | undefined,
           cardId: typeof spec.cardId === 'string' && spec.cardId.startsWith('custom-incident-') ? spec.cardId.slice(0, 80) : undefined,
+          trigger: spec.trigger === 'dayStart' || spec.trigger === 'wave' ? spec.trigger : 'immediate',
+          ttlMinutes: Math.max(30, Math.min(480, Math.round(Number(spec.ttlMinutes ?? 240)) || 240)),
+          blocking: spec.blocking === false ? false : true,
           options,
         },
       };
