@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Clock3, FastForward, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
+import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
@@ -1198,22 +1198,22 @@ export default function App() {
           <button
             id="dispatch-office-card"
             type="button"
-            className="world-office-card"
+            className="world-faction-card world-office-card tone-neutral"
             onClick={() => setModal({ type: 'office' })}
             title="打开事务所档案与玩家档案"
           >
-            <div className="world-office-top">
-              <span className="world-office-seal">所</span>
+            <div className="world-faction-top">
+              <span className="world-faction-seal world-office-seal">所</span>
               <div>
                 <strong>事务所档案</strong>
                 <small>代表：{representativeOf(state)?.name ?? '尚未任命'}</small>
               </div>
-              <span className="world-office-attitude">中立</span>
+              <span className="world-faction-attitude">中立</span>
             </div>
-            <p className="world-office-line">{state.office?.philosophy?.trim() || '还没有写下理念。这里写下的，会成为世界书里的设定。'}</p>
-            <div className="world-office-foot">
-              <span>玩家：<b>{loadPlayerProfile().name.trim() || '未命名'}</b></span>
-              <em>编辑档案 →</em>
+            <div className="world-office-bar"><Feather size={11} />编辑档案，写下理念与目标</div>
+            <div className="world-faction-foot">
+              <span>玩家 <b>{loadPlayerProfile().name.trim() || '未命名'}</b></span>
+              <em>点击打开</em>
             </div>
           </button>
         </section>
