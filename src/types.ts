@@ -1090,6 +1090,8 @@ export interface GameState {
   startersPicked: boolean;
   /** 首夜空缺已补齐的日期（0 表示还没补过）。 */
   openingFilledAt: number;
+  /** 最近一次「每日自动补充」发生在第几日的开门时；读档不会因此重放一次。 */
+  generatedDay?: number;
 }
 export type GameAction =
   | { type: 'dispatch'; girlIds: string[]; missionId: string }

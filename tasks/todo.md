@@ -897,3 +897,12 @@
 - [x] 新增动作 setProfileText（ield: appearance | outfitDescription）：抹平换行、限长 240、允许清空、写一条 base 日志。
 - [x] 档案 → 外观装备页顶部加两个文本域（#dossier-appearance-input / #dossier-outfit-input），草稿 + 失焦提交，与性格输入同一套交互。
 - [x] 	ests/v75.test.ts 两条；方案见 	asks/plan-v75.md。
+
+
+## v75-4（记作 v76）：自动生成只在换日触发
+
+- [x] 新增 src/autoGenerate.ts 的 shouldAutoGenerate()：日号跟着存档走（state.generatedDay），缺字段按「就是今天」处理，读档不补发。
+- [x] App 的自动生成 effect 改走它，并在发请求**之前**把 generatedDay 写进存档——失败也不会在读档时反复重放；顺手删掉原来的 lastGeneratedDay ref。
+- [x] 初始状态与空白档案都把开局日记成「已补过」（首夜仍走 openingFilledAt）。
+- [x] 	ests/v76.test.ts 两条。
+- [ ] v75-2（战后癖好进简报）按你的要求推后；v75-3 / v75-5 / v75-6 继续排。

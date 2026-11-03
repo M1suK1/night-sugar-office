@@ -4,6 +4,7 @@ import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, Game
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
+import { shouldAutoGenerate } from './autoGenerate';
 import { onLlmFinished } from './llm';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
 import { cityStage, factionAttitude } from './economy';
@@ -176,7 +177,6 @@ export default function App() {
   const [storyNotice, setStoryNotice] = useState<string | null>(null);
   const lastIncidentDay = useRef(state.day);
   const officeSynced = useRef(false);
-  const lastGeneratedDay = useRef(state.day);
   const generatingRef = useRef(false);
   const savingRef = useRef(false);
   const queuedSave = useRef<GameState | null>(null);
@@ -287,13 +287,13 @@ export default function App() {
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
   useEffect(() => {
-    if (!autoGenerate) { lastGeneratedDay.current = state.day; return; }
     if (!loaded) return;
-    if (state.day <= lastGeneratedDay.current) { lastGeneratedDay.current = state.day; return; }
-    lastGeneratedDay.current = state.day;
+    if (!shouldAutoGenerate(state, autoGenerate)) return;
     if (generatingRef.current || !llmHasKey()) return;
+    // 先把「今天已经补过」记进存档，再发请求：失败也不会在读档时反复重放。
+    setState(prev => (prev.generatedDay === prev.day ? prev : { ...prev, generatedDay: prev.day }));
     void generateContent('auto');
-  }, [state.day, autoGenerate, loaded]);
+  }, [state.day, state.generatedDay, autoGenerate, loaded]);
   /** 播报一律走函数式更新：异步生成回来时，别拿旧快照把这一整份状态盖回去。 */
   const commitCityNews = (news: CityNews | null) => {
     let ok = false;
