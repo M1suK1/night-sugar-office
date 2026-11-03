@@ -94,5 +94,7 @@ test('v53 拼装：分区渲染出真实数据，契约仍然在最后', () => {
   assert.ok(composed.system.includes(monsters[0]!.codex.weakness), '魔物弱点渲染进提示词');
   assert.ok(composed.system.includes('第 20 日'), '时间渲染进提示词');
   assert.ok(composed.system.includes('不要写伤害数字'), '契约仍在');
-  assert.ok(composed.system.trimEnd().endsWith('也不要写「第几回合」。'), '契约必须排在最后');
+  const lastContractLine = battleContract().trim().split('\n').pop() ?? '';
+  assert.ok(lastContractLine.length > 0);
+  assert.ok(composed.system.trimEnd().endsWith(lastContractLine), '契约必须排在最后');
 });

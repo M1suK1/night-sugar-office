@@ -189,6 +189,9 @@ export function battleStoryDigest(battle: BattleState): string {
   const describe = (event: BattleState['events'][number]): string => {
     const actor = name(event.actor);
     if (event.skillId === 'trait') return `${actor}的特性发动了`;
+    // 心防被打穿后会记一条「眩晕」的伪动作（actor 与 targets 是同一个人）。
+    // 照普通事件渲染会变成「Es对Es使用「眩晕」（支援）」，把模型带偏成她给自己上状态。
+    if (event.skillId === 'stunned') return `${actor}的心防被打穿，陷入眩晕（本轮无法行动）`;
     const skill = findSkill(event.skillId);
     const skillName = event.skillName || skill?.name || '一次出手';
     const targets = event.targets.map(name);

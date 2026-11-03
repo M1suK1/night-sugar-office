@@ -858,3 +858,9 @@
 - [x] `llm.ts` 新增 `onLlmFinished(listener)`，在 `recordLlmLog` 收尾时通知一次——所有叙事者操作（提案、新闻、私语、战斗札记、突发、蓝图…）都自动覆盖，重试不会被算成两次。
 - [x] 设置 → 通用新增「叙事者提示音」开关（`#settings-llm-chime`），默认开，存 localStorage（`night-sugar:llm-chime`）；连接测试不响。
 - [x] 测试：新增 `tests/v69.test.ts` 三条（该不该响的判定、无 localStorage 的默认值、无 AudioContext 时空操作不抛错）。
+## 修：战报摘要把「眩晕」渲染成角色对自己施放
+
+- [x] **原因**：心防被打穿时 `combat.ts` 会记一条伪动作（`skillId: "stunned"`、`actor` 与 `targets` 同一个人）。`battleStoryDigest` 按普通事件渲染，就成了「Es对Es使用「眩晕」（支援）」——模型看到的是「她给自己上了一个支援技能」。
+- [x] `battleNote.ts` 的 `describe()` 认 `skillId === "stunned"`：改成状态句「X的心防被打穿，陷入眩晕（本轮无法行动）」，不再走支援/攻击两个分支。
+- [x] `battleContract()` 补一条硬规则：眩晕是状态不是技能，不许写成「X 使用眩晕」。
+- [x] 测试：新增 `tests/v70.test.ts`（眩晕写成状态、被削心防的攻击与「击中多人」照旧、真支援仍走支援句式）；`v53` 的「契约排最后」断言改成按 `battleContract()` 最后一行比对，以后改契约不会再误伤。

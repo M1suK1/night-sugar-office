@@ -320,6 +320,7 @@ export function battleContract(): string {
     'narration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。',
     'expression 只能取 calm / smile / surprise / sad / angry / shy；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。',
     '不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。',
+    '战报里出现的「眩晕」是心防被打穿后的状态（她被打穿、站不稳），不是技能，也不是她对自己施放：写成「她心防被打穿，陷入眩晕」这类描述，不要写成「X 使用眩晕」。',
   ].join('\n');
 }
 
