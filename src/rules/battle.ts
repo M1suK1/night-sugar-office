@@ -9,7 +9,7 @@ import { canIntercept, factionGirlsOf, rosterMembers } from '../factions.ts';
 import { openFrontIn } from '../fronts.ts';
 import { recordMissionRun } from '../missionHistory.ts';
 import { clampPollution, districtName, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, purifyTo } from '../pollution.ts';
-import { missionExp } from '../progression.ts';
+import { recomputeMaxHp, missionExp } from '../progression.ts';
 import { effectiveDistrictEffect, factionName } from '../territories.ts';
 import type { BattleState, GameState, Girl, Interception, Mission, Scar, StatKey } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
@@ -22,7 +22,7 @@ import { completeStoryMission, failStoryMission } from './storyRun.ts';
 
 export function applyScar(state: GameState, girl: Girl, scar: Scar): void {
   girl.scars.push(scar);
-  girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
+  recomputeMaxHp(girl);
   girl.hp = Math.min(girl.hp, girl.maxHp);
   const effect = scar.effect;
   if (effect.kind === 'stat' && effect.stat) {

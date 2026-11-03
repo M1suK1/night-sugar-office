@@ -87,7 +87,10 @@ export function grantExp(girl: Girl, amount: number, mode: LevelUpMode = 'auto')
     girl.exp -= need;
     girl.level += 1;
     levels += 1;
-    girl.maxHp += HP_PER_LEVEL;
+    // 上限的唯一真源是 baseMaxHp（疤痕按比例削它）；只改 maxHp 会被战后重算抹掉，
+    // 这就是「每级该 +10 却没生效」的原因。
+    girl.baseMaxHp = Math.max(girl.baseMaxHp ?? girl.maxHp, girl.maxHp) + HP_PER_LEVEL;
+    recomputeMaxHp(girl);
     girl.hp = Math.min(girl.maxHp, girl.hp + HP_PER_LEVEL);
     if (mode === 'manual') {
       girl.unspentPoints = (girl.unspentPoints ?? 0) + POINTS_PER_LEVEL;
@@ -102,6 +105,13 @@ export function grantExp(girl: Girl, amount: number, mode: LevelUpMode = 'auto')
   }
   if (girl.level >= MAX_LEVEL) girl.exp = 0;
   return { leveled: levels > 0, levels, from, to: girl.level, points: mode === 'manual' ? levels * POINTS_PER_LEVEL : 0 };
+}
+
+/** 按基础上限与疤痕重算当前上限：升级、留疤之后都走这里。 */
+export function recomputeMaxHp(girl: Girl): void {
+  const base = Math.max(40, girl.baseMaxHp ?? girl.maxHp);
+  girl.baseMaxHp = base;
+  girl.maxHp = Math.max(40, Math.round(base * Math.max(0.4, 1 - girl.scars.length * 0.08)));
 }
 
 /** 把一点（或几点）可分配点数加到四维上。校验交给调用方给出界面文案。 */
