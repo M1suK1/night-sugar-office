@@ -1,5 +1,6 @@
 import type { BossTemplate, Element, Equipment, FactionId, GameState, IncidentCard, IncidentCardEffect, IncidentEffect, MarketStockEntry, MissionTemplate, MonsterRule, MonsterTemplate, Skill, SkillEffect, SkillResource, SkillSide, SkillTier, StatKey } from '../types.ts';
 import { districts } from '../districts.ts';
+import { suggestedLevel } from '../missionLevel.ts';
 import { skillById, skills } from './skills.ts';
 import { bossSkillById } from './bossSkills.ts';
 import { itemById, items } from './items.ts';
@@ -312,18 +313,23 @@ export function sanitizeMission(raw: unknown, monsterPool: Set<string> = new Set
     ? value.rewardEquipmentId
     : undefined;
   const rewardGirlLevel = Math.round(number(value.rewardGirlLevel, 0, 0, 12));
+  const difficulty = oneOf<MissionTemplate['difficulty']>(value.difficulty, MISSION_DIFFICULTIES, '中危');
+  const autoLevel = suggestedLevel(difficulty, enemyIds.length);
+  const rawLevel = Math.round(number(value.recommendedLevel, autoLevel, 1, 12));
+  // 旧工坊把推荐等级一律写成 3：非中危模板还停在 3 的，按难度与魔物数量补正。
+  const recommendedLevel = rawLevel === 3 && difficulty !== '中危' ? autoLevel : rawLevel;
   return {
     id, title,
     category: text(value.category, 16) || '民间琐事',
     description: text(value.description, 300),
-    difficulty: oneOf<MissionTemplate['difficulty']>(value.difficulty, MISSION_DIFFICULTIES, '中危'),
+    difficulty,
     duration: Math.round(number(value.duration, 60, 15, 240) / 15) * 15,
     requirement: oneOf<StatKey>(value.requirement, STAT_KEYS, 'insight'),
     target: Math.round(number(value.target, 60, 30, 120)),
     work,
     enemyIds,
     rounds: Math.round(number(value.rounds, 3, 2, 8)),
-    recommendedLevel: Math.round(number(value.recommendedLevel, 3, 1, 12)),
+    recommendedLevel,
     district,
     window: value.window === undefined ? undefined : oneOf<NonNullable<MissionTemplate['window']>>(value.window, MISSION_WINDOWS, 'urgent'),
     reward: Math.round(number(value.reward, 600, 0, 5000)),

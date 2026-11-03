@@ -2,6 +2,7 @@ import { MAX_ENEMIES, ROUND_MINUTES } from '../combat.ts';
 import { spawnBossMonster } from '../content/bosses.ts';
 import { factionInfo } from '../content/items.ts';
 import { customMissionTemplates } from '../content/library.ts';
+import { suggestedLevel } from '../missionLevel.ts';
 import { extraMissions } from '../content/missions-extra.ts';
 import { monsters } from '../content/monsters.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
@@ -301,7 +302,9 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
     enemyBuffs: enemyIds?.length ? spawned.buffs : undefined,
     enemyCount: undefined,
     duration: Math.round(template.duration * scale.duration),
-    recommendedLevel: template.storylineId ? template.recommendedLevel : Math.max(1, Math.min(8, (template.recommendedLevel ?? 3) + (difficulty === '绝望' ? 2 : difficulty === '高危' ? 1 : difficulty === '低危' ? -1 : 0))),
+    recommendedLevel: template.storylineId
+      ? template.recommendedLevel
+      : Math.max(1, Math.min(10, Math.max(template.recommendedLevel ?? 0, suggestedLevel(difficulty, enemyIds?.length ?? count)))),
     district: regionId,
     window,
     wave,
