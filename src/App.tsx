@@ -71,9 +71,9 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
-import { OPENING_CARDS, OPENING_CARD_BYTES } from './opening';
+import { OPENING_CARDS } from './opening';
 import { cardFileGuard, saveFileGuard } from './fileLimits';
-import { marketCardGap, marketNeedsCards, pickWithinBytes, unusedCards } from './cardMarket';
+import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
 import { planCardBatches } from './cardImport';
 import type { CardBoxEntry } from './cardbox';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
@@ -876,15 +876,17 @@ export default function App() {
     try {
       const box = await loadCardBox();
       setBoxUsable(box.length);
-      // 先按张数取，再按「卡面总量」截一刀：立绘会随存档一起序列化，不能为了摆满 20 个位置全读进来。
-      const picks = pickWithinBytes(unusedCards(box, next, OPENING_CARDS), OPENING_CARDS, OPENING_CARD_BYTES);
-      if (picks.length < Math.min(box.length, OPENING_CARDS)) {
-        console.info(`[卡库] 开局只读 ${picks.length}/${Math.min(box.length, OPENING_CARDS)} 张（约 ${Math.round(picks.reduce((sum, entry) => sum + entry.bytes, 0) / 1024 / 1024)}MB），其余留给市场按需补货。`);
-      }
+      // 只按张数取满：以前还按「卡面总量」砍一刀，48MB 预算下 3MB 一张的卡只装得下十几位，
+      // 界面上就永远凑不满选人池。改成读进来之后统一降维（长边 640），30 张也压得住，
+      // 落盘时还会被搬进资产库（v92），存档不会跟着变胖。
+      const picks = unusedCards(box, next, OPENING_CARDS);
       if (picks.length) {
-        // 卡库开局不摆内置候选：那 20 个位置都留给玩家的卡。
+        // 卡库开局不摆内置候选：这些位置都留给玩家的卡。
         next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
         next = await importCardsInBatches(next, picks);
+        const slimmed = await slimStateImages(next);
+        next = slimmed.state;
+        if (slimmed.changed) console.info('[卡库] 开局选人池已把立绘降到长边 640，避免一次读进几十 MB。');
       }
     } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ }
     setState(next);
