@@ -975,3 +975,7 @@
 .incident-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .incident-defer{margin-left:auto;flex:0 0 auto;padding:4px 10px;border:1px solid #ffffff1f;border-radius:5px;background:#ffffff08;color:#cbb6c2;font-size:9px;letter-spacing:.04em;cursor:pointer;transition:.2s}
 .incident-defer:hover{border-color:#d996ad66;color:#f7e6ee;background:#f3aec914}
+
+/* v81 交互剧情的选项：先一句「轮到你决定」，选项不要凭空悬着 */
+.session-options{flex-direction:column;align-items:stretch;gap:6px}
+.session-lead{margin:0 0 2px;font-size:9px;letter-spacing:.05em;color:#b78c9f;text-align:center}

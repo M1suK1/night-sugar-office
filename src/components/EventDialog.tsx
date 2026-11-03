@@ -194,7 +194,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
             </div>
 
             <footer className="event-composer">
-              {options.length > 0 && <div className="session-options">{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}
+              {options.length > 0 && <div className="session-options"><p className="session-lead" id="session-lead">她没有再往下说。轮到你决定。</p>{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}
               <div className="session-input">
                 <label className="sr-only" htmlFor="story-action">写下你的行动</label>
                 <textarea id="story-action" rows={2} maxLength={300} value={draft} disabled={loading} placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话……'} onChange={input => setDraft(input.target.value)} onKeyDown={input => { if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') { input.preventDefault(); void submit(draft); } }} />
