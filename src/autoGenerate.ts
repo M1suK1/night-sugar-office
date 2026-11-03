@@ -11,20 +11,25 @@ export interface AutoGenerateState {
   generatedDay?: number;
   /** 序章是否看完。没看完就是在初始化途中，这时候生成会拿默认名册起草。 */
   prologueSeen?: boolean;
+  /** 开局编成是否定下（`startersPicked`）；空白档没有编成这一步。 */
+  startersPicked?: boolean;
+  blank?: boolean;
 }
 
 /**
  * 该不该自动补一次提案。
  *
- * 除了「换日了」之外还有两道闸：
- *  - 开局那一夜（`openingDay`）不补：首夜由 `openingFill` 用本地内容摆好桌子，
- *    此时玩家还没走完序章、也还没挑人，让叙事者照着默认名册写提案只会写错人。
- *  - 序章没看完不补：那说明游戏还在初始化（编成 / 读档 / 建号途中）。
+ * 除了「换日了」之外还有两道闸，挡的都是「初始化没结束」：
+ *  - 序章没看完：那时还在播开场，玩家连人是谁都没认全。
+ *  - 编成没定下（`startersPicked`）：那时手上的还是默认名册/卡库池，
+ *    让叙事者照着它写提案，写出来的是一份错人的提案。空白档没有编成这一步，直接放行。
+ *
+ * 两道闸都过了之后，首夜也可以照常补——玩家已经认过人了，没必要再等一夜。
  */
-export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean, openingDay = 0): boolean {
+export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean): boolean {
   if (!enabled) return false;
   if (state.prologueSeen === false) return false;
-  if (state.day <= openingDay) return false;
+  if (!state.startersPicked && !state.blank) return false;
   const generated = typeof state.generatedDay === 'number' ? state.generatedDay : state.day;
   return state.day > generated;
 }
