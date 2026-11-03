@@ -17,6 +17,11 @@ export function validGeneratedItem(item: unknown): item is Equipment {
   if (!['weapon', 'charm', 'consumable'].includes(entry.slot)) return false;
   if (!['witch', 'association', 'government'].includes(entry.faction)) return false;
   if (entry.stats && (typeof entry.stats !== 'object' || Array.isArray(entry.stats))) return false;
+  // 只会说漂亮话的装备：没有数值、没有被动、没有效果，买回去什么都不会变。
+  const hasNumbers = Boolean(entry.stats && Object.values(entry.stats).some(value => typeof value === 'number' && value !== 0))
+    || Boolean(entry.maxHpBonus || entry.spiritBonusPct || entry.damageBonus || entry.initiativeBonus || entry.corruptionPerBattle);
+  const hasFlavor = Boolean(entry.passive?.trim()) || Boolean(entry.effect) || Boolean(entry.skillId);
+  if (!hasNumbers && !hasFlavor) return false;
   return true;
 }
 

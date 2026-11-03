@@ -935,3 +935,14 @@
 1. 原创角色语料（tone / habits / samples）进简报与起草接口，预设同步加契约；
 2. 所长立绘与六格表情差分（档案新增「所长」页 + 交互剧情头像）；
 3. 市场装备显示数值与用处（`itemStats.ts` 一个渲染器，市场与装备列表共用）。
+
+## v80 完成情况（对应 `tasks/plan-v80.md`）
+
+- [x] v80-1 语料：GirlVoice + voice.ts（sanitizeVoice / voiceLine）、接进 girlBrief 与档案、
+      预设新增「角色起草 · 语料契约」、档案与自定义建人两个入口、`tests/v80`。
+- [x] v80-2 所长立绘：PlayerProfile.portrait / portraitCrop / expressions（存本机不进存档）、
+      directorPortraitOf 回落链、DirectorPortrait 组件接进交互剧情、设置里传图与六格差分、`tests/v80b`。
+- [x] v80-3 装备数值：itemStats.ts（itemStatLines / itemEffectSummary）接进市场货架、
+      货架标题右侧摘要、validGeneratedItem 要求至少一项数值或效果、`tests/v80c`。
+- [ ] 后续可做：装备列表（AuxViews 的装备栏）也用同一渲染器；同槽位「+6 → +9」差值；
+      所长立绘的裁剪拖拽界面（现在只存了 crop 数据，没有拖动条）。

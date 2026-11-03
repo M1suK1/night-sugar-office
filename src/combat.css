@@ -944,3 +944,11 @@
 .player-expression-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:1}
 .player-expression{display:flex;align-items:center;justify-content:center;padding:6px 4px;border:1px dashed #ffffff1f;border-radius:6px;font-size:9px;color:#cbb6c2;cursor:pointer}
 .player-expression:hover{border-color:#d996ad66;color:#f7e6ee}
+
+/* v80 货架卡片：数值行 */
+.av-supply-stats{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px}
+.av-supply-stats li{display:flex;justify-content:space-between;gap:8px;font-family:var(--font-data);font-size:9px;letter-spacing:.02em;color:#cbb6c2}
+.av-supply-stats li b{color:#f2dfe9;font-weight:500}
+.av-supply-stats li.stat-good b{color:#8fd6a8}
+.av-supply-stats li.stat-bad b{color:#e08e9b}
+.av-supply-title em.av-supply-summary{margin-left:auto;font-family:var(--font-data);font-size:8px;font-style:normal;letter-spacing:.02em;color:#b78c9f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52%}
