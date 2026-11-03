@@ -61,6 +61,7 @@ import { IncidentDialog } from './components/IncidentDialog';
 import { blockingIncidents, openIncidentFor } from './incidents';
 import { pendingChoiceOf } from './rules/storyChoice';
 import { finishedSessionEvents } from './rules/storyEvent';
+import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } from './points';
 import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
@@ -152,6 +153,13 @@ export default function App() {
   const [binding, setBinding] = useState<PresetBinding>(loadBinding);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [incidentFocus, setIncidentFocus] = useState<string | null>(null);
+  /** 关掉的加点提醒：键是「人:点数」，升级发新点数后会重新出现。 */
+  const [pointsMuted, setPointsMuted] = useState<string[]>(loadPointsMuted);
+  const mutePoints = (girlId: string, points: number) => {
+    const next = [...pointsMuted.filter(key => !key.startsWith(`${girlId}:`)), pointsKey(girlId, points)];
+    setPointsMuted(next);
+    savePointsMuted(next);
+  };
   /** 点过「稍后再说」的事件：不再自己弹，但还留在任务列表里。换日重置。 */
   const [deferredIncidents, setDeferredIncidents] = useState<string[]>([]);
   // 换了一天，昨天说「稍后再说」的事还得再摆一次：不催就没人管了。
@@ -1270,7 +1278,7 @@ export default function App() {
 
         <div className="dispatch-layout">
           <DispatchMap state={state} onMission={id => setModal({ type: 'mission', id })} onFront={id => setModal({ type: 'front', id })} onDropGirl={(girlId, id) => setModal({ type: 'mission', id, girlId })} />
-          <Roster state={state} onGirl={girl} onMarket={() => navigate('market')} />
+          <Roster showPoints={girl => shouldShowPointBadge(girl, state.levelUpMode, pointsMuted)} state={state} onGirl={girl} onMarket={() => navigate('market')} />
         </div>
       </> : page === 'base' ? (
         <>
@@ -1329,7 +1337,7 @@ export default function App() {
           const dataUrl = await resizeImageFile(file);
           perform({ type: 'setPortrait', girlId: selectedGirl.id, portrait: dataUrl });
         } catch { notify('这张图读不出来：换一张 JPG / PNG。', false); }
-      }} onAllocateMany={plan => perform({ type: 'allocateStats', girlId: selectedGirl.id, plan })} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl.id)} />}
+      }} onAllocateMany={plan => perform({ type: 'allocateStats', girlId: selectedGirl.id, plan })} onMutePoints={() => mutePoints(selectedGirl.id, selectedGirl.unspentPoints ?? 0)} onEquip={(itemId, slot) => perform({ type: 'equipItem', girlId: selectedGirl.id, itemId, slot })} onUnequip={slot => perform({ type: 'unequipItem', girlId: selectedGirl.id, slot })} onUseItem={itemId => perform({ type: 'useItem', girlId: selectedGirl.id, itemId })} onExportCard={() => exportCard(selectedGirl.id)} />}
       {modal.type === 'wardrobe' && selectedGirl && <WardrobeDialog girl={selectedGirl} state={state} onImport={(outfits, mode) => perform({ type: 'importWardrobe', girlId: selectedGirl.id, outfits, mode })} onRemove={outfitId => perform({ type: 'removeOutfit', girlId: selectedGirl.id, outfitId })} onDescribe={describeOutfit} onDescribeSaved={(outfitId, description) => perform({ type: 'setOutfitDescription', girlId: selectedGirl.id, outfitId, description })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'expression' && selectedGirl && <ExpressionVariantDialog key={`expression-${selectedGirl.id}`} girl={selectedGirl} onSave={(key, dataUrl) => perform({ type: 'setVariant', girlId: selectedGirl.id, key, dataUrl })} onSaveMany={variants => perform({ type: 'setVariants', girlId: selectedGirl.id, variants })} onRemove={key => perform({ type: 'deleteVariant', girlId: selectedGirl.id, key })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}
       {modal.type === 'witch-form' && selectedGirl && <WitchFormDialog key={`witch-form-${selectedGirl.id}`} girl={selectedGirl} initialFile={modal.portraitFile} onSave={(outfit, personality) => perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit, personality, activate: false })} onDescribe={portrait => describeWitchForm(selectedGirl, portrait)} onRemove={() => perform({ type: 'clearWitchForm', girlId: selectedGirl.id })} onClose={() => setModal({ type: 'girl', id: selectedGirl.id })} />}

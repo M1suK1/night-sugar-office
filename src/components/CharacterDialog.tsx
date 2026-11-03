@@ -36,9 +36,11 @@ function gearSummary(item: Equipment) {
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken, memories, onMemory }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
+  /** 关掉这个人的加点提醒（升级发新点数后会重新出现）。 */
+  onMutePoints?: () => void;
   onProfileText?: (field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples', text: string) => void;
   /** 这位少女演完的交互剧情：点开只读回看。 */
   memories?: { id: string; title: string; day: number; rounds: number }[];
@@ -392,7 +394,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="growth-col">
             <div className="growth-hero"><div><small>当前目标</small><strong>{girl.goal}</strong><span>{girl.goalKind}倾向 · Lv.{girl.level}</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : `Lv.${girl.level}`}</div></div>
             <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>经验按委托推荐等级结算，但一次最多给到当前等级需求的 50%（调查 25%）：两次达标战斗或四次调查正好升一级。</small></div>
-            <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small></div>
+            <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small>{(girl.unspentPoints ?? 0) > 0 && onMutePoints && <button id="girl-points-mute" type="button" className="mini-action" onClick={onMutePoints}>不再提醒这几点</button>}</div>
             <div className="allocate-block" id="girl-allocate">
               {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => {
                 const free = girl.unspentPoints ?? 0;
@@ -416,7 +418,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <button id="girl-allocate-reset" type="button" className="btn small" disabled={!pendingTotal} onClick={() => setPending({ ...NO_POINTS })}>重置</button>
                 <button id="girl-allocate-confirm" type="button" className="btn small primary" disabled={!pendingTotal} onClick={() => { if (pendingTotal) { onAllocateMany?.(pending); setPending({ ...NO_POINTS }); } }}>确认加点 · {pendingTotal} 点</button>
               </div>
-              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
+              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 && (['magic', 'insight', 'agility', 'empathy'] as const).every(key => girl.stats[key] >= 120) ? `四维都到上限了（120），这 ${girl.unspentPoints} 点暂时花不出去；点上面的「不再提醒这几点」可以先把角标收起来。` : (girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
             </div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>

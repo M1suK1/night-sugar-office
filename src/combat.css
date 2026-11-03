@@ -996,3 +996,7 @@
 .story-memories button:hover{border-color:#d996ad66;background:#f3aec90d}
 .story-memories button small{font-family:var(--font-data);font-size:8px;color:#7d6a89}
 .session-readonly{margin-top:4px;padding:10px 12px;border:1px solid #ffffff14;border-radius:7px;background:#0d0a14;font-size:9px;letter-spacing:.04em;color:#b78c9f;text-align:center}
+
+/* v85 属性点头部里的「不再提醒」 */
+.modal-section-heading{align-items:center}
+.modal-section-heading .mini-action{margin-left:auto}

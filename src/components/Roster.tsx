@@ -5,7 +5,7 @@ import { corruptionLabels, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, 
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { GirlPortrait } from './GirlPortrait';
 
-export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void }) {
+export function Roster({ state, onGirl, onMarket, showPoints }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void; showPoints?: (girl: { id: string; unspentPoints?: number }) => boolean }) {
   const present = state.girls.filter(g => !g.retired && !g.left);
   const left = state.girls.filter(g => g.left && !g.dead).slice(0, 6);
   const idle = present.filter(g => g.status === 'idle').length;
@@ -38,7 +38,7 @@ export function Roster({ state, onGirl, onMarket }: { state: GameState; onGirl: 
                   {unread > 0 && <span className="whisper-badge" aria-label={`有 ${unread} 条新消息`}>{unread}</span>}
                   {g.retired && <span className="retired-stamp">文职</span>}
                   {g.witch && <span className="witch-stamp">魔女</span>}
-                  {(g.unspentPoints ?? 0) > 0 && <span className="point-badge" id={`roster-points-${g.id}`} aria-label={`有 ${g.unspentPoints} 点可分配属性`}>+{g.unspentPoints}</span>}
+                  {(showPoints ? showPoints(g) : (g.unspentPoints ?? 0) > 0) && <span className="point-badge" id={`roster-points-${g.id}`} aria-label={`有 ${g.unspentPoints} 点可分配属性`}>+{g.unspentPoints}</span>}
                 </div>
                 <div className="roster-info">
                   <div className="roster-name"><h3>{g.name}</h3><span>Lv.{g.level.toString().padStart(2, '0')}</span></div>
