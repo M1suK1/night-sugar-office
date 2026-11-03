@@ -36,10 +36,13 @@ function gearSummary(item: Equipment) {
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken, memories, onMemory }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
   onProfileText?: (field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples', text: string) => void;
+  /** 这位少女演完的交互剧情：点开只读回看。 */
+  memories?: { id: string; title: string; day: number; rounds: number }[];
+  onMemory?: (eventId: string) => void;
   /** 立绘缺失时手动补一张：读成 data URL 后由 setPortrait 落地。 */
   onPortraitFile?: (file: File) => void;
   /** 这人的立绘是不是缺了（存档瘦身后会出现）。 */
@@ -261,6 +264,21 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 })}
               </ol>
               {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
+              {memories && memories.length > 0 && (
+                <div className="story-memories" id="dossier-story-memories">
+                  <div className="story-memories-head"><b>回忆</b><small>演完的对话都留在这里，点开只是回看</small></div>
+                  <ul>
+                    {memories.map(memory => (
+                      <li key={memory.id}>
+                        <button id={`dossier-memory-${memory.id}`} type="button" onClick={() => onMemory?.(memory.id)}>
+                          <span>{memory.title}</span>
+                          <small>第 {memory.day} 夜 · {memory.rounds} 轮对话</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {storyline && (beat || graphChoice) ? (
                 <div className="story-beat">
                   <b>{beat?.title ?? graphChoice?.title ?? '她的回应'}</b>

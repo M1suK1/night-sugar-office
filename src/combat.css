@@ -985,3 +985,14 @@
 .session-options.branch-options>button{border-color:#d996ad55;background:#f3aec90d;color:#f0d8e4;text-align:left;padding:9px 11px;font-size:10px;letter-spacing:.02em}
 .session-options.branch-options>button:hover:not(:disabled){border-color:#d996ad99;background:#f3aec91a}
 .session-options.branch-options .session-lead{text-align:left;color:#c8a7b5}
+
+/* v84 档案 · 故事线：回忆列表与只读回看 */
+.story-memories{margin-top:12px;border-top:1px solid #ffffff0d;padding-top:10px}
+.story-memories-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.story-memories-head b{font-size:10px;letter-spacing:.08em;color:#e7cdd9}
+.story-memories-head small{font-size:8px;letter-spacing:.02em;color:#7d6a89}
+.story-memories ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.story-memories button{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:8px 10px;border:1px solid #ffffff14;border-radius:6px;background:#0d0a14;color:#e6d9e4;font-size:10px;letter-spacing:.02em;cursor:pointer;transition:border-color .2s,background .2s}
+.story-memories button:hover{border-color:#d996ad66;background:#f3aec90d}
+.story-memories button small{font-family:var(--font-data);font-size:8px;color:#7d6a89}
+.session-readonly{margin-top:4px;padding:10px 12px;border:1px solid #ffffff14;border-radius:7px;background:#0d0a14;font-size:9px;letter-spacing:.04em;color:#b78c9f;text-align:center}

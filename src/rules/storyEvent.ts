@@ -138,3 +138,10 @@ export function buildTemplateArc(girl: Girl, premise: string, hook: string): Sto
     },
   ];
 }
+
+/** 演完的交互剧情：档案里的「回忆」列表用。 */
+export function finishedSessionEvents(state: GameState, girlId: string): CharacterEvent[] {
+  return state.events
+    .filter(event => event.girlId === girlId && (event.status === 'done' || event.sessionDone))
+    .sort((left, right) => right.day - left.day);
+}

@@ -24,11 +24,13 @@ export interface EventDialogProps {
   branch?: { storylineId: string; options: { id: string; label: string }[] };
   onBranch?: (port: string) => void;
   onClose: () => void;
+  /** 已经结束的剧情：只回看，不接任何输入。 */
+  readOnly?: boolean;
 }
 
-export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose }: EventDialogProps) {
+export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false }: EventDialogProps) {
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} onAdvance={onAdvance} onChoose={onChoose} />;
+    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} />;
 }
@@ -82,7 +84,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose }: Pick<EventDia
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose }: EventDialogProps) {
+function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false }: EventDialogProps) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? [];
   const [draft, setDraft] = useState('');
@@ -197,7 +199,8 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
               {loading && turns.length > 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={18} className="spin" /><b>她在等你说完</b></div>}
             </div>
 
-            <footer className="event-composer">
+            {readOnly && <div className="session-readonly" id="session-readonly">这段剧情已经结束。你现在只是在回看。</div>}
+            {!readOnly && <footer className="event-composer">
               {event.pendingChoice && (
                 <div className="session-options branch-options" id="session-branch">
                   <p className="session-lead">她停在门口，等你拿主意。选完这段剧情就结束。</p>
@@ -218,7 +221,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
                   <button id="story-end-cancel" type="button" className="btn" onClick={() => setConfirmEnd(false)}>再聊一会</button>
                 </span> : <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>{branch && !event.pendingChoice ? '导向结局' : '结束事件'}</button>}
               </div>}
-            </footer>
+            </footer>}
           </main>
 
           <aside className="battle-note-side right" aria-label="所长">
