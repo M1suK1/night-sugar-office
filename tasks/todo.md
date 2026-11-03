@@ -692,3 +692,11 @@
 - [x] **第一夜用开场那一条**：`OPENING_NEWS_DAY = 14`，`openingCityNews(day, playerName)` 给出「{名字}继承了事务所——它在多年沉寂后重新开张……」，新档开局即带这条；`newsIsStale` 在第一夜恒为 false，`refreshCityNews` 在第一天只补开场、不请求模型。
 - [x] **电台口吻**：播报一律第三人称，不出现「你」；开场那条用委托人档案里的名字（没填时退回「新任所长」），生成提示词的 user 消息与 `nw-brief` 分区都写明「提到所长用他的名字」；改名后第一夜会自动重播一次。
 - [x] 测试：新增 `tests/v50.test.ts` 八条（开关与夹取、本地快讯内容、第一夜开场、1–3 条上限、清洗规则、过期判定、存取与清空、预设档位齐全）；26 个测试文件 464 项全绿，`tsc` 0 错，`check:rules` 通过。
+
+## v51 事务所档案与玩家档案：派遣页入口 + 双页签弹窗
+
+- [x] **派遣页入口**：`dispatch-world-strip` 加第三列「事务所档案」卡（`#dispatch-office-card`），显示理念首句、对外代表、玩家名字与「编辑档案 →」；窄屏（≤1180px）折到势力栏下方，不挤三方卡片。
+- [x] **双页签弹窗**：`OfficeDialog` 拆成「事务所档案 / 玩家档案」两页签（`#office-tab-office` / `#office-tab-player`）。事务所页保留原有背景 / 理念 / 目标与对外代表任命；玩家页新增名字、称呼、代词、外貌、性格、背景、与她们的关系七个字段（`#office-player-*`）。
+- [x] **保存**：保存时先 `savePlayerProfile()` 再 `onSave(office)`，页脚按页签给出不同的落库说明（世界书 / 仅本地），并显示「已保存」。
+- [x] 样式：卡片与 `.world-faction-card` 同一套边框、渐变与 hover；页签沿用设置页 `.settings-tab` 的观感（`.office-tab`）；`styles.css` 末尾追加，不动既有规则。
+- [x] 回归：26 个测试文件 464 项全绿，`tsc` 0 错，`check:rules` 通过；世界书旧入口与浏览器验收用到的 `#office-*`、`#settings-player-*` 选择器全部保留。

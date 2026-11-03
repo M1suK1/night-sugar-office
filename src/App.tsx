@@ -1195,6 +1195,27 @@ export default function App() {
               );
             })}
           </div>
+          <button
+            id="dispatch-office-card"
+            type="button"
+            className="world-office-card"
+            onClick={() => setModal({ type: 'office' })}
+            title="打开事务所档案与玩家档案"
+          >
+            <div className="world-office-top">
+              <span className="world-office-seal">所</span>
+              <div>
+                <strong>事务所档案</strong>
+                <small>代表：{representativeOf(state)?.name ?? '尚未任命'}</small>
+              </div>
+              <span className="world-office-attitude">中立</span>
+            </div>
+            <p className="world-office-line">{state.office?.philosophy?.trim() || '还没有写下理念。这里写下的，会成为世界书里的设定。'}</p>
+            <div className="world-office-foot">
+              <span>玩家：<b>{loadPlayerProfile().name.trim() || '未命名'}</b></span>
+              <em>编辑档案 →</em>
+            </div>
+          </button>
         </section>
 
         <TaskPanel state={state} onOpen={openTask} onNavigate={() => navigate('base')} />
