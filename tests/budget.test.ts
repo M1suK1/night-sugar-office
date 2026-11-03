@@ -44,7 +44,7 @@ test('默认预算：统一 2048，重 JSON 任务各有更宽的默认口子', 
   assert.equal(budget.tasks.arc, 4000);
   assert.equal(budget.tasks.chat, undefined);
   assert.equal(DEFAULT_TASK_BUDGETS.chat, undefined);
-  assert.equal(LLM_BUDGET_TASKS.length, 10);
+  assert.equal(LLM_BUDGET_TASKS.length, 11);
   assert.equal(budget.tasks.whisper, 1200);
 });
 

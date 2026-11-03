@@ -6,6 +6,7 @@ import { districtOfMission } from './battle.ts';
 import { book, clone, dateLabel, findGirl } from './core.ts';
 import { relationshipStage, statusLabels, workLabels } from './labels.ts';
 import { inWithdrawal, squadLimit } from './roster.ts';
+import { sanitizeCityNews } from '../cityNews.ts';
 import { failStoryMission } from './storyRun.ts';
 // v35 从 src/game.ts 拆出：派遣、陪伴与聊天。
 
@@ -153,6 +154,15 @@ export function applyMarkWhispersRead(state: GameState, action: Extract<GameActi
       const next = clone(state);
       if (next.whisperUnread) delete next.whisperUnread[action.girlId];
       return { state: next, ok: true, message: '' };
+}
+
+/** setCityNews 的动作处理器：把叙事者或本地规则写好的播报存进存档；传 null 清空。 */
+export function applySetCityNews(state: GameState, action: Extract<GameAction, { type: 'setCityNews' }>): ActionResult {
+      const next = clone(state);
+      const news = action.news ? sanitizeCityNews(action.news, next.day) : undefined;
+      if (news) next.cityNews = news;
+      else delete next.cityNews;
+      return { state: next, ok: true, message: news ? '城市新闻已更新。' : '已清空城市新闻。' };
 }
 
 /** addWhisper 的动作处理器（v35 从 act 拆出）。 */

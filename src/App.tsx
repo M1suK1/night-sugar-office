@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Clock3, FastForward, Pause, Play, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
+import { Check, Clock3, FastForward, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
+import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
@@ -36,7 +36,9 @@ import { slimStateImages } from './imageSlim';
 import { yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
-import { generateBattleNote, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
+import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
+import { localCityNews, newsIsStale } from './cityNews';
+import { loadBalance } from './balance';
 import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './research';
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
@@ -175,6 +177,9 @@ export default function App() {
   const queuedSave = useRef<GameState | null>(null);
   const latestState = useRef<GameState | null>(null);
   const writtenState = useRef<GameState | null>(null);
+  const newsBusyRef = useRef(false);
+  const [newsBusy, setNewsBusy] = useState(false);
+  const newsEnabled = loadBalance().cityNewsEnabled === 1;
 
   useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } }, [presets]);
   useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } }, [binding]);
@@ -278,6 +283,34 @@ export default function App() {
     if (generatingRef.current || !llmHasKey()) return;
     void generateContent('auto');
   }, [state.day, autoGenerate, loaded]);
+  const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual') => {
+    if (newsBusyRef.current) return;
+    if (loadBalance().cityNewsEnabled !== 1) {
+      if (mode === 'manual') notify('城市新闻已在「世界书 → 数值」里关掉了。', false);
+      return;
+    }
+    newsBusyRef.current = true;
+    setNewsBusy(true);
+    try {
+      const current = latestState.current ?? state;
+      let news: CityNews | undefined;
+      if (llmHasKey()) {
+        const result = await generateCityNews(loadLlmConfig(), current, taskRuntime(boundPreset('news', presets, binding), 'news'));
+        if (result.ok) news = result.data;
+      }
+      perform({ type: 'setCityNews', news: news ?? localCityNews(current) });
+      if (mode === 'manual') notify(news ? '城市播报已由叙事者写好。' : '没有连上叙事者，先用本地快讯顶上。', Boolean(news));
+    } finally {
+      newsBusyRef.current = false;
+      setNewsBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!loaded) return;
+    if (loadBalance().cityNewsEnabled !== 1) return;
+    if (!newsIsStale(state.cityNews, state.day)) return;
+    void refreshCityNews('auto');
+  }, [state.day, loaded]);
   useEffect(() => {
     // 提示排队逐条出现：一次推进里可能同时完成多个委托、多人升级，不能互相覆盖。
     if (!toasts.length) return;
@@ -1080,7 +1113,25 @@ export default function App() {
     <Topbar state={state} saved={saved} onNotifications={() => setModal({ type: 'notifications' })} onCommand={() => setCmdOpen(true)} filling={phase === 'play' && openingBusy} />
     <main id="main-content" className={`app-main page-${page}`}>
       {page === 'dispatch' ? <>
-        <PageHeading page={page}><div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div></PageHeading>
+        <PageHeading page={page}>
+          <div className="heading-side">
+            {newsEnabled && state.cityNews && (
+              <aside className="dispatch-news" id="dispatch-news" aria-label="城市新闻">
+                <header>
+                  <Radio size={12} />
+                  <b>城市播报</b>
+                  <span>第 {state.cityNews.day} 日 · {state.cityNews.source === 'llm' ? '叙事者' : '本地快讯'}</span>
+                  <button id="dispatch-news-refresh" type="button" disabled={newsBusy} onClick={() => void refreshCityNews('manual')}>{newsBusy ? '正在写' : '刷新'}</button>
+                </header>
+                <h3>{state.cityNews.headline}</h3>
+                <ul>
+                  {state.cityNews.items.map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
+                </ul>
+              </aside>
+            )}
+            <div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div>
+          </div>
+        </PageHeading>
 
         {/* 主页：城市安定度与三方势力态度并列栏 */}
         <section className="dispatch-world-strip" aria-label="城市安定度与三方势力态度">

@@ -30,7 +30,7 @@ import {
   applyStartExpedition,
 } from './rosterOps.ts';
 import {
-  applyAddWhisper, applyDropWhisper, applyMarkWhispersRead, care,
+  applyAddWhisper, applyDropWhisper, applyMarkWhispersRead, applySetCityNews, care,
   dispatch, talk,
 } from './dailyOps.ts';
 import {
@@ -116,6 +116,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'chooseStoryPassage': return applyChooseStoryPassage(state, action);
     case 'resolveEvent': return applyResolveEvent(state, action);
     case 'setPoolLimit': return applySetPoolLimit(state, action);
+    case 'setCityNews': return applySetCityNews(state, action);
     case 'deleteMission': return applyDeleteMission(state, action);
     case 'deleteCandidate': return applyDeleteCandidate(state, action);
     case 'deleteMonster': return applyDeleteMonster(state, action);

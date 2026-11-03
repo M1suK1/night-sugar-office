@@ -800,6 +800,20 @@ export interface Mission {
   /** 战斗模板只写要几只敌人，具体是哪些由 `rollEnemies` 按辖区与难度抽。 */
   enemyCount?: number;
 }
+/** 一条城市新闻：势力 / 污染 / 安定度 / 街头，四类各管一种来源。 */
+export interface CityNewsItem {
+  text: string;
+  tone: 'faction' | 'pollution' | 'stability' | 'street';
+}
+
+/** 每天一条的城市播报；换成业务日后由叙事者或本地规则重写。 */
+export interface CityNews {
+  day: number;
+  generatedAt: string;
+  headline: string;
+  items: CityNewsItem[];
+  source: 'llm' | 'rule';
+}
 /** 每次委托结算留下的一条参与记录；旧存档可从 battles 补战斗部分。 */
 export interface MissionRun {
   id: string;
@@ -1003,6 +1017,8 @@ export interface GameState {
   lastWhisperDay?: Record<string, number>;
   /** 委托参与记录；旧存档没有时从 battles 派生战斗部分。 */
   missionRuns?: MissionRun[];
+  /** 今日城市新闻；数值规则里关掉时不再生成。 */
+  cityNews?: CityNews;
   /** 升级成长方式：手动发点 / 按职阶自动加点；旧档按 auto 读。 */
   levelUpMode?: 'auto' | 'manual';
   /** 委托完成与升级的提示；新的在前，只留最近 20 条。 */
@@ -1110,6 +1126,7 @@ export type GameAction =
   | { type: 'finishStorySession'; eventId: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
   | { type: 'setPoolLimit'; pool: 'missions' | 'monsters' | 'candidates'; value: number }
+  | { type: 'setCityNews'; news: CityNews | null }
   | { type: 'deleteMission'; missionId: string }
   | { type: 'deleteCandidate'; girlId: string }
   | { type: 'deleteMonster'; monsterId: string }

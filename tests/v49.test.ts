@@ -14,15 +14,15 @@ function withRuntime(entries = DEFAULT_PROMPTS) {
   return { ...presetRuntime(undefined), entries };
 }
 
-test('v49 分区：十三条新词条都在默认词条里，且不会误报「禁止数值」', () => {
-  assert.equal(SECTION_PROMPTS.length, 13);
+test('v49 分区：十四条新词条都在默认词条里，且不会误报「禁止数值」', () => {
+  assert.equal(SECTION_PROMPTS.length, 14);
   for (const section of SECTION_PROMPTS) {
     const found = DEFAULT_PROMPTS.find(entry => entry.id === section.id);
     assert.ok(found, `缺少分区 ${section.id}`);
     assert.equal(found?.scope, section.scope);
     assert.equal(promptHasMechanicBan(section.content), false, `${section.id} 被误判成禁止数值`);
   }
-  assert.equal(DEFAULT_PROMPTS.length, 27);
+  assert.equal(DEFAULT_PROMPTS.length, 29);
 });
 
 test('v49 迁移：旧预设补到 schema 5，只补缺、不覆盖同 id 的自定义词条', () => {

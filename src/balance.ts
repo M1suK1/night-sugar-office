@@ -35,6 +35,8 @@ export interface BalanceRules {
   whisperMaxPct: number;
   /** 每晚最多入队几条私语。 */
   whisperDailyCap: number;
+  /** 城市新闻开关：1 = 每天生成一条播报，0 = 关掉。 */
+  cityNewsEnabled: number;
 }
 
 export const BALANCE_KEY = 'night-sugar:balance';
@@ -56,6 +58,7 @@ export const DEFAULT_BALANCE: BalanceRules = {
   whisperStoryPct: 100,
   whisperMaxPct: 85,
   whisperDailyCap: 3,
+  cityNewsEnabled: 1,
 };
 
 export interface BalanceField {
@@ -68,9 +71,11 @@ export interface BalanceField {
   unit?: string;
   /** 分组标题：相邻同组的字段会排在一起。 */
   group: string;
+  /** toggle：0 / 1 的开关，界面上渲染成开关而不是数字框。 */
+  kind?: 'number' | 'toggle';
 }
 
-export const BALANCE_GROUPS = ['运营与诊所', '灯下私语'] as const;
+export const BALANCE_GROUPS = ['运营与诊所', '灯下私语', '城市新闻'] as const;
 
 export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'clinicBase', label: '诊所起步价', hint: '每次治疗的基础费用。', min: 0, max: 2000, step: 10, unit: '星砂', group: '运营与诊所' },
@@ -89,6 +94,7 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'whisperStoryPct', label: '故事线角色', hint: '正在走故事线的角色专用概率；填 100 表示只要出勤就必发。', min: 0, max: 100, step: 5, unit: '%', group: '灯下私语' },
   { key: 'whisperMaxPct', label: '概率封顶', hint: '算上加成之后允许的最高概率。', min: 10, max: 100, step: 5, unit: '%', group: '灯下私语' },
   { key: 'whisperDailyCap', label: '每晚上限', hint: '一晚最多入队几条，避免一次刷满。', min: 1, max: 6, step: 1, unit: '条', group: '灯下私语' },
+  { key: 'cityNewsEnabled', label: '每日城市新闻', hint: '每天换日时让叙事者按势力、污染与安定度写一条播报；关掉后派遣页不再显示这一块。', min: 0, max: 1, step: 1, group: '城市新闻', kind: 'toggle' },
 ];
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

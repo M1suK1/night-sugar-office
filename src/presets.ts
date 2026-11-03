@@ -11,7 +11,7 @@ import { promptTokens } from './tokens.ts';
 export type PromptRole = 'system' | 'user' | 'assistant';
 
 /** 词条用途：共用词条会进入所有请求，任务词条只进入对应生成器。 */
-export type PromptScope = 'shared' | 'chat' | 'daily' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit' | 'battle' | 'whisper';
+export type PromptScope = 'shared' | 'chat' | 'daily' | 'news' | 'profile' | 'storyline' | 'event' | 'arc' | 'incident' | 'outfit' | 'battle' | 'whisper';
 
 export interface PromptScopeInfo {
   id: PromptScope;
@@ -23,6 +23,7 @@ export const PROMPT_SCOPES: PromptScopeInfo[] = [
   { id: 'shared', label: '共用', hint: '世界观、语气、玩家档案等所有任务都会用到的词条' },
   { id: 'chat', label: '角色对话', hint: '在事务所或外出时与角色交谈' },
   { id: 'daily', label: '每日提案', hint: '每晚的魔物、候选少女、委托与议会提案' },
+  { id: 'news', label: '城市新闻', hint: '每天一条城市播报：势力、污染与安定度' },
   { id: 'profile', label: '角色起草', hint: '根据立绘起草新角色的档案' },
   { id: 'storyline', label: '故事线', hint: '为一位角色规划四幕个人故事线' },
   { id: 'event', label: '私人事件', hint: '角色详情页里的两场私人事件' },
@@ -37,7 +38,7 @@ export const PROMPT_SCOPE_IDS = new Set<PromptScope>(PROMPT_SCOPES.map(scope => 
 
 /** 可独立绑定预设的生成任务；共用词条随每个任务一起注入，本身没有绑定。 */
 export type PromptTask = Exclude<PromptScope, 'shared'>;
-export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit', 'battle', 'whisper'];
+export const PROMPT_TASK_SCOPES: PromptTask[] = ['chat', 'daily', 'news', 'profile', 'storyline', 'event', 'arc', 'incident', 'outfit', 'battle', 'whisper'];
 
 export function isPromptScope(value: unknown): value is PromptScope {
   return typeof value === 'string' && PROMPT_SCOPE_IDS.has(value as PromptScope);
@@ -914,6 +915,7 @@ export type PresetBinding = Record<PromptTask, string>;
 export const DEFAULT_PRESET_BINDING: PresetBinding = {
   chat: 'builtin-balanced',
   daily: 'builtin-strict',
+  news: 'builtin-balanced',
   profile: 'builtin-strict',
   storyline: 'builtin-balanced',
   event: 'builtin-balanced',
@@ -1023,6 +1025,7 @@ export const DEFAULT_PROMPTS: PromptEntry[] = [
   { id: 'tone', name: '叙事语气', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。' },
   { id: 'task', name: '本次任务', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '{{context}}' },
   { id: 'chat', name: '角色对话', role: 'system', enabled: true, scope: 'chat', builtin: true, content: '你现在只扮演对方，不以旁白、作者或 AI 的身份说话。用中文回应 1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型。' },
+  { id: 'news', name: '城市新闻', role: 'system', enabled: true, scope: 'news', builtin: true, content: '你现在是樱雾市的夜间通讯员，为今晚的城市写一条播报。语气像深夜电台与街头快讯的混合：短、具体、有画面，不写数字以外的评论。每条只讲一件事：势力动向、辖区污染、城市安定度、或街头正在发生的小事。不要替玩家决定，不要写成议会提案。' },
   { id: 'daily', name: '每日提案', role: 'system', enabled: true, scope: 'daily', builtin: true, content: '为今晚的夜班提案担任编辑。先想清楚：谁在什么处境下提出这件事，她为什么非要今晚说，她希望所长付出什么。文案要具体、克制、有生活质感；机制数值必须服从下方输出契约，不要只写气氛。' },
   { id: 'profile', name: '角色起草', role: 'system', enabled: true, scope: 'profile', builtin: true, content: '为一位刚登记的魔法少女起草档案。先看立绘，再写她给人的第一印象；外貌、服装、元素、职阶、性格必须互相吻合。文案克制，不写露骨内容，不替玩家做决定。' },
   { id: 'storyline', name: '故事线', role: 'system', enabled: true, scope: 'storyline', builtin: true, content: '为一位魔法少女写一条可以分四幕推进的个人故事线。基调克制、具体、有生活质感，不要写成英雄史诗。从她的目标、特性与当前关系里找一个最小的裂缝开始。' },

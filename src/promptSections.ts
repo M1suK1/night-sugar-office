@@ -206,6 +206,26 @@ ${OOC_GUARD}`),
   section('dy-repair', 'daily', '提案·返修策略', `【如果这是返修】
 若请求里出现【必须修正的问题】，逐条按它改：只补不删、所有 id 仍取上面的目录、不新增字段、不要改选项 id；仍然只输出一个完整的 JSON 对象。`),
   section('chat-heroine', 'chat', '对话·她是谁', `${HEROINE_BLOCK.replace('{{history.chat:8}}', '{{history.battles:3}}')}`),
+  section('nw-brief', 'news', '新闻·今晚的城市', `【今晚的城市】
+{{night}}
+
+【三方势力】
+{{factions}}
+
+【辖区污染】
+{{districts}}
+
+【势力敌意】
+{{hostility}}
+
+【会客厅待议】
+{{council}}
+
+【写法】
+- 3–4 条，一条只讲一件事：势力动向、辖区污染、城市安定度、街头小事各挑着写。
+- 每条 30–80 字，像深夜电台的短讯；可以引用一处具体地点、一个时间、一个正在发生的小动作。
+- 只写城市此刻的状态与别人的反应，不要替所长做决定，不要写成议会提案或委托简报。
+- 不编造名单外的人与不存在的辖区；污染与敌意的数值必须和上面的读数一致。`),
   section('whisper-heroine', 'whisper', '私语·她是谁', `${HEROINE_BLOCK.replace('{{history.chat:8}}', '{{history.chat:12}}')}`),
   section('ev-heroine', 'event', '私人事件·她是谁', `【她是谁】
 {{heroine}}
@@ -221,6 +241,15 @@ ${OOC_GUARD}`),
 ];
 
 export const SECTION_IDS = SECTION_PROMPTS.map(entry => entry.id);
+
+/** 城市新闻的锁定契约：JSON 骨架 + 条数与枚举。 */
+export function newsContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"headline":"不超过 20 字的标题","items":[{"text":"一条播报","tone":"faction|pollution|stability|street"}]}',
+    'items 给 3–4 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。',
+  ].join('\n');
+}
 
 /** 蓝图的锁定契约：JSON 骨架、kind 取值与 id 字符集——解析器真正需要的那几条。 */
 export function storylineContract(): string {

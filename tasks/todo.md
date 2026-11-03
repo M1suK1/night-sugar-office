@@ -679,3 +679,13 @@
 - [x] **接线**：蓝图 body 从 4 759 字瘦到「玩家方向 + 锁定契约」；每日提案换成 `dailyContract()` + `buildNightCatalog` 供宏取数（`buildNightPrompt(state)` 保留为兼容出口）；对话 / 私语删掉手写的档案与「最近参与 / 最近对话」，只留场景句与战报；私人事件 / 完整剧情 / 开场白补 `state` 与主角上下文。
 - [x] **编辑器**：`PresetDialog` 增设宏面板（她是谁 / 她的过往 / 事务所与城市 / 目录 / 枚举与阈值五组，点一下插进光标所在的词条）、「代码追加的契约」只读预览；设置页补上 v44 起一直缺的「灯下私语」入口。
 - [x] 测试：新增 `tests/v49.test.ts` 十一条（分区齐全、schema 5 迁移、档案九节与魔女化、brief 压缩、名册与档案不重、四种历史的条数与省略、拼装顺序与「删了就消失」、玩家自定义覆盖、宏面板键名）；25 个测试文件 456 项全绿，`tsc` 0 错，`check:rules` 通过。
+
+## v50 城市新闻：每日播报 + 数值规则开关
+
+- [x] **`src/cityNews.ts`（新）**：`CityNews` 两条来源——`sanitizeCityNews()` 洗模型输出（≤4 条、每条 ≤90 字、tone 四选一、只有标题没有条目就当没生成），`localCityNews()` 用当前存档拼本地快讯（最热的一对势力、最脏的辖区与读数、安定度档位、派遣栏里最难收尾的那条），`newsIsStale()` 判换日过期。
+- [x] **存档**：`GameState.cityNews?`（`day` / `generatedAt` / `headline` / `items[]` / `source`），读档时过一遍 `sanitizeCityNews`，坏数据直接丢；新动作 `setCityNews`（传 null 清空）由 `rules/dailyOps.ts` 的 `applySetCityNews` 处理。
+- [x] **数值规则开关**：`BalanceRules.cityNewsEnabled`（0 / 1，默认 1）；`BalanceField` 新增 `kind: 'toggle'`，世界书 → 数值页渲染成开关而不是数字框，并新增「城市新闻」分组与说明。
+- [x] **生成任务**：`generateCityNews()` 走新 scope `news`（预设词条「城市新闻」+ 分区 `nw-brief` + 锁定契约 `newsContract()`），提示词里的城市数据全部来自 `{{night}}` / `{{factions}}` / `{{districts}}` / `{{hostility}}` / `{{council}}`；输出额度默认 1200；`LLM_BUDGET_TASKS` / `PROMPT_TASK_SCOPES` / `DEFAULT_PRESET_BINDING` / 设置页用途入口都补上这一档。
+- [x] **派遣页**：`PageHeading` 右侧新增 `.heading-side`，装「城市播报」卡与原来的夜班徽标；卡上有标题、来源（叙事者 / 本地快讯）、4 条带色点的短讯与「刷新」按钮；窄屏自动堆到标题下方。
+- [x] **自动生成**：换日时若开关开着且播报过期，先试叙事者，失败或没 Key 就用本地快讯落库；刷新按钮同一入口，失败时给出提示。
+- [x] 测试：新增 `tests/v50.test.ts` 六条（开关与夹取、本地快讯内容、清洗规则、过期判定、存取与清空、预设档位齐全）；26 个测试文件 462 项全绿，`tsc` 0 错，`check:rules` 通过。

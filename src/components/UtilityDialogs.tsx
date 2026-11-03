@@ -242,6 +242,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
             { scope: 'shared', label: '共用世界观与语气', hint: '所有任务最先注入' },
             { scope: 'chat', label: '角色对话', hint: '会客厅与远程交谈' },
             { scope: 'daily', label: '每日提案', hint: '今晚的魔物、少女、委托与议会' },
+            { scope: 'news', label: '城市新闻', hint: '每天一条城市播报' },
             { scope: 'profile', label: '角色起草', hint: '新契约者档案与立绘解读' },
             { scope: 'storyline', label: '个人故事线', hint: '四幕故事线的起点' },
             { scope: 'event', label: '私人事件', hint: '角色日常的两场小事件' },

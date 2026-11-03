@@ -492,6 +492,7 @@ export const BUDGET_UNIFIED_DEFAULT = 2048;
 export const LLM_BUDGET_TASKS = [
   { key: 'chat', label: '角色对话' },
   { key: 'daily', label: '每日提案' },
+  { key: 'news', label: '城市新闻' },
   { key: 'profile', label: '角色起草' },
   { key: 'storyline', label: '故事线起点' },
   { key: 'event', label: '故事事件' },
@@ -509,7 +510,7 @@ export interface LlmBudget {
 }
 const BUDGET_KEY = 'night-sugar:llm-budget';
 /** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
-export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, arc: 4000, battle: 16000, event: 3000, storyline: 3000, whisper: 1200 };
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, storyline: 3000, whisper: 1200 };
 
 function clampBudget(value: unknown, fallback: number): number {
   const num = Math.round(Number(value));
@@ -1528,6 +1529,28 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
   return { ok: true, data };
 }
 
+/** 每晚一条城市播报：势力、污染与安定度都由宏喂进去，模型只负责写成短讯。 */
+export async function generateCityNews(config: LlmConfig, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: CityNews } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
+    return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
+  }
+  const result = await callJson(config, preset, 'news', newsContract(), `请为第 ${state.day} 日的夜晚写一条城市播报。`, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
+  if (!result.ok) {
+    recordLlmLog({ kind: '城市新闻', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
+    return result;
+  }
+  const news = sanitizeCityNews({ ...result.raw, day: state.day, generatedAt: new Date().toISOString(), source: 'llm' }, state.day);
+  if (!news) {
+    const message = '模型没有给出可用的播报，已改用本地快讯。';
+    recordLlmLog({ kind: '城市新闻', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  recordLlmLog({ kind: '城市新闻', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `城市新闻已生成：${news.headline}`, request: meta.request, response: meta.response });
+  return { ok: true, data: news };
+}
+
 export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
@@ -2036,12 +2059,13 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { storylineContract } from './promptSections.ts';
+import { newsContract, storylineContract } from './promptSections.ts';
+import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleStoryDigest, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
-import type { Archetype, BattleNote, BattleState, CharacterEvent, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
+import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

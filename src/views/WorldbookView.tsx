@@ -182,22 +182,37 @@ export function WorldbookView({ onOpenOffice }: { onOpenOffice?: () => void }) {
             {fields.map(field => <label key={field.key} className="wb-balance-field">
               <span>{field.label}<em>{field.hint}</em></span>
               <div>
-                <input
-                  id={`balance-${field.key}`}
-                  type="number"
-                  className="wb-input"
-                  value={balance[field.key]}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  onChange={event => {
-                    const next = { ...balance, [field.key]: Number(event.target.value) };
-                    setBalance(next);
-                    saveBalance(next);
-                    setNote('数值已保存；下一次结算就会用新的值。');
-                  }}
-                />
-                <small>{field.unit}</small>
+                {field.kind === 'toggle'
+                  ? <button
+                    id={`balance-${field.key}`}
+                    type="button"
+                    role="switch"
+                    aria-checked={balance[field.key] === 1}
+                    aria-label={field.label}
+                    className={`toggle ${balance[field.key] === 1 ? 'on' : ''}`}
+                    onClick={() => {
+                      const next = { ...balance, [field.key]: balance[field.key] === 1 ? 0 : 1 };
+                      setBalance(next);
+                      saveBalance(next);
+                      setNote('数值已保存；下一次换日就会按新的开关走。');
+                    }}
+                  ><i /></button>
+                  : <input
+                    id={`balance-${field.key}`}
+                    type="number"
+                    className="wb-input"
+                    value={balance[field.key]}
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    onChange={event => {
+                      const next = { ...balance, [field.key]: Number(event.target.value) };
+                      setBalance(next);
+                      saveBalance(next);
+                      setNote('数值已保存；下一次结算就会用新的值。');
+                    }}
+                  />}
+                <small>{field.kind === 'toggle' ? (balance[field.key] === 1 ? '开' : '关') : field.unit}</small>
               </div>
             </label>)}
           </div>

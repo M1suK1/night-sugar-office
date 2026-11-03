@@ -1438,3 +1438,30 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 /* 没有可用 IndexedDB 时的顶部提示条：只提示，不阻断游戏。 */
 .storage-warning{display:flex;align-items:center;gap:7px;margin:0 0 10px;padding:8px 12px;border:1px solid #c08a5e55;border-radius:8px;background:#c08a5e18;color:#e6c9a8;font-size:12.5px;line-height:1.5}
 .storage-warning svg{flex:none;color:#c9b36a}
+
+/* v50：派遣页头部的城市播报。 */
+.heading-side { display: flex; align-items: flex-start; gap: 14px; justify-content: flex-end; }
+.dispatch-news { width: min(420px, 42vw); padding: 12px 14px; border: 1px solid rgba(244, 154, 189, 0.16); border-radius: 10px; background: linear-gradient(165deg, rgba(24, 17, 27, 0.92), rgba(14, 12, 18, 0.92)); }
+.dispatch-news header { display: flex; align-items: center; gap: 7px; font-size: 9px; letter-spacing: .12em; color: #a99ca6; margin-bottom: 8px; }
+.dispatch-news header b { color: #f3aec9; font-weight: 500; letter-spacing: .16em; }
+.dispatch-news header span { color: #6f6470; }
+.dispatch-news header button { margin-left: auto; padding: 2px 8px; border: 1px solid rgba(244, 154, 189, 0.32); border-radius: 999px; background: transparent; color: #e7c8d6; font-size: 9px; cursor: pointer; }
+.dispatch-news header button:hover:not(:disabled) { border-color: rgba(244, 154, 189, 0.7); color: #fff; }
+.dispatch-news header button:disabled { opacity: .55; cursor: default; }
+.dispatch-news h3 { margin: 0 0 7px; font-family: var(--font-display); font-weight: 500; font-size: 15px; letter-spacing: .01em; color: #f4e9ef; }
+.dispatch-news ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.dispatch-news li { position: relative; padding-left: 11px; font-size: 11px; line-height: 1.62; color: #b9adb8; }
+.dispatch-news li::before { content: ''; position: absolute; left: 0; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: #6f6470; }
+.dispatch-news li.tone-faction::before { background: #c9a2e0; }
+.dispatch-news li.tone-pollution::before { background: #8fb89a; }
+.dispatch-news li.tone-stability::before { background: #e8c08a; }
+.dispatch-news li.tone-street::before { background: #f3aec9; }
+@media (max-width: 1100px) {
+  .heading-side { flex-direction: column-reverse; align-items: flex-end; }
+  .dispatch-news { width: min(420px, 62vw); }
+}
+@media (max-width: 720px) {
+  .heading-side { align-items: stretch; }
+  .dispatch-news { width: 100%; }
+  .shift-badge { padding-top: 0; }
+}

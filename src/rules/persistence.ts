@@ -1,4 +1,5 @@
 import { bossTemplateOf } from '../content/bosses.ts';
+import { sanitizeCityNews } from '../cityNews.ts';
 import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
 import { getItem, items, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
@@ -126,6 +127,8 @@ export function loadState(raw: string | null): GameState {
     state.missionRuns = Array.isArray(state.missionRuns)
       ? state.missionRuns.filter(run => run && typeof run.id === 'string' && Array.isArray(run.girlIds) && Number.isFinite(run.day)).slice(0, 120)
       : [];
+    // v50：城市新闻是可选字段；坏数据直接丢掉，读档后换日会重写。
+    state.cityNews = sanitizeCityNews(state.cityNews, state.day);
     // v33：旧档没有这套成长设置时按自动加点读，不追溯退点。
     state.levelUpMode = state.levelUpMode === 'manual' ? 'manual' : 'auto';
     state.notices = Array.isArray(state.notices)
