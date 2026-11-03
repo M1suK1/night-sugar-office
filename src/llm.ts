@@ -1743,7 +1743,9 @@ function storyCast(state: GameState, event: CharacterEvent): { id: string; name:
   const pool = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
   const people = ids.flatMap(id => {
     const girl = pool.find(item => item.id === id);
-    return girl ? [{ id: girl.id, name: girl.name }] : [];
+    if (girl) return [{ id: girl.id, name: girl.name }];
+    const leader = leaderById(id);
+    return leader ? [{ id: leader.id, name: leader.name }] : [];
   });
   if (!people.length) {
     const girl = pool.find(item => item.id === event.girlId);
@@ -2117,7 +2119,7 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
-import { EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
+import { leaderById, EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';

@@ -920,3 +920,12 @@
 - [x] 档案 → 外观装备页工具条：`#dossier-portrait-reload` 选图 → `resizeImageFile` → `setPortrait`；缺图时提示「立绘缺失，补一张就好」。
 - [x] `tests/v78` 两条。
 - [ ] 后续：名册卡片角标、从卡库按 cardId 自动取回。
+
+## v79：势力首领召见（弹窗事件）
+
+- [x] 数值规则新增「势力」两项：`leaderSummonChance`（0–100，默认 40）、`leaderSummonCooldownDays`（1–14，默认 3），随 `BALANCE_FIELDS` 自动进世界书。
+- [x] `src/rules/summon.ts`：`summonRollsToday()` 按日号离散滚动（读档不重掷）+ 冷却记在 `incidentCooldowns`；`summonFactionToday()` 三方轮转；`buildSummonEvent()` 造一个只出场首领的 `session` 事件。
+- [x] `endNight` 打烊后调用 `maybeSummon()`：塞事件、记冷却、写一条日志。
+- [x] `storyCast` 认得首领 id（`leaderById`），召见弹窗里能出现首领本人。
+- [x] `tests/v79` 两条。
+- [ ] 后续：`{{leader}}` 宏与「每日至少一条首领提案」的名额校验，等这轮实际玩过再加。

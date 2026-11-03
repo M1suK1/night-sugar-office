@@ -11,6 +11,7 @@ import { applyResignations, tickStrain } from '../resignations.ts';
 import { SHIFT_END, SHIFT_START, WAVE_AT, WAVE_SIZES, absoluteMinutes, dayOf, minutesOf, shiftStartAt } from '../shift.ts';
 import type { ActionResult, BattleState, FactionId, GameState, Girl, Mission } from '../types.ts';
 import { interceptionFor, settleCombat } from './battle.ts';
+import { maybeSummon } from './summon.ts';
 import { accruePension, addCorruption, drugTick, gainTrait, tickConditions } from './conditions.ts';
 import { book, clone, dateLabel, findGirl, grantExpWithNotice, hashText } from './core.ts';
 import { careRecovery } from './dailyOps.ts';
@@ -376,6 +377,7 @@ export function endNight(state: GameState): ActionResult {
   next.shift = { day: next.day, wave: 0 };
   syncShift(next);
   ensureMissionPools(next);
+  maybeSummon(next);
   const openingIncident = deployDueIncident(next, 'dayStart', { day: next.day, minutes: next.minutes }, { wave: 0 });
   if (openingIncident) {
     next.incidents.unshift(openingIncident);

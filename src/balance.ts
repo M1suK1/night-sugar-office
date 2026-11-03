@@ -24,7 +24,11 @@ export interface BalanceRules {
   /** 长期委托最长天数。 */
   longMaxDays: number;
   /** 委托成功后她主动私语的基础概率（百分比）。 */
-  whisperVictoryPct: number;
+/** 势力首领召见的日概率（百分比）：掷中才有人来请所长过去。 */
+  leaderSummonChance: number;
+  /** 同一位首领两次召见之间至少隔几天。 */
+  leaderSummonCooldownDays: number;
+    whisperVictoryPct: number;
   /** 击退或失败后的基础概率（她更想开口安慰）。 */
   whisperDefeatPct: number;
   /** 羁绊拉满时的额外加成上限（百分点）。 */
@@ -53,6 +57,8 @@ export const DEFAULT_BALANCE: BalanceRules = {
   longMinDays: 2,
   longMaxDays: 7,
   whisperVictoryPct: 30,
+  leaderSummonChance: 40,
+  leaderSummonCooldownDays: 3,
   whisperDefeatPct: 45,
   whisperBondMaxPct: 20,
   whisperStoryPct: 100,
