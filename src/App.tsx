@@ -64,6 +64,7 @@ import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
 import { OPENING_CARDS, OPENING_CARD_BYTES } from './opening';
+import { cardFileGuard, saveFileGuard } from './fileLimits';
 import { marketCardGap, marketNeedsCards, pickWithinBytes, unusedCards } from './cardMarket';
 import { planCardBatches } from './cardImport';
 import type { CardBoxEntry } from './cardbox';
@@ -733,7 +734,9 @@ export default function App() {
     notify(`契约卡「${girl.name}」已导出到下载目录。${storyNote}`);
   };
   const importCard = async (file: File) => {
-    if (file.size > 8_000_000) { notify('卡片文件超过 8MB，无法导入。', false); return; }
+    // 一张带立绘与表情差分的 PNG 卡十兆二十兆都正常，这里只拦明显不是卡的文件。
+    const guard = cardFileGuard(file.size);
+    if (!guard.ok) { notify(`导入失败：${guard.message}`, false); return; }
     const parsed = parseGirlCard(await file.text());
     if (!parsed.ok) { notify(`导入失败：${parsed.message}`, false); return; }
     const optimized = await optimizeCardImages(parsed.card);
@@ -748,7 +751,8 @@ export default function App() {
     notify('当前存档已导出到下载目录。');
   };
   const importSave = async (file: File) => {
-    if (file.size > 6_000_000) { notify('存档文件超过 6MB，无法导入。', false); return; }
+    const guard = saveFileGuard(file.size);
+    if (!guard.ok) { notify(`导入失败：${guard.message}`, false); return; }
     const next = importState(await file.text());
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);

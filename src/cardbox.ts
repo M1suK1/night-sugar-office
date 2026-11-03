@@ -11,6 +11,7 @@
  * 迁移时用 `pop()` 逐个取，让已经处理过的长文本可以尽早被回收。
  */
 import type { GirlCard, GirlFaction, PortraitSpec, StatKey } from './types.ts';
+import { CARD_FILE_BYTES_MAX, formatBytes } from './fileLimits.ts';
 import { girlCardHash, parseGirlCard } from './cards.ts';
 import { kvDelete, kvGet, kvSet } from './store.ts';
 
@@ -25,7 +26,7 @@ export const CARD_BOX_LIMIT = 60;
  * 256KB 那种老阈值会把正常的卡全挡在门外。真正的容量约束是 IndexedDB 配额，
  * 由 `saveCardBox` 的返回值兜底，写不进去就回滚并报出来。
  */
-export const CARD_BOX_MAX_BYTES = 24 * 1024 * 1024;
+export const CARD_BOX_MAX_BYTES = CARD_FILE_BYTES_MAX;
 
 /** 卡库索引条目：除了立绘原文，进编成/市场需要的东西都在这里。 */
 export interface CardBoxEntry {
@@ -69,9 +70,7 @@ export function cardBoxByteSize(text: string): number {
 
 /** 给人看的大小：1023B / 24KB / 3.4MB。 */
 export function formatByteSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${bytes}B`;
+  return formatBytes(bytes);
 }
 
 function statsOf(raw: unknown): Record<StatKey, number> {

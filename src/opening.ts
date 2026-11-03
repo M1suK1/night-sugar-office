@@ -1,4 +1,5 @@
 import type { GameState } from './types.ts';
+import { CARD_FILE_BYTES_MAX } from './fileLimits.ts';
 import { incidentPoolNeed } from './incidents.ts';
 import { spawnableMonsters } from './rules/encounters.ts';
 
@@ -15,7 +16,7 @@ export const OPENING_CARDS = 20;
  * 一起被 JSON 序列化进存档，低配机器上开局就顶不住。超过预算的卡留在卡库里，
  * 由市场按缺口逐日补货（`refillMarket` 会按 hash 单张读）。
  */
-export const OPENING_CARD_BYTES = 12 * 1024 * 1024;
+export const OPENING_CARD_BYTES = CARD_FILE_BYTES_MAX;
 
 export interface OpeningGaps {
   /** 待处理议案还差几条。 */

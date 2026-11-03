@@ -733,3 +733,10 @@
 - [x] 预算：`DEFAULT_TASK_BUDGETS.incident = 3000`，批量事件调用再给 `tokenFloor 3000`（用户存的统一预算 / 预设额度偏低时也能拿到够用的额度）。
 - [x] `incidentEntriesFrom`：容忍 `entries` / `incidents` / `items` / `events` / `data.*` 与「只给一条对象」的壳子，非对象条目丢掉。
 - [x] 测试：新增 `tests/v55.test.ts`（截断不再返回半截、换壳子都能取到、突发事件预算 3000）；30 个文件 479 项全绿，`tsc` 与 `check:rules` 均通过。
+## 修：PNG 契约卡导入不了
+
+- [x] **根因**：「导入角色卡」这条口子自己写死 `file.size > 8_000_000`，而卡库扫描早就是 24MB。带立绘 + 魔女化 + 衣柜 + 表情差分的纯 PNG 卡是 10–22MB（`data/cards/` 里现成的六张超过 8MB），于是卡库收得进去、从文件导入反被判成过大。
+- [x] 新增 `src/fileLimits.ts` 作为唯一出处：`CARD_FILE_BYTES_MAX`（24MB）、`SAVE_FILE_BYTES_MAX`（32MB，与存档位一致）、`formatBytes`、`cardFileGuard` / `saveFileGuard`。
+- [x] `App.tsx` 两个闸口改用 guard，并报出真实体积；`CARD_BOX_MAX_BYTES`、`OPENING_CARD_BYTES` 都改成引用同一常量。
+- [x] 存档导入的老 6MB 闸口一并改成 32MB（与 `SLOT_BYTES_LIMIT` 对齐），避免同类误杀。
+- [x] 测试：新增 `tests/v56.test.ts`（十兆级 PNG 卡能过闸并解析、只有明显不是卡的文件才拦、三个上限同源）。
