@@ -5,6 +5,7 @@
  * 世界书是独立模块（worldbook.ts），这里只负责把 {{worldbook}} 等变量替换掉。
  */
 import { SECTION_PROMPTS } from './promptSections.ts';
+import { contractPrompts } from './promptContracts.ts';
 import { resolveMacros, type MacroContext } from './promptMacros.ts';
 import { promptTokens } from './tokens.ts';
 
@@ -63,6 +64,10 @@ export interface PromptEntry {
   scope?: PromptScope;
   /** SillyTavern 的分隔条目：只用于视觉分组，不发送内容。 */
   marker?: boolean;
+  /** 锁定契约：不进正文分层，由 composeTaskSystem 作为最后一段注入。 */
+  contract?: boolean;
+  /** 契约词条的出厂文本：玩家没改过时仍用代码里的动态默认值（含当次目标等）。 */
+  defaultContent?: string;
   builtin?: boolean;
 }
 
@@ -129,6 +134,8 @@ export interface PresetRuntime {
   main: string;
   jailbreak: string;
   entries: PromptEntry[];
+  /** 锁定契约词条：不进正文分层，由 composeTaskSystem 作为最后一段注入。 */
+  contracts?: PromptEntry[];
   /** SillyTavern 的世界书 / 场景 / 性格格式串，用于包裹注入内容。 */
   wiFormat: string;
   scenarioFormat: string;
@@ -138,7 +145,7 @@ export interface PresetRuntime {
 }
 
 /** 词条结构版本：每加一批默认可编辑的分区就 +1，读档时按版本补齐。 */
-export const PRESET_SCHEMA = 6;
+export const PRESET_SCHEMA = 7;
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
 /** 一次性把旧的三档/共用副本拆成每个任务一份的标记；v2 补上战斗札记。 */
@@ -309,6 +316,7 @@ export function presetPrompts(preset: ChatPreset | undefined): PromptEntry[] {
 
 /** 实际参与拼装的词条：按 prompt_order 的顺序与启停；不在 order 里的词条不注入。 */
 export function activePrompts(preset: ChatPreset | undefined, scope?: PromptScope): PromptEntry[] {
+  // 见 renderPresetSystem：契约词条不算正文分区。
   const all = presetPrompts(preset);
   const order = preset?.promptOrder;
   let ordered = all;
@@ -322,15 +330,17 @@ export function activePrompts(preset: ChatPreset | undefined, scope?: PromptScop
       byId.delete(item.identifier);
     }
   }
-  if (!scope) return ordered;
-  return ordered.filter(entry => {
+  // 契约词条不进正文：它们由 composeTaskSystem 单独追加，这里只返回普通分区。
+  const plain = ordered.filter(entry => !entry.contract);
+  if (!scope) return plain;
+  return plain.filter(entry => {
     const entryScope = promptScope(entry);
     return entryScope === 'shared' || entryScope === scope;
   });
 }
 
 function defaultPromptCopies(extra: PromptEntry[] = []): PromptEntry[] {
-  return [...DEFAULT_PROMPTS.map(entry => ({ ...entry })), ...extra.map(entry => ({ ...entry }))];
+  return [...DEFAULT_PROMPTS.map(entry => ({ ...entry })), ...contractPrompts().map(entry => ({ ...entry })), ...extra.map(entry => ({ ...entry }))];
 }
 
 export function builtinPresets(): ChatPreset[] {
@@ -369,10 +379,10 @@ export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   const ids = new Set(prompts.map(entry => entry.id));
   // 4 以后只补「结构分区」：v50 的新闻分区、v53 的札记分区都是这样补进来的。
   const wanted = schema <= 2
-    ? DEFAULT_PROMPTS
+    ? [...DEFAULT_PROMPTS, ...contractPrompts()]
     : schema === 3
-      ? [...DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle'), ...SECTION_PROMPTS]
-      : SECTION_PROMPTS;
+      ? [...DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle'), ...SECTION_PROMPTS, ...contractPrompts()]
+      : [...SECTION_PROMPTS, ...contractPrompts()];
   const added = wanted.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
   const all = [...prompts, ...added];
   const order = (preset.promptOrder ?? prompts.map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
@@ -878,6 +888,7 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
     main: text(settings, 'main'),
     jailbreak: text(settings, 'jailbreak'),
     entries: activePrompts(preset),
+    contracts: presetPrompts(preset).filter(entry => entry.contract && entry.content.trim()),
     wiFormat: text(settings, 'wi_format') || '{0}',
     scenarioFormat: text(settings, 'scenario_format') || '{{scenario}}',
     personalityFormat: text(settings, 'personality_format') || '{{personality}}',
@@ -887,7 +898,9 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
 }
 
 /** 把预设词条的变量替换掉；返回系统段、缺失变量与命中变量。 */
-export function renderPresetSystem(entries: PromptEntry[], vars: Record<string, string | undefined>, ctx: MacroContext = {}): { system: string; used: string[]; missing: string[]; tokens: number } {
+export function renderPresetSystem(rawEntries: PromptEntry[], vars: Record<string, string | undefined>, ctx: MacroContext = {}): { system: string; used: string[]; missing: string[]; tokens: number } {
+  // 契约词条只在 composeTaskSystem 的最后一段出现，不参与正文分层，否则会重复两遍。
+  const entries = rawEntries.filter(entry => !entry.contract);
   const used = new Set<string>();
   const missing = new Set<string>();
   const parts: string[] = [];
@@ -1071,7 +1084,7 @@ export interface ComposedPrompt {
  * 固定的系统提示顺序：共用词条 → 本任务词条 → 代码输出契约。
  * 旧预设的 main / jailbreak 只在没有可渲染词条时兜底。
  */
-export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}, ctx: MacroContext = {}): ComposedPrompt {
+export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}, ctx: MacroContext = {}, contractId?: string): ComposedPrompt {
   const scopeEntries = scopedEntries(runtime, scope);
   // 预设里一条该用途的分区都没有时（旧预设、空 runtime、测试），补上默认分区：
   // 但只要还剩任意一条，就按玩家的增删来，不再插手。
@@ -1089,7 +1102,16 @@ export function composeTaskSystem(contract: string, runtime: PresetRuntime, scop
     if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
   }
   // 契约里的枚举与阈值也是宏，跟着同一个上下文展开；它永远排在最后。
-  const expandedContract = resolveMacros(contract.trim(), ctx).text.trim();
+  // 预设里有同名契约词条就以它为准（可在界面上逐条审核、修改），否则用代码默认值。
+  const id = contractId ?? `${scope}:contract`;
+  const override = (runtime.contracts ?? []).find(entry => {
+    if (entry.id !== id) return false;
+    const content = entry.content.trim();
+    if (!content) return false;
+    // 出厂文本没动过就照用代码默认值：契约里可能带当次的动态部分（目标节点等）。
+    return content !== (entry.defaultContent ?? '').trim();
+  });
+  const expandedContract = resolveMacros((override ? override.content : contract).trim(), ctx).text.trim();
   if (expandedContract) parts.push(expandedContract);
   return {
     system: parts.filter(Boolean).join('\n\n'),

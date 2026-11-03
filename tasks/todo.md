@@ -793,3 +793,13 @@
 - [x] 新增 `incidentBatchContract()`：把突发事件的 JSON 形状、trigger 三选一、kind 三选一、出场角色白名单、效果幅度表、存活时长写进提示词（原来是硬编码字符串，且完全没有这些字段）。
 - [x] 测试：新增 `tests/v63.test.ts` 七条（营业日只在 20:00 翻、跨午夜不刷新、开门刷新、午夜后打烊进下一天、池子条目按 trigger 投放、内置优先、触发器推导与降级）；顺手修 `game.test.ts` / `v24.test.ts` 里「把 report 也当有选项」的旧测试助手。
 - [ ] 待做：v63-3（6 个结构契约 + 生成器字面量全部进预设、`PRESET_SCHEMA 7`、`prompt-lint` 测试）、v63-4（提示词全量视图 UI + 导入导出）。
+## v63-3a：结构契约也进预设（可见、可改）
+
+- [x] 新增 `src/promptContracts.ts`：10 条 `contract: true` 词条（daily / news / incident / battle / storyline / arc / arc:opening / arc:turn / chat / whisper），带 `defaultContent`（出厂文本）。
+- [x] `PromptEntry` 增加 `contract` 与 `defaultContent`；`activePrompts` 与 `renderPresetSystem` 都跳过契约——它们不参与正文分层，只由 `composeTaskSystem` 作为最后一段注入。
+- [x] `PresetRuntime` 增加 `contracts`（`presetRuntime` 填），`composeTaskSystem` 优先用预设里的契约；**只有玩家改过**（`content !== defaultContent`）才覆盖代码默认值，避免把带动态目标的契约固化成快照。
+- [x] `PRESET_SCHEMA → 7`：内置预设与旧预设迁移都补上契约词条（只补不覆盖，幂等）。
+- [x] `dialogueContract()` 进 `promptSections.ts`，`llm.ts` 的 `DIALOGUE_FORMAT_HINT` 改为调用它；`dailyContract` 由 `llm-night` 注册进契约表（避免 presets ⇄ llm-night 成环）。
+- [x] 预设界面的契约词条带「结构契约 · 最后注入」角标，改了就按你写的走。
+- [x] 测试：新增 `tests/v64.test.ts` 五条（契约词条齐备、改了就用预设、正文不重复、内置与 schema 7、迁移幂等不覆盖）；`game.test.ts` 三处计数断言改成「正文词条数不变 + 契约另算」。
+- [ ] 待做：v63-3b（剩余生成器字面量：单条突发事件模板、storyline/arc 的 user 句、profile/outfit 契约；以及 `prompt-lint` 测试）、v63-4（提示词全量视图：按任务分组 + 改动标记 + 导入导出）。

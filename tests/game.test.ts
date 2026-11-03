@@ -9,7 +9,7 @@ import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chanc
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
-import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
+import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PRESET_SCHEMA, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
 import { effectiveStats } from '../src/economy.ts';
 import { mulberry32, rollStats, statsForArchetype } from '../src/content/archetypes.ts';
@@ -1418,7 +1418,8 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.ok(warned.warnings.some(text => text.includes('SPreset')));
   assert.equal(warned.unsupported.length, 1);
   const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
-  assert.equal(again.preset?.promptOrder?.length, 35);
+  assert.ok((again.preset?.promptOrder?.length ?? 0) >= 35, '导出导入不该丢词条');
+  assert.ok((again.preset?.promptOrder ?? []).some(item => item.identifier === 'news:contract'), '结构契约跟着预设一起走');
   assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
 });
 
@@ -1716,8 +1717,10 @@ test('预设词条替换变量，缺失变量与分隔标记不进入系统提�
 
 test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
-  const entries = presetPrompts(legacy.preset);
-  assert.equal(entries.length, 33);
+  const all = presetPrompts(legacy.preset);
+  const entries = all.filter(entry => !entry.contract);
+  assert.equal(entries.length, 33, '正文词条数量不变（契约另算）');
+  assert.ok(all.some(entry => entry.contract), '契约词条一并补齐');
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
@@ -2309,15 +2312,18 @@ test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
   const imported = importPresetObject({ name: '只有主提示', settings: { temp_openai: 0.6, prompts: [{ identifier: 'main', content: '只写夜晚。' }] } });
   assert.equal(imported.ok, true);
   if (!imported.ok || !imported.preset) return;
-  assert.equal(imported.preset.schema, 6);
+  assert.equal(imported.preset.schema, PRESET_SCHEMA);
   assert.ok(imported.warnings.some(text => text.includes('默认词条')));
-  const entries = presetPrompts(imported.preset);
-  assert.equal(entries.length, 32);
+  const all = presetPrompts(imported.preset);
+  const entries = all.filter(entry => !entry.contract);
+  assert.equal(entries.length, 32, '正文词条数量不变（契约另算）');
   assert.equal(entries.filter(entry => entry.scope === 'daily').length, 5);
   assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
   assert.equal(entries.filter(entry => entry.scope === 'battle').length, 2);
+  assert.ok(all.some(entry => entry.contract && entry.scope === 'daily'), '每日提案的契约也补上了');
   const runtime = presetRuntime(imported.preset);
-  assert.equal(runtime.entries.length, 32);
+  assert.equal(runtime.entries.length, 32, 'runtime.entries 只含正文（契约另存 contracts）');
+  assert.ok((runtime.contracts ?? []).some(entry => entry.id === 'daily:contract'));
   assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
 });
 

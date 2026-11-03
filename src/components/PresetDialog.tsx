@@ -361,6 +361,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                 {!entry.marker && <select id={`preset-entry-role-${index}`} className="preset-entry-role" value={entry.role} disabled={!editable} onChange={event => patchEntry(entry.id, { role: event.target.value as PromptEntry['role'] })}>
                   {(['system', 'user', 'assistant'] as const).map(role => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
                 </select>}
+                {entry.contract && <span className="preset-entry-contract" title="这段文本永远追加在本任务的最后；改了就按你写的走">结构契约 · 最后注入</span>}
                 <span className="preset-entry-tokens">{entry.marker ? '——' : `${promptTokens(entry.content)}t`}</span>
                 <div className="preset-entry-move">
                   <button type="button" id={`preset-entry-up-${index}`} aria-label="上移" disabled={!editable || index === 0} onClick={() => moveEntry(index, -1)}><ArrowUp size={12}/></button>

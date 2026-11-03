@@ -3,6 +3,7 @@ import type {
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
   OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
+import { registerContractDefault } from './promptContracts.ts';
 import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
@@ -859,6 +860,8 @@ export function dailyContract(): string {
     '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
   ].join('\n');
 }
+
+registerContractDefault('daily:contract', dailyContract);
 
 /** 兼容旧调用与测试：默认 daily 分区 + 锁定契约拼出来的系统提示。 */
 export function buildNightPrompt(state: GameState): string {

@@ -326,6 +326,15 @@ export function newsContract(): string {
   ].join('\n');
 }
 
+/** 灯下私语 / 角色对话的回复格式：1–3 条短消息，动作与台词分开。 */
+export function dialogueContract(): string {
+  return [
+    '【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：',
+    '{"lines":[{"text":"说出口的台词","action":"可省略的动作或神态","expression":"calm|smile|surprise|sad|angry|shy"}]}',
+    '一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。',
+  ].join('\n');
+}
+
 /**
  * 突发事件的 JSON 契约。
  *

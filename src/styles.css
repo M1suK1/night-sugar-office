@@ -1507,3 +1507,4 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .allocate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .allocate-actions .primary{border-color:#f3aec966;color:#f8d7e4}
 .llm-budget-hint{display:block;font-style:normal;font-size:8px;color:#6b5c74;margin-top:1px}
+.preset-entry-contract{font:500 8px/1 var(--font-body);letter-spacing:.04em;color:#f3aec9;background:#f3aec914;border:1px solid #f3aec933;border-radius:3px;padding:2px 5px;white-space:nowrap}
