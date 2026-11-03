@@ -36,8 +36,10 @@ function gearSummary(item: Equipment) {
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
+  /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
+  onProfileText?: (field: 'appearance' | 'outfitDescription', text: string) => void;
   /** 滑条一次提交四项：由 allocateStats 一次落地，避免连续 +1 互相盖掉。 */
   onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
@@ -82,6 +84,12 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const [drawerMessage, setDrawerMessage] = useState('');
   const [editingPersonality, setEditingPersonality] = useState(false);
   const [personalityDraft, setPersonalityDraft] = useState('');
+  const [appearanceDraft, setAppearanceDraft] = useState(girl.appearance ?? '');
+  const [outfitDraft, setOutfitDraft] = useState(girl.outfitDescription ?? '');
+  useEffect(() => {
+    setAppearanceDraft(girl.appearance ?? '');
+    setOutfitDraft(girl.outfitDescription ?? '');
+  }, [girl.id, girl.appearance, girl.outfitDescription]);
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
@@ -411,6 +419,19 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           </>}
           {tab === 'appearance' && <>
             <div className="appearance-page">
+              <section className="appearance-section" aria-labelledby="profile-text-title">
+                <div className="appearance-head"><span className="appearance-index">00</span><div><h3 id="profile-text-title">她的样子与这身衣服</h3><small>这两段会进提示词；从契约卡带进来的也能改。</small></div></div>
+                <label className="field"><span>外貌</span>
+                  <textarea id="dossier-appearance-input" className="av-input" rows={4} maxLength={240} value={appearanceDraft}
+                    onChange={event => setAppearanceDraft(event.target.value)}
+                    onBlur={() => { if (appearanceDraft !== (girl.appearance ?? '')) onProfileText?.('appearance', appearanceDraft); }} />
+                </label>
+                <label className="field"><span>服装描述</span>
+                  <textarea id="dossier-outfit-input" className="av-input" rows={4} maxLength={240} value={outfitDraft}
+                    onChange={event => setOutfitDraft(event.target.value)}
+                    onBlur={() => { if (outfitDraft !== (girl.outfitDescription ?? '')) onProfileText?.('outfitDescription', outfitDraft); }} />
+                </label>
+              </section>
               <section className="appearance-section" aria-labelledby="wardrobe-title">
                 <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>四格礼装 · 换装同步立绘与头像</small></div><em>{Math.min(4, girl.wardrobe.length)} / 4</em></div>
                 <div className="wardrobe-grid">

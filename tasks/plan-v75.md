@@ -28,34 +28,26 @@
 
 ---
 
-## 2. 角色「癖好」没有进提示词
+## 2. 角色「癖好」没有进提示词（战后获得的特性）
 
-**现状**
-- 癖好现在只是**治疗选项**：`clinic` 动作带 `kink?: boolean`（`types.ts:1129`），收费走高 `balance.clinicKinkFee`（`roster.clinicQuote`），结算时在 `rules/time.ts:194-201` 只写一条日志。
-- 全仓库的提示词构建（`girlBrief`、`girlDossier.dossierOf`、`promptMacros` 的 `{{heroine}}`、`battleNote` 的 `battleGirlText`）里**没有任何** `kink` / 癖好 字样 → 叙事者不知道这件事。
+**现状（已核实）**
 
-**改法（需要你在两个语义里选一个，见文末决策点）**
-1. 在 `Girl` 上记一份可读事实，而不是布尔值：
-   ```ts
-   /** 她对「被深度照料」这件事的依赖程度；每次带癖好的治疗 +1，最高 5。 */
-   kinkFamiliarity?: number;
-   ```
-   在 `settleTreatments`（`time.ts:193-197`）里 `girl.kinkFamiliarity = Math.min(5, (girl.kinkFamiliarity ?? 0) + 1)`。
-2. 把它变成一句人话，放进 `glyph`（`girlDossier` 新增 `kinkNote`）：
-   - `0`：不输出；
-   - `1`：「被那样照料过一次，之后每次进诊所都会先问一句是谁值班。」
-   - `3`：「开始主动要求那种护理，事后会沉默很久。」
-   - `5`：「已经把它当成唯一能放松的方式。」
-3. 接到提示词：`girlBrief()`（llm.ts）与 `dossierOf().brief/full` 里加一行 `癖好：<kinkNote>`；`{{heroine}}` 走 `dossierOf` 自动带上。
-4. 顺带把「癖好护理史」写进 `history.missions` 之外的新宏 `{{her.kink}}`？——**不做**，先只走档案行，避免宏表膨胀。
+- 这里的「癖好」就是**战后获得的特性**：`gainTrait()`（`rules/conditions.ts:62`）在战斗胜利 35%、调查完成 30%、星象台远行 12% 的概率下从特性池里抽一条写进 `girl.traits`（带 `gainedAt` 与 `polarity` 正 / 负 / 中性）。
+- `girlDossier.ts:93` 把特性写进了**全量档案**（`{{heroine}}` 走这条），但**简报** `girlBrief()`（llm.ts）只写身份 / 性情 / 外貌 / 语气——对话、私语、角色事件全用简报，所以叙事者根本不知道她战后染上了什么怪癖。
+- 简报也是战斗札记「她是谁」与事件开场白的取数口，这条缺失在三个任务里同时存在。
 
-**验收 / 测试（`tests/v75-kink.test.ts`）**
-- 没做过带癖好的治疗 → 提示词里没有「癖好」二字；
-- 做 1 次 / 3 次 / 5 次 → 提示词分别出现对应的三档描述；
-- 存档序列化后 `kinkFamiliarity` 仍在（`persistence` 不用改，字段可选）。
+**改法**
 
----
+1. `girlBrief()` 增加一行：`战后癖好：偏执（多疑，容易把好意当试探）｜好整以暇（打完还笑得出来）`，最多 4 条，按 `gainedAt` 新→旧排；没有就写「暂时没有」。
+2. 极性写进文本：负面写「她自己也察觉到了」，正面用中性描述，中性直接给行为。
+3. 抽一个 `traitLine(girl)` 同时供 `girlBrief`、`dossierOf().brief` 与 `girlDossier()`，避免三处各写一遍又走散。
+4. 战后日志已有「显露出新的特性」，不再额外通知。
 
+**验收 / 测试（`tests/v75-quirk.test.ts`）**
+
+- 没有特性 → 简报含「暂时没有」；
+- 给 5 条特性 → 只取最近 4 条，顺序按获得时间倒序；
+- 同一份信息在 `dossierOf().brief` 与 `girlDossier()` 里一致。
 ## 3. 每日提案偏财政：加「契约者之间的纠纷」
 
 **现状**
@@ -132,6 +124,11 @@ useEffect(() => {
 - `CharacterEvent` 已经支持 `cast`（`storyCast` 从 `state.girls` + `candidates` 取人），但首领不在这个池子里 —— 这是「召见」做不出来的真正卡点。
 
 **改法**
+0. **频率（已确认：概率 + 冷却，且可在数值规则里改）**
+   - `balance.ts` 增两个字段（进 `BALANCE_FIELDS`，分组「势力」）：
+     `leaderSummonChance`（首领召见概率，0–100%，默认 40）与 `leaderSummonCooldownDays`（召见冷却，1–14 天，默认 3）。
+   - 冷却复用 `incidentCooldowns` + `templateId`；概率用 day 派生的确定性哈希，便于复现与测试。
+   - 世界书「数值规则」条目由 `BALANCE_FIELDS` 驱动，会自动带上这两项，不用另写文案。
 1. **召见机制（核心）**
    - `StoryCast`/`storyCast`（`llm.ts`）与 `EventDialog` 的 `cast` 解析改为同时认「三方代表」：`factionRepresentativeOf(state, faction)`（`factions.ts`）返回的 `{id, name, portrait, color}` 也能进 cast；渲染侧复用现有 `PortraitSubject`（它只要 id/name/color/portrait）。
    - 新增弹窗模板组「召见」（`content/incidents.ts`）：`kind: 'faction'`、`trigger: {kind: 'dayStart'}`、选项 `应召 / 推脱 / 派人代替`；`应召` 的 outcome 是「开一场角色事件，cast = 首领 + 在场少女」，结算里调用现有的 `addEvent(state, girl, title, hook, 'story', storylineId?)`（`rules/storyCore.ts`）并把 `event.cast` 设成 `[representative.id, ...]`。
@@ -148,7 +145,7 @@ useEffect(() => {
 
 ---
 
-## 决策点（需要你拍三件事）
+## 决策点（已定 2026-11-03）
 
 1. **癖好的语义**：⑮ 我按「治疗时的深度照料」记成 `kinkFamiliarity` 0–5 并写进档案（默认）｜B 你指的是别的东西（比如某个「癖好」文本字段），告诉我字段名我改接法。
 2. **纠纷的强度**：提案里的两人纠纷只影响 `bond` / `fatigue`（默认，安全）｜还是允许它升级成「一人离队风险 / 辖区归属争议」这类重后果。

@@ -79,6 +79,31 @@ export function applyAllocateStats(state: GameState, action: Extract<GameAction,
   return { state: next, ok: true, message: `${girl.name}：${spent.join('、')}，还剩 ${girl.unspentPoints ?? 0} 点。` };
 }
 
+/** 两段可以手改的档案文本：清掉换行、限长 240、允许清空。 */
+function applyProfileText(
+  state: GameState,
+  action: { girlId: string; text: string },
+  field: 'appearance' | 'outfitDescription',
+): ActionResult {
+  const next = clone(state);
+  const girl = findRosterGirl(next, action.girlId);
+  if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+  const text = String(action.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  girl[field] = text;
+  const label = field === 'appearance' ? '外貌' : '服装描述';
+  next.logs.unshift({
+    id: `log-profile-${field}-${girl.id}-${Date.now()}`,
+    time: dateLabel(next.day, next.minutes), kind: 'base',
+    text: `${girl.name}的${label}被改写了：${text || '（清空）'}`,
+  });
+  return { state: next, ok: true, message: `${girl.name}的${label}已更新。` };
+}
+
+/** setProfileText 的动作处理器：外貌 / 服装描述。 */
+export function applySetProfileText(state: GameState, action: Extract<GameAction, { type: 'setProfileText' }>): ActionResult {
+  return applyProfileText(state, action, action.field);
+}
+
 /** setLevelUpMode 的动作处理器（v35 从 act 拆出）。 */
 export function applySetLevelUpMode(state: GameState, action: Extract<GameAction, { type: 'setLevelUpMode' }>): ActionResult {
       if (state.levelUpMode === action.mode) return { state, ok: false, message: '已经是这个模式了。' };

@@ -15,7 +15,7 @@ import {
 import {
   applyAllocateStat, applyAllocateStats, applyBuild, applyChangeOutfit, applyClearWitchForm,
   applyDeleteVariant, applyImportWardrobe, applyRemoveOutfit, applyRenameOutfit,
-  applySetExpression, applySetLevelUpMode, applySetOutfitDescription, applySetPersonality,
+  applySetExpression, applySetLevelUpMode, applySetOutfitDescription, applySetPersonality, applySetProfileText,
   applySetVariant, applySetVariants, applySetWitchForm,
 } from './growthOps.ts';
 import {
@@ -71,6 +71,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'retire': return applyRetire(state, action);
     case 'changeOutfit': return applyChangeOutfit(state, action);
     case 'setExpression': return applySetExpression(state, action);
+    case 'setProfileText': return applySetProfileText(state, action);
     case 'setPersonality': return applySetPersonality(state, action);
     case 'allocateStat': return applyAllocateStat(state, action);
     case 'allocateStats': return applyAllocateStats(state, action);

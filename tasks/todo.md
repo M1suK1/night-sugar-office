@@ -891,3 +891,9 @@
 - [x] `parseStoryLines` 直接丢掉 `speakerId === "player"` 的台词：玩家说什么由他自己的行动气泡承担。
 - [x] 契约改成「speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）」，并把原来那句「不要替他编新话」改成「也不要把所长这一轮的动作复述成一句台词」。
 - [x] 测试：新增 `tests/v74.test.ts` 三条（player 台词被丢、少女台词与 after/心声照旧、契约措辞）；`v34`/`v54` 两处旧断言跟着更新。
+
+## v75-1：档案里的外貌 / 服装描述可编辑
+
+- [x] 新增动作 setProfileText（ield: appearance | outfitDescription）：抹平换行、限长 240、允许清空、写一条 base 日志。
+- [x] 档案 → 外观装备页顶部加两个文本域（#dossier-appearance-input / #dossier-outfit-input），草稿 + 失焦提交，与性格输入同一套交互。
+- [x] 	ests/v75.test.ts 两条；方案见 	asks/plan-v75.md。

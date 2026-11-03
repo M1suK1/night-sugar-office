@@ -1130,6 +1130,8 @@ export type GameAction =
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }
+  /** 档案里的两段文本：外貌与「她现在这身」的描述，导入契约卡后也能改。 */
+  | { type: 'setProfileText'; girlId: string; field: 'appearance' | 'outfitDescription'; text: string }
   | { type: 'allocateStat'; girlId: string; stat: StatKey; amount?: number }
   /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
