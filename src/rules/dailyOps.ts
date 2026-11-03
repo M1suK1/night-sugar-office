@@ -159,10 +159,15 @@ export function applyMarkWhispersRead(state: GameState, action: Extract<GameActi
 /** setCityNews 的动作处理器：把叙事者或本地规则写好的播报存进存档；传 null 清空。 */
 export function applySetCityNews(state: GameState, action: Extract<GameAction, { type: 'setCityNews' }>): ActionResult {
       const next = clone(state);
-      const news = action.news ? sanitizeCityNews(action.news, next.day) : undefined;
-      if (news) next.cityNews = news;
-      else delete next.cityNews;
-      return { state: next, ok: true, message: news ? '城市新闻已更新。' : '已清空城市新闻。' };
+      // 只有显式传 null 才清空；模型给出半截数据时保留原来那条，别让播报块闪一下就不见。
+      if (action.news === null) {
+        delete next.cityNews;
+        return { state: next, ok: true, message: '已清空城市新闻。' };
+      }
+      const news = sanitizeCityNews(action.news, next.day);
+      if (!news) return { state, ok: false, message: '这条播报没有可用的条目，保留原来的播报。' };
+      next.cityNews = news;
+      return { state: next, ok: true, message: '城市新闻已更新。' };
 }
 
 /** addWhisper 的动作处理器（v35 从 act 拆出）。 */

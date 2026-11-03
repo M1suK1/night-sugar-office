@@ -719,3 +719,9 @@
 - [x] **完整剧情分区**：新增 `arc-brief`（scope `arc`）：只写本场主角的故事、三段上限、选项要分岔、tone / expression 规则、不写数值，并说明「这一次是写章节 / 开场白 / 续写」看数据段。
 - [x] **三份契约**：`arcContract(targets)` / `arcOpeningContract()` / `arcTurnContract()` 保留 JSON 骨架、段落与台词数量、字数与 bond 上限等硬性要求；三处调用点改成「数据段 + 契约」，开场与续写不再互相污染。
 - [x] 测试：新增 `tests/v54.test.ts` 四条（schema 5 → 6 补装分区与 promptOrder、默认词条里两块分区在、三份契约、拼装顺序与互不污染）；29 个测试文件 476 项全绿，`tsc` 0 错，`check:rules` 通过。
+## 修：城市新闻闪一下就消失
+
+- [x] **根因一（异步回写用了旧快照）**：`refreshCityNews` 等在 LLM 结果之后调用 `perform(setCityNews)`，而 `perform` 用的是渲染时捕获的 `state`——等待期间任何状态变化都会被这份旧快照盖回去。改成函数式更新 `setState(prev => act(prev, …))`，并改读 `latestState.current`。
+- [x] **根因二（洗不出内容就删整块）**：`applySetCityNews` 原来在 `sanitizeCityNews` 返回 undefined 时 `delete next.cityNews`；模型偶尔给出半截条目就直接把播报删掉。现在只有显式传 `null` 才清空，洗不出来时返回 `ok:false` 并保留上一条。
+- [x] **界面兜底**：新闻开关开着时这块就一直渲染，没有条目时显示「今晚的播报还在写」与一行占位，不再出现「先出现再消失」；第一夜重播开场前也比对标题与正文，避免同一条被反复写。
+- [x] 测试：`tests/v50.test.ts` 的存取用例改为断言「洗不出来时保留旧播报、只有 null 才清空」；29 个测试文件 476 项全绿，`tsc` 0 错。

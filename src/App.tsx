@@ -284,9 +284,24 @@ export default function App() {
     if (generatingRef.current || !llmHasKey()) return;
     void generateContent('auto');
   }, [state.day, autoGenerate, loaded]);
+  /** 播报一律走函数式更新：异步生成回来时，别拿旧快照把这一整份状态盖回去。 */
+  const commitCityNews = (news: CityNews | null) => {
+    let ok = false;
+    setState(prev => {
+      const applied = act(prev, { type: 'setCityNews', news });
+      if (applied.ok) { ok = true; return applied.state; }
+      return prev;
+    });
+    return ok;
+  };
   const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual') => {
-    if ((latestState.current ?? state).day <= OPENING_NEWS_DAY) {
-      perform({ type: 'setCityNews', news: openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name) });
+    const current = latestState.current ?? state;
+    // 接手的第一夜固定播开场那一条，不请叙事者。
+    if (current.day <= OPENING_NEWS_DAY) {
+      const opening = openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name);
+      if (!current.cityNews || current.cityNews.headline !== opening.headline || current.cityNews.items[0]?.text !== opening.items[0]?.text) {
+        commitCityNews(opening);
+      }
       return;
     }
     if (newsBusyRef.current) return;
@@ -297,14 +312,14 @@ export default function App() {
     newsBusyRef.current = true;
     setNewsBusy(true);
     try {
-      const current = latestState.current ?? state;
       let news: CityNews | undefined;
       if (llmHasKey()) {
         const result = await generateCityNews(loadLlmConfig(), current, taskRuntime(boundPreset('news', presets, binding), 'news'));
         if (result.ok) news = result.data;
       }
-      perform({ type: 'setCityNews', news: news ?? localCityNews(current) });
-      if (mode === 'manual') notify(news ? '城市播报已由叙事者写好。' : '没有连上叙事者，先用本地快讯顶上。', Boolean(news));
+      const latest = latestState.current ?? current;
+      const committed = commitCityNews(news ?? localCityNews(latest));
+      if (mode === 'manual') notify(committed ? (news ? '城市播报已由叙事者写好。' : '没有连上叙事者，先用本地快讯顶上。') : '这条播报没有可用的内容，保留原来那条。', committed);
     } finally {
       newsBusyRef.current = false;
       setNewsBusy(false);
@@ -1127,17 +1142,18 @@ export default function App() {
       {page === 'dispatch' ? <>
         <PageHeading page={page}>
           <div className="heading-side">
-            {newsEnabled && state.cityNews && (
+            {newsEnabled && (
               <aside className="dispatch-news" id="dispatch-news" aria-label="城市新闻">
                 <header>
                   <Radio size={12} />
                   <b>城市播报</b>
-                  <span>第 {state.cityNews.day} 日 · {state.cityNews.source === 'llm' ? '叙事者' : '本地快讯'}</span>
+                  <span>{state.cityNews ? `第 ${state.cityNews.day} 日 · ${state.cityNews.source === 'llm' ? '叙事者' : '本地快讯'}` : '等待播报'}</span>
                   <button id="dispatch-news-refresh" type="button" disabled={newsBusy} onClick={() => void refreshCityNews('manual')}>{newsBusy ? '正在写' : '刷新'}</button>
                 </header>
-                <h3>{state.cityNews.headline}</h3>
+                <h3>{state.cityNews?.headline ?? '今晚的播报还在写。'}</h3>
                 <ul>
-                  {state.cityNews.items.map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
+                  {(state.cityNews?.items ?? []).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
+                  {!state.cityNews?.items.length && <li className="tone-street">通讯员还在路上，稍等一下，或者点右上角「刷新」。</li>}
                 </ul>
               </aside>
             )}

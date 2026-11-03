@@ -112,8 +112,10 @@ test('v50 播种报：存进存档、可清空，读档字段是可选的', () =
   const cleared = act(saved.state, { type: 'setCityNews', news: null });
   assert.equal(cleared.ok, true);
   assert.equal(cleared.state.cityNews, undefined);
-  const dirty = act(state, { type: 'setCityNews', news: { ...news, items: [{ text: '', tone: 'street' }] } });
-  assert.equal(dirty.state.cityNews, undefined, '洗不出内容时不留半条');
+  const dirty = act(saved.state, { type: 'setCityNews', news: { ...news, items: [{ text: '', tone: 'street' }] } });
+  assert.equal(dirty.ok, false, '洗不出内容时明确失败');
+  assert.equal(dirty.state.cityNews?.headline, news.headline, '洗不出内容时保留原来那条，界面不该闪一下就消失');
+  assert.equal(act(saved.state, { type: 'setCityNews', news: null }).state.cityNews, undefined, '只有显式 null 才清空');
 });
 
 test('v50 预设里多了城市新闻这一档：词条、分区与契约都在', () => {
