@@ -20,7 +20,7 @@ interface StarterDialogProps {
   onAddCard: () => void;
   onAddCustom: () => void;
   onClose: () => void;
-  /** 卡库够 20 张：只显示卡与自定义，内置角色不出现。 */
+  /** 卡库够 TOP 张：只显示卡与自定义，内置角色不出现。 */
   cardsOnly?: boolean;
   /** 开场必经：不给关闭按钮，也不显示「稍后再说」。 */
   forced?: boolean;
@@ -89,7 +89,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     setRoster(assignment.roster);
   }, [randomize, pool]);
   const [roster, setRoster] = useState<Record<FactionId, FactionRoster>>(() => {
-    // 卡够 20 张时内置角色不在池子里，默认阵容改用卡先坐满三方。
+    // 卡够 TOP 张时内置角色不在池子里，默认阵容改用卡先坐满三方。
     if (cardsOnly) {
       const seeded = cardFactionRoster(pool, starterPicks(state, true));
       if (seeded) return seeded;
@@ -288,7 +288,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           <p>{cardsOnly
             ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
             : forced
-              ? '卡库还不够 20 张，先用默认阵容补满。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
+              ? '卡库还没满，先用默认阵容补满。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
               : '挑 2 位少女签进事务所（最多 6 位），再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
         <div className="starter-head-actions">

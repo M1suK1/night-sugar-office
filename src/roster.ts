@@ -59,12 +59,12 @@ function girlSubject(girl: Girl): RosterSubject {
 /**
  * 可编进势力的全部人。
  *
- * v27 起卡库是唯一的人事来源：`cardsOnly` 为真时（卡库够 20 张）只给卡与自定义，
+ * v27 起卡库是唯一的人事来源：`cardsOnly` 为真时（卡库够 TOP 张）只给卡与自定义，
  * 内置三位首领与九位随从完全不出现；不足 20 张时才把它们补在后面。
  * `limit` 是选人池上限（= `OPENING_CARDS`），保证池子不会被卡片撑爆。
  */
 export interface RosterPoolOptions {
-  /** 卡库够 20 张：不掺内置角色。 */
+  /** 卡库够 TOP 张：不掺内置角色。 */
   cardsOnly?: boolean;
   /** 池子上限，0 表示不截。 */
   limit?: number;
@@ -99,13 +99,13 @@ export function rosterPool(state: GameState, library: CardBoxEntry[] = [], optio
   return list;
 }
 
-/** 卡库够 20 张时编成界面不显示内置角色。 */
+/** 卡库够 TOP 张时编成界面不显示内置角色。 */
 export const STARTER_DEFAULT = ['yue', 'tang', 'ling', 'wu'];
 
 /** 开局默认勾进事务所的契约少女数：先 2 位，三方名册再各补首领与随从。 */
 export const STARTER_COUNT = 2;
 
-/** 开局默认勾选：卡库前 2 张；卡不够 20 张时再用默认角色补到 2 位。 */
+/** 开局默认勾选：卡库前 2 张；卡不够 TOP 张时再用默认角色补到 2 位。 */
 export function starterPicks(state: GameState, cardsOnly: boolean): string[] {
   const cards = [...state.girls, ...state.candidates]
     .filter(girl => Boolean(girl.cardId) && !girl.dead && !girl.retired)
@@ -180,7 +180,7 @@ export function rosterSeatOf(state: GameState, id: string): { faction: FactionId
 }
 
 /**
- * 卡够 20 张时，用卡把三方先坐满：3 位首领 + 剩下的人轮流当随从。
+ * 卡够 TOP 张时，用卡把三方先坐满：3 位首领 + 剩下的人轮流当随从。
  * 默认阵容里的内置首领与随从在 cardsOnly 下已经不在池子里，不能再拿来预填。
  */
 export function cardFactionRoster(pool: RosterSubject[], taken: string[] = []): Record<FactionId, FactionRoster> | null {

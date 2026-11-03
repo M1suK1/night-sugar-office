@@ -8,15 +8,16 @@ export const OPENING_OPINIONS = 3;
 /** 首夜本地兜底要凑到的待用弹窗事件条数。 */
 export const OPENING_INCIDENTS = 3;
 /** 开局从卡库摆出来的选人池上限（没被选中的留在市场）。 */
-export const OPENING_CARDS = 20;
+export const OPENING_CARDS = 30;
 /**
  * 开局愿意一次性读进内存的卡面总量。
  *
- * 一张带 1024 立绘的卡约 2–3MB，20 张就是 40–60MB：这些立绘会跟着 `GameState`
- * 一起被 JSON 序列化进存档，低配机器上开局就顶不住。超过预算的卡留在卡库里，
+ * 一张带 1024 立绘的卡约 2–3MB，30 张就是 60–90MB。v92 之后落盘时立绘会搬进资产库、
+ * 存档里只留引用，所以这套上限管的是开局那一次读卡；第一次导入卡之后就会瘦下来。
+ * 预算按「单张卡上限 ×2」给，够把 30 人的选人池铺满大半。超过预算的卡留在卡库里，
  * 由市场按缺口逐日补货（`refillMarket` 会按 hash 单张读）。
  */
-export const OPENING_CARD_BYTES = CARD_FILE_BYTES_MAX;
+export const OPENING_CARD_BYTES = CARD_FILE_BYTES_MAX * 2;
 
 export interface OpeningGaps {
   /** 待处理议案还差几条。 */

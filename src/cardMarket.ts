@@ -39,7 +39,7 @@ export function unusedCards(box: CardBoxEntry[], state: GameState, limit = Numbe
 }
 
 /**
- * 再按「卡面总量」截一刀：开局不该为了摆满 20 个人把几十 MB 立绘读进内存。
+ * 再按「卡面总量」截一刀：开局不该为了摆满选人池上限把几十 MB 立绘读进内存。
  *
  * 至少收一张（第一张哪怕超预算也要收，否则开局没人可选），之后超出预算就停，
  * 剩下的留在卡库等市场按缺口补货。

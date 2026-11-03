@@ -47,6 +47,9 @@ test('v56 存档闸口跟着存档位走，不再卡在 6MB', () => {
 
 test('v56 三个上限同源：卡库、开局选人池、导入闸口', () => {
   assert.equal(CARD_BOX_MAX_BYTES, CARD_FILE_BYTES_MAX);
-  assert.equal(OPENING_CARD_BYTES, CARD_FILE_BYTES_MAX);
+  // v95：开局选人池放到 30 人，读卡预算必须比「单张卡上限」宽，
+  // 否则铺不满池子（其余的人靠市场按缺口逐日补）。其它两个上限仍与单卡上限同源。
+  assert.ok(OPENING_CARD_BYTES >= CARD_FILE_BYTES_MAX, '开局读卡预算不小于单卡上限');
+  assert.equal(OPENING_CARD_BYTES, CARD_FILE_BYTES_MAX * 2);
   assert.equal(SAVE_FILE_BYTES_MAX, SLOT_BYTES_LIMIT);
 });

@@ -173,7 +173,7 @@ export default function App() {
   const [phase, setPhase] = useState<BootPhase>(() => { try { return sessionStorage.getItem(STARTED_KEY) === '1' ? 'play' : 'title'; } catch { return 'title'; } });
   /** 启动时读到的自动存档是否存在——标题页只在这时给「接着上一夜」。 */
   const [hadSave, setHadSave] = useState(false);
-  /** 卡库里能用的卡数：够 20 张时编成界面不掺内置角色。 */
+  /** 卡库里能用的卡数：够选人池上限时编成界面不掺内置角色。 */
   const [boxUsable, setBoxUsable] = useState(0);
   const enterPlay = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setPhase('play'); };
   /** 载入存档后的分流：没编成过的老档先补编成，空白档直接进正片。 */
@@ -870,7 +870,7 @@ export default function App() {
     return working;
   };
 
-  /** 开始新游戏：标准开局 → 卡库摆出最多 20 张选人池 → 进编成。 */
+  /** 开始新游戏：标准开局 → 卡库摆出最多 OPENING_CARDS 张选人池 → 进编成。 */
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
     let next = act(state, { type: 'reset', mode }).state;
     try {
