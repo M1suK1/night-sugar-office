@@ -80,3 +80,17 @@ export function treatmentFor(state: GameState, girlId: string): Treatment | unde
   return state.treatments.find(item => item.girlId === girlId);
 }
 /** 辖区环境在结算时的统一修正：疲劳、精神力。声望在各自分支里结算。 */
+
+/**
+ * 与一位候选者缔约的价格。
+ *
+ * 以前三处各写一段（1800 + 等级×400 + 四维×4 之类），算下来一张卡要三四千，
+ * 开局那点星砂根本招不起人——经济压力大半来自这里。现在统一按「基础 + 等级 + 四维」
+ * 走，四维总和 260 的五级少女大致 1000 星砂，越强越贵但仍然招得起。
+ */
+export function contractCost(level: number, statSum: number): number {
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.round(level)) : 1;
+  const safeSum = Number.isFinite(statSum) ? Math.max(0, Math.round(statSum)) : 260;
+  const price = Math.round(700 + safeLevel * 25 + safeSum * 0.6);
+  return Math.max(300, Math.min(2000, price));
+}

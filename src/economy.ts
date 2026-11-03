@@ -93,9 +93,12 @@ export function marketUpgradeCost(level: number): number | null {
 export function advancedCost(level: number): { gold: number; stability: number } {
   return { gold: 1200 * level, stability: [0, 1, 2, 4, 6, 9, 12][Math.max(1, Math.min(6, level))] ?? 12 };
 }
+/** 装备整体降价：一本账，市场、契约卡、工坊都从这里读。 */
+export const EQUIPMENT_PRICE_SCALE = 0.75;
+
 export function factionPrice(item: Equipment, standing: number): number {
   const factor = standing < 30 ? 1.1 : standing >= 80 ? 0.9 : standing >= 60 ? 0.95 : 1;
-  return Math.round(item.price * factor);
+  return Math.round(item.price * factor * EQUIPMENT_PRICE_SCALE);
 }
 export function factionAttitude(standing: number): { label: string; discount: string; tone: 'cold' | 'neutral' | 'warm' | 'ally' } {
   if (standing >= 80) return { label: '盟约', discount: '货架 −10%', tone: 'ally' };

@@ -48,13 +48,19 @@ export function bossTick(state: GameState, elapsed: number): void {
  * 生成一条议题；`variant` 让同一个时段也能补出不同的议题（首夜连补三条时用）。
  * 返回是否真的加了一条：同一个议题标题还挂在待议里就不再重复提。
  */
+/** 星象台：每人每小时的收益与经验。 */
+export const EXPEDITION_GOLD_PER_HOUR = 300;
+export const EXPEDITION_EXP_PER_HOUR = 10;
+
 export function settleExpedition(state: GameState, expeditionId: string, at: { day: number; minutes: number }): void {
   const expedition = state.expeditions.find(e => e.id === expeditionId);
   if (!expedition) return;
   const members = expedition.memberIds.map(id => findGirl(state, id)).filter((g): g is Girl => Boolean(g));
   if (!members.length) { state.expeditions = state.expeditions.filter(e => e.id !== expeditionId); return; }
   const seed = hashText(`${expedition.id}:${expedition.cyclesDone}:${at.day}:${at.minutes}`);
-  const gain = 60 + (seed % 121);
+  // 每人每小时 300 星砂、10 点经验：星象台以前一轮只给 60–180，
+  // 比派遣还亏，没人愿意把人放上去。
+  const gain = EXPEDITION_GOLD_PER_HOUR * members.length;
   const found = seed % 10 < 6;
   state.gold += gain;
   book(state, at.day, gain);
@@ -64,7 +70,7 @@ export function settleExpedition(state: GameState, expeditionId: string, at: { d
   for (const girl of members) {
     girl.fatigue = Math.min(100, girl.fatigue + 5);
     girl.bond = Math.min(100, girl.bond + 1);
-    grantExpWithNotice(state, girl, 2);
+    grantExpWithNotice(state, girl, EXPEDITION_EXP_PER_HOUR);
     if (found) gainTrait(state, girl, '星象台远行', 0.12);
   }
   state.logs.unshift({ id: `log-exp-${expedition.id}-${expedition.cyclesDone}`, time: dateLabel(at.day, at.minutes), kind: 'expedition', text: `星象台远行第 ${expedition.cyclesDone} 轮：${members.map(g => g.name).join('、')}带回 ${gain} 星砂${found ? '和一段可以写进档案的见闻' : '，但没有发现异常'}。`, delta: gain });

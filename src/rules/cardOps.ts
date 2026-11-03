@@ -1,3 +1,4 @@
+import { contractCost } from './roster.ts';
 import { parseExpressionVariantKey, sanitizeExpressionVariants } from '../expressions.ts';
 import { cardboxReport } from '../cardbox.ts';
 import { customOutfitFor } from '../rules/outfits.ts';
@@ -156,7 +157,7 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     factionTag: cardOrigin,
     portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-    skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: 1800 + g.level * 220,
+    skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: contractCost(g.level, g.stats.magic + g.stats.insight + g.stats.agility + g.stats.empathy),
     scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
     goal: g.goal, goalKind: '成长', traits: cardTraits, conditions: [],
     contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
@@ -263,7 +264,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
         portrait: sanitizePortraitSrc(draft.portrait) ?? sanitizePortraitSrc(wardrobe.find(outfit => outfit.portrait)?.portrait) ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: 1800 + Math.max(0, sum - 260) * 40 + extra,
+        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: contractCost(1, sum) + extra,
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
         goal: draft.goal, goalKind: '成长', traits, conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,

@@ -1000,3 +1000,25 @@
 /* v85 属性点头部里的「不再提醒」 */
 .modal-section-heading{align-items:center}
 .modal-section-heading .mini-action{margin-left:auto}
+
+/* v91 地图：难度筛选条与针脚难度标 */
+.map-difficulty-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-2px 0 10px}
+.map-difficulty-filters>button{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid #ffffff14;border-radius:999px;background:#0d0a14;color:#a992a6;font-size:9px;letter-spacing:.04em;cursor:pointer;transition:.2s}
+.map-difficulty-filters>button>i{width:5px;height:5px;border-radius:50%;background:#6f5c7c}
+.map-difficulty-filters>button>small{font-family:var(--font-data);font-size:8px;color:#7d6a89}
+.map-difficulty-filters>button:hover{border-color:#d996ad55;color:#e7cdd9}
+.map-difficulty-filters>button.active{border-color:#d996ad88;background:#f3aec914;color:#f7e6ee}
+.map-difficulty-filters>button.tone-low>i{background:#8fd6a8}
+.map-difficulty-filters>button.tone-mid>i{background:#d9c07a}
+.map-difficulty-filters>button.tone-high>i{background:#e08e6a}
+.map-difficulty-filters>button.tone-doom>i{background:#d96a86}
+.pin-difficulty{display:inline-flex;align-items:center;gap:4px;font-size:8px;letter-spacing:.04em;color:#b78c9f}
+.pin-difficulty>i{width:4px;height:4px;border-radius:50%;background:#6f5c7c}
+.pin-difficulty.tone-low>i{background:#8fd6a8}
+.pin-difficulty.tone-mid>i{background:#d9c07a}
+.pin-difficulty.tone-high>i{background:#e08e6a}
+.pin-difficulty.tone-doom>i{background:#d96a86}
+/* 委托详情：难度与推荐等级占满一行 */
+.mission-facts>div.mission-fact-wide{grid-column:1/-1;display:flex;align-items:baseline;gap:8px;padding-top:10px;border-top:1px solid #ffffff0d}
+.mission-facts>div.mission-fact-wide b{font-size:14px}
+.mission-facts>div.mission-fact-wide .mission-fact-note{font-size:8px;letter-spacing:.03em;color:#887582}

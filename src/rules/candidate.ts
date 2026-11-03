@@ -1,3 +1,4 @@
+import { contractCost } from './roster.ts';
 import { STAT_JITTER, STAT_MIN, mulberry32 } from '../content/archetypes.ts';
 import { factionLeaderLevel, factionMemberLevel } from '../factions.ts';
 import { factionGirls } from '../content/factionGirls.ts';
@@ -240,7 +241,7 @@ export function makeCandidate(state: GameState, level: number, salt = 0, tag?: G
     id, name, codename: `${element.slice(0, 2)}协奏`, title: '刚刚递交契约的魔法少女', element, color, portrait: '',
     level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-    skill: '', skills, description: '她的档案还很薄，只有一页训练记录和一张没有署名的推荐信。', cost: 1800 + level * 400 + Math.round((stats.magic + stats.insight + stats.agility + stats.empathy) * 4),
+    skill: '', skills, description: '她的档案还很薄，只有一页训练记录和一张没有署名的推荐信。', cost: contractCost(level, stats.magic + stats.insight + stats.agility + stats.empathy),
     scars: [], relationships: {}, archetype, quote: '请多指教。我会努力不拖后腿的。',
     goal: '证明自己可以独立完成一次委托。', goalKind: '成长', traits: [], conditions: [], contractEndDay: 24, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
     appearance: pick(['浅色短发，发梢有一点不听话的卷。', '黑发扎成低马尾，耳后别着一枚旧发卡。', '亚麻色长发，眼睛比制服的颜色更浅。'], 6),

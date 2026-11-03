@@ -58,6 +58,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <div><Clock3 size={18} /><small>预计耗时</small><b>{mission.duration}<em> 分钟</em></b></div>
         <div><Shield size={18} /><small>{mission.work === 'combat' ? '战斗轮次' : '推荐能力'}</small><b>{mission.work === 'combat' ? mission.rounds : statLabels[mission.requirement]}<em>{mission.work === 'combat' ? ` × ${mission.rounds} 轮` : ` ${mission.target}+`}</em></b></div>
         <div><Users size={18} /><small>编队上限</small><b>{limit}<em> 人</em></b></div>
+        <div className="mission-fact-wide"><Shield size={18} /><small>难度 · 推荐等级</small><b>{mission.difficulty}<em>推荐 Lv.{mission.recommendedLevel ?? '—'}</em></b>{missionBaselineNote(mission) && <span className="mission-fact-note">{missionBaselineNote(mission)}</span>}</div>
       </div>
 
       <section className="mission-district" style={{ '--district-tint': region.tint } as React.CSSProperties} aria-label="辖区环境">

@@ -13,13 +13,20 @@ import { frontRemaining } from '../fronts';
 import { factionAttitude } from '../economy';
 
 const icons = { candy: Candy, station: TrainFront, mirror: Eclipse, cat: Cat, tower: Mail };
+/** 难度分级：与委托数据里的四个写法一一对应，顺序从轻到重。 */
+export const MAP_DIFFICULTIES = ['低危', '中危', '高危', '绝望'] as const;
+export type MapDifficulty = typeof MAP_DIFFICULTIES[number];
+const difficultyTone = (value: string) => MAP_DIFFICULTIES.includes(value as MapDifficulty) ? value === '低危' ? 'low' : value === '中危' ? 'mid' : value === '高危' ? 'high' : 'doom' : 'mid';
 type Filter = 'all' | 'combat' | 'investigation' | 'urgent' | 'active';
 
 export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: GameState; onMission: (id: string) => void; onFront: (id: string) => void; onDropGirl: (girlId: string, missionId: string) => void }) {
   const [zoom, setZoom] = useState(1), [filter, setFilter] = useState<Filter>('all'), [list, setList] = useState(false), [over, setOver] = useState<string | null>(null), [focus, setFocus] = useState<DistrictId | null>(null);
+  /** 难度筛选独立于类型筛选：两排可以叠加，「高危 + 战斗」这种组合最常用。 */
+  const [difficultyFilter, setDifficultyFilter] = useState<'all' | MapDifficulty>('all');
   const missions = useMemo(() => state.missions.filter(m => missionVisibleOnMap(m, state.day)), [state.missions, state.day]);
   const open = missions.filter(m => m.status === 'open').length;
-  const visible = (m: Mission) => filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter);
+  const visible = (m: Mission) => (filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter))
+    && (difficultyFilter === 'all' || m.difficulty === difficultyFilter);
   const threat = (m: Mission) => (m.enemyIds ?? []).reduce((sum, id) => sum + (findMonster(id)?.maxHp ?? 0), 0);
   const pins = useMemo(() => missions.map(m => ({ mission: m, district: districtOfMission(m).id })), [missions]);
   const focused = focus ? districts[focus] : null;
@@ -36,6 +43,15 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
     <div className="map-filters" aria-label="地图任务筛选">
       {[{ id: 'all', label: '全部委托' }, { id: 'combat', label: '战斗' }, { id: 'investigation', label: '调查' }, { id: 'urgent', label: '紧急优先' }, { id: 'active', label: '派遣中' }].map(f => <button id={`map-filter-${f.id}`} key={f.id} aria-pressed={filter === f.id} className={filter === f.id ? 'active' : ''} onClick={() => setFilter(f.id as Filter)}>{f.id === 'combat' ? <Swords size={11} /> : f.id === 'investigation' ? <ScanEye size={11} /> : null}{f.label}{f.id === 'urgent' && <i />}</button>)}
       <span><span className="signal-dot" />心愿信号已同步</span>
+    </div>
+    <div className="map-difficulty-filters" aria-label="按难度筛选">
+      <button id="map-difficulty-all" aria-pressed={difficultyFilter === 'all'} className={difficultyFilter === 'all' ? 'active' : ''} onClick={() => setDifficultyFilter('all')}>全部难度</button>
+      {MAP_DIFFICULTIES.map(level => {
+        const count = missions.filter(mission => mission.difficulty === level && mission.status !== 'done' && mission.status !== 'expired').length;
+        return <button id={`map-difficulty-${difficultyTone(level)}`} key={level} aria-pressed={difficultyFilter === level} className={`difficulty-chip tone-${difficultyTone(level)} ${difficultyFilter === level ? 'active' : ''}`} onClick={() => setDifficultyFilter(difficultyFilter === level ? 'all' : level)}>
+          <i />{level}<small>{count}</small>
+        </button>;
+      })}
     </div>
     {list ? <div className="mission-list-view">
       {missions.filter(visible).map(m => {
@@ -97,6 +113,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
               <small>{expired ? `${region.name} · 信号已消散` : m.status === 'active' ? `${squad.map(g => g!.name).join('、') || '契约者'} · 出勤中` : `${region.name} · ${m.window ? windowLabel[m.window] : m.work === 'combat' ? '战斗' : '调查'}`}{m.window === 'urgent' && m.status === 'open' && <b>限时</b>}</small>
               <strong>{m.title}</strong>
               <em><Clock3 size={10} />{m.duration} 分钟<span>+{m.reward} 星砂</span></em>
+              <span className={`pin-difficulty tone-${difficultyTone(m.difficulty)}`}><i />{m.difficulty}{missionBaselineNote(m) ? ` · ${missionBaselineNote(m)}` : ''}</span>
               {deadline && (m.status === 'open' || m.status === 'active') && <span className={`pin-deadline ${m.window === 'urgent' ? 'urgent' : ''}`}><Hourglass size={10} />{m.status === 'active' ? '派遣中' : `接取${deadline}`}</span>}
               {m.work === 'combat' && m.status === 'open' && <span className="pin-threat"><Skull size={10} />{m.enemyIds?.length ?? 0} 魔物 · 威胁 {threat(m)}</span>}
               {m.status === 'open' && m.work === 'combat' && <span className="pin-slots"><Users size={10} />队伍 0 / 3</span>}
