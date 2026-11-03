@@ -1,3 +1,4 @@
+import { FIRST_BOSS_DAY } from '../opening.ts';
 import { bossTemplateOf } from '../content/bosses.ts';
 import { normalizeGeneratedDay } from '../autoGenerate.ts';
 import { sanitizeCityNews } from '../cityNews.ts';
@@ -244,7 +245,10 @@ export function loadState(raw: string | null): GameState {
     state.marketStock = state.marketStock.filter((entry, index, list) => list.findIndex(other => other.id === entry.id) === index);
     state.marketLevel = Math.max(1, Math.min(4, Number(state.marketLevel) || 1));
     state.marketDay ??= state.day;
-    state.boss ??= null; state.bossCycle ??= 0; state.nextBossDay ??= state.day + 2;
+    state.boss ??= null; state.bossCycle ??= 0;
+    // v96：首轮空月推迟到第 24 夜。还没开打的旧档从 16 日被顺延到这里，别让玩家点开档就被空月堵门。
+    const firstCycle = !state.boss && !state.bossCycle && (state.cycleStartDay ?? state.day) <= 14;
+    state.nextBossDay = firstCycle ? Math.max(Number(state.nextBossDay) || 0, FIRST_BOSS_DAY) : (Number(state.nextBossDay) || state.day + 2);
     state.customSkills ??= [];
     state.customMonsters ??= [];
     state.poolLimits ??= { missions: 140, monsters: 50, candidates: 20, combatMissions: 120, investigationMissions: 20 };

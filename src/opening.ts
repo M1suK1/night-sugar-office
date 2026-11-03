@@ -7,6 +7,14 @@ import { spawnableMonsters } from './rules/encounters.ts';
 export const OPENING_OPINIONS = 3;
 /** 首夜本地兜底要凑到的待用弹窗事件条数。 */
 export const OPENING_INCIDENTS = 3;
+/**
+ * 第一次空月最早出现在第几日。
+ *
+ * 开局是第 14 夜：原本 16 日就挂空月，玩家只有两夜发育——招不起人、也练不出等级。
+ * 现在留足十天（第 24 夜），足够招人、升两三级、攒一笔钱再上桌。
+ */
+export const FIRST_BOSS_DAY = 24;
+
 /** 开局从卡库摆出来的选人池上限（没被选中的留在市场）。 */
 export const OPENING_CARDS = 30;
 /**

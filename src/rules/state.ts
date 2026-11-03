@@ -1,3 +1,4 @@
+import { FIRST_BOSS_DAY } from '../opening.ts';
 import { ROUND_MINUTES } from '../combat.ts';
 import { openingCityNews } from '../cityNews.ts';
 import { loadPlayerProfile } from '../player.ts';
@@ -65,7 +66,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, marketWindow: [], marketSold: [], whisperQueue: [], whisperUnread: {}, lastWhisperDay: {}, truceUntil: {}, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, marketWindow: [], marketSold: [], whisperQueue: [], whisperUnread: {}, lastWhisperDay: {}, truceUntil: {}, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, FIRST_BOSS_DAY), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 50, candidates: 20, combatMissions: 0, investigationMissions: 0 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
@@ -102,7 +103,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     samples: sampleDays(), messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },
-    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, marketWindow: [], marketSold: [], whisperQueue: [], whisperUnread: {}, lastWhisperDay: {}, truceUntil: {}, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, 14 + 2), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
+    inventory: {}, marketStock: makeMarketStock(14, { marketLevel: 1, standing: 50 }), marketLevel: 1, marketDay: 14, marketWindow: [], marketSold: [], whisperQueue: [], whisperUnread: {}, lastWhisperDay: {}, truceUntil: {}, boss: null, bossCycle: 0, nextBossDay: Math.max(bosses[0].firstDay, FIRST_BOSS_DAY), cycleStartDay: 14, customSkills: [], customMonsters: [], customBosses: [], generatedItems: [], chronicle: [],
     poolLimits: { missions: 12, monsters: 50, candidates: 20, combatMissions: 0, investigationMissions: 0 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],

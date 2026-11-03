@@ -224,7 +224,8 @@ test('v24 Boss 常驻：连过三晚都在板上，声望每晚都在掉', () =>
     return current;
   };
   let current = state;
-  for (let index = 0; index < 6 && !current.boss; index++) current = night(current);
+  // v96：首次空月推到第 24 夜（开局第 14 夜 + 十夜发育），这里多走几晚才等得到它。
+  for (let index = 0; index < 20 && !current.boss; index++) current = night(current);
   assert.ok(current.boss, 'Boss 应已登场');
   assert.equal(current.boss!.template, boss.id);
   for (let index = 0; index < 3; index++) {
@@ -238,10 +239,16 @@ test('v24 Boss 常驻：连过三晚都在板上，声望每晚都在掉', () =>
 
 test('v24 Boss 血量继承：打一场后剩余血量写在 state.boss.hp 上', () => {
   let current = createInitialState();
-  for (let guard = 0; guard < 12 && !current.boss; guard++) {
+  // v96：空月推后到第 24 夜；每轮先清掉所有挡路的弹窗，再打烊，多给几次机会。
+  for (let guard = 0; guard < 120 && !current.boss; guard++) {
     const pending = current.incidents.find(incident => incident.status === 'pending');
-    if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0].id }).state;
-    current = act(current, { type: 'endNight' }).state;
+    if (pending) {
+      current = act(current, { type: 'resolveIncident', incidentId: pending.id, ...(pending.options[0] ? { optionId: pending.options[0].id } : {}) }).state;
+      continue;
+    }
+    const ended = act(current, { type: 'endNight' });
+    current = ended.state;
+    if (!ended.ok && !current.incidents.some(incident => incident.status === 'pending')) break;
   }
   const mission = current.missions.find(entry => entry.boss)!;
   const squad = current.girls.filter(girl => !girl.dead && !girl.retired).slice(0, 3).map(girl => girl.id);
