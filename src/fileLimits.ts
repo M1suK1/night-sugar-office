@@ -10,7 +10,7 @@
 /** 单张契约卡的兜底上限：只拦「明显不是契约卡」的文件，真正的约束是 IndexedDB 配额。 */
 export const CARD_FILE_BYTES_MAX = 24 * 1024 * 1024;
 /** 存档的上限，与存档位（`SLOT_BYTES_LIMIT`）保持一致。 */
-export const SAVE_FILE_BYTES_MAX = 32_000_000;
+export const SAVE_FILE_BYTES_MAX = 96_000_000;
 
 /** 给人看的体积。 */
 export function formatBytes(bytes: number): string {

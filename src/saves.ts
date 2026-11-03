@@ -1,4 +1,6 @@
 import type { GameState } from './types.ts';
+import { slimStateForSave } from './saveSlim.ts';
+import { describeStateSize } from './saveSize.ts';
 import { loadState } from './game.ts';
 import { kvDelete, kvGet, kvSet } from './store.ts';
 
@@ -14,7 +16,8 @@ export type SaveSlotId = (typeof SAVE_SLOT_IDS)[number];
 export const SLOT_PREFIX = 'save/slot/';
 
 /** 单槽体积上限（按 JSON 字符数估）：存进 IndexedDB 后不再受 5MB 配额限制，这里只防手滑写入超大对象。 */
-export const SLOT_BYTES_LIMIT = 32_000_000;
+/** 单槽上限。旧值 32MB 会把「带差分的中期存档」直接拦在门外；IDB 配额远大于此。 */
+export const SLOT_BYTES_LIMIT = 96_000_000;
 
 export type SaveSlotSummary = {
   id: SaveSlotId;
@@ -83,22 +86,34 @@ export async function slotSummaries(): Promise<(SaveSlotSummary | null)[]> {
 
 /** 写入槽位：先量体积再落盘，失败时把原因说明白。 */
 export async function writeSlot(id: SaveSlotId, state: GameState): Promise<{ ok: boolean; message: string; summary?: SaveSlotSummary }> {
-  const payload: SlotPayload = { schema: 1, savedAt: Date.now(), state };
+  let payload: SlotPayload = { schema: 1, savedAt: Date.now(), state };
   let bytes = 0;
   try {
     bytes = JSON.stringify(payload).length;
   } catch {
     return { ok: false, message: '这一局的状态没法序列化，存档位没有写入。' };
   }
+  // 接近上限时先瘦身一次（表情差分的 data URL 是主要负担），省下的字节写进提示里。
+  let slimNote = '';
+  if (bytes > SLOT_BYTES_LIMIT * 0.8) {
+    const slim = await slimStateForSave(state);
+    if (slim.saved > 0) {
+      payload = { schema: 1, savedAt: Date.now(), state: slim.state };
+      bytes = JSON.stringify(payload).length;
+      slimNote = `保存前把表情差分压小，省下 ${Math.round(slim.saved / 1000)}KB。`;
+    }
+  }
   if (bytes > SLOT_BYTES_LIMIT) {
-    return { ok: false, message: `这一局有 ${Math.round(bytes / 1000)}KB，超过单个存档位的上限；请先导出存档再清理历史记录。` };
+    // 说清楚是什么撑爆的：多半是表情差分（内联 data URL），不是剧情文字。
+    const detail = describeStateSize(state);
+    return { ok: false, message: `这一局有 ${Math.round(bytes / 1000)}KB，超过单个存档位的上限 ${Math.round(SLOT_BYTES_LIMIT / 1000)}KB。最大的几块：${detail}。可以先导出存档，再删掉几套表情差分或衣柜，或者先清掉旧战报与旧日志。` };
   }
   try {
     await kvSet(slotKey(id), payload);
   } catch {
     return { ok: false, message: '浏览器没能写入这个存档位（可能是空间不足或隐私模式）。可以先删掉别的槽位再试。' };
   }
-  return { ok: true, message: `已存入存档位 ${id}。`, summary: (await slotSummary(id)) ?? undefined };
+  return { ok: true, message: `已存入存档位 ${id}。${slimNote}`, summary: (await slotSummary(id)) ?? undefined };
 }
 
 export async function readSlot(id: SaveSlotId): Promise<GameState | null> {
