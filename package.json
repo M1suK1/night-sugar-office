@@ -7,7 +7,7 @@
     "dev": "node tools/vite.mjs --host 127.0.0.1",
     "build": "tsc -b && node tools/vite.mjs build",
     "preview": "node tools/vite.mjs preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test tests/game.test.ts tests/budget.test.ts tests/vertex.test.ts tests/v24.test.ts tests/v26.test.ts tests/store.test.ts tests/cards-api.test.ts tests/v27.test.ts tests/research.test.ts tests/market-window.test.ts tests/v29.test.ts tests/v31.test.ts tests/v32.test.ts tests/v33.test.ts tests/v34.test.ts tests/game-api.test.ts tests/cardbox.test.ts tests/starter.test.ts tests/pool.test.ts tests/v44.test.ts tests/v45.test.ts tests/v46.test.ts tests/v47.test.ts tests/v48.test.ts",
+    "test": "node --experimental-strip-types --test tests/game.test.ts tests/budget.test.ts tests/vertex.test.ts tests/v24.test.ts tests/v26.test.ts tests/store.test.ts tests/cards-api.test.ts tests/v27.test.ts tests/research.test.ts tests/market-window.test.ts tests/v29.test.ts tests/v31.test.ts tests/v32.test.ts tests/v33.test.ts tests/v34.test.ts tests/game-api.test.ts tests/cardbox.test.ts tests/starter.test.ts tests/pool.test.ts tests/v44.test.ts tests/v45.test.ts tests/v46.test.ts tests/v47.test.ts tests/v48.test.ts tests/v49.test.ts",
     "test:browser": "node tests/browser.mjs",
     "check:rules": "node tools/check-imports.mjs"
   },

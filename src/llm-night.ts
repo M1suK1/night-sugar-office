@@ -1,5 +1,5 @@
 import type {
-  Archetype, Element, Equipment, Expression, FactionId, GameState, Girl,
+  Archetype, Element, Equipment, FactionId, GameState, Girl,
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
   OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
@@ -7,12 +7,12 @@ import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
 import { MAX_ENEMIES } from './combat.ts';
-import { factionInfo, listItems } from './content/items.ts';
+import { listItems } from './content/items.ts';
 import { tierOf } from './items.ts';
 import { pickEquipmentOfTier, pickMissionTemplate } from './nightPick.ts';
 import { findSkill } from './content/skills.ts';
 import { factionRepresentativeOf, type FactionRepresentative } from './factions.ts';
-import { HOSTILITY_PAIRS, pairLabel } from './hostility.ts';
+import { HOSTILITY_PAIRS } from './hostility.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { findAnySkill, isBossSkill } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
@@ -20,20 +20,12 @@ import { createSeedPack } from './content/seed-pack.ts';
 import { factionBrief, factionTagLabel } from './factions.ts';
 import { representativeOf } from './office.ts';
 import { pollutionTierLabel } from './pollution.ts';
+import { DEFAULT_PROMPTS, renderPresetSystem } from './presets.ts';
+import { NIGHT_ARCHETYPES, NIGHT_DIFFICULTIES, NIGHT_ELEMENTS, NIGHT_EXPRESSIONS, NIGHT_FACTIONS, NIGHT_GOALS, NIGHT_RANKS, NIGHT_SCHEMA_EXAMPLE, NIGHT_STATS, NIGHT_TOPICS, NIGHT_VERSION, NIGHT_WINDOWS, NIGHT_WORKS } from './nightSpec.ts';
 
-export const NIGHT_VERSION = 2;
+// 枚举与 JSON 骨架搬到 nightSpec.ts，这里照旧再导出一遍，外部 import 路径不用改。
+export * from './nightSpec.ts';
 
-export const NIGHT_STATS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
-export const NIGHT_ELEMENTS: Element[] = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系'];
-export const NIGHT_ARCHETYPES: Archetype[] = ['输出', '守护', '治愈', '控制', '侦查'];
-export const NIGHT_RANKS: MonsterTemplate['rank'][] = ['碎屑', '游荡', '灾厄', '王座'];
-export const NIGHT_TOPICS: Opinion['topic'][] = ['经费', '排班', '设施', '同伴', '城市', '私人心愿'];
-export const NIGHT_DIFFICULTIES: MissionTemplate['difficulty'][] = ['低危', '中危', '高危', '绝望'];
-export const NIGHT_FACTIONS: FactionId[] = ['witch', 'association', 'government'];
-export const NIGHT_GOALS: GoalKind[] = ['战斗', '调查', '社交', '生活', '成长'];
-export const NIGHT_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
-export const NIGHT_WINDOWS: CommissionWindow[] = ['urgent', 'long'];
-export const NIGHT_WORKS: WorkKind[] = ['combat', 'investigation'];
 const DISTRICT_IDS = Object.keys(districts) as DistrictId[];
 
 /** 模型看到的物品目录：内置物品 + 存档里已经登记过的一次性装备。 */
@@ -845,126 +837,35 @@ export function buildNightCatalog(state: GameState): NightCatalog {
   };
 }
 
-export const NIGHT_SCHEMA_EXAMPLE = {
-  version: 2,
-  mission: {
-    title: '', description: '', work: 'combat', difficulty: '中危',
-  },
-  opinions: [{
-    authorId: '', authorKind: 'girl', authorFaction: null, topic: '经费', faction: 'witch', district: null, title: '', text: '', request: '',
-    dialogue: [{ speakerId: '', speaker: '', text: '', expression: 'sad' }],
-    options: [
-      { id: 'accept', label: '批准', effect: '', changes: [{ kind: 'gold', amount: -600 }], outcomes: [] },
-      { id: 'reject', label: '驳回', effect: '', changes: [{ kind: 'girl', girlId: '', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
-    ],
-  }],
-  envoy: {
-    faction: 'association', title: '', description: '', work: 'investigation', difficulty: '中危', district: 'station', rewardGirlLevel: 0,
-  },
-  loot: [{ tier: 3, slot: 'charm', faction: 'witch' }],
-};
 
 function clipLine(text: string | undefined, limit: number): string {
   const value = (text ?? '').replace(/\s+/g, ' ').trim();
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
-/** 系统提示词：目录、规则、JSON 形状一次给全。 */
-export function buildNightPrompt(state: GameState): string {
-  const catalog = buildNightCatalog(state);
-  const names = (values: readonly string[]) => values.join(' / ');
-  const city = catalog.city;
-  const lounge = state.rooms.find(room => room.type === 'lounge');
-  const opinionCap = Math.max(3, Math.min(5, 1 + (lounge?.level ?? 2)));
-  const pendingOpinions = state.opinions.filter(opinion => opinion.status === 'pending').length;
-  const opinionNeed = Math.max(1, opinionCap - pendingOpinions);
-  const roster = catalog.girls.map(girl => {
-    const lines = [
-      `- ${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype} · Lv.${girl.level} · 羁绊 ${girl.bond} · 出身 ${girl.origin}`,
-      girl.personality ? `  性格：${girl.personality}` : '',
-      girl.appearance ? `  外貌：${girl.appearance}` : '',
-      girl.quote ? `  语气参考：「${girl.quote}」` : '',
-    ].filter(Boolean);
-    return lines.join('\n');
-  }).join('\n');
-  const cityBlock = city ? [
-    '【城市态势】',
-    ...city.briefs.map(brief => `- ${brief.split('\n').join(' / ')}`),
-    `- 最脏的辖区：${city.dirtiest.map(item => `${item.name}（污染 ${item.pollution} · ${item.tier} · 当主 ${item.owner}）`).join('、') || '无'}`,
-    `- 夜糖事务所是重开的中立委托机构，收留三方与无所属的少女；当前对外代表 ${city.representative}。`,
-    '- 辖区污染会改变委托目标与魔物状态，但污染数值只能由程序结算，不要出现在 JSON 里。',
-    '- 少女的「出身」只说明她从哪里来，不代表雇主；她们的雇主一律是夜糖事务所。',
-    '- 事件文本可以写协会的净化班与技术禁令、市役所的回收车与编号、月蚀庭净血派的受洗名单；但协会不是纯善，月蚀庭也不是单纯受害者。',
-  ].join('\n') : '';
-  return `【今晚的机制目录】
-${JSON.stringify(catalog)}
-
-【值夜名册】authorId / speakerId / girlId 只能从下面这些人里选，名字也必须照抄：
-${roster || '（名册为空）'}
-
-【三方首领】代表提案的 authorId 只能取这些 id；作者是一个势力时，authorFaction 必须写同一个势力：
-${catalog.representatives.map(rep => `- ${rep.name}（${rep.id}）· ${rep.title} · ${factionInfo[rep.faction].name} · Lv.${rep.level}`).join('\n')}
-
-【势力关系】敌意越高越接近开战（满 100 触发战线）：
-${HOSTILITY_PAIRS.map(pair => `- ${pairLabel(pair)}：${state.hostility?.[pair]?.value ?? 0}`).join('\n')}
-
-${cityBlock}
-
-【硬性规则】
-1. 只输出一个 JSON 对象，不要 Markdown、解释或思维链。
-2. 所有 id 必须来自目录；authorId 只能取【值夜名册】或【三方首领】里的 id，speakerId 只能取名册或三方首领，不要写名单外的角色。
-2b. 普通提案 authorKind 写 "girl"；代表提案写 "leader" 并填 authorFaction，authorId 必须是该方首领。
-2c. 关系类提案（可选，不必每晚都有）：允许 accept 带 {kind:"truce",pair,days:5–20} 或 {kind:"territory",district,faction}，reject 可带 {kind:"war",pair}；这类提案必须由 leader 提出，pair 必须包含 authorFaction，accept 至少要支付 3000 星砂或割让辖区。没有关系变化时不要写这些字段。
-3. opinions 是 1–3 条议题的数组；每条的 options **恰好 2 项**，id 只能是 accept 与 reject。
-4. 暂缓由系统固定处理（提出者羁绊 −1、所属势力态度 −2、下个议事日重新提出），**你不要写 defer**。
-5. reject 必须包含提出者羁绊 −2、该议题 faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
-6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。
-7. opinions[].dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
-8. 不再生成新魔物，不要输出 monster 字段。
-9. 委托只写 work（${names(NIGHT_WORKS)}）与 difficulty（${names(NIGHT_DIFFICULTIES)}）；时长、报酬、判定属性、目标值、轮次、敌人组合、辖区由程序按 difficulty 从真实委托模板里抽，你不要写这些字段。战斗委托会沿用模板的魔物组合，所以也不要自己编敌人。
-10. 议会单个变化 gold ≤1500、reputation ≤10、faction ≤15、bond ≤5、fatigue ≤20、minutes ≤90；所有数值必须是整数。
-11. loot 最多 2 件，只写阶级与槽位：{"tier":3,"slot":"charm","faction":"witch"}；具体是哪一件由程序从三阶器物里随机发放，不要写 name / stats / passive。
-12. 颜色、立绘、SVG、坐标、本地 id 由程序生成，不要填写。
-13. 本次需要 ${opinionNeed} 条议题（会客厅等级上限 ${opinionCap} 条，已有 ${pendingOpinions} 条待议）。不要用同一条议题凑数；不要输出超过这个数量。
-
-【字段说明书】
-■ mission（今晚的主委托）
-  · title：6–14 字，地点 + 异常，不写数值。
-  · description：80–160 字，报案人口吻，写现场能听到／闻到的具体东西。
-  · work：combat（要正面打）或 investigation（走访、取样、问话）。
-  · difficulty：${names(NIGHT_DIFFICULTIES)} 之一；难度决定程序抽到哪一档模板。
-■ envoy（三方使者委托）
-  · 与 mission 同口径，另外写 faction（${names(NIGHT_FACTIONS)}）与 district（可选），其余交给程序。
-■ opinions[]（议会提案）
-  · authorId / authorKind / authorFaction：谁提的、是少女还是首领。
-  · topic：${names(NIGHT_TOPICS)} 之一。
-  · faction：这条议题牵动哪一方；district：涉及辖区时才写，否则 null。
-  · title ≤14 字；text 60–140 字，写清她要什么、为什么现在提；request 一句话说明她要你答应什么。
-  · dialogue：3–5 句，speakerId 必须是名册或首领 id，expression 只能是 ${names(NIGHT_EXPRESSIONS)}。
-  · options：恰好 accept 与 reject 两项，各自 changes / outcomes 如下。
-■ options[].changes 的合法 kind
-  · {kind:"gold", amount}           负数=支出，正数=收入，单条 ≤1500
-  · {kind:"reputation", amount}     城市安定度，±10
-  · {kind:"faction", faction, amount}  势力态度，±15
-  · {kind:"girl", girlId, field, amount}  field 取 bond / fatigue / corruption / spirit / hp；bond ±5，fatigue ≤20
-  · {kind:"item", itemId, amount}   指向目录里已有的物品 id，负数=消耗
-  · {kind:"minutes", amount}        正数=占用时间，≤90
-  · {kind:"hostility", pair, amount} 只有领袖提案可写，±9
-■ options[].outcomes 的合法 kind
-  · {kind:"leave"}                                 她因此离开事务所
-  · {kind:"truce", pair, days}                     两方停战，只能写在 accept
-  · {kind:"war", pair}                             两方开战，只能写在 reject
-  · {kind:"territory", district, faction}          辖区易主
-  · {kind:"mission", template}                     追加一份委托模板；本轮不用，别写
-■ loot[]：只写 {tier:1–5, slot:"weapon|charm|consumable", faction}
-■ 不要写的字段：duration / reward / requirement / target / rounds / recommendedLevel / enemyRefs / window / 颜色 / 坐标 / 任何本地 id。
-
-【JSON 形状】
-${JSON.stringify(NIGHT_SCHEMA_EXAMPLE)}
-
-把空字符串替换成与今晚局势一致的文案；保持字段完整。`;
+/** 默认 daily 分区（预设还没绑定时、以及测试里的兜底）：用 DEFAULT_PROMPTS 里的默认文本渲染。 */
+export function composeDailySections(ctx: { state: GameState }): string[] {
+  const entries = DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily');
+  const rendered = renderPresetSystem(entries, {}, ctx);
+  return [rendered.system];
 }
 
+/** 提案的锁定契约：只有解析器需要的 JSON 骨架与整数要求。其余文字在预设的 daily 分区里。 */
+export function dailyContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    JSON.stringify(NIGHT_SCHEMA_EXAMPLE),
+    '',
+    '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
+  ].join('\n');
+}
+
+/** 兼容旧调用与测试：默认 daily 分区 + 锁定契约拼出来的系统提示。 */
+export function buildNightPrompt(state: GameState): string {
+  const parts = composeDailySections({ state }).map(part => part.trim()).filter(Boolean);
+  parts.push(dailyContract());
+  return parts.join('\n\n');
+}
 
 function mapItemRef(ref: string | undefined, lootIds: Map<string, string>): string | undefined {
   if (!ref) return undefined;

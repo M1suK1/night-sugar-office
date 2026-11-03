@@ -310,7 +310,7 @@ export default function App() {
       const preset = taskRuntime(boundPreset('arc', presets, binding), 'arc');
       const memory = story ? [story.title, story.premise, ...story.beats.filter(item => item.index < story.stage).map(item => `${item.title}：${item.hook}`)].join('\n') : '';
       const result = config.apiKey
-        ? await generateStoryArc(config, target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset)
+        ? await generateStoryArc(config, target, { storylineTitle: story?.title, premise: story?.premise, beatTitle: beat?.title, beatHook: beat?.hook, memory }, preset, latestState.current ?? state)
         : { ok: false as const, message: '' };
       if (!result.ok && config.apiKey) notify(result.message || '叙事者没有写完，改用模板剧情。', false);
       const passages: StoryPassage[] = result.ok
@@ -987,7 +987,7 @@ export default function App() {
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
     const storyline = state.storylines.find(item => item.girlId === girlId && item.status === 'active');
-    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, taskRuntime(boundPreset('event', presets, binding), 'event'));
+    const result = await generateEvent(loadLlmConfig(), target, storyline ? { title: storyline.title, premise: storyline.premise } : undefined, taskRuntime(boundPreset('event', presets, binding), 'event'), latestState.current ?? state);
     const stamp = Date.now();
     const data = result.ok ? result.data : undefined;
     const fallbackTitle = storyline ? `${storyline.title} · 夜路` : '夜路';

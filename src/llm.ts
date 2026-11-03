@@ -152,7 +152,7 @@ const EMPTY_RUNTIME: PresetRuntime = {
  * 固定拼装顺序：共用词条 → 任务词条 → 场景/性格/世界书 → 代码输出契约。
  * 代码契约永远在最后，预设词条不能覆盖 JSON 字段与枚举。
  */
-function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptScope, extra: Record<string, string | undefined> = {}, context?: string) {
+function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptScope, extra: Record<string, string | undefined> = {}, context?: string, ctx: MacroContext = {}) {
   const world = resolvePresetWorld(runtime, scope, extra);
   const vars = promptVars({ ...extra, world, context });
   if (vars.scenario) vars.scenario = applyFormat(runtime.scenarioFormat, vars.scenario);
@@ -163,7 +163,7 @@ function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptSc
     vars.worldbook ? `【世界书】\n${applyFormat(runtime.wiFormat, vars.worldbook)}` : '',
   ].filter(Boolean);
   const fullContract = [...contextParts, contract.trim()].filter(Boolean).join('\n\n');
-  const composed = composeTaskSystem(fullContract, runtime, scope, vars);
+  const composed = composeTaskSystem(fullContract, runtime, scope, vars, ctx);
   return { system: composed.system, vars, world, composed };
 }
 
@@ -333,35 +333,13 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     role: message.role === 'player' ? 'user' as const : 'assistant' as const,
     content: message.action ? `${message.text}\n（${message.action}）` : message.text,
   }));
-  const bondLabel = girl.bond >= 85 ? '爱意' : girl.bond >= 70 ? '依恋' : girl.bond >= 55 ? '亲近' : girl.bond >= 40 ? '平常' : girl.bond >= 25 ? '戒备' : '疏离';
-  const stage = (value: number) => value >= 85 ? '爱意' : value >= 70 ? '依恋' : value >= 55 ? '亲近' : value >= 40 ? '平常' : value >= 25 ? '戒备' : '疏离';
-  const allGirls = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
-  const peers = Object.entries(girl.relationships ?? {}).map(([id, value]) => {
-    const peer = allGirls.find(candidate => candidate.id === id);
-    return peer ? `${peer.name}：${value}/100（${stage(value)}）` : '';
-  }).filter(Boolean);
-  const battles = state.battles.filter(battle => battle.units.some(unit => unit.uid === `ally-${girl.id}`)).slice(0, 5).map(battle => {
-    const unit = battle.units.find(entry => entry.uid === `ally-${girl.id}`)!;
-    const label = { victory: '胜利', repelled: '暂时击退', defeat: '失败', draw: '平局' }[battle.outcome ?? 'draw'];
-    const scar = battle.scars?.length ? `；留下${battle.scars.length}道疤痕` : '';
-    return `第${battle.startedAt.day}日「${battle.missionTitle}」：${label}，${battle.round}/${battle.rounds}轮；造成 ${unit.dealt} 伤害，承受 ${unit.taken}，治疗 ${unit.healed}${scar}。`;
-  });
-  const skillNames = girl.skills.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、');
-  const traitText = girl.traits.map(trait => `${trait.name}（${trait.description}）`).join('；');
-  const body = `身份：${girl.title}，代号「${girl.codename}」，${girl.element}，${girl.archetype ?? '未定职阶'}，等级 ${girl.level}。
-外貌：${girl.appearance ?? '不详'}。性格：${activePersonality(girl) || '安静'}。服装：${girl.outfitDescription ?? '值夜制服'}。
-登场台词：${girl.quote ?? '没有留下出场白'}。当前目标：${girl.goal ?? '没有写下来的愿望'}。特性：${traitText || '无'}。技能：${skillNames || '未记录'}。
-对所长（玩家）的羁绊：${girl.bond}/100（${bondLabel}）。
-与同伴的关系：${peers.join('；') || '还没有特别亲近的同伴'}。
-经历的战斗：${battles.join(' ') || '还没有参加过战斗'}。
-状态：生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，身上有 ${girl.scars.length} 道疤痕：${girl.scars.map(scar => scar.name).join('、')}` : ''}。
-【最近参与】
-${missionMemory(state, girl)}
-（只作为记忆与语气参考，不要逐条复述委托记录；当前这次对话没有新的委托结算。）
-${remote ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。' : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。`}`;
+  // v49：她的档案与过往由 chat 分区的宏供给，这里只留这次见面的场景。
+  const body = remote
+    ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。'
+    : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。（只作为语气与记忆参考；当前这次对话没有新的委托结算。）`;
   const MAX_CONTEXT = runtime.maxContext;
   const recentHistory: typeof history = [];
-  const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话');
+  const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话', { state, focus: girl });
   let used = baseSystem.length + text.length;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
@@ -452,7 +430,7 @@ ${job.outcome === 'victory' || job.outcome === 'success' ? '她赢了，但不�
 ${missionMemory(state, girl, job.missionId)}
 【最近对话】
 ${recentWithActions}`;
-  const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语');
+  const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语', { state, focus: girl });
   const messages: ChatMessage[] = [
     { role: 'system', content: `${system}\n\n${DIALOGUE_FORMAT_HINT}` },
     { role: 'user', content: '写她此刻发给所长的消息，1–3 条，可以有动作和表情；只输出 JSON。' },
@@ -1065,7 +1043,7 @@ const DEFAULT_TOKEN_BUDGET = 8000;
 const RETRY_TOKEN_CEILING = 16384;
 
 async function chatJson(
-  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0,
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0, ctx: MacroContext = {},
 ): Promise<JsonCallOutcome> {
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = applyPresetApi(runtime, config);
@@ -1075,7 +1053,7 @@ async function chatJson(
   if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: Math.max(runtime.maxTokens, tokenFloor) };
   else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
   else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
-  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入');
+  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入', ctx);
   let messages: ChatMessage[] = applyRegexToMessages([
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -1107,16 +1085,16 @@ function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
 
 async function generateDailyCore(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const system = buildNightPrompt(state);
+  const system = dailyContract();
   const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
-  const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 8000);
+  const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 8000, { state });
   if (!outcome.result.ok) return { ok: false, message: `生成失败：${outcome.result.message}` };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('生成失败：', outcome) };
   let validation = validateNightProposal(outcome.raw, state);
   let source = outcome;
   if (!validation.ok) {
     const repairBody = `${system}\n\n【上一次提案（未通过本地校验）】\n${JSON.stringify(outcome.raw)}\n\n【必须修正的问题】\n${validation.errors.map((entry, index) => `${index + 1}. ${entry}`).join('\n')}\n\n只输出修正后的完整 JSON。不要解释，不要省略任何字段；所有 id 必须来自上面的目录。`;
-    const repaired = await chatJson(config, preset, 'daily', repairBody, '请只提交修正后的完整 JSON。', ['共用词条 + 每日提案词条 + 今晚机制目录', '修复上一次提案'], meta, { context: '修复今晚的提案' }, 8000);
+    const repaired = await chatJson(config, preset, 'daily', repairBody, '请只提交修正后的完整 JSON。', ['共用词条 + 每日提案词条 + 今晚机制目录', '修复上一次提案'], meta, { context: '修复今晚的提案' }, 8000, { state });
     if (!repaired.result.ok) return { ok: false, message: `提案未通过校验，修复请求失败：${repaired.result.message}` };
     if (!repaired.raw) return { ok: false, message: `提案未通过校验，且修复输出无法解析。${jsonFailureMessage('', repaired)}` };
     source = repaired;
@@ -1284,9 +1262,9 @@ function parseIncidentEffect(raw: unknown): IncidentEffect {
 }
 
 async function callJson(
-  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>,
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>, ctx: MacroContext = {},
 ): Promise<{ ok: true; raw: Record<string, unknown> } | { ok: false; message: string }> {
-  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra);
+  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra, 0, ctx);
   if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('', outcome) };
   return { ok: true, raw: outcome.raw };
@@ -1434,79 +1412,15 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
-  const body = `先读她的档案：${girlBrief(girl)}
-${blueprintFactionLine(state)}
-${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
-请直接写一张「故事蓝图」（StoryGraph），不是四幕手稿。只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","premise":"","tone":"","nodes":[{"id":"n1","kind":"start","title":"开始","data":{"kind":"start"}}],"edges":[{"from":"n1","fromPort":"out","to":"n2"}]}
-
-节点 kind 只能用这九种：start、choice、mission、event、incident、opinion、reward、wait、end。
-没有 scene 节点。需要一段旁白时，用 incident 写一张「看一眼」的弹窗；需要她开口说话时，用 event。
-
-【规模与硬性结构】
-8–16 个节点；恰好 1 个 start；2–3 个 end，且每个 end 的 ending 两两不同（例如「留下」「离开」「带着钥匙走」）；
-choice 1–2 个；mission 1–2 个；event 1–2 个；incident 1–2 个；opinion 0–1 个；reward 与 wait 合计不超过 2 个。
-
-【连线总则——这一节写错，整张蓝图会被校验打回】
-1. 必须是有向无环图：从 start 能到达每个节点；每条路径最终都到 end；不允许回环、自环、悬空连线。
-2. 除 end 外每个节点都必须有出口；end 不能有任何出口；start 只有一条 fromPort="out"。
-3. fromPort 只有四种合法来源，别的一律非法：
-   a) "out"：start、event、reward、wait，以及没有选项的 incident；
-   b) "success" 与 "failure"：只有 mission 用，且必须各恰好一条；
-   c) choice 的选项 id；
-   d) incident 有选项时的 o1 / o2 / o3。
-4. choice 的选项 id 只能是小写单字母：a、b、c、d，按顺序给。
-   禁止语义化命名。下面这些名字一出现就说明写错了：trust_calc、point_overlo、defy_fate、accept_logic、option1、OPTION_A、选项A。
-5. choice 有几个选项，就必须恰好有同样条数的出边，fromPort 分别等于这些 id —— 不多一条，也不少一条。
-   例：options 是 a、b，则 edges 里必须同时存在 {from:"该节点",fromPort:"a",to:…} 与 {from:"该节点",fromPort:"b",to:…}。
-6. 全图不允许出现「起点节点里没有声明过的 fromPort」。写边之前先回头看那个节点的出口清单。
-7. incident 的选项 id 固定写 o1、o2、o3；每个选项对应一条 fromPort 相同的边。incident 不写选项时，用一条 fromPort="out"。
-8. opinion 固定两个分支：accept 与 reject 各一条出边，fromPort 分别写 accept / reject。这两条线就是「批准」和「驳回」之后各自的剧情。
-   不要写 defer，暂缓由系统处理、不走剧情线。
-
-【各节点 data 的写法】
-- start: {"kind":"start"}
-- choice: {"kind":"choice","prompt":"她在等你怎么回应","options":[{"id":"a","label":"选项文案","intent":"这个选择意味着什么","effect":{"bond":2}},{"id":"b","label":"另一个选项","intent":"","effect":{"bond":-1,"corruption":1}}]}
-  · 2–4 个选项；id 只能是 a/b/c/d。effect 可用 bond −12…12、gold −800…800、reputation −10…10、corruption −10…10。
-- mission: {"kind":"mission","spec":{"title":"","goal":"她要在这场委托里做到什么，写具体","work":"combat|investigation","difficulty":"简单|常规|棘手|危险"}}
-  · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；
-    战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。
-- event: {"kind":"event","title":"","hook":"一句引子","cast":["名册里的角色 id"],"opening":"250–350 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档"}
-  · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。
-  · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。
-  · 涉及三方首领时 id 也要从名册或首领名单里取，不要新造名字。
-- incident（强制弹窗：必须现在拿主意，或必须先看一眼的事）:
-  {"kind":"incident","spec":{"kind":"faction","title":"不超过 14 字","body":"60–160 字，写清谁在施压、要什么、不答应会怎样","faction":"association|government|witch","district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","options":[{"label":"答应","hint":"一句代价","effect":{"gold":-200,"reputation":2}},{"label":"拒绝","hint":"一句代价","effect":{"reputation":-3,"faction":{"id":"government","standing":-2}}}]}}
-  · spec.kind 只能是 faction / environment / girl。
-  · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。
-  · 不给选项就是一张纯通报卡，玩家点「知道了」继续。
-- opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:
-  {"kind":"opinion","spec":{"topic":"私人心愿","title":"不超过 14 字","text":"60–140 字，写清她要什么、为什么现在提","request":"一句话说明她要你答应什么","options":[{"id":"accept","label":"批准","effect":"批准之后会发生什么，一句话"},{"id":"reject","label":"驳回","effect":"驳回之后会发生什么，一句话"}]}}
-  · options 只能有 accept 与 reject 两项；节点上对应两条出边，fromPort 分别是 accept 与 reject。
-  · 暂缓（defer）由程序固定补，不占端口、不推进剧情——不要写。
-  · topic 只能是 经费 / 排班 / 设施 / 同伴 / 城市 / 私人心愿。
-- reward（一次结算：数值 + 可能的特性 + 可能的一件装备）: {"kind":"reward","effect":{"bond":2,"gold":0},"equipmentTier":3}
-  · effect 可用：bond −12…12、gold −800…800、reputation −10…10、corruption −10…10、growth{magic|insight|agility|empathy 各 −3…3}、trait{name≤16字, description≤60字}、buff{name, stat, amount ≤6, days 1…5}。
-  · equipmentTier 可选，1–5 的整数：写 3 就是「一件三阶装备」，具体哪一件由程序随机发放；不写即不给装备。
-  · 全图 gold 合计不超过 800，bond 合计不超过 12。不要写 skill、装备名字或装备属性。
-- wait: {"kind":"wait","days":0,"minutes":60}（days 0–14，minutes 0–1440）
-- end: {"kind":"end","summary":"这条结局收在哪里","ending":"两三个字的结局名，同一张图里不能重复"}
-
-【不要】
-不要给 x、y、边 id、颜色、note 或任何额外字段；不要输出 scene 节点；不要输出注释、解释或 Markdown 代码块。
-
-【提交前自检——逐条对照，全部通过再输出】
-1. 所有 kind 都在九种之内，且没有 scene。
-2. 每个 choice 的选项 id 都是 a/b/c/d；每个选项在 edges 里都有且只有一条 fromPort 完全相同的边。
-3. edges 里每条的 fromPort，都能在 from 指向的节点里找到同名出口；出现 trust_calc、defy_fate 这类名字就说明写错了。
-4. 每个 mission 恰好一条 success、一条 failure。
-5. 每个 incident：有选项就每个 o1/o2/o3 各一条同名边，没选项就一条 out。
-6. 每个 opinion 恰好 accept 与 reject 两条边——批准走一条，驳回走另一条。
-7. start 只有一条 out；end 没有任何出边；其余非 end 节点至少一条出边。
-8. 从 start 出发能走到每一个节点，且每条路径都能到某个 end；没有环。`;
+  // v49：结构、端口、节点写法与自检都在预设的 storyline 分区里；这里只留玩家方向与锁定契约。
+  const body = [
+    direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '',
+    storylineContract(),
+  ].filter(Boolean).join('\n');
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
-  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '' };
-  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 8000);
+  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '' };
+  const macroCtx: MacroContext = { state, focus: girl };
+  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 8000, macroCtx);
   if (!first.result.ok) {
     const message = `生成蓝图失败：${first.result.message}`;
     recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -1536,12 +1450,9 @@ ${JSON.stringify(first.raw)}
 【必须修正的问题】
 ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).join('\n')}
 
-只输出修正后的完整 JSON。不要解释，不要省略节点；保持 8–16 个节点，并让每条路径都能走到 end。
-按上面的规则逐条修正下列问题后再输出：
-- 如果某个选项「必须且只能连一条线」，就补一条 {from:"该选择节点 id",fromPort:"该选项 id",to:…}，不要新增选项、不要改选项 id。
-- 如果出现「无法识别的出口」，说明 fromPort 写成了语义化名字：把它改成该节点真实存在的选项 id（a/b/c/d 或 o1/o2/o3），不要新建端口。
-- 不要删节点；保持原有的 2–3 个 end 与 8–16 个节点规模。`;
-    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 8000);
+只输出修正后的完整 JSON。不要解释，不要省略节点。
+按上面的规则逐条修正下列问题后再输出；若某条规则已经在【连线总则】里写过，以那边为准。`;
+    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 8000, macroCtx);
     if (!second.result.ok) {
       const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
       recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -1617,11 +1528,10 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
   return { ok: true, data };
 }
 
-export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
+export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `角色：${girlBrief(girl)}
-${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
+  const body = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}]}]}
 要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行。`;
@@ -1630,7 +1540,7 @@ ${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。
     personality: activePersonality(girl),
     scenario: storyline ? `${storyline.title}——${storyline.premise}` : '',
     story: storyline?.title ?? '',
-  });
+    }, { state, focus: girl });
   if (!result.ok) {
     recordLlmLog({ kind: '角色事件', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1687,11 +1597,10 @@ export interface StoryArcInput {
 const ARC_TARGETS = '至少 4 段，每段旁白 260–520 字、2–4 行对话、2–3 个选项；全文合计不少于 1200 字';
 
 /** 分幕剧情：一次生成 4–5 段完整剧情，选项带明确后果。 */
-export async function generateStoryArc(config: LlmConfig, girl: Girl, input: StoryArcInput, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryArc } | { ok: false; message: string }> {
+export async function generateStoryArc(config: LlmConfig, girl: Girl, input: StoryArcInput, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedStoryArc } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `角色：${girlBrief(girl)}
-${input.storylineTitle ? `故事线：${input.storylineTitle}${input.premise ? `——${input.premise}` : ''}` : ''}
+  const body = `${input.storylineTitle ? `故事线：${input.storylineTitle}${input.premise ? `——${input.premise}` : ''}` : ''}
 ${input.beatTitle ? `这一幕：${input.beatTitle}${input.beatHook ? `——${input.beatHook}` : ''}` : ''}
 ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.memory.slice(0, 1600)}` : ''}
 只输出一个 JSON 对象，不要 Markdown 代码块：
@@ -1703,7 +1612,7 @@ ${input.memory ? `前情（必须与之一致，不要重复原文）：${input.
     personality: activePersonality(girl),
     scenario: [input.premise, input.beatTitle, input.beatHook].filter(Boolean).join('\n'),
     story: input.storylineTitle ?? '',
-  });
+    }, { state, focus: girl });
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1813,9 +1722,10 @@ ${briefs || '只有她和你'}
 只输出一个 JSON 对象，不要 Markdown：
 {"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""]}
 要求：narration 250–350 字，写地点、光线、她在做什么、把话头留给你，不要替玩家决定；lines 2–5 句，speakerId 只能取上面的人或 player；options 给 3 条你的第一步参考行动，每条不超过 24 字、用「你……」开头；不要写数值与技能名。`;
+  const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
   const result = await callJson(config, preset, 'arc', body, '请写下这段剧情的开场白。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook, story: event.title,
-  });
+    }, { state, focus: focusGirl });
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2122,10 +2032,12 @@ import {
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
 import { EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
-import { skills, tierLabels } from './content/skills.ts';
+import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
-import { buildNightPrompt, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
+import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
+import { storylineContract } from './promptSections.ts';
+import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleStoryDigest, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';

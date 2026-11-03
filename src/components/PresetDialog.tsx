@@ -5,6 +5,9 @@ import {
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
+import { MACRO_GROUPS, type MacroGroup } from '../promptMacros';
+import { storylineContract } from '../promptSections';
+import { dailyContract } from '../llm-night';
 
 interface Props {
   presets: ChatPreset[];
@@ -43,6 +46,15 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const editable = Boolean(preset && !preset.builtin);
   const totalTokens = entries.reduce((sum, entry) => sum + (entry.enabled && !entry.marker ? promptTokens(entry.content) : 0), 0);
   const [regexSample, setRegexSample] = useState('（她把杯子放下）这一晚的剧情到这里就结束了。<think_nya>她的声音很轻</think_nya>');
+  const [macroGroup, setMacroGroup] = useState(MACRO_GROUPS[0]?.id ?? 'heroine');
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
+  const [showContract, setShowContract] = useState(false);
+  const contract = view === 'daily' ? dailyContract() : view === 'storyline' ? storylineContract() : '';
+  const insertMacro = (key: string) => {
+    const target = entries.find(entry => entry.id === activeEntryId) ?? entries.find(entry => entry.enabled && !entry.marker);
+    if (!target) return;
+    patchEntry(target.id, { content: `${target.content}${target.content.endsWith('\n') || !target.content ? '' : '\n'}{{${key}}}` });
+  };
   const previewRegex = preset?.regex ?? [];
   const previewPrompt = applyRegexScripts(regexSample, previewRegex, 'input', 'prompt');
   const previewDisplay = applyRegexScripts(regexSample, previewRegex, 'output', 'display');
@@ -314,11 +326,27 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
 
           <div className="preset-entry-vars">
             <span>可用变量</span>
-            {PROMPT_VARIABLES.map(variable => <button key={variable.key} type="button" className="preset-var" title={variable.hint} disabled={!editable} onClick={() => {
-              const target = entries.find(entry => entry.enabled && !entry.marker);
-              if (!target) return;
-              patchEntry(target.id, { content: `${target.content}{{${variable.key}}}` });
-            }}>{`{{${variable.key}}}`}</button>)}
+            {PROMPT_VARIABLES.map(variable => <button key={variable.key} type="button" className="preset-var" title={variable.hint} disabled={!editable} onClick={() => insertMacro(variable.key)}>{`{{${variable.key}}}`}</button>)}
+          </div>
+
+          <div className="preset-macro-panel">
+            <div className="preset-macro-head">
+              <span>宏（随存档实时展开）</span>
+              {MACRO_GROUPS.map((group: MacroGroup) => <button key={group.id} type="button" id={`preset-macro-group-${group.id}`} className={`preset-macro-tab ${macroGroup === group.id ? 'active' : ''}`} title={group.hint} onClick={() => setMacroGroup(group.id)}>{group.label}</button>)}
+              {(view === 'daily' || view === 'storyline') && <button type="button" id="preset-contract-toggle" className="preset-macro-tab" onClick={() => setShowContract(value => !value)}>{showContract ? '收起契约' : '代码追加的契约'}</button>}
+            </div>
+            <div className="preset-macro-list">
+              {MACRO_GROUPS.find(group => group.id === macroGroup)?.items.map(item => <button
+                key={item.key}
+                type="button"
+                id={`preset-macro-${item.key.replace(/[.:]/g, '-')}`}
+                className="preset-macro-item"
+                title={`${item.hint}（约 ${item.budget} tokens）`}
+                disabled={!editable}
+                onClick={() => insertMacro(item.key)}
+              ><b>{`{{${item.key}}}`}</b><small>{item.label}</small></button>)}
+            </div>
+            {showContract && contract && <pre id="preset-contract-preview" className="preset-contract-preview">{contract}</pre>}
           </div>
 
           {visibleEntries.length === 0 && <p className="small-note">这个用途还没有词条。添加一条，或恢复本用途默认。</p>}
@@ -340,7 +368,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                   <button type="button" id={`preset-entry-delete-${index}`} aria-label="删除词条" disabled={!editable} onClick={() => patchEntries(entries.filter(item => item.id !== entry.id))}><Trash2 size={12}/></button>
                 </div>
               </div>
-              {!entry.marker && <textarea id={`preset-entry-content-${index}`} className="preset-entry-content" rows={3} value={entry.content} readOnly={!editable} placeholder="词条内容；可以写 {{world}}、{{player}}、{{context}} 等变量。" onChange={event => patchEntry(entry.id, { content: event.target.value })} />}
+              {!entry.marker && <textarea id={`preset-entry-content-${index}`} className="preset-entry-content" rows={3} value={entry.content} readOnly={!editable} placeholder="词条内容；可以写 {{heroine}}、{{history.chat:20}}、{{girls}} 等宏。" onFocus={() => setActiveEntryId(entry.id)} onChange={event => patchEntry(entry.id, { content: event.target.value })} />}
               {!entry.marker && promptHasMechanicBan(entry.content) && <div className="preset-entry-warning">
                 <span>这条要求会禁止模型写数值、奖励或规则，和夜班提案 v2 的完整生成冲突。</span>
                 <button type="button" id={`preset-entry-fix-ban-${index}`} disabled={!editable} onClick={() => patchEntry(entry.id, { content: stripMechanicBan(entry.content) })}>移除这一句</button>

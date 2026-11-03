@@ -249,6 +249,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
             { scope: 'incident', label: '突发事件', hint: '事务所桌上的三选一麻烦' },
             { scope: 'outfit', label: '服装词条', hint: '看立绘写衣柜描述' },
             { scope: 'battle', label: '战斗札记', hint: '把一场战斗扩写成多人分场叙事' },
+            { scope: 'whisper', label: '灯下私语', hint: '她打完这一场后主动发来的消息' },
           ] as const).map(item => <button key={item.scope} id={`settings-prompt-${item.scope}`} type="button" className="llm-task" onClick={() => onPresets(item.scope)}>
             <b>{item.label}</b><span>{item.hint}</span><em>编辑词条 →</em>
           </button>)}

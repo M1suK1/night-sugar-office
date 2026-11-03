@@ -4,6 +4,10 @@
  * 夜糖用到的子集：采样参数、提示词词条（可增删、可排序、可禁用、可引用变量）。
  * 世界书是独立模块（worldbook.ts），这里只负责把 {{worldbook}} 等变量替换掉。
  */
+import { SECTION_PROMPTS } from './promptSections.ts';
+import { resolveMacros, type MacroContext } from './promptMacros.ts';
+import { promptTokens } from './tokens.ts';
+
 export type PromptRole = 'system' | 'user' | 'assistant';
 
 /** 词条用途：共用词条会进入所有请求，任务词条只进入对应生成器。 */
@@ -241,12 +245,10 @@ export function expandPresetMacros(content: string, vars: Record<string, string 
   return { text: output, used };
 }
 
-/** 估算 token：CJK 按 1、其余按 4 字符 1 token。 */
-export function promptTokens(content: string): number {
-  let cjk = 0;
-  for (const char of content) if (/[\u3400-\u9fff\u3040-\u30ff]/.test(char)) cjk += 1;
-  return Math.ceil(cjk + (content.length - cjk) / 4);
-}
+
+
+/** 估算 token：CJK 按 1、其余按 4 字符 1 token（实现在 tokens.ts，两边共用一份）。 */
+export { promptTokens } from './tokens.ts';
 
 function entryId(index: number): string {
   return `entry-${Date.now().toString(36)}-${index}-${Math.floor(Math.random() * 999)}`;
@@ -355,19 +357,24 @@ export function builtinPresets(): ChatPreset[] {
 
 /**
  * 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。
- * schema 2 补齐全部任务词条；schema 3 只补战斗札记；schema 4 不再改动。
+ * schema 2 补齐全部任务词条；schema 3 只补战斗札记；schema 4 不再改动；
+ * schema 5 补齐 v49 的结构分区（只补缺、不动已有的同 id 词条）。
  */
 export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   const schema = preset.schema ?? 2;
-  if (schema >= 4) return preset;
+  if (schema >= 5) return preset;
   const prompts = presetPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
   const ids = new Set(prompts.map(entry => entry.id));
-  const wanted = schema <= 2 ? DEFAULT_PROMPTS : DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle');
+  const wanted = schema <= 2
+    ? DEFAULT_PROMPTS
+    : schema === 3
+      ? DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle')
+      : DEFAULT_PROMPTS.filter(entry => SECTION_PROMPTS.some(section => section.id === entry.id));
   const added = wanted.filter(entry => !ids.has(entry.id)).map(entry => ({ ...entry }));
   const all = [...prompts, ...added];
   const order = (preset.promptOrder ?? prompts.map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
     .concat(added.map(entry => ({ identifier: entry.id, enabled: entry.enabled })));
-  return { ...preset, schema: 4, prompts: all, promptOrder: order };
+  return { ...preset, schema: 5, prompts: all, promptOrder: order };
 }
 
 function sanitizePreset(raw: unknown): ChatPreset | null {
@@ -877,7 +884,7 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
 }
 
 /** 把预设词条的变量替换掉；返回系统段、缺失变量与命中变量。 */
-export function renderPresetSystem(entries: PromptEntry[], vars: Record<string, string | undefined>): { system: string; used: string[]; missing: string[]; tokens: number } {
+export function renderPresetSystem(entries: PromptEntry[], vars: Record<string, string | undefined>, ctx: MacroContext = {}): { system: string; used: string[]; missing: string[]; tokens: number } {
   const used = new Set<string>();
   const missing = new Set<string>();
   const parts: string[] = [];
@@ -885,7 +892,11 @@ export function renderPresetSystem(entries: PromptEntry[], vars: Record<string, 
     if (!entry.enabled || entry.marker) continue;
     const expanded = expandPresetMacros(entry.content, vars);
     expanded.used.forEach(key => used.add(key));
-    const content = expanded.text.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
+    // v49：先展开注册过的宏（{{heroine}} / {{history.chat:20}} / {{girls}} …），再走老的变量替换。
+    const macro = resolveMacros(expanded.text, ctx);
+    macro.used.forEach(key => used.add(key));
+    macro.missing.forEach(key => missing.add(key));
+    const content = macro.text.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
       used.add(key);
       const value = vars[key];
       if (!value) { missing.add(key); return ''; }
@@ -1021,6 +1032,8 @@ export const DEFAULT_PROMPTS: PromptEntry[] = [
   { id: 'outfit', name: '服装词条', role: 'system', enabled: true, scope: 'outfit', builtin: true, content: '为附带的立绘里的这套服装写一条衣柜词条。只写衣服本身，不要写人物身份、剧情或数值。用夜糖事务所的口吻。' },
   { id: 'battle', name: '战斗札记', role: 'system', enabled: true, scope: 'battle', builtin: true, content: '为一场已经打完的战斗写札记。只写发生过的回合、动作与对话，不改胜负、伤害、奖励或角色状态。让参战且有名有姓的魔法少女自己说话；没有名字与立绘的魔物只出现在旁白里。3–5 场，每场覆盖连续回合，最后收束到这场战斗留下的东西。' },
   { id: 'whisper', name: '灯下私语', role: 'system', enabled: true, scope: 'whisper', builtin: true, content: '写一条她主动发给所长的消息。她刚打完这一场，只写她此刻真的会说出口的 2–3 句，不超过 120 字；可以提战斗里的一个细节、自己的伤势或一句关心。不要旁白、不要解释规则、不要替所长回答，也不要改变任何数值。' },
+  // v49：蓝图 / 提案 / 四处单人剧情共用的结构分区；数据一律走宏，玩家可改可停用。
+  ...SECTION_PROMPTS,
 ];
 
 function scopedEntries(runtime: PresetRuntime, scope: PromptScope): PromptEntry[] {
@@ -1053,10 +1066,15 @@ export interface ComposedPrompt {
  * 固定的系统提示顺序：共用词条 → 本任务词条 → 代码输出契约。
  * 旧预设的 main / jailbreak 只在没有可渲染词条时兜底。
  */
-export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}): ComposedPrompt {
-  const entries = scopedEntries(runtime, scope).filter(entry => entry.enabled && !entry.marker);
+export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}, ctx: MacroContext = {}): ComposedPrompt {
+  const scopeEntries = scopedEntries(runtime, scope);
+  // 预设里一条该用途的分区都没有时（旧预设、空 runtime、测试），补上默认分区：
+  // 但只要还剩任意一条，就按玩家的增删来，不再插手。
+  const sections = SECTION_PROMPTS.filter(entry => entry.scope === scope);
+  const hasSections = sections.some(entry => scopeEntries.some(item => item.id === entry.id));
+  const entries = [...scopeEntries, ...(hasSections ? [] : sections)].filter(entry => entry.enabled && !entry.marker);
   const world = resolvePresetWorld(runtime, scope, vars);
-  const rendered = renderPresetSystem(entries, { ...vars, world });
+  const rendered = renderPresetSystem(entries, { ...vars, world }, ctx);
   const parts: string[] = [];
   if (rendered.system.trim()) parts.push(rendered.system.trim());
   else {
@@ -1065,7 +1083,9 @@ export function composeTaskSystem(contract: string, runtime: PresetRuntime, scop
     if (main) parts.push(`【预设·主提示】\n${main}`);
     if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
   }
-  if (contract.trim()) parts.push(contract.trim());
+  // 契约里的枚举与阈值也是宏，跟着同一个上下文展开；它永远排在最后。
+  const expandedContract = resolveMacros(contract.trim(), ctx).text.trim();
+  if (expandedContract) parts.push(expandedContract);
   return {
     system: parts.filter(Boolean).join('\n\n'),
     used: rendered.used,

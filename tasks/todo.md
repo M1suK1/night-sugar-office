@@ -667,3 +667,15 @@
 
 - [x] `src/rules/rosterOps.ts` 的 `applyHire` 删掉那条「欢迎〇〇 / 申请 300 星砂筹办欢迎会」的默认提案，`makeOpinion` 的 import 一并收回；会客厅空着时本来就有「今晚没有新的议题」的空态，不再被自家生成的凑数提案占位。契约日志与提示不变。
 - [x] `tests/game.test.ts` 的雇佣用例补一条断言：缔结契约前后 `opinions` 数量不变。
+
+## v49 提示词分区与宏：v46 / v47 的提示词交给玩家改
+
+- [x] **`src/nightSpec.ts`（新）**：把每日提案的枚举与 `NIGHT_SCHEMA_EXAMPLE` 从 `llm-night.ts` 搬出来，宏与校验器读同一份；`llm-night.ts` 原样再导出，外部 import 路径不变。
+- [x] **`src/tokens.ts`（新）**：`promptTokens` 单独成模块，`presets.ts` 再导出，避免分区与预设互相引用。
+- [x] **`src/girlDossier.ts`（新）**：`dossierOf()` 输出她的九节全量档案（魔女化自动换人格、末尾自动附「没列出的事她不知道」），四份历史各自带条数参数、预算与「还有 N 条未列出」尾巴。
+- [x] **`src/promptMacros.ts`（新）**：宏注册表（`{{heroine}}`、`{{heroine:brief}}`、`{{history.missions}}` / `storylines` / `chat` / `battles`、`{{girls}}`、`{{factions}}`、`{{leaders}}`、`{{districts}}`、`{{hostility}}`、`{{office}}`、`{{council}}` 与 `{{council.need/cap/pending}}`、`{{incidents}}`、`{{storylines}}`、`{{items:3}}`、`{{missions:combat}}`、`{{traits}}`、九个枚举宏）、`resolveMacros`（支持 `{{key:arg}}` 与点号键）、`MACRO_GROUPS`（编辑器分组）。
+- [x] **`src/promptSections.ts`（新）**：`STORY_LIMITS`（提示词与校验器共用）、`limitsText()`、`storylineContract()`、13 条分区默认文本（蓝图 5 + 提案 4 + 对话 / 私语 / 私人事件 / 完整剧情各 1），全部走宏且通过「禁止数值」误报检查。
+- [x] **`src/presets.ts`**：`DEFAULT_PROMPTS` 合并 13 条分区（27 条）；`ensurePromptScopes` 补 schema 5 只补缺、同步 `promptOrder`；`renderPresetSystem` / `composeTaskSystem` 先展开注册宏再走老变量，契约同样展开且永远最后；某用途一条分区都没有时补默认分区（旧预设兜底），但只要还剩一条就按玩家的增删来。
+- [x] **接线**：蓝图 body 从 4 759 字瘦到「玩家方向 + 锁定契约」；每日提案换成 `dailyContract()` + `buildNightCatalog` 供宏取数（`buildNightPrompt(state)` 保留为兼容出口）；对话 / 私语删掉手写的档案与「最近参与 / 最近对话」，只留场景句与战报；私人事件 / 完整剧情 / 开场白补 `state` 与主角上下文。
+- [x] **编辑器**：`PresetDialog` 增设宏面板（她是谁 / 她的过往 / 事务所与城市 / 目录 / 枚举与阈值五组，点一下插进光标所在的词条）、「代码追加的契约」只读预览；设置页补上 v44 起一直缺的「灯下私语」入口。
+- [x] 测试：新增 `tests/v49.test.ts` 十一条（分区齐全、schema 5 迁移、档案九节与魔女化、brief 压缩、名册与档案不重、四种历史的条数与省略、拼装顺序与「删了就消失」、玩家自定义覆盖、宏面板键名）；25 个测试文件 456 项全绿，`tsc` 0 错，`check:rules` 通过。

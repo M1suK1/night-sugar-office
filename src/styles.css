@@ -990,6 +990,18 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .preset-entry-vars > span { font-size: 9px; letter-spacing: .1em; color: #78697f; margin-right: 2px; }
 .preset-var { padding: 2px 6px; border: 1px solid #f3aec92e; border-radius: 3px; background: #f3aec90a; color: #d7c3dc; font-size: 9px; font-family: var(--font-data); cursor: pointer; }
 .preset-var:hover { border-color: #f3aec96b; color: #fff; }
+.preset-macro-panel { margin-bottom: 10px; padding: 8px; border: 1px dashed #7fc8c033; border-radius: 5px; background: #0e1418; }
+.preset-macro-head { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 7px; }
+.preset-macro-head > span { font-size: 9px; letter-spacing: .1em; color: #6f8a92; margin-right: 2px; }
+.preset-macro-tab { padding: 2px 8px; border: 1px solid #7fc8c02e; border-radius: 3px; background: #7fc8c00a; color: #b9d3d8; font-size: 9px; cursor: pointer; }
+.preset-macro-tab.active { border-color: #7fc8c08c; color: #fff; background: #7fc8c022; }
+.preset-macro-tab:hover { border-color: #7fc8c06b; color: #fff; }
+.preset-macro-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.preset-macro-item { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; padding: 3px 7px; border: 1px solid #ffffff14; border-radius: 4px; background: #14100f; color: #d7c3dc; cursor: pointer; }
+.preset-macro-item:hover { border-color: #7fc8c06b; }
+.preset-macro-item b { font-size: 9px; font-family: var(--font-data); color: #a8dbe2; }
+.preset-macro-item small { font-size: 8px; color: #7d6f83; }
+.preset-contract-preview { margin: 8px 0 0; padding: 8px; max-height: 220px; overflow: auto; border: 1px solid #ffffff14; border-radius: 4px; background: #0b0a0d; color: #b9a9c4; font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
 .preset-entry-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 .preset-entry { padding: 8px; border: 1px solid #ffffff10; border-radius: 5px; background: #100e14; }
 .preset-entry.off { opacity: .5; }
