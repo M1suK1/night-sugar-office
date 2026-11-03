@@ -758,6 +758,31 @@ function parseCandidate(ctx: Ctx, value: unknown): NightCandidateSpec {
 
 /** 把模型 JSON 规范化成运行时可用的提案；所有硬错误都会阻止采纳。 */
 export function validateNightProposal(raw: unknown, state: GameState): NightValidation {
+  const validation = validateNightProposalCore(raw, state);
+  spendWarning(validation);
+  return validation;
+}
+
+/**
+ * 三条提案是否全都在扣星砂。是的话提醒一次：留一条代价压在 bond / fatigue 上的。
+ * 只看「所有选项都在扣钱」的提案算作花钱提案——有一条免费选项就不算。
+ */
+export function shouldWarnAllSpend(opinions: readonly {
+  options: readonly { changes?: readonly { kind: string; amount?: number }[] }[];
+}[]): boolean {
+  if (opinions.length < 2) return false;
+  return opinions.every(opinion => opinion.options.every(option =>
+    (option.changes ?? []).some(change => change.kind === 'gold' && (change.amount ?? 0) < 0)));
+}
+
+/** 三条提案全都在扣星砂时提醒一次：留一条把代价压在关系上的。 */
+function spendWarning(validation: NightValidation): void {
+  const opinions = validation.proposal?.opinions;
+  if (!opinions || !shouldWarnAllSpend(opinions)) return;
+  validation.warnings.push('三条提案全都在花星砂：至少留一条不花钱的（人事纠纷、排班不满、辖区争议），代价落在关系上。');
+}
+
+function validateNightProposalCore(raw: unknown, state: GameState): NightValidation {
   const ctx: Ctx = {
     state,
     errors: [],
@@ -866,6 +891,8 @@ export function dailyContract(): string {
     '',
     '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
     '同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。',
+    '三条提案不要全在花星砂：至少留一条「不花钱」的——两个人的矛盾要你裁决、对排班或辖区归属不满、她护着的人被谁伤了。这类提案的代价落在关系与情绪上（bond / fatigue），不是账本。',
+    '涉及两个人的提案，dialogue 里两人都要说话，且第二个人必须反驳或加码；不要只有提出者一个人讲完。',
   ].join('\n');
 }
 
