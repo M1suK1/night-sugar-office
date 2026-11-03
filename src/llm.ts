@@ -1764,8 +1764,16 @@ function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], lim
     if (!person) return [];
     const expression = STORY_EXPRESSIONS.includes(line.expression as typeof STORY_EXPRESSIONS[number])
       ? line.expression as Expression : 'calm';
-    return [{ speakerId: person.id, speakerName: person.name, expression, text, mode: line.mode === 'thought' ? 'thought' as const : 'speech' as const }];
+    const after = typeof line.after === 'number' && Number.isFinite(line.after)
+      ? Math.max(0, Math.round(line.after))
+      : undefined;
+    return [{ speakerId: person.id, speakerName: person.name, expression, text, mode: line.mode === 'thought' ? 'thought' as const : 'speech' as const, after }];
   }).slice(0, limit);
+}
+
+/** 测试用：把台词解析这一层单独露出来（它决定 after 能不能活着到渲染层）。 */
+export function parseStoryLinesForTest(raw: unknown, cast: { id: string; name: string }[], limit = 8): StoryLine[] {
+  return parseStoryLines(raw, cast, limit);
 }
 
 function storyHistory(turns: StoryTurn[], limit = 8): string {

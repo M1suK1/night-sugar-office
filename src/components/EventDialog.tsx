@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowRight, ChevronRight, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
-import type { CharacterEvent, Expression, Girl } from '../types';
+import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { interleaveTurn } from '../storyLines';
 
 const expressionLabel: Record<Expression, string> = {
   calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
@@ -162,9 +163,11 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
                 </div>
               ) : (
                 <section key={turn.id} className="story-narrator-turn">
-                  {turn.text.split(/\n+/).filter(Boolean).map((paragraph, index) => <p key={index} className="battle-note-narration">{paragraph}</p>)}
-                  {(turn.lines ?? []).length > 0 && <div className="battle-note-lines">
-                    {(turn.lines ?? []).map((line, index) => {
+                  {(() => {
+                    // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
+                    const paragraphs = turn.text.split(/\n+/).filter(Boolean);
+                    const turnLines = turn.lines ?? [];
+                    const renderLine = (line: StoryLine, index: number) => {
                       const right = line.speakerId === 'player';
                       const active = preview ? preview.id === line.speakerId && !right : false;
                       return (
@@ -176,8 +179,11 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
                           <span className="battle-note-bubble">{line.text}</span>
                         </div>
                       );
-                    })}
-                  </div>}
+                    };
+                    return interleaveTurn(paragraphs, turnLines).map(segment => segment.kind === 'narration'
+                      ? <p key={`p-${segment.index}`} className="battle-note-narration">{paragraphs[segment.index]}</p>
+                      : renderLine(turnLines[segment.index]!, segment.index));
+                  })()}
                   {turnIndex > 0 && <button type="button" className="story-rewrite" id={`story-rewrite-${turn.id}`} disabled={loading} onClick={() => void onRewrite(event.id, turn.id)}><RefreshCw size={12} />重写这一段</button>}
                 </section>
               ))}

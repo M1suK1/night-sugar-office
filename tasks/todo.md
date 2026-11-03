@@ -872,3 +872,10 @@
 - [x] 单槽上限 32MB → **96MB**；文件导入上限 `SAVE_FILE_BYTES_MAX` 同步放宽（否则导出的存档自己导不回来）。
 - [x] 测试：新增 `tests/v71.test.ts` 四条（体检排序、该不该压的判定、无 canvas 空操作、两个上限一致）。
 - [ ] 待办：真正的根治是让 `importedVariants` 也走资产（`portraitAsset` 那套），渲染层已在用资产解析；那样存档里只剩几百字节的键。等这轮体积问题确认缓解后再动。
+## 修：角色剧情里台词全堆在正文后面
+
+- [x] **原因**：`StoryLine` 只有 `speakerId/speakerName/expression/text/mode`，没有位置字段，渲染只能「先说完全部旁白、再列全部台词」——和战斗札记当初的问题一模一样。战斗札记是靠 `after`（插在第几段旁白之后）解决的，这里补齐同一套。
+- [x] `StoryLine` 新增 `after?: number`（0 = 段落最前面）；`parseStoryLines` 收下并夹住；`arcTurnContract()` 把 `after` 写进 JSON 形状，并要求「台词必须贴着它回应或打断的那一段」。
+- [x] 新增 `src/storyLines.ts`：`interleaveTurn(paragraphs, lines)` 按 `after` 交织；**没写 after 时均匀铺开**（老存档与没跟上的模型也不会整段塌在结尾）。
+- [x] `EventDialog` 的旁白/台词改成按交织结果渲染，玩家台词仍靠右、心声与表情预览照旧。
+- [x] 测试：新增 `tests/v72.test.ts` 四条（按 after 插、没写时铺开、越界夹到两端、解析保留 after 且丢弃不在场的说话人）。

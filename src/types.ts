@@ -576,6 +576,8 @@ export interface StoryLine {
   expression: Expression;
   text: string;
   mode?: 'speech' | 'thought';
+  /** 插在第几段旁白之后：0 表示最前面，段落按 \n 分段从 1 数；缺省按位置均匀铺开。 */
+  after?: number;
 }
 
 /** 一轮剧情：旁白正文，或玩家写下的一句行动。 */

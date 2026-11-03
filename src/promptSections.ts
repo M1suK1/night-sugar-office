@@ -308,6 +308,7 @@ export function arcTurnContract(): string {
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
     '{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}',
     'narration 900–3000 字；lines 2–8 句，speakerId 只能取在场的人或 player；options 恰好 3 条、每条不超过 24 字、用「你……」开头。',
+    'after 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。',
     'bond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；player 的台词只能来自所长这一次的行动，不要替他编新话。',
   ].join('\n');
 }
