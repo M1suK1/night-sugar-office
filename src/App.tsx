@@ -79,6 +79,7 @@ import type { CardBoxEntry } from './cardbox';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
+import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
 import { cardboxCards, loadCardBox, saveCardBox } from './cardbox';
 import { StarterDialog } from './components/StarterDialog';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -136,6 +137,7 @@ function worldBrief(state: GameState) {
 export default function App() {
   // 初始先给一份空档占位，真正的进度在挂载后从 IndexedDB 读出来。
   const [state, setState] = useState<GameState>(() => loadState(null));
+  const hydratedRef = useRef(false);
   const [booted, setBooted] = useState(false);
   /** 存档真的读完了才算数：否则「编成守卫」会拿默认空档把刚存好的进度踢回编成。 */
   const [loaded, setLoaded] = useState(false);
@@ -259,13 +261,25 @@ export default function App() {
     void persist(state);
   }, [booted, state]);
 
+  // 读档后的第一帧：把 portraitAsset 引用解析回 data URL，界面照旧直接用 girl.portrait。
+  useEffect(() => {
+    if (!loaded || hydratedRef.current) return;
+    hydratedRef.current = true;
+    void hydrateStatePortraits(state).then(hydrated => {
+      if (hydrated === state) return;
+      setState(hydrated);
+      latestState.current = hydrated;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
   // 关页/切后台时补一次落盘——只在这份状态还没写成功时才写，
   // 免得把外部（例如测试脚本）刚写进去的存档又盖回内存里的旧版本。
   useEffect(() => {
     const flush = () => {
       if (!booted || !latestState.current) return;
       if (writtenState.current === latestState.current) return;
-      void kvSet(SAVE_CURRENT_KEY, latestState.current);
+      void extractStatePortraits(latestState.current).then(flat => kvSet(SAVE_CURRENT_KEY, flat.state));
     };
     const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('pagehide', flush);
@@ -280,7 +294,9 @@ export default function App() {
     if (savingRef.current) { queuedSave.current = next; return; }
     savingRef.current = true;
     try {
-      await kvSet(SAVE_CURRENT_KEY, next);
+      // 立绘先搬进资产库，存档里只留引用：一个人几百 KB 的图不该反复写进存档。
+      const flat = await extractStatePortraits(next);
+      await kvSet(SAVE_CURRENT_KEY, flat.state);
       writtenState.current = next;
       setSaved(true);
     } catch {
@@ -806,7 +822,7 @@ export default function App() {
 
   const saveToSlot = async (id: SaveSlotId) => { const result = await writeSlot(id, state); notify(result.message, result.ok); };
   const loadFromSlot = async (id: SaveSlotId) => {
-    const next = await readSlot(id);
+    const next = await readSlot(id).then(async slotState => (slotState ? hydrateStatePortraits(slotState) : null));
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
     setModal(null);
     if (phase !== 'play') { setState(next); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
