@@ -1,4 +1,5 @@
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
+import { focusGirlOf } from './storyFocus.ts';
 import { dailyHistoryBlock } from './opinionHistory.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 
@@ -1334,7 +1335,7 @@ ${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()
     char: girlBrief(girl),
     personality: activePersonality(girl),
     scenario: direction?.trim() ?? '',
-  });
+  }, { focus: girl });
   if (!result.ok) {
     recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1861,7 +1862,7 @@ export async function generateStoryTurn(
   ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
     char: briefs, personality: '', scenario: event.hook ?? '', story: event.title,
-  });
+  }, { state, focus: focusGirlOf(state, event) });
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;

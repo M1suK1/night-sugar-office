@@ -879,3 +879,9 @@
 - [x] 新增 `src/storyLines.ts`：`interleaveTurn(paragraphs, lines)` 按 `after` 交织；**没写 after 时均匀铺开**（老存档与没跟上的模型也不会整段塌在结尾）。
 - [x] `EventDialog` 的旁白/台词改成按交织结果渲染，玩家台词仍靠右、心声与表情预览照旧。
 - [x] 测试：新增 `tests/v72.test.ts` 四条（按 after 插、没写时铺开、越界夹到两端、解析保留 after 且丢弃不在场的说话人）。
+## 修：角色剧情提示词里「（本任务没有指定主角）」
+
+- [x] **原因**：`{{heroine}}` / `{{history.*}}` 都靠 `MacroContext.focus` 取人。`generateStoryTurn`（角色剧情的续写这一条）调 `callJson` 时**根本没传 ctx**，`generateStoryline` 也没传——于是宏展开成「（本任务没有指定主角）」。开场白与蓝图那两条早就传了 `{ state, focus }`，只有续写漏了。
+- [x] 新增 `src/storyFocus.ts`：`focusGirlOf(state, event)` 统一判定主角（事件主人 → cast 第一位 → 名册里第一个能出勤的人）。
+- [x] `generateStoryTurn` 补 `{ state, focus: focusGirlOf(state, event) }`；`generateStoryline` 补 `{ focus: girl }`（它没有 state 形参，且当前没有调用方；真要启用得先加 state）。
+- [x] 测试：新增 `tests/v73.test.ts` 三条（优先级、兜底、带 focus 时渲染真名 / 缺 focus 时才是截图里那句）。
