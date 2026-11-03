@@ -1,6 +1,8 @@
-import type { BattleNote, BattleNoteLine, BattleNoteScene, BattleState, Expression, MonsterTemplate, PortraitSpec } from './types';
+import { districtAt, districts } from './districts.ts';
+import { factionInfo } from './content/items.ts';
 import { pollutionTierLabel } from './pollution.ts';
-import { findSkill } from './content/skills.ts';
+import { findSkill, skills } from './content/skills.ts';
+import type { BattleNote, BattleNoteLine, BattleNoteScene, BattleState, Expression, GameState, MonsterTemplate, PortraitSpec } from './types';
 
 export const BATTLE_NOTE_EXPRESSIONS: Expression[] = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'];
 const EXPRESSION_SET = new Set<string>(BATTLE_NOTE_EXPRESSIONS);
@@ -114,6 +116,66 @@ export function battleDigest(battle: BattleState): string {
  * v33 起保留技能名与用途分类：支援/治疗/自身增益不再被误写成「向队友出手」，
  * 模型也能看出这一手是攻击、护持还是回复。只禁止伤害数值，不再禁止技能名。
  */
+/** 场地：辖区、环境修正与这一战发生时的污染。 */
+export function battlePlaceText(battle: BattleState, state?: GameState): string {
+  const mission = state?.missions.find(item => item.id === battle.missionId);
+  const districtId = mission?.district ?? (mission ? districtAt(mission.x, mission.y) : undefined);
+  const district = districtId ? districts[districtId] : undefined;
+  const owner = districtId ? state?.territories?.[districtId] : undefined;
+  const pollution = battle.pollution ?? mission?.pollutionAtSpawn;
+  const lines = [
+    `地点：${district?.name ?? '事务所周边'}（${districtId ?? '未知辖区'}）${owner ? ` · 当主 ${factionInfo[owner].name}` : ''}`,
+    district ? `环境：${district.description}` : '',
+    typeof pollution === 'number' ? `这一战发生时的污染：${pollution}（${pollutionTierLabel(pollution)}）` : '',
+    mission ? `委托类型：${mission.work === 'combat' ? '战斗' : '调查'} · ${mission.category}` : '',
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
+/** 时间：第几日、几点开始、打了多久。 */
+export function battleTimeText(battle: BattleState): string {
+  const { day, minutes } = battle.startedAt;
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  const span = Math.max(1, battle.round || battle.rounds);
+  return `第 ${day} 日 ${clock} 开打 · 共 ${span}/${battle.rounds} 回合 · 夜班时段 ${clock} 起`;
+}
+
+/** 我方：这一战在场的魔法少女，带上她的元素、职阶、技能与此刻状态。 */
+export function battleGirlText(battle: BattleState, state?: GameState): string {
+  const allies = battleActors(battle).filter(actor => actor.side === 'ally');
+  if (!allies.length) return '（没有我方魔法少女参战）';
+  return allies.map(actor => {
+    const girl = actor.girlId ? state?.girls.find(item => item.id === actor.girlId) : undefined;
+    if (!girl) return `- ${actor.name}${actor.codename ? `（${actor.codename}）` : ''}`;
+    const skillNames = girl.skills.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、') || '未记录';
+    const traits = girl.traits.map(trait => trait.name).slice(0, 3).join('、') || '无';
+    return [
+      `- ${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.element}/${girl.archetype ?? '未定职阶'} · Lv.${girl.level}`,
+      ` 技能：${skillNames}；特性：${traits}`,
+      ` 此刻：生命 ${girl.hp}/${girl.maxHp} · 心防 ${girl.spirit}/${girl.maxSpirit} · 疲劳 ${girl.fatigue} · 侵蚀 ${girl.corruption ?? 0}${girl.scars.length ? ` · 疤痕 ${girl.scars.length} 道` : ''}`,
+      actor.down ? ` 已经倒下（第 ${actor.downRound ?? '?'} 回合）` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n');
+}
+
+/** 敌方：魔物档案——阶级、属性、习性、弱点与它会的招。 */
+export function battleMonsterText(battle: BattleState): string {
+  const enemies = battleActors(battle).filter(actor => actor.side === 'enemy');
+  if (!enemies.length) return '（这一场没有魔物）';
+  return enemies.map(actor => {
+    const monster = actor.monster;
+    if (!monster) return `- ${actor.name}${actor.down ? `（第 ${actor.downRound ?? '?'} 回合被击倒）` : ''}`;
+    const monsterSkills = monster.skillIds.map(id => skills.find(skill => skill.id === id)?.name).filter(Boolean).join('、');
+    return [
+      `- ${monster.name}（${monster.rank}·${monster.element}）· ${monster.epithet}`,
+      ` 习性：${monster.codex.habit}`,
+      ` 弱点：${monster.codex.weakness}`,
+      monsterSkills ? ` 技能：${monsterSkills}` : '',
+      actor.down ? ` 第 ${actor.downRound ?? '?'} 回合被击倒` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n');
+}
+
 export function battleStoryDigest(battle: BattleState): string {
   const actors = battleActors(battle);
   const byUid = new Map(actors.map(actor => [actor.uid, actor]));

@@ -227,6 +227,32 @@ ${OOC_GUARD}`),
 - 每条 30–80 字，像深夜电台的短讯；可以引用一处具体地点、一个时间、一个正在发生的小动作。
 - 只写城市此刻的状态与别人的反应，不要替所长做决定，不要写成议会提案或委托简报。
 - 不编造名单外的人与不存在的辖区；污染与敌意的数值必须和上面的读数一致。`),
+  section('bt-brief', 'battle', '札记·这一战的现场', `【场地】
+{{battlePlace}}
+
+【时间】
+{{battleTime}}
+
+【我方】
+{{battleGirls}}
+
+【敌方】
+{{battleMonsters}}
+
+【可以说话的角色】speakerId 必须原样使用，且只能从这张表里选：
+{{battleCast}}
+
+【发生过的动作与结果】
+{{battleReport}}
+
+【写法】
+- 一次写完的不分场札记：只写发生过的回合、动作与对话，不改胜负、伤害、奖励或角色状态。
+- 场景要落在地点与环境上：写出这一战的街区、光线、地面、空气里的东西，环境修正也可以变成具体的阻碍或便利。
+- 时间要有推进感：从开打的时刻写到收尾，让人感到这一夜过去了多久。
+- 我方少女按档案写：用她的元素与技能打出具体的动作，用她此刻的状态（疲劳、侵蚀、疤痕）解释她为什么这样打。
+- 魔物只出现在旁白里：按档案写它的习性、弱点与被击中时的反应，不给它台词，也不给它起新名字。
+- 台词只来自【可以说话的角色】，倒下的角色不能在倒下后继续说话；支援与护护类行动写成「她替谁挡下」，不能写成向同伴出手。
+- 唯一不能写的是数值：不写伤害数字、回合数、生命/心防数值、星砂数字或「第几回合」。`),
   section('whisper-heroine', 'whisper', '私语·她是谁', `${HEROINE_BLOCK.replace('{{history.chat:8}}', '{{history.chat:12}}')}`),
   section('ev-heroine', 'event', '私人事件·她是谁', `【她是谁】
 {{heroine}}
@@ -242,6 +268,17 @@ ${OOC_GUARD}`),
 ];
 
 export const SECTION_IDS = SECTION_PROMPTS.map(entry => entry.id);
+
+/** 战斗札记的锁定契约：JSON 骨架、台词上限与「不写数值」的硬规则。 */
+export function battleContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}',
+    'narration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。',
+    'expression 只能取 calm / smile / surprise / sad / angry / shy；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。',
+    '不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。',
+  ].join('\n');
+}
 
 /** 城市新闻的锁定契约：JSON 骨架 + 条数与枚举。 */
 export function newsContract(): string {

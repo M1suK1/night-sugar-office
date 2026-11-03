@@ -652,7 +652,7 @@ export default function App() {
     setNoteError(undefined);
     try {
       const config = loadLlmConfig();
-      const result = await generateBattleNote(config, battle, taskRuntime(boundPreset('battle', presets, binding), 'battle'));
+      const result = await generateBattleNote(config, battle, taskRuntime(boundPreset('battle', presets, binding), 'battle'), latestState.current ?? state);
       if (result.ok) {
         perform({ type: 'saveBattleNote', note: result.data }, true);
         notify(`战斗札记写好了：${result.data.charCount} 字，已收进战斗记录。`);

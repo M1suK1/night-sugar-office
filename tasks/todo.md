@@ -707,3 +707,9 @@
 - [x] **等级口径**：`factions.ts` 新增 `FACTION_LEADER_LEVEL = 10`、`FACTION_MEMBER_LEVELS = [8, 9]` 与 `factionLeaderLevel()` / `factionMemberLevel()`；`customGirlOf` / `customLeaderOf` 与 `sanitizeCustomGirl` / `sanitizeCustomLeader` 全部走这两个函数。
 - [x] **内置数据**：`content/factionGirls.ts` 九位随从改成 8–9 级（每方一位 9 级、其余 8 级），首领本来就是 10 级。
 - [x] 测试：新增 `tests/v52.test.ts` 三条（助手指派与好感 60、回落规则、等级口径与内置数据）；27 个测试文件 467 项全绿，`tsc` 0 错，`check:rules` 通过。
+## v53 战斗札记补全上下文并暴露提示词
+
+- [x] **`battleNote.ts`**：新增 `battlePlaceText()`（辖区、当主、污染读数、委托类型）、`battleTimeText()`（第几日几点开打、打到第几回合）、`battleGirlText()`（元素/职阶/等级/技能/特性 + 此刻的生命、心防、疲劳、侵蚀、疤痕、倒下时机）、`battleMonsterText()`（阶级、属性、习性、弱点、招式、倒下回合）。
+- [x] **提示词搬进预设**：`promptSections.ts` 新增 `bt-brief`（scope `battle`）与 `battleContract()`；六个变量 `{{battlePlace}}` / `{{battleTime}}` / `{{battleGirls}}` / `{{battleMonsters}}` / `{{battleCast}}` / `{{battleReport}}` 由 `generateBattleNote` 现算后注入，代码只留 JSON 骨架、台词上限与数值禁令。
+- [x] **接线**：`generateBattleNote(config, battle, preset?, state?)` 多收一个存档参数（App 传 `latestState.current ?? state`），修复请求同样带上下文；`chatJson` 用 `{ state }` 作为宏上下文。
+- [x] 测试：新增 `tests/v53.test.ts` 五条（场地与时间、我方档案、敌方档案、契约与分区、拼装顺序）；28 个测试文件 472 项全绿，`tsc` 0 错，`check:rules` 通过。

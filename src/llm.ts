@@ -1917,7 +1917,7 @@ export async function generateWitchFormProfile(
 }
 
 /** 把一场已结算的战斗写成多人分场札记；只读，不改变任何战斗结果。 */
-export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
+export async function generateBattleNote(config: LlmConfig, battle: BattleState, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: BattleNote } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cfg = applyPresetApi(preset ?? EMPTY_RUNTIME, config);
@@ -1926,19 +1926,22 @@ export async function generateBattleNote(config: LlmConfig, battle: BattleState,
   const castText = cast.length
     ? cast.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'} ${actor.name}${actor.codename ? `（${actor.codename}）` : ''}｜speakerId=${actor.girlId}｜表情=${actor.expression}`).join('\n')
     : '（没有带姓名与立绘的参战魔法少女；本场只能写旁白）';
-  const body = `战斗记录（只给发生过的动作与结果，不含数值）：
-${battleStoryDigest(battle)}
-可说话角色（speakerId 必须原样使用，且只能从这张表里选）：
-${castText}
-
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}
-要求：一次写完，不分场、不分段标题、不写回合。narration 是一整篇连贯的战斗叙事，6000–10000 字，用动作、环境、停顿推进；narration 不要重复台词，也不要写「某某说」后再把原话抄一遍。台词 6–14 句全部放在 lines，按发生顺序用 after 指定插入位置：after 是该句台词之前已经写完的旁白段落数（0 = 第一段之前，1 = 第一段之后，依此类推），必须随剧情递增，不能把所有台词堆在结尾。只给上表里的角色，必须带 speakerSide、speakerId、表情与 speech/thought；倒下的角色不能在倒下后继续说话。摘要里「」中的技能名可以照原样引用，但要写成一招具体的动作与结果，不要罗列；支援、护持、回复类行动要写成「她替谁挡下」「光落在谁身上」，绝不能写成向同伴出手。唯一的禁令是数值：不要写伤害数字、回合数、HP/心防数值、星砂数字或“第几回合”。魔物没有立绘与名字，只出现在旁白里。不改胜负、奖励、疤痕或角色状态，不替玩家做决定，不写未发生的事。`;
+  // v53：场地 / 时间 / 我方 / 敌方 / 战报都作为变量注入，文字说明在预设的「札记·这一战的现场」分区里。
+  const body = battleContract();
+  const battleVars = {
+    battlePlace: battlePlaceText(battle, state),
+    battleTime: battleTimeText(battle),
+    battleGirls: battleGirlText(battle, state),
+    battleMonsters: battleMonsterText(battle),
+    battleCast: castText,
+    battleReport: battleStoryDigest(battle),
+  };
   const outcome = await chatJson(config, preset, 'battle', body, '请把这场战斗写成札记。', ['共用词条 + 战斗札记词条 + 结构契约', `战斗：${battle.missionTitle}`], meta, {
     story: battle.missionTitle,
     context: `结果：${battle.outcome ?? '未结算'}；参战：${cast.map(actor => actor.name).join('、') || '无'}`,
     char: castText,
-  }, 14000);
+    ...battleVars,
+  }, 14000, { state });
   if (!outcome.result.ok) {
     recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), status: statusOf(outcome.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: outcome.result.message, request: meta.request, response: meta.response });
     return { ok: false, message: `写札记失败：${outcome.result.message}` };
@@ -1956,7 +1959,8 @@ ${castText}
     const repaired = await chatJson(config, preset, 'battle', repairBody, '请只输出修正后的完整 JSON。', ['共用词条 + 战斗札记词条 + 结构契约', '修复上一次札记'], meta, {
       story: battle.missionTitle,
       context: '修复札记',
-    }, 14000);
+      ...battleVars,
+    }, 14000, { state });
     source = repaired;
     if (!repaired.result.ok) {
       recordLlmLog({ kind: '战斗札记', ok: false, model: cfg.model.trim(), status: statusOf(repaired.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg), message: repaired.result.message, request: meta.request, response: meta.response });
@@ -2059,10 +2063,10 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { newsContract, storylineContract } from './promptSections.ts';
+import { battleContract, newsContract, storylineContract } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
-import { battleCast, battleStoryDigest, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
+import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
 import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';

@@ -1405,7 +1405,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.equal(runtime.topP, 0.98);
   assert.equal(runtime.maxTokens, 32768);
   assert.equal(runtime.maxContext, 400000);
-  assert.equal(activePrompts(flat.preset).length, 33);
+  assert.equal(activePrompts(flat.preset).length, 34);
   const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
   assert.ok(wrapped.system.includes('月见桃 的叙事者'));
   assert.ok(!wrapped.system.includes('注释'));
@@ -1418,7 +1418,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.ok(warned.warnings.some(text => text.includes('SPreset')));
   assert.equal(warned.unsupported.length, 1);
   const again = importPresetJson(exportPresetJson({ ...flat.preset!, settings: flat.preset!.settings }));
-  assert.equal(again.preset?.promptOrder?.length, 33);
+  assert.equal(again.preset?.promptOrder?.length, 34);
   assert.equal(again.preset?.promptOrder?.[0].identifier, 'main');
 });
 
@@ -1717,17 +1717,17 @@ test('预设词条替换变量，缺失变量与分隔标记不进入系统提�
 test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入文本', () => {
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
   const entries = presetPrompts(legacy.preset);
-  assert.equal(entries.length, 31);
+  assert.equal(entries.length, 32);
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
   assert.ok(wrapped.system.includes('系统底稿'));
   assert.ok(wrapped.system.includes('旧主提示'));
-  assert.equal(DEFAULT_PROMPTS.length, 29);
+  assert.equal(DEFAULT_PROMPTS.length, 30);
   assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'tone', 'task']);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'chat').length, 2);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily').length, 5);
-  assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle').length, 1);
+  assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle').length, 2);
   const summary = playerSummary({ name: '白鸟', alias: '所长', pronoun: '他', appearance: '旧风衣', personality: '寡言', background: '接手事务所', relation: '同事' });
   assert.ok(summary.includes('白鸟（所长）'));
   assert.ok(summary.includes('旧风衣'));
@@ -2312,12 +2312,12 @@ test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
   assert.equal(imported.preset.schema, 5);
   assert.ok(imported.warnings.some(text => text.includes('默认词条')));
   const entries = presetPrompts(imported.preset);
-  assert.equal(entries.length, 30);
+  assert.equal(entries.length, 31);
   assert.equal(entries.filter(entry => entry.scope === 'daily').length, 5);
   assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
-  assert.equal(entries.filter(entry => entry.scope === 'battle').length, 1);
+  assert.equal(entries.filter(entry => entry.scope === 'battle').length, 2);
   const runtime = presetRuntime(imported.preset);
-  assert.equal(runtime.entries.length, 30);
+  assert.equal(runtime.entries.length, 31);
   assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
 });
 
