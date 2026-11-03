@@ -357,6 +357,7 @@ test('雇佣扣款、去重并遵守基地容量', () => {
   const s = createInitialState(); s.gold = 20000;
   const candidate = s.candidates[0];
   const r = act(s, { type: 'hire', girlId: candidate.id }); assert.equal(r.ok, true); assert.equal(r.state.girls.length, 6);
+  assert.equal(r.state.opinions.length, s.opinions.length, '缔结契约不再自动生成欢迎议案');
   assert.equal(act(r.state, { type: 'hire', girlId: candidate.id }).ok, false);
   r.state.rooms.find(room => room.type === 'dorm')!.capacity = 5;
   assert.equal(act(r.state, { type: 'hire', girlId: 'lu' }).ok, false);

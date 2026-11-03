@@ -8,7 +8,7 @@ import { factionCollapsed, leaderById, leaderTitle, rosterLeader } from '../fact
 import { normalizeMarketWindow } from '../rules/market.ts';
 import { LEADER_HIRE_COST, hydrate, sanitizeCustomGirl, sanitizeCustomLeader, sanitizeFactionRoster } from '../rules/candidate.ts';
 import { FACTION_ORDER } from '../territories.ts';
-import { makeOpinion, trimOpinions } from '../rules/opinion.ts';
+import { trimOpinions } from '../rules/opinion.ts';
 import { OPENING_INCIDENTS } from '../opening.ts';
 import { topUpFromFallback } from '../incidents.ts';
 import { CONTRACT_DAYS, pensionArrears, renewalCost } from '../contracts.ts';
@@ -310,7 +310,6 @@ export function applyHire(state: GameState, action: Extract<GameAction, { type: 
       next.marketSold = Array.from(new Set([...(next.marketSold ?? []), candidate.id]));
       normalizeMarketWindow(next);
       next.logs.unshift({ id: `log-hire-${candidate.id}`, time: dateLabel(next.day, next.minutes), kind: 'finance', text: `与${candidate.name}缔结契约，事务所增加一位新的魔法少女。`, delta: -candidate.cost });
-      next.opinions.unshift(makeOpinion(next, next.girls[next.girls.length - 1], '同伴', `欢迎${candidate.name}`, '新契约者已经住进宿舍。她想为对方准备一点什么。', '申请 300 星砂筹办一次小型欢迎会。'));
       return { state: next, ok: true, message: `${candidate.name}已加入夜糖事务所。` };
 }
 

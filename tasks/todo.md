@@ -662,3 +662,8 @@
 - [x] **运行时接线**：`Incident` / `Opinion` 各加 `storyNodeId`，`resolveStoryWait` 新增 `chosenPort` 参数并按它找边；`applyResolveIncident` 传选项 id、`applyDecideOpinion` 传 accept / reject；提案节点在运行时只带 accept / reject，`advanceStoryGraph` 补一条固定的 defer（界面仍是三个按钮，暂缓不推进剧情）。
 - [x] 测试：新增 `tests/v46.test.ts` 九条（读档迁移、奖励清洗、按阶级发放与确定性、结构校验、choice 端口、弹窗端口、提案端口、提案运行三分支、生成时 scene 静默转换与提示词内容）；24 个测试文件 445 项全绿，`tsc` 0 错，`check:rules` 通过。
 - [x] `npm test` 脚本补进 v44–v48 五个文件；README 更新蓝图 / 内容工坊 / 回归规模与文件清单。
+
+## 小修：契约魔法少女后不再塞一条默认欢迎议案
+
+- [x] `src/rules/rosterOps.ts` 的 `applyHire` 删掉那条「欢迎〇〇 / 申请 300 星砂筹办欢迎会」的默认提案，`makeOpinion` 的 import 一并收回；会客厅空着时本来就有「今晚没有新的议题」的空态，不再被自家生成的凑数提案占位。契约日志与提示不变。
+- [x] `tests/game.test.ts` 的雇佣用例补一条断言：缔结契约前后 `opinions` 数量不变。
