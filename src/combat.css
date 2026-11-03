@@ -929,3 +929,7 @@
 .mini-action{padding:4px 10px;border:1px solid #ffffff1f;border-radius:6px;font-size:9px;color:#e7cdd9;cursor:pointer;user-select:none}
 .mini-action:hover{border-color:#d996ad66;color:#f7e6ee}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* v80 语料：只重写语料那一行 */
+.custom-voice-actions{display:flex;align-items:center;gap:8px;margin:2px 0 6px}
+.custom-voice-actions small{font-size:8px;letter-spacing:.03em;color:#887582}

@@ -4,6 +4,7 @@ import type { Archetype, DraftTrait, Element, GirlDraft, StatKey, TraitPolarity 
 import type { GeneratedGirlProfile } from '../llm';
 import { STAT_MAX, STAT_MIN, rollStats, statsForArchetype, type PlayableArchetype } from '../content/archetypes';
 import { tierLabels } from '../content/skills';
+import { sanitizeVoice } from '../voice';
 import { defaultSkillAccuracy } from '../combat';
 import { filterSkills, girlSkillPool } from '../skills';
 import { traits, traitPolarityLabel } from '../content/traits';
@@ -15,7 +16,7 @@ import { readWardrobePackage, type WardrobePackage } from '../wardrobeImport';
 import { fileDropProps } from '../drop';
 import { CutoutPreview } from './CutoutPreview';
 
-type FieldKey = 'name' | 'codename' | 'title' | 'element' | 'archetype' | 'goal' | 'quote' | 'appearance' | 'personality' | 'outfitDescription';
+type FieldKey = 'name' | 'codename' | 'title' | 'element' | 'archetype' | 'goal' | 'quote' | 'appearance' | 'personality' | 'outfitDescription' | 'voice';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const elements: Element[] = ['星光系', '糖霜系', '月影系', '梦境系', '自然系', '赤焰系', '魔物'];
@@ -76,6 +77,9 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [skillSchool, setSkillSchool] = useState('全部');
   const [skillTier, setSkillTier] = useState<'all' | 'basic' | 'signature' | 'ultimate'>('all');
   const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());  const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
+  const [voiceTone, setVoiceTone] = useState('');
+  const [voiceHabits, setVoiceHabits] = useState('');
+  const [voiceSamples, setVoiceSamples] = useState('');
   const [preview, setPreview] = useState(''); const [source, setSource] = useState<HTMLImageElement | null>(null); const [zoom, setZoom] = useState(1); const [x, setX] = useState(0); const [y, setY] = useState(0);
   /** 可持久化的立绘（长边 ≤1024 的 WebP dataURL）。`source.src` 是临时的 blob:，绝对不能进存档。 */
   const [portraitData, setPortraitData] = useState('');
@@ -194,6 +198,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     onCreate({
       name: name.trim(), codename: codename.trim() || '未命名契约', title: title.trim() || '新登记的魔法少女', element, archetype, color, quote, goal,
       appearance, personality, outfitDescription, stats, skillIds, traits: filledTraits.map(item => ({ name: item.name.trim(), description: item.description.trim(), polarity: item.polarity })),
+      voice: sanitizeVoice({ tone: voiceTone, habits: voiceHabits.split(/\r?\n/), samples: voiceSamples.split(/\r?\n/) }),
       // 存可持久化的原图（长边 ≤1024 的 WebP），取景另存为相对比例；blob: 一律挡在门外。
       portrait: sanitizePortraitSrc(portraitData) ?? sanitizePortraitSrc(preview) ?? sanitizePortraitSrc(wardrobe?.portrait),
       portraitCrop: source ? { zoom, x, y } : undefined,
@@ -215,9 +220,15 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     else if (key === 'quote') setQuote(profile.quote);
     else if (key === 'appearance') setAppearance(profile.appearance);
     else if (key === 'personality') setPersonality(profile.personality);
-    else setOutfitDescription(profile.outfitDescription);
+    else if (key === 'outfitDescription') setOutfitDescription(profile.outfitDescription);
+    else if (key === 'voice') {
+      const voice = profile.voice;
+      setVoiceTone(voice?.tone ?? '');
+      setVoiceHabits((voice?.habits ?? []).join('\n'));
+      setVoiceSamples((voice?.samples ?? []).join('\n'));
+    }
   };
-  const allFields: FieldKey[] = ['name', 'codename', 'title', 'element', 'archetype', 'goal', 'quote', 'appearance', 'personality', 'outfitDescription'];
+  const allFields: FieldKey[] = ['name', 'codename', 'title', 'element', 'archetype', 'goal', 'quote', 'appearance', 'personality', 'outfitDescription', 'voice'];
 
   const runGenerate = async (targets: FieldKey[] | 'all') => {
     if (!onGenerate || drafting) return;
@@ -384,6 +395,10 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
           <label>{fieldHead('外貌描述', 'appearance')}<textarea className={`av-input${shimmer('appearance')}`} rows={3} value={appearance} onChange={e => editText('appearance', setAppearance, e.target.value)} maxLength={200} /></label>
           <label>{fieldHead('性格描述', 'personality')}<textarea className={`av-input${shimmer('personality')}`} rows={2} value={personality} onChange={e => editText('personality', setPersonality, e.target.value)} maxLength={80} /></label>
           <label>{fieldHead('服装描述', 'outfitDescription')}<textarea className={`av-input${shimmer('outfitDescription')}`} rows={2} value={outfitDescription} onChange={e => editText('outfitDescription', setOutfitDescription, e.target.value)} maxLength={80} /></label>
+          <label>{fieldHead('说话方式', 'voice')}<input id="custom-voice-tone" className={`av-input${shimmer('voice')}`} value={voiceTone} onChange={e => editText('voice', setVoiceTone, e.target.value)} maxLength={30} placeholder="短句，先反问再回答" /></label>
+          <label>{fieldHead('口头习惯（一行一条）', 'voice')}<textarea id="custom-voice-habits" className={`av-input${shimmer('voice')}`} rows={2} value={voiceHabits} onChange={e => editText('voice', setVoiceHabits, e.target.value)} placeholder="自称「我」，从不用敬语" /></label>
+          <label>{fieldHead('例话（一行一句）', 'voice')}<textarea id="custom-voice-samples" className={`av-input${shimmer('voice')}`} rows={3} value={voiceSamples} onChange={e => editText('voice', setVoiceSamples, e.target.value)} placeholder="这条街我走了十年，闭着眼都不会撞到人。" /></label>
+          <div className="custom-voice-actions"><button id="custom-voice-draft" type="button" className="btn" disabled={drafting || !onGenerate} onClick={() => void runGenerate(['voice'])}><Sparkles size={13} />{drafting ? '正在重写' : '只重写语料'}</button><small>其余内容保持你现在填的样子。</small></div>
         </div>
       </div>
       <div className="custom-wardrobe-package">

@@ -3,6 +3,7 @@ import { defaultWitchPersonality } from '../personality.ts';
 import { loadBalance } from '../balance.ts';
 import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
 import { WARDROBE_LIMIT } from '../rules/labels.ts';
+import { sanitizeVoice } from '../voice.ts';
 import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
 import { allocatePoint, statLabel } from '../progression.ts';
 import { buildCost } from '../rules/roster.ts';
@@ -84,12 +85,27 @@ export function applyAllocateStats(state: GameState, action: Extract<GameAction,
 function applyProfileText(
   state: GameState,
   action: { girlId: string; text: string },
-  field: 'appearance' | 'outfitDescription',
+  field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples',
 ): ActionResult {
   const next = clone(state);
   const girl = findRosterGirl(next, action.girlId);
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
-  const text = String(action.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  const raw = String(action.text ?? '');
+  const isVoice = field === 'voiceTone' || field === 'voiceHabits' || field === 'voiceSamples';
+  if (isVoice) {
+    const patch: Record<string, unknown> = { ...(girl.voice ?? {}) };
+    if (field === 'voiceTone') patch.tone = raw;
+    else patch[field === 'voiceHabits' ? 'habits' : 'samples'] = raw.split(/\r?\n/);
+    girl.voice = sanitizeVoice(patch);
+    const label = field === 'voiceTone' ? '说话方式' : field === 'voiceHabits' ? '口头习惯' : '例话';
+    next.logs.unshift({
+      id: `log-profile-${field}-${girl.id}-${Date.now()}`,
+      time: dateLabel(next.day, next.minutes), kind: 'base',
+      text: `${girl.name}的${label}被改写了：${raw.replace(/\s+/g, ' ').trim().slice(0, 80) || '（清空）'}`,
+    });
+    return { state: next, ok: true, message: `${label}已更新。` };
+  }
+  const text = raw.replace(/\s+/g, ' ').trim().slice(0, 240);
   girl[field] = text;
   const label = field === 'appearance' ? '外貌' : '服装描述';
   next.logs.unshift({

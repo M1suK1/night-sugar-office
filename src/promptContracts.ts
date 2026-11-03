@@ -12,7 +12,7 @@
 import type { PromptEntry, PromptScope } from './presets.ts';
 import {
   arcContract, arcOpeningContract, arcTurnContract, battleContract,
-  dialogueContract, incidentBatchContract, newsContract, storylineContract,
+  dialogueContract, incidentBatchContract, newsContract, profileVoiceRule, storylineContract,
 } from './promptSections.ts';
 
 const registry = new Map<string, () => string>();
@@ -30,6 +30,7 @@ interface ContractSpec {
 }
 
 const SPECS: ContractSpec[] = [
+  { id: 'profile:contract', scope: 'profile', name: '角色起草 · 语料契约', make: profileVoiceRule },
   { id: 'daily:contract', scope: 'daily', name: '每日提案 · 结构契约', make: () => registry.get('daily:contract')?.() ?? '' },
   { id: 'news:contract', scope: 'news', name: '城市新闻 · 结构契约', make: newsContract },
   { id: 'incident:contract', scope: 'incident', name: '突发事件 · 结构契约', make: incidentBatchContract },

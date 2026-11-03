@@ -2,6 +2,7 @@ import type { Girl, GameState, MissionRun, Storyline } from './types.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 import { relationshipStage, stageLabels, statLabels, statusLabels, workLabels } from './rules/labels.ts';
 import { factionTagLabel } from './factions.ts';
+import { voiceLine } from './voice.ts';
 import { activePersonality } from './personality.ts';
 import { getItem } from './content/items.ts';
 import { skills } from './content/skills.ts';
@@ -61,14 +62,16 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
     `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title}${girl.leader ? '· 一方首领' : ''}`,
     `出身 ${factionTagLabel(girl.factionTag)}；雇主 夜糖事务所`,
   ].join('\n');
+  const voice = voiceLine(girl);
   const nature = [
     `性情：性格 ${activePersonality(girl) || '安静'}`,
     `语气参考：「${girl.quote?.trim() || '没有留下出场白'}」`,
-  ].join('；');
+    voice,
+  ].filter(Boolean).join('；');
   const wish = `心愿：${girl.goal?.trim() || '没有写下来的愿望'}（${girl.goalKind}）`;
 
   if (opts.brief) {
-    return fitLines([identity.split('\n')[0]!, nature.split('\n')[0]!, `关系：${bondText}${peers.length ? `；同伴 ${peers.join('、')}` : ''}`, wish], BRIEF_BUDGET, {
+    return fitLines([identity.split('\n')[0]!, nature, `关系：${bondText}${peers.length ? `；同伴 ${peers.join('、')}` : ''}`, wish], BRIEF_BUDGET, {
       fromEnd: true, omitted: () => '',
     });
   }

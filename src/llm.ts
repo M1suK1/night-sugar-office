@@ -1275,7 +1275,8 @@ export interface GeneratedEvent { title: string; hook: string; scenes: { title: 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
   // 出身与雇主必须分开写：出身只交代她来自哪一方，雇主永远是把她们收进名册的夜糖事务所。
-  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
+  const voice = voiceLine(girl);
+  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}${voice ? `；${voice}` : ''}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
 }
 
 function parseEffect(raw: unknown): StoryEffect {
@@ -2047,6 +2048,8 @@ export async function generateBattleNote(config: LlmConfig, battle: BattleState,
 export interface GeneratedGirlProfile {
   name: string; codename: string; title: string; element: Element; archetype: Archetype;
   quote: string; goal: string; appearance: string; personality: string; outfitDescription: string;
+  /** 语料：说话方式、口头习惯、例话。 */
+  voice?: GirlVoice;
   focus: StatKey; skillIds: string[]; traits: DraftTrait[];
   /** 代表色：让 LLM 一并给出，避免十张卡一个粉。 */
   color?: string;
@@ -2058,7 +2061,8 @@ async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hin
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
 skillIds 只能从以下 ID 中选三个：${skillList}
-traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。`;
+traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
+voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
   const visualRule = portrait
     ? '先观察附带的立绘：发色与发型、瞳色、服装轮廓与配色、配饰、兽耳或尾巴、姿态与表情。appearance 必须具体描述这些可见特征；outfitDescription 必须写到颜色、材质与穿法；element、archetype、personality 和 title 都要从画面气质推断，不能与立绘冲突。'
     : '这次没有立绘，请只根据世界观与文字要求起草，不要假装看见图片。';
@@ -2103,7 +2107,7 @@ traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20
       element: element === ('魔物' as Element) ? '星光系' : element, archetype: archetype === ('魔物' as Archetype) ? '治愈' : archetype,
       quote: str('quote', '请多指教。'), goal: str('goal', '想找到一个可以回去的地方。'),
       appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。', 200), personality: str('personality', '安静，习惯先观察再开口。'),
-      outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), focus, skillIds, traits: draftTraits,
+      outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), voice: sanitizeVoice(raw.voice), focus, skillIds, traits: draftTraits,
       color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color.trim()) ? raw.color.trim() : undefined,
     } };
   } catch {
@@ -2122,15 +2126,16 @@ import { worldbookContext } from './worldbook.ts';
 import { leaderById, EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
+import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, storylineContract, whisperUserHint } from './promptSections.ts';
+import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, whisperUserHint } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
-import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine,  DraftTrait, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
+import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine, DraftTrait, GirlVoice, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

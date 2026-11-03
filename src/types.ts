@@ -218,10 +218,22 @@ export interface DraftTrait {
   description: string;
   polarity: TraitPolarity;
 }
+/** 她怎么说话：只进提示词，不进战斗结算。 */
+export interface GirlVoice {
+  /** 一句话概括她的说话方式（30 字内）。 */
+  tone: string;
+  /** 口头习惯：自称、语气词、句子长短、回避什么，最多 3 条。 */
+  habits: string[];
+  /** 三句她说得出口的例话，不是对她的描述。 */
+  samples: string[];
+}
+
 export interface GirlDraft {
   name: string; codename: string; title: string; element: Element; archetype: Archetype;
   color: string; quote: string; goal: string;
   appearance: string; personality: string; outfitDescription: string;
+  /** 语料：进提示词的说话方式与例话。 */
+  voice?: GirlVoice;
   stats: Record<StatKey, number>; skillIds: string[]; traits: DraftTrait[];
   portrait?: string; portraitCrop?: CropBox; appearanceSpec?: PortraitSpec; portraitHint?: string;
   wardrobe?: Outfit[]; outfitId?: string; importedVariants?: Record<string, string>; witchForm?: Outfit;
@@ -730,6 +742,8 @@ export interface Girl {
   /** 「再想想」给的宽限日：到了这一天还在状态里就直接走。 */
   graceUntilDay?: number;
   appearance: string; personality: string; outfitDescription: string;
+  /** 语料：进提示词的说话方式与例话。 */
+  voice?: GirlVoice;
   /** 魔女化后的性格记录；普通形态仍保留原性格。 */
   witchPersonality?: string;
   wardrobe: Outfit[]; outfitId: string; expression: Expression;
@@ -1133,7 +1147,7 @@ export type GameAction =
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }
   /** 档案里的两段文本：外貌与「她现在这身」的描述，导入契约卡后也能改。 */
-  | { type: 'setProfileText'; girlId: string; field: 'appearance' | 'outfitDescription'; text: string }
+  | { type: 'setProfileText'; girlId: string; field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples'; text: string }
   /** 重新载入立绘：只收 data URL；空串表示清掉。 */
   | { type: 'setPortrait'; girlId: string; portrait: string }
   | { type: 'allocateStat'; girlId: string; stat: StatKey; amount?: number }

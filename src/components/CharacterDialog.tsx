@@ -39,7 +39,7 @@ const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = {
 export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
-  onProfileText?: (field: 'appearance' | 'outfitDescription', text: string) => void;
+  onProfileText?: (field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples', text: string) => void;
   /** 立绘缺失时手动补一张：读成 data URL 后由 setPortrait 落地。 */
   onPortraitFile?: (file: File) => void;
   /** 这人的立绘是不是缺了（存档瘦身后会出现）。 */
@@ -90,10 +90,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const [personalityDraft, setPersonalityDraft] = useState('');
   const [appearanceDraft, setAppearanceDraft] = useState(girl.appearance ?? '');
   const [outfitDraft, setOutfitDraft] = useState(girl.outfitDescription ?? '');
+  const [voiceToneDraft, setVoiceToneDraft] = useState(girl.voice?.tone ?? '');
+  const [voiceHabitsDraft, setVoiceHabitsDraft] = useState((girl.voice?.habits ?? []).join('\n'));
+  const [voiceSamplesDraft, setVoiceSamplesDraft] = useState((girl.voice?.samples ?? []).join('\n'));
   useEffect(() => {
     setAppearanceDraft(girl.appearance ?? '');
     setOutfitDraft(girl.outfitDescription ?? '');
-  }, [girl.id, girl.appearance, girl.outfitDescription]);
+    setVoiceToneDraft(girl.voice?.tone ?? '');
+    setVoiceHabitsDraft((girl.voice?.habits ?? []).join('\n'));
+    setVoiceSamplesDraft((girl.voice?.samples ?? []).join('\n'));
+  }, [girl.id, girl.appearance, girl.outfitDescription, girl.voice]);
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
@@ -444,6 +450,24 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                   <textarea id="dossier-outfit-input" className="av-input" rows={4} maxLength={240} value={outfitDraft}
                     onChange={event => setOutfitDraft(event.target.value)}
                     onBlur={() => { if (outfitDraft !== (girl.outfitDescription ?? '')) onProfileText?.('outfitDescription', outfitDraft); }} />
+                </label>
+              </section>
+              <section className="appearance-section" aria-labelledby="voice-title">
+                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="voice-title">她怎么说话</h3><small>语料只进提示词：她说话的方式，不是对她的描述。</small></div></div>
+                <label className="field"><span>说话方式</span>
+                  <input id="dossier-voice-tone" className="av-input" maxLength={30} value={voiceToneDraft} placeholder="短句，先反问再回答"
+                    onChange={event => setVoiceToneDraft(event.target.value)}
+                    onBlur={() => { if (voiceToneDraft !== (girl.voice?.tone ?? '')) onProfileText?.('voiceTone', voiceToneDraft); }} />
+                </label>
+                <label className="field"><span>口头习惯（一行一条）</span>
+                  <textarea id="dossier-voice-habits" className="av-input" rows={3} value={voiceHabitsDraft} placeholder="自称「我」，从不用敬语；答不上来就沉默两秒"
+                    onChange={event => setVoiceHabitsDraft(event.target.value)}
+                    onBlur={() => { if (voiceHabitsDraft !== (girl.voice?.habits ?? []).join('\n')) onProfileText?.('voiceHabits', voiceHabitsDraft); }} />
+                </label>
+                <label className="field"><span>例话（一行一句）</span>
+                  <textarea id="dossier-voice-samples" className="av-input" rows={3} value={voiceSamplesDraft} placeholder="这条街我走了十年，闭着眼都不会撞到人。"
+                    onChange={event => setVoiceSamplesDraft(event.target.value)}
+                    onBlur={() => { if (voiceSamplesDraft !== (girl.voice?.samples ?? []).join('\n')) onProfileText?.('voiceSamples', voiceSamplesDraft); }} />
                 </label>
               </section>
               <section className="appearance-section" aria-labelledby="wardrobe-title">
