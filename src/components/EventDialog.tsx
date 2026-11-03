@@ -20,12 +20,15 @@ export interface EventDialogProps {
   onTurn: (eventId: string, action: string) => Promise<boolean>;
   onRewrite: (eventId: string, turnId: string) => Promise<boolean>;
   onEnd: (eventId: string) => void;
+  /** 蓝图正卡在选项上时，这一段能走的分支（文案只来自蓝图，不由模型编）。 */
+  branch?: { storylineId: string; options: { id: string; label: string }[] };
+  onBranch?: (port: string) => void;
   onClose: () => void;
 }
 
-export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, onClose }: EventDialogProps) {
+export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose }: EventDialogProps) {
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} onClose={onClose} onAdvance={onAdvance} onChoose={onChoose} />;
+    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} onAdvance={onAdvance} onChoose={onChoose} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} />;
 }
@@ -79,7 +82,8 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose }: Pick<EventDia
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onClose }: EventDialogProps) {
+function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose }: EventDialogProps) {
+  const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? [];
   const [draft, setDraft] = useState('');
   const [preview, setPreview] = useState<{ id: string; expression: Expression } | null>(null);
@@ -194,16 +198,26 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
             </div>
 
             <footer className="event-composer">
-              {options.length > 0 && <div className="session-options"><p className="session-lead" id="session-lead">她没有再往下说。轮到你决定。</p>{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}
-              <div className="session-input">
+              {event.pendingChoice && (
+                <div className="session-options branch-options" id="session-branch">
+                  <p className="session-lead">她停在门口，等你拿主意。选完这段剧情就结束。</p>
+                  {(pending?.options ?? []).map(option => (
+                    <button key={option.id} id={`story-branch-${option.id}`} type="button" disabled={loading} onClick={() => onBranch?.(option.id)}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {options.length > 0 && !event.pendingChoice && <div className="session-options"><p className="session-lead" id="session-lead">她没有再往下说。轮到你决定。</p>{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}
+              {!event.pendingChoice && <div className="session-input">
                 <label className="sr-only" htmlFor="story-action">写下你的行动</label>
                 <textarea id="story-action" rows={2} maxLength={300} value={draft} disabled={loading} placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话……'} onChange={input => setDraft(input.target.value)} onKeyDown={input => { if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') { input.preventDefault(); void submit(draft); } }} />
                 <button id="story-submit" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>行动</button>
                 {confirmEnd ? <span className="session-end-confirm">
                   <button id="story-end-confirm" type="button" className="btn danger" onClick={() => onEnd(event.id)}>确认结束</button>
                   <button id="story-end-cancel" type="button" className="btn" onClick={() => setConfirmEnd(false)}>再聊一会</button>
-                </span> : <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>结束事件</button>}
-              </div>
+                </span> : <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>{branch && !event.pendingChoice ? '导向结局' : '结束事件'}</button>}
+              </div>}
             </footer>
           </main>
 

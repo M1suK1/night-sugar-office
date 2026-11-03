@@ -2,7 +2,7 @@
 import {
   applyAddCharacterEvent, applyAddStoryline, applyAdvanceEvent, applyAdvanceStoryline,
   applyAppendStoryTurn, applyBeginStoryEvent, applyChooseStoryPassage, applyChooseStoryPort,
-  applyDecideStoryChoice, applyFinishStorySession, applyReplaceStoryTurn, applyResolveEvent,
+  applyDecideStoryChoice, applyChooseStoryOption, applyFinishStorySession, applyReplaceStoryTurn, applyResolveEvent,
   applySetStoryPlan, applyStartCharacterEvent, applyStartStorySession, applyStartStoryline,
 } from './storyOps.ts';
 import {
@@ -115,6 +115,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'appendStoryTurn': return applyAppendStoryTurn(state, action);
     case 'replaceStoryTurn': return applyReplaceStoryTurn(state, action);
     case 'finishStorySession': return applyFinishStorySession(state, action);
+    case 'chooseStoryOption': return applyChooseStoryOption(state, action);
     case 'chooseStoryPort': return applyChooseStoryPort(state, action);
     case 'chooseStoryPassage': return applyChooseStoryPassage(state, action);
     case 'resolveEvent': return applyResolveEvent(state, action);

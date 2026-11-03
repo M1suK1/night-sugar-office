@@ -59,6 +59,7 @@ import { CommandConsole } from './components/CommandConsole';
 import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
 import { blockingIncidents, openIncidentFor } from './incidents';
+import { pendingChoiceOf } from './rules/storyChoice';
 import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
@@ -1442,7 +1443,7 @@ export default function App() {
       if (!target) return null;
       const subject = state.girls.find(item => item.id === target.girlId);
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
-      const dialog = <EventDialog event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => { if (perform({ type: 'finishStorySession', eventId })) setModal(null); }} onClose={() => setModal(null)} />;
+      const dialog = <EventDialog event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => { if (perform({ type: 'finishStorySession', eventId })) setModal(null); }} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}
     {modal?.type === 'end-night' && <Dialog label="打烊与交接" onClose={() => setModal(null)}>

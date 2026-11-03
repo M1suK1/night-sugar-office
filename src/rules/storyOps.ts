@@ -1,3 +1,4 @@
+import { pendingChoiceOf } from './storyChoice.ts';
 import { applyStoryEffect } from '../rules/storyCore.ts';
 import { STORY_SESSION_TURNS, buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
 import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } from '../rules/storyRun.ts';
@@ -41,7 +42,7 @@ export function applySetStoryPlan(state: GameState, action: Extract<GameAction, 
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!action.plan) {
-        girl.storyPlan = undefined;
+        girl.storyPlan = undefined
         return { state: next, ok: true, message: '已移除故事蓝图。' };
       }
       const plan = sanitizeStoryPlan(action.plan);
@@ -205,6 +206,21 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event) return { state, ok: false, message: '找不到这段剧情。' };
       if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      // 蓝图正卡在选项上：这一下不该收尾，而是把剧情引到门口、把选项摆出来。
+      const branch = pendingChoiceOf(next, event.girlId);
+      if (branch && !event.pendingChoice) {
+        const labels = branch.options.map(option => `「${option.label}」`).join('　');
+        event.turns = [...(event.turns ?? []), {
+          id: `turn-lead-${Date.now().toString(36)}`,
+          role: 'narrator' as const,
+          text: `话说到这里就断了。${branch.title}这件事还悬在你们之间——${labels}，哪一条都还来得及，但只能选一条。`,
+          lines: [], options: [], at: Date.now(),
+        }];
+        event.pendingChoice = { storylineId: branch.storylineId, nodeId: branch.nodeId };
+        next.logs.unshift({ id: `log-story-lead-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `「${event.title}」走到岔路口，等所长拿主意。` });
+        return { state: next, ok: true, message: '剧情引到了岔路口，选一条吧。' };
+      }
+      event.pendingChoice = undefined;
       event.status = 'done'; event.badge = false; event.sessionDone = true;
       const girl = findGirl(next, event.girlId);
       const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
@@ -275,4 +291,26 @@ export function applyResolveEvent(state: GameState, action: Extract<GameAction, 
       next.logs.unshift({ id: `log-event-choice-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `「${event.title}」：${choice.label}。` });
       finishStoryEvent(next, event);
       return { state: next, ok: true, message: '事件结束。' };
+}
+
+
+/** chooseStoryOption 的动作处理器：先把蓝图往前推一格，再把这段剧情收尾。 */
+export function applyChooseStoryOption(state: GameState, action: Extract<GameAction, { type: 'chooseStoryOption' }>): ActionResult {
+  const event = state.events.find(item => item.id === action.eventId);
+  if (!event) return { state, ok: false, message: '找不到这段剧情。' };
+  if (!event.pendingChoice) return { state, ok: false, message: '这段剧情没有在等选择。' };
+  const chosen = applyChooseStoryPort(state, { type: 'chooseStoryPort', storylineId: action.storylineId, port: action.port });
+  if (!chosen.ok) return chosen;
+  const next = clone(chosen.state);
+  const target = next.events.find(item => item.id === action.eventId);
+  if (!target) return { state, ok: false, message: '找不到这段剧情。' };
+  target.pendingChoice = undefined;
+  target.status = 'done'; target.badge = false; target.sessionDone = true;
+  const girl = findGirl(next, target.girlId);
+  const rounds = (target.turns ?? []).filter(turn => turn.role === 'player').length;
+  const gain = Math.min(4, Math.max(0, Math.round(rounds * 0.8)));
+  if (girl) { girl.eventBadge = undefined; girl.bond = Math.min(100, girl.bond + gain); }
+  next.logs.unshift({ id: `log-story-branch-${target.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl?.name ?? '她'}的剧情「${target.title}」选定了走向${gain ? `，羁绊 +${gain}` : ''}。` });
+  archive(next, '关系', target.title, `${girl?.name ?? '她'}的这段剧情选定了走向。`);
+  return { state: next, ok: true, message: '这一段落定，故事往下走了。' };
 }

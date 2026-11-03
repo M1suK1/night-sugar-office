@@ -621,6 +621,8 @@ export interface CharacterEvent {
   cast?: string[];
   opening?: string;
   sessionDone?: boolean;
+  /** 这段剧情正卡在蓝图的选项上：等玩家选完才算结束。 */
+  pendingChoice?: { storylineId: string; nodeId: string };
   chosen?: string[];
   summary?: string;
   pending?: boolean;
@@ -1158,6 +1160,8 @@ export type GameAction =
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
   | { type: 'finishStorySession'; eventId: string }
+  /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
+  | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }
   | { type: 'setPoolLimit'; pool: 'missions' | 'monsters' | 'candidates'; value: number }
   | { type: 'setCityNews'; news: CityNews | null }
