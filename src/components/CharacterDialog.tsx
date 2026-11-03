@@ -93,6 +93,10 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const [voiceToneDraft, setVoiceToneDraft] = useState(girl.voice?.tone ?? '');
   const [voiceHabitsDraft, setVoiceHabitsDraft] = useState((girl.voice?.habits ?? []).join('\n'));
   const [voiceSamplesDraft, setVoiceSamplesDraft] = useState((girl.voice?.samples ?? []).join('\n'));
+  const lines = (text: string) => text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const habitCount = Math.min(3, lines(voiceHabitsDraft).length);
+  const sampleCount = Math.min(3, lines(voiceSamplesDraft).length);
+  const voiceFilled = Boolean(voiceToneDraft.trim() || habitCount || sampleCount);
   useEffect(() => {
     setAppearanceDraft(girl.appearance ?? '');
     setOutfitDraft(girl.outfitDescription ?? '');
@@ -430,9 +434,9 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           {tab === 'appearance' && <>
             <div className="appearance-page">
               <section className="appearance-section" aria-labelledby="profile-text-title">
-                <div className="appearance-head"><span className="appearance-index">00</span><div><h3 id="profile-text-title">她的样子与这身衣服</h3><small>这两段会进提示词；从契约卡带进来的也能改。</small></div></div>
+                <div className="appearance-head"><span className="appearance-index">00</span><div><h3 id="profile-text-title">她的样子与这身衣服</h3><small>这两段会进提示词；从契约卡带进来的也能改。</small></div><em>{portraitBroken ? '立绘缺失' : '立绘就绪'}</em></div>
                 <div className="profile-tools">
-                  {portraitBroken ? <span className="profile-tools-note">立绘缺失，补一张就好。</span> : null}
+                  {portraitBroken ? <span className="profile-tools-note">补一张立绘就能看见她。</span> : null}
                   <label className="mini-action" htmlFor="dossier-portrait-reload">重新载入立绘</label>
                   <input id="dossier-portrait-reload" className="sr-only" type="file" accept="image/*"
                     onChange={event => {
@@ -441,37 +445,49 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                       if (file) onPortraitFile?.(file);
                     }} />
                 </div>
-                <label className="field"><span>外貌</span>
-                  <textarea id="dossier-appearance-input" className="av-input" rows={4} maxLength={240} value={appearanceDraft}
-                    onChange={event => setAppearanceDraft(event.target.value)}
-                    onBlur={() => { if (appearanceDraft !== (girl.appearance ?? '')) onProfileText?.('appearance', appearanceDraft); }} />
-                </label>
-                <label className="field"><span>服装描述</span>
-                  <textarea id="dossier-outfit-input" className="av-input" rows={4} maxLength={240} value={outfitDraft}
-                    onChange={event => setOutfitDraft(event.target.value)}
-                    onBlur={() => { if (outfitDraft !== (girl.outfitDescription ?? '')) onProfileText?.('outfitDescription', outfitDraft); }} />
-                </label>
+                <div className="text-pair">
+                  <label className="text-panel">
+                    <span className="text-panel-head"><b>外貌</b><small>{appearanceDraft.length}/240</small></span>
+                    <textarea id="dossier-appearance-input" rows={4} maxLength={240} value={appearanceDraft} placeholder="她站在灯下时的样子：发型、瞳色、有没有藏起来的地方。"
+                      onChange={event => setAppearanceDraft(event.target.value)}
+                      onBlur={() => { if (appearanceDraft !== (girl.appearance ?? '')) onProfileText?.('appearance', appearanceDraft); }} />
+                  </label>
+                  <label className="text-panel">
+                    <span className="text-panel-head"><b>服装描述</b><small>{outfitDraft.length}/240</small></span>
+                    <textarea id="dossier-outfit-input" rows={4} maxLength={240} value={outfitDraft} placeholder="她此刻这身衣服：颜色、材质、穿法，以及哪里不合规矩。"
+                      onChange={event => setOutfitDraft(event.target.value)}
+                      onBlur={() => { if (outfitDraft !== (girl.outfitDescription ?? '')) onProfileText?.('outfitDescription', outfitDraft); }} />
+                  </label>
+                </div>
               </section>
               <section className="appearance-section" aria-labelledby="voice-title">
-                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="voice-title">她怎么说话</h3><small>语料只进提示词：她说话的方式，不是对她的描述。</small></div></div>
-                <label className="field"><span>说话方式</span>
-                  <input id="dossier-voice-tone" className="av-input" maxLength={30} value={voiceToneDraft} placeholder="短句，先反问再回答"
+                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="voice-title">她怎么说话</h3><small>只进提示词：她说话的方式，不是对她的描述。</small></div><em>{voiceFilled ? '已写语料' : '还没写'}</em></div>
+                <label className="voice-tone">
+                  <span>说话方式</span>
+                  <input id="dossier-voice-tone" maxLength={30} value={voiceToneDraft} placeholder="短句，先反问再回答"
                     onChange={event => setVoiceToneDraft(event.target.value)}
                     onBlur={() => { if (voiceToneDraft !== (girl.voice?.tone ?? '')) onProfileText?.('voiceTone', voiceToneDraft); }} />
+                  <small>{voiceToneDraft.length}/30</small>
                 </label>
-                <label className="field"><span>口头习惯（一行一条）</span>
-                  <textarea id="dossier-voice-habits" className="av-input" rows={3} value={voiceHabitsDraft} placeholder="自称「我」，从不用敬语；答不上来就沉默两秒"
-                    onChange={event => setVoiceHabitsDraft(event.target.value)}
-                    onBlur={() => { if (voiceHabitsDraft !== (girl.voice?.habits ?? []).join('\n')) onProfileText?.('voiceHabits', voiceHabitsDraft); }} />
-                </label>
-                <label className="field"><span>例话（一行一句）</span>
-                  <textarea id="dossier-voice-samples" className="av-input" rows={3} value={voiceSamplesDraft} placeholder="这条街我走了十年，闭着眼都不会撞到人。"
-                    onChange={event => setVoiceSamplesDraft(event.target.value)}
-                    onBlur={() => { if (voiceSamplesDraft !== (girl.voice?.samples ?? []).join('\n')) onProfileText?.('voiceSamples', voiceSamplesDraft); }} />
-                </label>
+                <div className="text-pair">
+                  <label className="text-panel">
+                    <span className="text-panel-head"><b>口头习惯</b><small>{habitCount}/3 条</small></span>
+                    <textarea id="dossier-voice-habits" rows={3} value={voiceHabitsDraft} placeholder="自称「我」，从不用敬语&#10;答不上来就沉默两秒"
+                      onChange={event => setVoiceHabitsDraft(event.target.value)}
+                      onBlur={() => { if (voiceHabitsDraft !== (girl.voice?.habits ?? []).join('\n')) onProfileText?.('voiceHabits', voiceHabitsDraft); }} />
+                    <i className="text-panel-hint">一行一条 · 自称、语气词、句子长短、回避什么</i>
+                  </label>
+                  <label className="text-panel">
+                    <span className="text-panel-head"><b>例话</b><small>{sampleCount}/3 句</small></span>
+                    <textarea id="dossier-voice-samples" rows={3} value={voiceSamplesDraft} placeholder="这条街我走了十年，闭着眼都不会撞到人。"
+                      onChange={event => setVoiceSamplesDraft(event.target.value)}
+                      onBlur={() => { if (voiceSamplesDraft !== (girl.voice?.samples ?? []).join('\n')) onProfileText?.('voiceSamples', voiceSamplesDraft); }} />
+                    <i className="text-panel-hint">一行一句 · 她说得出口的句子，不是旁白</i>
+                  </label>
+                </div>
               </section>
               <section className="appearance-section" aria-labelledby="wardrobe-title">
-                <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>四格礼装 · 换装同步立绘与头像</small></div><em>{Math.min(4, girl.wardrobe.length)} / 4</em></div>
+                <div className="appearance-head"><span className="appearance-index">02</span><div><h3 id="wardrobe-title"><Shirt size={14} />衣柜</h3><small>四格礼装 · 换装同步立绘与头像</small></div><em>{Math.min(4, girl.wardrobe.length)} / 4</em></div>
                 <div className="wardrobe-grid">
                   {girl.wardrobe.slice(0, 4).map(outfit => (
                     <button key={outfit.id} id={`dossier-outfit-${outfit.id}`} type="button" className={`wardrobe-tile ${girl.outfitId === outfit.id && !girl.witch ? 'picked' : ''} ${girl.witch ? 'locked' : ''}`} aria-pressed={girl.outfitId === outfit.id && !girl.witch} aria-disabled={girl.witch} title={girl.witch ? '魔女化期间锁定在第五格' : undefined} onClick={() => onChangeOutfit(outfit.id)}>
@@ -495,7 +511,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               </section>
 
               <section className="appearance-section" aria-labelledby="expression-title">
-                <div className="appearance-head"><span className="appearance-index">02</span><div><h3 id="expression-title"><Sparkles size={14} />表情</h3><small>只改变呈现，不影响数值</small></div><em>{expressions.find(item => item.id === girl.expression)?.label ?? '平静'}</em></div>
+                <div className="appearance-head"><span className="appearance-index">03</span><div><h3 id="expression-title"><Sparkles size={14} />表情</h3><small>只改变呈现，不影响数值</small></div><em>{expressions.find(item => item.id === girl.expression)?.label ?? '平静'}</em></div>
                 <div className="expression-grid" role="group" aria-label="选择表情">
                   {expressions.map(item => {
                     const Icon = expressionIcons[item.id];
@@ -510,7 +526,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               </section>
 
               <section className="appearance-section" aria-labelledby="equipment-title">
-                <div className="appearance-head"><span className="appearance-index">03</span><div><h3 id="equipment-title"><Wand2 size={14} />装备</h3><small>法器与护符各一 · 从仓库拖入</small></div><em>{gear.length} 件在库</em></div>
+                <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="equipment-title"><Wand2 size={14} />装备</h3><small>法器与护符各一 · 从仓库拖入</small></div><em>{gear.length} 件在库</em></div>
                 <div className="equipment-slots">
                   {(['weapon', 'charm'] as const).map((slot, index) => {
                     const item = getItem(girl.equipment[slot]);
@@ -530,7 +546,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               </section>
 
               <div className="appearance-stats">
-                <div className="appearance-head"><span className="appearance-index">04</span><div><h3><ShieldCheck size={14} />有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div></div>
+                <div className="appearance-head"><span className="appearance-index">05</span><div><h3><ShieldCheck size={14} />有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div></div>
                 <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${Math.min(100, eff[k])}%` }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
               </div>
             </div>

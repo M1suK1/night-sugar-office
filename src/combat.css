@@ -952,3 +952,21 @@
 .av-supply-stats li.stat-good b{color:#8fd6a8}
 .av-supply-stats li.stat-bad b{color:#e08e9b}
 .av-supply-title em.av-supply-summary{margin-left:auto;font-family:var(--font-data);font-size:8px;font-style:normal;letter-spacing:.02em;color:#b78c9f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52%}
+
+/* v80 档案：外貌 / 服装 / 语料 —— 与衣柜、表情同栏宽的双列编辑块 */
+.text-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:760px){.text-pair{grid-template-columns:minmax(0,1fr)}}
+.text-panel{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px 11px 12px;border:1px solid #ffffff14;border-radius:7px;background:linear-gradient(180deg,#141020,#0d0a14);transition:border-color .2s,box-shadow .2s}
+.text-panel:focus-within{border-color:#c478b866;box-shadow:0 0 0 1px #c478b81f}
+.text-panel-head{display:flex;align-items:baseline;gap:8px}
+.text-panel-head b{font-size:9px;font-weight:500;letter-spacing:.08em;color:#e7cdd9}
+.text-panel-head small{margin-left:auto;font-family:var(--font-data);font-size:8px;letter-spacing:.02em;color:#7d6a89}
+.text-panel textarea{width:100%;min-height:74px;resize:vertical;border:0;background:transparent;padding:0;color:#e6d9e4;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;font-size:11px;line-height:1.9;letter-spacing:.01em;outline:0;caret-color:#f3aec9;scrollbar-width:thin;scrollbar-color:#4b3c57 transparent}
+.text-panel textarea::placeholder{color:#5e4d6b;font-size:10px}
+.text-panel-hint{font-style:normal;font-size:7px;letter-spacing:.04em;color:#6f5c7c}
+.voice-tone{display:flex;align-items:center;gap:9px;margin-bottom:10px;padding:9px 11px;border:1px solid #ffffff14;border-radius:7px;background:#0d0a14;transition:border-color .2s}
+.voice-tone:focus-within{border-color:#c478b866}
+.voice-tone>span{flex:0 0 auto;font-size:9px;letter-spacing:.08em;color:#cbb6c2}
+.voice-tone input{flex:1;min-width:0;border:0;background:transparent;padding:0;color:#e6d9e4;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;font-size:11px;letter-spacing:.01em;outline:0;caret-color:#f3aec9}
+.voice-tone input::placeholder{color:#5e4d6b;font-size:10px}
+.voice-tone small{flex:0 0 auto;font-family:var(--font-data);font-size:8px;color:#7d6a89}
