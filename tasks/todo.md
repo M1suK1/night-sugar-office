@@ -844,3 +844,11 @@
 - [x] 新增 `.event-stage` / `.event-rail` / `.event-portrait` / `.event-center` 一套样式（`dialogs.css`），窄屏（≤980px）自动收成单列并隐藏侧栏。
 - [x] 保留全部既有 id（`#event-close`、`#story-action`、`#story-submit`、`#story-end*`、`#story-option-*`、`#story-rewrite-*`），浏览器流程脚本不用改。
 - [ ] 视觉验收：本机沙箱里 Chromium 起不来（spawn EPERM），没能截图自查；需要你刷新页面看一眼两侧立绘的宽度与中间文字的可读性。
+## 改：角色事件直接复用战斗札记的全屏 UI
+
+- [x] `StorySession` 不再自建三栏，直接套 `.battle-note-overlay` / `.battle-note-shell` / `.battle-note-head` / `.battle-note-stage`：全屏、同一套头部（标题 + 来源角标 + 关闭）、同一套侧栏立绘。
+- [x] 阵营对调：**左侧 = 在场角色**，**右侧 = 所长**（虚线占位 + 「你」）；台词气泡按发言侧左右分（玩家在右）。
+- [x] 中间沿用 `.battle-note-body` 的旁白与 `.battle-note-line` 气泡，底部新增 `.event-composer`（快捷选项 + 行动输入框 + 行动 / 结束事件），贴在中间列底部。
+- [x] `App` 里交互剧情不再包 `.story-overlay`：那层带 `backdrop-filter`，会让里面的 `position:fixed` 以它为包含块，全屏会打折扣；`SceneEvent` 仍走旧居中弹窗。
+- [x] 只补了必须的几条样式（`.event-center`、`.event-composer`、`.event-player-art`、`.battle-note-line.player-turn`），其余全部复用战斗札记。
+- [ ] 视觉验收仍待你刷新页面确认（沙箱里 Chromium spawn EPERM，无法截图）。
