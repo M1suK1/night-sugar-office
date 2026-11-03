@@ -906,3 +906,17 @@
 - [x] 初始状态与空白档案都把开局日记成「已补过」（首夜仍走 openingFilledAt）。
 - [x] 	ests/v76.test.ts 两条。
 - [ ] v75-2（战后癖好进简报）按你的要求推后；v75-3 / v75-5 / v75-6 继续排。
+
+
+## v77：提案不全是花钱，两人议题要互相反驳
+
+- [x] 契约两条：至少一条不花钱的提案；两人议题 dialogue 里两人都要说话，第二个必须反驳或加码。
+- [x] 校验 warn：三条提案所有选项都在扣星砂时提醒（不拦下）。导出 `shouldWarnAllSpend()`，`tests/v77`。
+
+## v78：立绘缺失可以重新载入
+
+- [x] `src/portraitReload.ts`：`portraitMissing()` / `girlsMissingPortrait()`（空串与外链都算缺）。
+- [x] 动作 `setPortrait`（只收 data URL，`sanitizePortraitSrc` 把关；空串＝清空），带日志。
+- [x] 档案 → 外观装备页工具条：`#dossier-portrait-reload` 选图 → `resizeImageFile` → `setPortrait`；缺图时提示「立绘缺失，补一张就好」。
+- [x] `tests/v78` 两条。
+- [ ] 后续：名册卡片角标、从卡库按 cardId 自动取回。
