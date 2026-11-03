@@ -96,15 +96,16 @@ export function localCityNews(state: GameState, day = state.day): CityNews {
   };
 }
 
-/** 玩家接手的第一夜：不生成，只播这一条。 */
-export function openingCityNews(day = OPENING_NEWS_DAY): CityNews {
+/** 玩家接手的第一夜：不生成，只播这一条。电台口吻，用名字称呼所长，不用「你」。 */
+export function openingCityNews(day = OPENING_NEWS_DAY, playerName = ''): CityNews {
+  const name = playerName.trim() || '新任所长';
   return {
     day,
     generatedAt: new Date().toISOString(),
     headline: '夜糖事务所，今夜重新开张',
     items: [{
       tone: 'street',
-      text: '你继承了事务所——它在多年沉寂后重新开张。今夜明灯已亮，城市是否会在你的领导下变得更好？',
+      text: `${name}继承了事务所——它在多年沉寂后重新开张。今夜明灯已亮，这座城市会不会在新的手上变得更好？`,
     }],
     source: 'rule',
   };

@@ -46,6 +46,11 @@ test('v50 第一夜：不生成，只用开场那一条', () => {
   assert.ok(opening.headline.includes('重新开张'));
   assert.ok(opening.items[0]!.text.includes('继承'));
   assert.ok(opening.items[0]!.text.includes('明灯已亮'));
+  assert.ok(!opening.items[0]!.text.includes('你'), '电台播报不该用第二人称称呼所长');
+  const named = openingCityNews(OPENING_NEWS_DAY, '白鸟');
+  assert.ok(named.items[0]!.text.startsWith('白鸟'), '要用玩家设定的名字');
+  assert.ok(!named.items[0]!.text.includes('你'), '换名字之后仍然保持第三人称');
+  assert.ok(openingCityNews(OPENING_NEWS_DAY, '').items[0]!.text.startsWith('新任所长'), '没登记名字时退回「新任所长」');
   assert.equal(newsIsStale(undefined, OPENING_NEWS_DAY), false, '第一夜没有播报也不算过期，直接补开场');
   assert.equal(newsIsStale(opening, OPENING_NEWS_DAY), false);
   assert.equal(newsIsStale(undefined, OPENING_NEWS_DAY + 1), true, '第二天起才需要生成');

@@ -1,5 +1,6 @@
 import { ROUND_MINUTES } from '../combat.ts';
 import { openingCityNews } from '../cityNews.ts';
+import { loadPlayerProfile } from '../player.ts';
 import { bosses } from '../content/bosses.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
 import { applyPct, districtAt, districts } from '../districts.ts';
@@ -54,7 +55,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     openingFilledAt: 0,
     levelUpMode: 'manual',
     notices: [],
-    cityNews: openingCityNews(14),
+    cityNews: openingCityNews(14, loadPlayerProfile().name),
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],
@@ -85,7 +86,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     openingFilledAt: 0,
     levelUpMode: 'manual',
     notices: [],
-    cityNews: openingCityNews(14),
+    cityNews: openingCityNews(14, loadPlayerProfile().name),
     factionRoster: defaultFactionRoster(),
     customFactionLeaders: [],
     customFactionGirls: [],

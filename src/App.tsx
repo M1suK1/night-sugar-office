@@ -39,6 +39,7 @@ import { incidentPoolNeed } from './incidents.ts';
 import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
 import { localCityNews, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
 import { loadBalance } from './balance';
+import { loadPlayerProfile } from './player';
 import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './research';
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
@@ -285,7 +286,7 @@ export default function App() {
   }, [state.day, autoGenerate, loaded]);
   const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual') => {
     if ((latestState.current ?? state).day <= OPENING_NEWS_DAY) {
-      perform({ type: 'setCityNews', news: openingCityNews() });
+      perform({ type: 'setCityNews', news: openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name) });
       return;
     }
     if (newsBusyRef.current) return;
@@ -311,9 +312,11 @@ export default function App() {
   };
   useEffect(() => {
     if (!loaded) return;
-    // 接手的第一夜固定播开场那一条，不请叙事者；旧档在这一天缺播报时也补上。
+    // 接手的第一夜固定播开场那一条，不请叙事者；旧档在这一天缺播报、或玩家刚改了名字时补上。
     if (state.day <= OPENING_NEWS_DAY) {
-      if (!state.cityNews) void refreshCityNews('auto');
+      const name = loadPlayerProfile().name.trim();
+      const text = state.cityNews?.items[0]?.text ?? '';
+      if (!state.cityNews || (name && !text.includes(name))) void refreshCityNews('auto');
       return;
     }
     if (loadBalance().cityNewsEnabled !== 1) return;

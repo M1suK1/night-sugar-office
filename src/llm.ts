@@ -1536,7 +1536,7 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
-  const result = await callJson(config, preset, 'news', newsContract(), `请为第 ${state.day} 日的夜晚写一条城市播报。`, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
+  const result = await callJson(config, preset, 'news', newsContract(), `请为第 ${state.day} 日的夜晚写一条城市播报。播报是电台口吻，提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
   if (!result.ok) {
     recordLlmLog({ kind: '城市新闻', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
