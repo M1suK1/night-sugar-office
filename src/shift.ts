@@ -41,6 +41,21 @@ export function clockLabel(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/**
+ * 绝对分钟 → 营业日。
+ *
+ * 营业夜从 20:00 起算，00:00–02:00 仍属于前一夜的「第 N 日」，所以日号**只在 20:00 翻**。
+ * 这个公式以前散落在三处（advanceClock、combat、endNight 各写一遍），改成唯一出处。
+ */
+export function dayOf(absolute: number): number {
+  return Math.floor((absolute - SHIFT_START) / 1440);
+}
+
+/** 绝对分钟 → 当夜分钟（20:00 → 1200，跨午夜后 00:30 → 1470）。 */
+export function minutesOf(absolute: number, day = dayOf(absolute)): number {
+  return absolute - day * 1440;
+}
+
 /** 距离打烊还剩多少分钟（可为负）。 */
 export function minutesToClose(minutes: number): number {
   return SHIFT_END - minutes;

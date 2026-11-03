@@ -2102,7 +2102,7 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { arcContract, arcOpeningContract, arcTurnContract, battleContract, newsContract, storylineContract } from './promptSections.ts';
+import { arcContract, arcOpeningContract, arcTurnContract, battleContract, incidentBatchContract, newsContract, storylineContract } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
@@ -2158,9 +2158,7 @@ export async function generateIncidentBatch(config: LlmConfig, state: GameState,
   const body = `第 ${state.day} 日，夜糖事务所。安定度 ${state.reputation}，星砂 ${state.gold}，城市平均污染 ${Math.round(cityAveragePollution(state))}。
 三方态度：${factions}。在册契约者：${girls || '（暂无）'}。
 最近已用过、不要重复的题目：${used || '（无）'}。
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"entries":[{"category":"report|decision|scene","title":"","body":"","options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"faction":{"id":"association|government|witch","standing":0},"girl":{"bond":0}}}]}]}
-要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。title 2–14 字，body 30–120 字，写出具体的人、地点与时间压力；数值幅度克制（gold 不超过 800，reputation 不超过 ±4，faction.standing 不超过 ±4）。不要出现需要额外数值系统的效果。`;
+${incidentBatchContract()}`;
   const result = await callJson(config, preset, 'incident', body, '请把这几件事攒下来，留给以后的夜晚。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，补充待用事件池`,
   }, undefined, 3000);

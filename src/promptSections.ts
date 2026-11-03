@@ -326,6 +326,26 @@ export function newsContract(): string {
   ].join('\n');
 }
 
+/**
+ * 突发事件的 JSON 契约。
+ *
+ * 以前这里只写了 `{category,title,body,options}`，没写 trigger / kind / 出场角色 / 效果幅度，
+ * 于是模型写出来的条目缺触发时机，进池子也永远不会被投出来。这份文本是"能不能用"的全部要求。
+ */
+export function incidentBatchContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"entries":[{"category":"report|decision|scene","kind":"faction|environment|girl","title":"","body":"","trigger":{"kind":"dayStart|wave|missionDone","wave":1,"work":"combat|investigation"},"girlId":"","district":"","faction":"association|government|witch","ttlMinutes":240,"options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"faction":{"id":"association|government|witch","standing":0},"girl":{"bond":0}}}]}]}',
+    '要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。',
+    'title 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。',
+    '【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。',
+    '【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。',
+    '【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。',
+    '【数值幅度】gold ≤ 800（可负，最低 −800）；reputation ±4；faction.standing ±4；girl.bond ±6；girl.fatigue / girl.spirit ±8。不要出现需要额外数值系统的效果。',
+    '【存活时长】ttlMinutes 60–480，默认 240。report 不拦时间；decision 与 scene 会拦住打烊，所以别把通报写成 decision。',
+  ].join('\n');
+}
+
 /** 蓝图的锁定契约：JSON 骨架、kind 取值与 id 字符集——解析器真正需要的那几条。 */
 export function storylineContract(): string {
   return [

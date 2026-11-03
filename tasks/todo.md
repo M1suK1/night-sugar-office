@@ -783,3 +783,13 @@
 - [x] 工坊：新建模板按难度与魔物数量给默认等级；改难度或改魔物时，只要这一项还停在自动值就自动跟着走，手改过的不动。
 - [x] 库清洗：旧模板还停在 3 且难度不是中危的，按难度与魔物数量补正（中危保持 3，手写过的值不覆盖）。
 - [x] 测试：新增 `tests/v62.test.ts`（建议值表、夜间委托不再统一 3、旧库补正三态）。
+## v63-1 / v63-2：换日时机与弹窗事件（按 plan-v63.md 实施）
+
+- [x] `shift.ts` 新增 `dayOf` / `minutesOf`：营业日只在 20:00 翻（00:00–02:00 仍算同一夜），公式从三处收成一处（`advanceClock`、`combat`、`endNight`）。
+- [x] **修 `endNight` 的打烊边缘**：旧写法 `minutes < SHIFT_START || minutes >= SHIFT_END` 在「午夜后被拦住」时算出同一天，`advanceClock` 目标时间早于当前 → 静默 return，day 原地不动（看起来像午夜重开）。改成 `minutes >= SHIFT_START → day + 1`。
+- [x] 委托分批投放**未改动**（按你的要求）。
+- [x] **接上弹窗取用链路**：新增 `deployDueIncident()`（内置优先、模型待用池兜底），开门 / 每个时段 / 委托收尾三条路径全部改走它。`takeFromPool` 此前零调用，模型写的弹窗永远躺在池子里。
+- [x] `sanitizeGeneratedIncident` 补齐触发器与类别：`trigger` 缺省按类别推导（report→dayStart、decision→wave 1、scene→missionDone），`kind` 与 `girlId` 不一致时降级成环境事件，`ttlMinutes` 夹在 60–480，`faction` / `district` 一起洗。
+- [x] 新增 `incidentBatchContract()`：把突发事件的 JSON 形状、trigger 三选一、kind 三选一、出场角色白名单、效果幅度表、存活时长写进提示词（原来是硬编码字符串，且完全没有这些字段）。
+- [x] 测试：新增 `tests/v63.test.ts` 七条（营业日只在 20:00 翻、跨午夜不刷新、开门刷新、午夜后打烊进下一天、池子条目按 trigger 投放、内置优先、触发器推导与降级）；顺手修 `game.test.ts` / `v24.test.ts` 里「把 report 也当有选项」的旧测试助手。
+- [ ] 待做：v63-3（6 个结构契约 + 生成器字面量全部进预设、`PRESET_SCHEMA 7`、`prompt-lint` 测试）、v63-4（提示词全量视图 UI + 导入导出）。

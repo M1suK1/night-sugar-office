@@ -215,8 +215,8 @@ test('v24 Boss 常驻：连过三晚都在板上，声望每晚都在掉', () =>
   const night = (input: ReturnType<typeof createInitialState>) => {
     let current = input;
     for (let guard = 0; guard < 12; guard++) {
-      const pending = current.incidents.find(incident => incident.status === 'pending');
-      if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0].id }).state;
+      const pending = current.incidents.find(incident => incident.status === 'pending' && incident.options.length > 0);
+      if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0]!.id }).state;
       const next = act(current, { type: 'endNight' });
       if (next.ok) return next.state;
       current = next.state;

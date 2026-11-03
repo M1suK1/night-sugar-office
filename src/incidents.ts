@@ -220,6 +220,25 @@ export function dueIncidents(
   return [makeIncidentFromTemplate(state, chosen, at)];
 }
 
+/**
+ * 这一次触发到底投哪条：先问内置模板，没有合适的再从**模型写的待用池**里取。
+ *
+ * 池子以前只进不出——`takeFromPool` 一个调用方都没有，模型写好的弹窗永远躺在
+ * `state.incidentPool` 里，玩家一次也看不到。现在三条触发路径（开门 / 每个时段 / 委托收尾）
+ * 都走这里，内置优先，池子兜底。
+ */
+export function deployDueIncident(
+  state: GameState,
+  cause: 'dayStart' | 'wave' | 'missionDone',
+  at: { day: number; minutes: number },
+  options: DueOptions = {},
+): Incident | undefined {
+  const [builtin] = dueIncidents(state, cause, at, options);
+  if (builtin) return builtin;
+  const pooled = takeFromPool(state, cause, at, options);
+  return pooled ? { ...pooled, status: 'pending' } : undefined;
+}
+
 /** 到点没处理的弹窗标记成过期，交给调用方结算代价。 */
 export function expireIncidents(state: GameState, at: { day: number; minutes: number }): Incident[] {
   const now = incidentMinute(at.day, at.minutes);
@@ -290,6 +309,34 @@ export function incidentOptionById(incident: Incident, id: string): IncidentOpti
   return incident.options.find(option => option.id === id);
 }
 
+/**
+ * 模型写的触发条件。四选一：开门 / 某个时段 / 某类委托收尾 / 条件式。
+ * 没写或写坏就按类别推导——通报放开门前，要拿主意的丢进时段，剧情挂在委托之后，
+ * 这样条目至少有一个能真的触发的时机，而不是进池子就再也不出来。
+ */
+function incidentTriggerFrom(raw: unknown, category: Incident['category']): IncidentTrigger {
+  if (raw && typeof raw === 'object') {
+    const value = raw as Record<string, unknown>;
+    if (value.kind === 'dayStart') return { kind: 'dayStart' };
+    if (value.kind === 'wave') {
+      const wave = Number(value.wave);
+      return { kind: 'wave', wave: Number.isFinite(wave) ? Math.max(0, Math.min(2, Math.round(wave))) : 1 };
+    }
+    if (value.kind === 'missionDone') {
+      const work = value.work === 'combat' || value.work === 'investigation' ? value.work as WorkKind : undefined;
+      const district = typeof value.district === 'string' && value.district in districts ? value.district as DistrictId : undefined;
+      return { kind: 'missionDone', work, district };
+    }
+    if (value.kind === 'condition' && Array.isArray(value.all) && value.all.length) {
+      const all = value.all.filter((entry): entry is IncidentCondition => Boolean(entry) && typeof entry === 'object').slice(0, 3);
+      if (all.length) return { kind: 'condition', all };
+    }
+  }
+  if (category === 'decision') return { kind: 'wave', wave: 1 };
+  if (category === 'scene') return { kind: 'missionDone' };
+  return { kind: 'dayStart' };
+}
+
 /** 把模型给的条目洗成可以进池子的弹窗：文本长度、选项数量、数值幅度都夹住，不合格的直接丢。 */
 export function sanitizeGeneratedIncident(
   state: GameState,
@@ -338,10 +385,18 @@ export function sanitizeGeneratedIncident(
     const scene = item.scene && typeof item.scene === 'object' ? item.scene as Record<string, unknown> : undefined;
     void scene;
   }
-  const kind: Incident['kind'] = finalCategory === 'scene' ? 'girl' : 'faction';
-  const girlId = typeof item.girlId === 'string' ? item.girlId : undefined;
-  const resolvedGirl = girlId && state.girls.some(girl => girl.id === girlId && !girl.dead) ? girlId : undefined;
-  const ttl = INCIDENT_DEFAULT_TTL;
+  const rawGirlId = typeof item.girlId === 'string' ? item.girlId.trim() : '';
+  const resolvedGirl = rawGirlId && state.girls.some(girl => girl.id === rawGirlId && !girl.dead) ? rawGirlId : undefined;
+  const declaredKind = item.kind === 'faction' || item.kind === 'environment' || item.kind === 'girl' ? item.kind : undefined;
+  // 说是「关于某个少女」，但 id 不在名册上：降级成环境事件，别留一条永远点不着 girlId 的弹窗。
+  const kind: Incident['kind'] = declaredKind === 'girl'
+    ? (resolvedGirl ? 'girl' : 'environment')
+    : declaredKind ?? (finalCategory === 'scene' ? (resolvedGirl ? 'girl' : 'environment') : 'faction');
+  const rawDistrict = typeof item.district === 'string' && item.district in districts ? item.district as DistrictId : undefined;
+  const rawFactionId = item.faction === 'association' || item.faction === 'government' || item.faction === 'witch' ? item.faction : undefined;
+  const trigger = incidentTriggerFrom(item.trigger, finalCategory);
+  const ttlRaw = typeof item.ttlMinutes === 'number' && Number.isFinite(item.ttlMinutes) ? Math.round(item.ttlMinutes) : INCIDENT_DEFAULT_TTL;
+  const ttl = Math.max(60, Math.min(480, ttlRaw));
   const stamp = hashText(`${title}:${body}`).toString(36);
   return {
     id: `inc-pool-${stamp}`,
@@ -353,7 +408,10 @@ export function sanitizeGeneratedIncident(
     options: finalCategory === 'report' ? [] : options,
     status: 'pending',
     category: finalCategory,
-    girlId: finalCategory === 'scene' ? resolvedGirl : undefined,
+    trigger,
+    girlId: kind === 'girl' ? resolvedGirl : undefined,
+    faction: kind === 'faction' ? rawFactionId : undefined,
+    district: rawDistrict,
     ttlMinutes: ttl,
     expiresAt: incidentMinute(at.day, at.minutes) + ttl,
     templateId: `llm-${stamp}`,

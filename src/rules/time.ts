@@ -5,10 +5,10 @@ import { districts } from '../districts.ts';
 import { effectiveMaxHp, effectiveMaxSpirit } from '../economy.ts';
 import { planFronts, resolveDueFronts } from '../fronts.ts';
 import { applyHostility, hostilityGain } from '../hostility.ts';
-import { blockingIncidents, dueIncidents, expireIncidents, markIncidentCooldown, topUpFromFallback } from '../incidents.ts';
+import { blockingIncidents, deployDueIncident, expireIncidents, markIncidentCooldown, topUpFromFallback } from '../incidents.ts';
 import { clampPollution, pollutionDailyRise, pollutionFloor, pollutionTier, pollutionTierLabel } from '../pollution.ts';
 import { applyResignations, tickStrain } from '../resignations.ts';
-import { SHIFT_END, SHIFT_START, WAVE_AT, WAVE_SIZES, absoluteMinutes, shiftStartAt } from '../shift.ts';
+import { SHIFT_END, SHIFT_START, WAVE_AT, WAVE_SIZES, absoluteMinutes, dayOf, minutesOf, shiftStartAt } from '../shift.ts';
 import type { ActionResult, BattleState, FactionId, GameState, Girl, Mission } from '../types.ts';
 import { interceptionFor, settleCombat } from './battle.ts';
 import { accruePension, addCorruption, drugTick, gainTrait, tickConditions } from './conditions.ts';
@@ -107,10 +107,11 @@ export function syncShift(state: GameState): number {
       changed += 1;
     }
     state.shift.wave += 1;
-    for (const incident of dueIncidents(state, 'wave', { day: state.day, minutes: state.minutes }, { wave })) {
-      state.incidents.unshift(incident);
-      markIncidentCooldown(state, incident);
-      state.logs.unshift({ id: `log-incident-wave-${incident.id}`, time: dateLabel(state.day, state.minutes), kind: 'incident', text: `第 ${wave + 1} 时段，有人敲了敲窗：${incident.title}。` });
+    const waveIncident = deployDueIncident(state, 'wave', { day: state.day, minutes: state.minutes }, { wave });
+    if (waveIncident) {
+      state.incidents.unshift(waveIncident);
+      markIncidentCooldown(state, waveIncident);
+      state.logs.unshift({ id: `log-incident-wave-${waveIncident.id}`, time: dateLabel(state.day, state.minutes), kind: 'incident', text: `第 ${wave + 1} 时段，有人敲了敲窗：${waveIncident.title}。` });
     }
     if (fresh.length) {
       state.logs.unshift({ id: `log-wave-${state.day}-${wave}`, time: dateLabel(state.day, state.minutes), kind: 'story', text: `第 ${wave + 1} 时段委托送达：${fresh.join('、')}。` });
@@ -147,9 +148,9 @@ export function advanceClock(state: GameState, to: number): void {
   if (elapsed <= 0) return;
   const previousDay = state.day;
   // 营业夜从 20:00 起算：00:00–02:00 仍属于前一天的「第 N 日」，只是分钟数越过 1440。
-  const nextDay = Math.floor((to - SHIFT_START) / 1440);
+  const nextDay = dayOf(to);
   state.day = nextDay;
-  state.minutes = to - nextDay * 1440;
+  state.minutes = minutesOf(to, nextDay);
   const days = state.day - previousDay;
   if (days > 0) {
     accruePension(state, days);
@@ -304,10 +305,11 @@ export function advance(state: GameState, minutes: number): ActionResult {
         mission.squad = [];
         mission.girlId = undefined;
       }
-      for (const incident of dueIncidents(next, 'missionDone', { day: next.day, minutes: next.minutes }, { work: mission.work, wave: next.shift.wave })) {
-        next.incidents.unshift(incident);
-        markIncidentCooldown(next, incident);
-        next.logs.unshift({ id: `log-incident-mission-${incident.id}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `委托收尾时，有人等在门口：${incident.title}。` });
+      const settledIncident = deployDueIncident(next, 'missionDone', { day: next.day, minutes: next.minutes }, { work: mission.work, wave: next.shift.wave });
+      if (settledIncident) {
+        next.incidents.unshift(settledIncident);
+        markIncidentCooldown(next, settledIncident);
+        next.logs.unshift({ id: `log-incident-mission-${settledIncident.id}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `委托收尾时，有人等在门口：${settledIncident.title}。` });
       }
     } else if (due.girl) {
       const girl = findGirl(next, due.girl.id);
@@ -364,15 +366,19 @@ export function endNight(state: GameState): ActionResult {
     girl.fatigue = Math.max(0, girl.fatigue - 12);
     girl.spirit = Math.min(effectiveMaxSpirit(girl), girl.spirit + 20);
   }
-  const closedDay = next.minutes < SHIFT_START || next.minutes >= SHIFT_END ? next.day + 1 : next.day;
+  // 打烊一律挪到下一夜开门。旧写法只在 minutes 落在「门外」时 +1，
+  // 于是这一夜被弹窗拦住、停在 00:00–02:00 之间再打烊时，目标时间反而比现在早，
+  // advanceClock 静默 return，day 原地不动——看起来像「午夜重开」。
+  const closedDay = next.minutes >= SHIFT_START ? next.day + 1 : next.day;
   advanceClock(next, absoluteMinutes(closedDay, SHIFT_START));
   next.shift = { day: next.day, wave: 0 };
   syncShift(next);
   ensureMissionPools(next);
-  for (const incident of dueIncidents(next, 'dayStart', { day: next.day, minutes: next.minutes }, { wave: 0 })) {
-    next.incidents.unshift(incident);
-    markIncidentCooldown(next, incident);
-    next.logs.unshift({ id: `log-incident-night-${incident.id}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `第 ${next.day} 日开门前，有人把一件事放在了桌上：${incident.title}。` });
+  const openingIncident = deployDueIncident(next, 'dayStart', { day: next.day, minutes: next.minutes }, { wave: 0 });
+  if (openingIncident) {
+    next.incidents.unshift(openingIncident);
+    markIncidentCooldown(next, openingIncident);
+    next.logs.unshift({ id: `log-incident-night-${openingIncident.id}`, time: dateLabel(next.day, next.minutes), kind: 'incident', text: `第 ${next.day} 日开门前，有人把一件事放在了桌上：${openingIncident.title}。` });
   }
   topUpFromFallback(next, { day: next.day, minutes: next.minutes }, 3);
   const poolIncident = rollPoolIncident(next);

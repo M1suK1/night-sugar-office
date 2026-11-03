@@ -440,8 +440,8 @@ test('退休金按日划拨，欠约累积到契约状态', () => {
   assert.equal(retired.state.girls.find(g => g.id === 'yue')!.retired, true);
   const before = retired.state.gold; let current = retired.state;
   for (let i = 0; i < 100; i++) {
-    const pending = current.incidents.find(item => item.status === 'pending');
-    if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0].id }).state;
+    const pending = current.incidents.find(item => item.status === 'pending' && item.options.length > 0);
+    if (pending) current = act(current, { type: 'resolveIncident', incidentId: pending.id, optionId: pending.options[0]!.id }).state;
     current = act(current, { type: 'endNight' }).state;
   }
   assert.ok(current.gold < before, '退役金应该造成持续支出');
