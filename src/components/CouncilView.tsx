@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Clock3, Coins, Heart, Moon, ShieldCheck, X } from 'lucide-react';
 import type { GameState, Opinion } from '../types';
 import { factionInfo } from '../content/items';
-import { opinionOptionTags, previewOpinionOption, resolveOpinionDialogue, resolveOpinionOptions } from '../opinions';
+import { opinionOptionTags, opinionSpeakerOf, previewOpinionOption, resolveOpinionDialogue, resolveOpinionOptions } from '../opinions';
 import { opinionLimit } from '../game';
 import { GirlPortrait } from './GirlPortrait';
 
@@ -74,6 +74,9 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
   const dialogue = current ? resolveOpinionDialogue(state, current) : [];
   const dialogueDone = !current || lineIndex >= dialogue.length;
   const line = dialogueDone ? undefined : dialogue[Math.min(lineIndex, dialogue.length - 1)];
+  // 大立绘跟着「这一句是谁说的」走：助手接话时画助手，不能把她的表情贴到提案人脸上。
+  const figure = current ? opinionSpeakerOf(state, current, line) : undefined;
+  const authorFigure = current ? opinionSpeakerOf(state, current) : undefined;
 
   useEffect(() => {
     setLineIndex(0);
@@ -141,13 +144,13 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
             <div><ShieldCheck size={13} /><span>安定度</span><b>{state.reputation}</b></div>
             <div><Moon size={13} /><span>待决议</span><b>{pending.length}</b></div>
           </div>
-          {speaker ? (
-            <button id="council-speaker-card" type="button" className="council-speaker-card" onClick={() => onGirl(speaker.id)}>
-              <GirlPortrait girl={speaker} variant="avatar" />
+          {authorFigure ? (
+            <button id="council-speaker-card" type="button" className="council-speaker-card" onClick={() => speaker && onGirl(speaker.id)}>
+              <GirlPortrait girl={authorFigure} variant="avatar" />
               <span>
-                <b>{speaker.name}</b>
-                <small>{speaker.codename} · {speaker.title}</small>
-                <em><Heart size={11} /> {speaker.bond}/100 · 侵蚀 {speaker.corruption}</em>
+                <b>{authorFigure.name}</b>
+                <small>{speaker ? `${speaker.codename} · ${speaker.title}` : current?.authorKind === 'leader' ? '三方代表' : '提出者'}</small>
+                {speaker && <em><Heart size={11} /> {speaker.bond}/100 · 侵蚀 {speaker.corruption}</em>}
               </span>
             </button>
           ) : <p className="muted">今晚没有需要当面谈的事。</p>}
@@ -170,7 +173,7 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
                 <small>{current.request}</small>
               </header>
               <div className="council-figure">
-                {speaker ? <GirlPortrait girl={{ ...speaker, expression: line?.expression ?? 'calm' }} variant="full" bare /> : <div className="council-figure-empty" />}
+                {figure ? <GirlPortrait girl={figure} variant="full" bare /> : <div className="council-figure-empty" />}
               </div>
               <div className={`council-options ${dialogueDone ? 'ready' : 'waiting'}`}>
                 {options.map((option, at) => {

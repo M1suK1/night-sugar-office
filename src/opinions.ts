@@ -1,5 +1,6 @@
-import type { FactionId, GameState, MissionTemplate, Opinion, OpinionChange, OpinionDialogueLine, OpinionOption, OpinionOutcome } from './types';
+import type { Expression, FactionId, GameState, MissionTemplate, Opinion, OpinionChange, OpinionDialogueLine, OpinionOption, OpinionOutcome, Outfit, PortraitSpec } from './types';
 import { factionInfo, getItem } from './content/items.ts';
+import { factionRepresentativeOf } from './factions.ts';
 import { districts, type DistrictId } from './districts.ts';
 import { absoluteMinutes, SHIFT_END } from './shift.ts';
 import { pairLabel } from './hostility.ts';
@@ -135,6 +136,79 @@ export function resolveOpinionDialogue(state: GameState, opinion: Opinion): Opin
       expression: line.expression,
     }));
   return lines.length ? lines : fallback;
+}
+
+/**
+ * 议会里某一句话「该画谁」。
+ *
+ * 立绘必须跟着说话人走：原先固定画提案人，助手回一句带表情的话
+ * （比如琉音笑着接话），那张笑脸就落在提案人符玄脸上。
+ *
+ * 解析顺序：这一句的 speakerId → 名册 / 纪念堂 / 势力所属 / 首领，
+ * 首领提案再往「三方代表」上退一步；都解析不到就回到提案人，
+ * 但**不**沿用别人的表情——别人的表情画在自己脸上就是错的那个人。
+ */
+export interface OpinionSpeaker {
+  id: string;
+  name: string;
+  color: string;
+  portrait: string;
+  codename?: string;
+  expression: Expression;
+  portraitSpec?: PortraitSpec;
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  importedVariants?: Record<string, string>;
+  witch?: boolean;
+  witchForm?: Outfit;
+  corruption?: number;
+}
+
+type SpeakerSource = Partial<{
+  id: string; name: string; color: string; portrait: string; codename: string;
+  expression: Expression; portraitSpec: PortraitSpec; wardrobe: Outfit[]; outfitId: string;
+  importedVariants: Record<string, string>; witch: boolean; witchForm: Outfit; corruption: number;
+}>;
+
+/** 能当说话人的角色：在册少女、纪念堂、势力所属少女与首领。 */
+function speakerSourceOf(state: GameState, id: string | undefined): SpeakerSource | undefined {
+  if (!id) return undefined;
+  return state.girls.find(girl => girl.id === id)
+    ?? state.memorial.find(entry => entry.girl.id === id)?.girl
+    ?? state.customFactionGirls?.find(girl => girl.id === id)
+    ?? state.customFactionLeaders?.find(leader => leader.id === id);
+}
+
+export function opinionSpeakerOf(state: GameState, opinion: Opinion, line?: OpinionDialogueLine): OpinionSpeaker | undefined {
+  const representative = opinion.authorKind === 'leader' && opinion.authorFaction
+    ? factionRepresentativeOf(state, opinion.authorFaction)
+    : undefined;
+  const author: SpeakerSource | undefined = representative
+    ? { id: representative.id, name: representative.name, color: representative.color, portrait: representative.portrait ?? '', portraitSpec: representative.portraitSpec }
+    : speakerSourceOf(state, opinion.authorId);
+  const foreign = Boolean(line?.speakerId && line.speakerId !== opinion.authorId);
+  const foreignSource = foreign ? speakerSourceOf(state, line?.speakerId) : undefined;
+  const base = foreignSource ?? author;
+  if (!base?.id) return undefined;
+  // 别人的表情只贴在别人脸上：解析得到说话人就按她那句的表情画，
+  // 解析不到就退回提案人本人的表情，绝不照搬别人的表情。
+  const own = base.expression;
+  const expression = (foreignSource || !foreign ? line?.expression : undefined) ?? own ?? 'calm';
+  return {
+    id: base.id,
+    name: base.name ?? '提出者',
+    color: base.color ?? '#9a939f',
+    portrait: base.portrait ?? '',
+    codename: base.codename,
+    expression,
+    portraitSpec: base.portraitSpec,
+    wardrobe: base.wardrobe,
+    outfitId: base.outfitId,
+    importedVariants: base.importedVariants,
+    witch: base.witch,
+    witchForm: base.witchForm,
+    corruption: base.corruption,
+  };
 }
 
 /** 旧存档、故事蓝图或手写选项没有结构化数据时，用同主题的默认值补齐。 */

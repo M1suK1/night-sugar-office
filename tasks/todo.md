@@ -740,3 +740,10 @@
 - [x] `App.tsx` 两个闸口改用 guard，并报出真实体积；`CARD_BOX_MAX_BYTES`、`OPENING_CARD_BYTES` 都改成引用同一常量。
 - [x] 存档导入的老 6MB 闸口一并改成 32MB（与 `SLOT_BYTES_LIMIT` 对齐），避免同类误杀。
 - [x] 测试：新增 `tests/v56.test.ts`（十兆级 PNG 卡能过闸并解析、只有明显不是卡的文件才拦、三个上限同源）。
+## 修：议会里助手那句的表情画在提案人脸上
+
+- [x] **根因**：`CouncilView` 的大立绘固定取 `opinion.authorId`（提案人），只是把 `line.expression` 换上去。助手（琉音）笑着接话时，这张笑脸就贴在提案人（符玄）脸上。
+- [x] 新增 `opinionSpeakerOf(state, opinion, line)`：先按 `line.speakerId` 解析说话人（名册 → 纪念堂 → 势力所属 → 首领 → 三方代表），解析不到才退回提案人。
+- [x] 表情规则：解析得到说话人就用她那句的 `expression`；解析不到就退回提案人**本人**的表情，绝不照搬别人的表情。
+- [x] 顺带修掉代表提案（`authorKind: leader`）立绘空白的问题：现在会退到该方代表/首领，侧栏卡片也显示代表本人。
+- [x] 测试：新增 `tests/v57.test.ts`（助手那句换人换表情、本人表情、未知说话人不借表情、无对白、代表提案）。
