@@ -810,3 +810,12 @@
 - [x] 新增 `tests/prompt-lint.test.ts`：`src/llm.ts` / `llm-night.ts` / `nightSpec.ts` 里的提示词字面量**只减不增**（当前 7 处，全部列出），搬完一处就把 BUDGET 改小；另有「函数都在位」的断言。
 - [ ] 还剩 7 处字面量（都在 `llm.ts` / `llm-night.ts`）：`JSON_RETRY_MESSAGE`、角色起草 / 故事线起点 / 战斗札记 / 单条突发事件 / 故事蓝图 的 JSON 形状段、`dailyContract` 的 JSON 形状行。下一步继续搬，闸门数字往下调。
 - [ ] v63-4 余项：全量视图仍按任务页签分组（已有「全部」页签 + 已改计数），若要一屏平铺全部任务，再做分组折叠。
+## 修：同一个人反复提相似的议案
+
+- [x] **原因**：每日提案的提示词里只有**待议**的议题（`{{council}}`），已经决议过的题目模型一无所知，于是同一个作者连着几晚写同一个角度。
+- [x] 新增 `src/opinionHistory.ts`：`recentOpinions()`（最近 8 天、默认 12 条）、`opinionHistoryText()`（`第 N 日｜作者｜主题｜「标题」｜结论`）、`dailyHistoryBlock()`（带「不要重复」与「换法」两块）、`repeatsRecentOpinion()`。
+- [x] 每日提案的 user 消息尾部固定拼上 `dailyHistoryBlock()`：所有预设都吃得到，不依赖玩家有没有改词条。
+- [x] 新增宏 `{{opinions}}` / `{{opinions:6}}`（「事务所与城市」分组），想自己放到词条里也能用。
+- [x] `dailyContract()` 补一条硬规则：同一作者不要重复最近提过的议题，同题重提会被本地校验拦下。
+- [x] 校验层兜底：`parseOpinion` 里同作者同名议题直接判错 → 修复轮会把历史清单再发一遍，逼它换角度或换人提。
+- [x] 测试：新增 `tests/v66.test.ts` 五条（历史格式、窗口与条数、喂给模型的那块、撞题判定、宏展开）。

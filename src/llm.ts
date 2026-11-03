@@ -1,4 +1,5 @@
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
+import { dailyHistoryBlock } from './opinionHistory.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 
 /** openai = 任意 OpenAI 兼容接口；vertex = Google Vertex AI（服务账号 JSON 或 Express 密钥）。 */
@@ -1125,7 +1126,9 @@ function jsonFailureMessage(prefix: string, outcome: JsonCallOutcome): string {
 async function generateDailyCore(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime, meta?: LlmCallMeta): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const system = dailyContract();
-  const user = `请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`;
+  // 提案历史要真的进模型视野：待议的 {{council}} 只有还没决议的，决议过的题目它一概不知。
+  const history = dailyHistoryBlock(state);
+  const user = [`请提交今晚的提案。${context ? `\n当前局势：${context}` : ''}`, history].filter(Boolean).join('\n\n');
   const outcome = await chatJson(config, preset, 'daily', system, user, ['共用词条 + 每日提案词条 + 今晚机制目录', '用户请求：今晚的提案'], meta, { context: '每日提案' }, 8000, { state });
   if (!outcome.result.ok) return { ok: false, message: `生成失败：${outcome.result.message}` };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('生成失败：', outcome) };

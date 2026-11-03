@@ -4,6 +4,7 @@ import type {
   OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
 import { registerContractDefault } from './promptContracts.ts';
+import { repeatsRecentOpinion } from './opinionHistory.ts';
 import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
 import { districts } from './districts.ts';
@@ -647,11 +648,17 @@ function parseOpinion(ctx: Ctx, value: unknown): NightOpinionSpec {
   if (relations.some(({ outcome }) => outcome.kind === 'truce') && spend < 3000 && !cedesDistrict) {
     error(ctx, `${path}.options`, '停战/换辖区的批准必须至少支付 3000 星砂，或割让一个辖区');
   }
+  const resolvedAuthorId = author?.id ?? representative?.id ?? ctx.activeGirls[0]?.id ?? '';
+  const resolvedTitle = text(ctx, body.title, `${path}.title`, 30);
+  // 撞了最近提过的同名议题就让这次提案失败：修复轮会把历史清单再发一遍，逼它换角度。
+  if (repeatsRecentOpinion(ctx.state, resolvedAuthorId, resolvedTitle)) {
+    error(ctx, `${path}.title`, `最近已经提过同名的议题「${resolvedTitle}」，换一个角度、换一个提出者，或把旧议题的后果写成新由头`);
+  }
   return {
-    authorId: author?.id ?? representative?.id ?? ctx.activeGirls[0]?.id ?? '',
+    authorId: resolvedAuthorId,
     authorKind, authorFaction,
     topic, faction, district,
-    title: text(ctx, body.title, `${path}.title`, 30),
+    title: resolvedTitle,
     text: text(ctx, body.text, `${path}.text`, 300),
     request: text(ctx, body.request, `${path}.request`, 160),
     dialogue, options,
@@ -858,6 +865,7 @@ export function dailyContract(): string {
     JSON.stringify(NIGHT_SCHEMA_EXAMPLE),
     '',
     '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
+    '同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。',
   ].join('\n');
 }
 

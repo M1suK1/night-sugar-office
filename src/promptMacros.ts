@@ -1,4 +1,5 @@
 import type { GameState, Girl } from './types.ts';
+import { opinionHistoryText } from './opinionHistory.ts';
 import type { DistrictId } from './districts.ts';
 import { NODE_LABELS } from './storygraph.ts';
 import { districts } from './districts.ts';
@@ -195,6 +196,7 @@ const RESOLVERS: Record<string, Resolver> = {
   night: ctx => nightText(ctx.state),
   girls: (ctx, arg) => girlsText(ctx.state, arg),
   heroine: (ctx, arg) => heroineText(ctx, arg),
+  opinions: (ctx, arg) => ctx.state ? opinionHistoryText(ctx.state, Number(arg) || undefined) : '',
   factions: ctx => factionsText(ctx.state),
   leaders: ctx => leadersText(ctx.state),
   districts: ctx => districtsText(ctx.state),
@@ -252,6 +254,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'hostility', label: '势力敌意', hint: '三对势力的敌意值与档位', budget: 80 },
       { key: 'office', label: '事务所', hint: '名称、对外代表、会客厅与宿舍等级', budget: 80 },
       { key: 'council', label: '待议议题', hint: '标题、提出者与主题', budget: 200 },
+      { key: 'opinions', label: '最近提过的议题', hint: '含已决议的；写提案时要求换角度，默认 12 条', budget: 260 },
       { key: 'council.need', label: '本次需要几条议题', hint: '按会客厅上限算出来的缺口', budget: 8 },
       { key: 'incidents', label: '待处理弹窗', hint: '标题与类型', budget: 160 },
       { key: 'storylines', label: '进行中的故事线', hint: '谁、第几段、停在哪一幕', budget: 160 },
