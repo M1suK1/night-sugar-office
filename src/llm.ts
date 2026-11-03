@@ -450,7 +450,7 @@ ${recentWithActions}`;
   const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语', { state, focus: girl });
   const messages: ChatMessage[] = [
     { role: 'system', content: `${system}\n\n${DIALOGUE_FORMAT_HINT}` },
-    { role: 'user', content: '写她此刻发给所长的消息，1–3 条，可以有动作和表情；只输出 JSON。' },
+    { role: 'user', content: whisperUserHint() },
   ];
   const params = presetParams(runtime);
   let request = requestSnapshot(messages, requestParams(cfg, params), ['角色卡（含预设）', '战报与最近对话']);
@@ -1596,7 +1596,7 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}]}]}
 要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行。`;
-  const result = await callJson(config, preset, 'event', body, `请写下${girl.name}的这段事件。`, ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
+  const result = await callJson(config, preset, 'event', body, eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
     scenario: storyline ? `${storyline.title}——${storyline.premise}` : '',
@@ -1669,7 +1669,7 @@ export async function generateStoryArc(config: LlmConfig, girl: Girl, input: Sto
     '【这一次】写这一段剧情的完整章节，不是开场白、也不是续写。',
     arcContract(ARC_TARGETS),
   ].filter(Boolean).join('\n');
-  const result = await callJson(config, preset, 'arc', body, `请写下${girl.name}的这段剧情。`, ['共用词条 + 完整剧情词条 + 结构契约', `角色：${girl.name}`, '前情与这一幕'], meta, {
+  const result = await callJson(config, preset, 'arc', body, arcUserHint('beat', girl.name), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${girl.name}`, '前情与这一幕'], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
     scenario: [input.premise, input.beatTitle, input.beatHook].filter(Boolean).join('\n'),
@@ -1786,7 +1786,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     arcOpeningContract(),
   ].filter(Boolean).join('\n');
   const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
-  const result = await callJson(config, preset, 'arc', body, '请写下这段剧情的开场白。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
+  const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook, story: event.title,
     }, { state, focus: focusGirl });
   if (!result.ok) {
@@ -1838,7 +1838,7 @@ export async function generateStoryTurn(
     '【这一次】接着写下一轮，不要重写开场。',
     arcTurnContract(),
   ].filter(Boolean).join('\n');
-  const result = await callJson(config, preset, 'arc', body, '请接着写下一轮。', ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
+  const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
     char: briefs, personality: '', scenario: event.hook ?? '', story: event.title,
   });
   if (!result.ok) {
@@ -1875,9 +1875,7 @@ export async function generateOutfitDescription(config: LlmConfig, portrait: str
   const started = Date.now();
   const meta: LlmCallMeta = {};
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const body = `只输出一个 JSON 对象，不要 Markdown 代码块：
-{"name":"","description":""}
-要求：name 是 4–10 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 50–90 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。`;
+  const body = outfitContract();
   const outcome = await chatJson(config, preset, 'outfit', body, [{ type: 'text', text: '请为这套服装写一条衣柜词条。' }, { type: 'image_url', image_url: { url: portrait } }], ['共用词条 + 服装词条 + 结构契约（含立绘）', '用户请求：补充服装描述'], meta);
   const result = outcome.result;
   if (!result.ok) {
@@ -2100,7 +2098,7 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool } from './skills.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { arcContract, arcOpeningContract, arcTurnContract, battleContract, dialogueContract, incidentBatchContract, newsContract, storylineContract } from './promptSections.ts';
+import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, storylineContract, whisperUserHint } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
-  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
+  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, defaultPromptContent, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
@@ -40,6 +40,12 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const fileRef = useRef<HTMLInputElement>(null);
   const preset = presets.find(item => item.id === selectedId) ?? presets[0];
   const entries = useMemo(() => (preset ? presetPrompts(preset) : []), [preset]);
+  /** 与出厂文本比对：契约比 defaultContent，普通词条比 DEFAULT_PROMPTS / SECTION_PROMPTS。 */
+  const changed = (entry: { id: string; content: string; contract?: boolean; defaultContent?: string }) => {
+    if (entry.contract) return entry.content.trim() !== (entry.defaultContent ?? '').trim();
+    const builtin = defaultPromptContent(entry.id);
+    return builtin !== undefined && entry.content.trim() !== builtin.trim();
+  };
   const activeTask: PromptTask | null = view !== 'shared' && view !== 'all' ? view : null;
   const visibleEntries = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => view === 'all' || promptScope(entry) === view);
   const viewLabel = view === 'all' ? '全部用途' : promptScopeLabel(view);
@@ -320,6 +326,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
             <span className="preset-scope-current">{viewLabel}</span>
             <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm(view === 'all' ? '恢复成默认词条？当前编辑会被覆盖。' : `恢复「${viewLabel}」的默认词条？该页的编辑会被覆盖。`)) resetScope(); }}><RotateCcw size={12}/>{view === 'all' ? '恢复全部默认' : view === 'shared' ? '恢复共用默认' : '恢复本任务'}</button>
             <span className="preset-order-note">注入 {activePrompts(preset, view === 'all' ? undefined : view).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
+            <span className="preset-order-changed" title="与出厂文本不同的词条数，方便你逐条复核">已改 {entries.filter(changed).length} 条</span>
             <span className="preset-token-total">约 {totalTokens} tokens</span>
           </div>
           {view !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === view)?.hint}。代码里的 JSON 输出契约会自动追加在本页词条之后，不需要写进词条。</p>}
@@ -362,6 +369,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                   {(['system', 'user', 'assistant'] as const).map(role => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
                 </select>}
                 {entry.contract && <span className="preset-entry-contract" title="这段文本永远追加在本任务的最后；改了就按你写的走">结构契约 · 最后注入</span>}
+                {changed(entry) && <span className="preset-entry-changed" title="与出厂文本不同">已改</span>}
                 <span className="preset-entry-tokens">{entry.marker ? '——' : `${promptTokens(entry.content)}t`}</span>
                 <div className="preset-entry-move">
                   <button type="button" id={`preset-entry-up-${index}`} aria-label="上移" disabled={!editable || index === 0} onClick={() => moveEntry(index, -1)}><ArrowUp size={12}/></button>

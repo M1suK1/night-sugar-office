@@ -803,3 +803,10 @@
 - [x] 预设界面的契约词条带「结构契约 · 最后注入」角标，改了就按你写的走。
 - [x] 测试：新增 `tests/v64.test.ts` 五条（契约词条齐备、改了就用预设、正文不重复、内置与 schema 7、迁移幂等不覆盖）；`game.test.ts` 三处计数断言改成「正文词条数不变 + 契约另算」。
 - [ ] 待做：v63-3b（剩余生成器字面量：单条突发事件模板、storyline/arc 的 user 句、profile/outfit 契约；以及 `prompt-lint` 测试）、v63-4（提示词全量视图：按任务分组 + 改动标记 + 导入导出）。
+## v63-3b / v63-4：字面量搬迁 + 已改标记 + 只减不增闸门
+
+- [x] 又搬了 5 段进 `promptSections.ts`：`whisperUserHint()`、`outfitContract()`、`eventUserHint()`、`arcUserHint(kind)`，`llm.ts` 里对应调用改成函数。
+- [x] 预设界面：普通词条与契约词条都带「已改」角标（契约比 `defaultContent`，普通词条比 `DEFAULT_PROMPTS` / `SECTION_PROMPTS` 的出厂文本），工具栏显示「已改 N 条」，一眼看出哪些被你自己动过。
+- [x] 新增 `tests/prompt-lint.test.ts`：`src/llm.ts` / `llm-night.ts` / `nightSpec.ts` 里的提示词字面量**只减不增**（当前 7 处，全部列出），搬完一处就把 BUDGET 改小；另有「函数都在位」的断言。
+- [ ] 还剩 7 处字面量（都在 `llm.ts` / `llm-night.ts`）：`JSON_RETRY_MESSAGE`、角色起草 / 故事线起点 / 战斗札记 / 单条突发事件 / 故事蓝图 的 JSON 形状段、`dailyContract` 的 JSON 形状行。下一步继续搬，闸门数字往下调。
+- [ ] v63-4 余项：全量视图仍按任务页签分组（已有「全部」页签 + 已改计数），若要一屏平铺全部任务，再做分组折叠。

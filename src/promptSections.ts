@@ -326,6 +326,32 @@ export function newsContract(): string {
   ].join('\n');
 }
 
+/** 灯下私语这一轮的 user 指令（原来是写死在 llm.ts 里的字符串）。 */
+export function whisperUserHint(): string {
+  return '写她此刻发给所长的消息，1–3 条，可以有动作和表情；只输出 JSON。';
+}
+
+/** 服装词条的契约：名字与描述的字数、口吻与禁区。 */
+export function outfitContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"name":"","description":""}',
+    '要求：name 是 4–10 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 50–90 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。',
+  ].join('\n');
+}
+
+/** 私人事件的 user 指令。 */
+export function eventUserHint(name: string): string {
+  return `请写下${name}的这段事件。`;
+}
+
+/** 完整剧情（弧光）三处 user 指令。 */
+export function arcUserHint(kind: 'beat' | 'opening' | 'turn', name = ''): string {
+  if (kind === 'opening') return '请写下这段剧情的开场白。';
+  if (kind === 'turn') return '请接着写下一轮。';
+  return `请写下${name}的这段剧情。`;
+}
+
 /** 灯下私语 / 角色对话的回复格式：1–3 条短消息，动作与台词分开。 */
 export function dialogueContract(): string {
   return [

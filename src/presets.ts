@@ -372,6 +372,14 @@ export function builtinPresets(): ChatPreset[] {
  * 旧预设 / ST 导入补齐用途：缺失的默认词条按 builtin 标记补上，用户删过的不会被反复补。
  * schema 2 补齐全部任务词条；3 只补战斗札记；4/5 只补结构分区；6 起每加一批分区都会按版本补齐。
  */
+/** 某个词条的出厂文本（正文默认值或契约默认值），用来判断玩家是否改过。 */
+export function defaultPromptContent(id: string): string | undefined {
+  const found = DEFAULT_PROMPTS.find(entry => entry.id === id)
+    ?? SECTION_PROMPTS.find(entry => entry.id === id)
+    ?? contractPrompts().find(entry => entry.id === id);
+  return found?.content;
+}
+
 export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   const schema = preset.schema ?? 2;
   if (schema >= PRESET_SCHEMA) return preset;
