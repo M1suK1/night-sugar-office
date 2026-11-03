@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Archive, Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, Upload, RotateCcw, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, SlidersHorizontal, Hourglass, MapPin, Terminal, Save } from 'lucide-react';
-import type { GameState, Girl } from '../types';
+import type { Expression, GameState, Girl } from '../types';
 import { loadResearchPrefs, saveResearchPrefs } from '../research';
 import { buildCost, capacity, seatsTaken, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
@@ -8,6 +8,8 @@ import { BUDGET_MAX, BUDGET_MIN, LLM_BUDGET_TASKS, budgetForTask, defaultLlmBudg
 import { describeVertexCredential, vertexLocation, vertexTarget } from '../vertex';
 import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
+import { EXPRESSIONS, EXPRESSION_META } from '../expressions';
+import { resizeImageFile } from '../image';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
   const taken=seatsTaken(state), full=taken>=capacity(state),poor=state.gold<girl.cost;
   return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{taken} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
@@ -103,6 +105,14 @@ export function SettingsDialog({state,reduced,onReduced,chime=false,onChime,onEx
     setLlmNote(info.kind === 'invalid' ? { ok: false, text: info.message } : { ok: true, text: info.kind === 'service-account' ? `已导入服务账号：${info.clientEmail}（项目 ${info.projectId}）。` : '已导入密钥。' });
   };
   const updatePlayer = (patch: Partial<PlayerProfile>) => { const next = { ...player, ...patch }; setPlayer(next); savePlayerProfile(next); };
+  const uploadDirector = async (file: File | undefined, expression?: Expression) => {
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImageFile(file);
+      if (expression) updatePlayer({ expressions: { ...player.expressions, [expression]: dataUrl } });
+      else updatePlayer({ portrait: dataUrl });
+    } catch { setLlmNote({ ok: false, text: '这张图读不出来：换一张 JPG / PNG。' }); }
+  };
   const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
   const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
   return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2>{boot&&<p className="muted" id="settings-boot-note">这些偏好与凭证只存在本机，不进存档。</p>}<div className="settings-tabs" role="tablist" aria-label="设置分类">{(boot ? [{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }] : [{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }, { id: 'pools', label: '内容池', Icon: Boxes }]).map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
@@ -116,6 +126,18 @@ export function SettingsDialog({state,reduced,onReduced,chime=false,onChime,onEx
           <label><span>名字</span><input id="settings-player-name" value={player.name} maxLength={24} placeholder="例如：白鸟" onChange={e => updatePlayer({ name: e.target.value })}/></label>
           <label><span>称呼 / 代号</span><input id="settings-player-alias" value={player.alias} maxLength={24} placeholder="所长、夜班负责人" onChange={e => updatePlayer({ alias: e.target.value })}/></label>
           <label><span>代词</span><select id="settings-player-pronoun" value={player.pronoun} onChange={e => updatePlayer({ pronoun: e.target.value })}><option value="">不指定</option><option value="你">你</option><option value="他">他</option><option value="她">她</option><option value="TA">TA</option></select></label>
+        </div>
+        <div className="player-portrait-row">
+          <span className="player-portrait-label">立绘</span>
+          <label className="btn small" htmlFor="settings-player-portrait"><Upload size={14} />上传立绘<input id="settings-player-portrait" type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void uploadDirector(file); }} /></label>
+          <div className="player-expression-grid">
+            {EXPRESSIONS.map(expression => (
+              <label key={expression} className="player-expression" title={EXPRESSION_META[expression].note}>
+                <span>{EXPRESSION_META[expression].label}</span>
+                <input id={`settings-player-expression-${expression}`} type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void uploadDirector(file, expression); }} />
+              </label>
+            ))}
+          </div>
         </div>
         <label className="player-wide"><span>外貌</span><input id="settings-player-appearance" value={player.appearance} maxLength={400} placeholder="留白也可以；叙事者会尽量不替你补完。" onChange={e => updatePlayer({ appearance: e.target.value })}/></label>
         <label className="player-wide"><span>性格</span><input id="settings-player-personality" value={player.personality} maxLength={400} placeholder="说话方式、习惯、在意的事。" onChange={e => updatePlayer({ personality: e.target.value })}/></label>

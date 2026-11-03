@@ -933,3 +933,14 @@
 /* v80 语料：只重写语料那一行 */
 .custom-voice-actions{display:flex;align-items:center;gap:8px;margin:2px 0 6px}
 .custom-voice-actions small{font-size:8px;letter-spacing:.03em;color:#887582}
+
+/* v80 所长：发言行里的小头像，没图就画剪影 */
+.director-portrait{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:26px;height:26px;border-radius:50%;overflow:hidden;background:#1b1720;border:1px solid #ffffff1f;font-family:var(--font-data);font-size:11px;color:#b78c9f;letter-spacing:0}
+.director-portrait img{width:100%;height:100%;object-fit:cover;object-position:50% 30%}
+.director-portrait.missing{background:repeating-linear-gradient(45deg,#191420,#191420 4px,#221a28 4px,#221a28 8px)}
+.director-inline{margin-right:7px;vertical-align:middle}
+.player-portrait-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid #ffffff0d}
+.player-portrait-label{font-size:10px;letter-spacing:.06em;color:#887582;padding-top:7px;min-width:34px}
+.player-expression-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:1}
+.player-expression{display:flex;align-items:center;justify-content:center;padding:6px 4px;border:1px dashed #ffffff1f;border-radius:6px;font-size:9px;color:#cbb6c2;cursor:pointer}
+.player-expression:hover{border-color:#d996ad66;color:#f7e6ee}

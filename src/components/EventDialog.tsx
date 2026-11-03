@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { ArrowRight, ChevronRight, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { DirectorPortrait } from './DirectorPortrait';
 import { interleaveTurn } from '../storyLines';
 
 const expressionLabel: Record<Expression, string> = {
@@ -158,6 +159,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
               {turns.length === 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={22} className="spin" /><b>叙事者正在写开场白</b><span>她先开口，你随后决定用什么方式接下去。</span></div>}
               {turns.map((turn, turnIndex) => turn.role === 'player' ? (
                 <div key={turn.id} className="battle-note-line right player-turn">
+                  <DirectorPortrait className="director-inline" />
                   <span className="battle-note-speaker">所长</span>
                   <span className="battle-note-bubble">{turn.text}</span>
                 </div>
@@ -175,6 +177,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
                           style={{ '--speaker-color': colorOf(line.speakerId) } as CSSProperties}
                           onMouseEnter={() => !right && setPreview({ id: line.speakerId, expression: line.expression })}
                           onMouseLeave={() => setPreview(null)}>
+                          {right && <DirectorPortrait className="director-inline" expression={line.expression} />}
                           <span className="battle-note-speaker">{right ? '所长' : line.speakerName}{line.mode === 'thought' ? ' · 心声' : ''}</span>
                           <span className="battle-note-bubble">{line.text}</span>
                         </div>
