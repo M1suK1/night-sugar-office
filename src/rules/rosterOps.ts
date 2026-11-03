@@ -129,8 +129,16 @@ export function applySetStarters(state: GameState, action: Extract<GameAction, {
       next.factionRoster = roster;
       next.customFactionLeaders = parsed.leaders;
       next.customFactionGirls = parsed.girls;
+      // 开局就把助手位定下来：默认名册第一位，编成时也能直接指定；她的好感一并抬到 60，免得一开局就空着。
+      const wantedAssistant = typeof action.assistantId === 'string' ? action.assistantId : undefined;
+      const assistantId = wantedAssistant && starterIds.has(wantedAssistant) ? wantedAssistant : starters[0]?.id;
+      if (assistantId) {
+        next.assistantId = assistantId;
+        const assistant = next.girls.find(girl => girl.id === assistantId);
+        if (assistant) assistant.bond = Math.max(assistant.bond, 60);
+      }
       next.startersPicked = true;
-      next.logs.unshift({ id: `log-starters-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `开局编成完成：${starters.length} 位契约少女，三方阵容已定。` });
+      next.logs.unshift({ id: `log-starters-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `开局编成完成：${starters.length} 位契约少女，三方阵容已定。${assistantId ? `${next.girls.find(girl => girl.id === assistantId)?.name ?? '她'}兼任助手与对外代表。` : ''}` });
       return { state: next, ok: true, message: '编成已确认。' };
 }
 

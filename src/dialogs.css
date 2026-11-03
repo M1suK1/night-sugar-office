@@ -917,3 +917,24 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .workshop-entry.narrator span { grid-column: 1; }
 .workshop-entry.narrator em { grid-column: 1; font-size: 8px; color: #7d7089; font-style: normal; }
 .workshop-entry.narrator button { grid-column: 2; grid-row: 1 / span 2; display: inline-flex; align-items: center; gap: 3px; font-size: 8.5px; }
+
+/* v52：开局编成里直接定助手位（同时是对外代表）。 */
+.starter-assistant {
+  margin-top: 12px; padding: 10px 12px; border-radius: 11px;
+  border: 1px dashed #f3aec933; background: #f3aec90a;
+}
+.starter-assistant-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.starter-assistant-head b { font-size: 11.5px; color: #ffd4e5; letter-spacing: .04em; }
+.starter-assistant-head span { font-size: 10.5px; color: #8f8799; }
+.starter-assistant-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.starter-assistant-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 3px; border-radius: 999px; cursor: pointer;
+  border: 1px solid #ffffff14; background: #0d0b12; color: #cbbfc9; font-size: 11.5px;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+.starter-assistant-chip > span:first-child { width: 25px; height: 25px; border-radius: 50%; overflow: hidden; display: block; }
+.starter-assistant-chip:hover { border-color: #f3aec966; color: #ffd9e8; }
+.starter-assistant-chip.active { border-color: #f3aec9aa; background: #f3aec918; color: #ffd9e8; }
+.starter-assistant-chip i { font-style: normal; font-size: 10px; color: #8f8799; }
+.starter-assistant-chip.active i { color: #f3aec9; }
+.starter-assistant-empty { font-size: 10.5px; color: #7d7688; }

@@ -15,6 +15,7 @@ interface StarterDialogProps {
     girlIds: string[],
     roster: Record<FactionId, FactionRoster>,
     custom: { leaders: FactionLeader[]; girls: FactionGirl[] },
+    assistantId?: string,
   ) => void;
   onAddCard: () => void;
   onAddCustom: () => void;
@@ -64,6 +65,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   useEffect(() => { void loadCardBox().then(setLibrary).catch(() => setLibrary([])); }, []);
   const pool = useMemo<RosterSubject[]>(() => rosterPool(state, library, { cardsOnly, limit: OPENING_CARDS }), [state, library, cardsOnly]);
 
+  const [assistantPick, setAssistantPick] = useState<string | undefined>(state.assistantId);
   const [picked, setPicked] = useState<string[]>(() => {
     const valid = new Set(poolPicks.map(pick => pick.id));
     return starterPicks(state, cardsOnly).filter(id => valid.has(id));
@@ -218,6 +220,8 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     }
   }
   const legal = issues.length === 0;
+  // 助手必须在名册里：没选过、或选完又把人移出名册时，回落到名册第一位。
+  const assistantId = assistantPick && picked.includes(assistantPick) ? assistantPick : picked[0];
 
   /** 把空着的首领 / 随从位用「没被名册选走、也没坐座位」的人补上，只补不换。 */
   const fillEmpty = () => {
@@ -262,7 +266,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
         if (subject && subject.origin === 'custom') girls.push(customGirlOf(faction, subject));
       }
     }
-    onConfirm(picked, roster, { leaders, girls });
+    onConfirm(picked, roster, { leaders, girls }, assistantId);
   };
 
   const rosterOf = (faction: FactionId) => {
@@ -443,6 +447,35 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           </div>
         </section>
       )}
+
+      <section className="starter-assistant" aria-label="助手与对外代表">
+        <div className="starter-assistant-head">
+          <b>助手 / 对外代表</b>
+          <span>开局就定下来：她的好感直接拉到 60，议会里替你说话的就是她。不选则默认名册第一位。</span>
+        </div>
+        <div className="starter-assistant-list">
+          {picked.map(id => {
+            const subject = pool.find(item => item.id === id);
+            if (!subject) return null;
+            const active = assistantId === id;
+            return (
+              <button
+                key={id}
+                id={`starter-assistant-${id}`}
+                type="button"
+                className={`starter-assistant-chip ${active ? 'active' : ''}`}
+                aria-pressed={active}
+                onClick={() => setAssistantPick(id)}
+              >
+                <GirlPortrait girl={{ id: subject.id, name: subject.name, color: subject.color, portrait: subject.portrait, portraitSpec: subject.portraitSpec }} variant="avatar" />
+                <span>{subject.name}</span>
+                <i>{active ? '助手 · 代表' : '设为助手'}</i>
+              </button>
+            );
+          })}
+          {picked.length === 0 && <span className="starter-assistant-empty">名册还是空的，选两个人之后可以把其中一位留作助手。</span>}
+        </div>
+      </section>
 
       <footer className="starter-foot">
         <span className={legal ? 'starter-ok' : 'starter-bad'} title={issues.join('；')}>

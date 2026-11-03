@@ -1,4 +1,5 @@
 import { STAT_JITTER, STAT_MIN, mulberry32 } from '../content/archetypes.ts';
+import { factionLeaderLevel, factionMemberLevel } from '../factions.ts';
 import { factionGirls } from '../content/factionGirls.ts';
 import { getSkill } from '../content/skills.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
@@ -57,7 +58,7 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
     note: '由事务所编入名册的少女。',
-    level: Math.max(1, Math.min(20, Math.round(typeof src.level === 'number' ? src.level : 1))),
+    level: factionLeaderLevel(typeof src.level === 'number' ? src.level : undefined),
     stats: sanitizeSubjectStats(src.stats),
     skillIds: Array.isArray(src.skillIds) ? src.skillIds.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
     archetype: src.archetype ?? '输出',
@@ -82,7 +83,7 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     portrait: typeof src.portrait === 'string' ? src.portrait : '',
     portraitSpec: src.portraitSpec,
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
-    level: Math.max(1, Math.min(20, Math.round(typeof src.level === 'number' ? src.level : 1))),
+    level: factionMemberLevel(typeof src.level === 'number' ? src.level : undefined),
     stats: sanitizeSubjectStats(src.stats),
     skills: Array.isArray(src.skills) ? src.skills.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
     tag: faction,

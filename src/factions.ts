@@ -200,11 +200,21 @@ export function subjectOfCustom(input: {
 }
 
 /** 把面板条目固化成某一方的随从。 */
+/** 编进势力的等级口径：首领 10 级，随从 8–9 级。 */
+export const FACTION_LEADER_LEVEL = 10;
+export const FACTION_MEMBER_LEVELS = [8, 9] as const;
+export function factionMemberLevel(level?: number): number {
+  return typeof level === 'number' && level >= 9 ? 9 : 8;
+}
+export function factionLeaderLevel(_level?: number): number {
+  return FACTION_LEADER_LEVEL;
+}
+
 export function customGirlOf(faction: FactionId, subject: RosterSubject): FactionGirl {
   return {
     id: subject.id, faction, name: subject.name, codename: subject.codename ?? subject.name,
     title: subject.title, portrait: subject.portrait, portraitSpec: subject.portraitSpec,
-    color: subject.color, level: subject.level,
+    color: subject.color, level: factionMemberLevel(subject.level),
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
     cardId: subject.cardId,
@@ -217,7 +227,7 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
     id: subject.id, faction, name: subject.name, title: subject.title,
     portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
     quote: subject.quote, note: '由事务所编入名册的少女。',
-    level: subject.level,
+    level: factionLeaderLevel(subject.level),
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skillIds: subject.skillIds ?? [],
     archetype: '输出',

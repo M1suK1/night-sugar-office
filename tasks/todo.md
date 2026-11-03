@@ -700,3 +700,10 @@
 - [x] **保存**：保存时先 `savePlayerProfile()` 再 `onSave(office)`，页脚按页签给出不同的落库说明（世界书 / 仅本地），并显示「已保存」。
 - [x] 样式：卡片与 `.world-faction-card` 同一套边框、渐变与 hover；页签沿用设置页 `.settings-tab` 的观感（`.office-tab`）；`styles.css` 末尾追加，不动既有规则。
 - [x] 回归：26 个测试文件 464 项全绿，`tsc` 0 错，`check:rules` 通过；世界书旧入口与浏览器验收用到的 `#office-*`、`#settings-player-*` 选择器全部保留。
+## v52 开局编成直接定助手 + 势力等级统一
+
+- [x] **助手位**：`setStarters` 动作新增 `assistantId`；`applySetStarters` 校验它必须在新名册里，缺省取第一位，并把她的好感抬到 `max(现有, 60)`，编成日志写明「她兼任助手与对外代表」。
+- [x] **编成界面**：`StarterDialog` 在页脚上方新增「助手 / 对外代表」一栏，名册里的人排成一排 chip 可点选（`#starter-assistant-<id>`），默认沿用存档已有助手或名册第一位；选完人又被移出名册时自动回落。
+- [x] **等级口径**：`factions.ts` 新增 `FACTION_LEADER_LEVEL = 10`、`FACTION_MEMBER_LEVELS = [8, 9]` 与 `factionLeaderLevel()` / `factionMemberLevel()`；`customGirlOf` / `customLeaderOf` 与 `sanitizeCustomGirl` / `sanitizeCustomLeader` 全部走这两个函数。
+- [x] **内置数据**：`content/factionGirls.ts` 九位随从改成 8–9 级（每方一位 9 级、其余 8 级），首领本来就是 10 级。
+- [x] 测试：新增 `tests/v52.test.ts` 三条（助手指派与好感 60、回落规则、等级口径与内置数据）；27 个测试文件 467 项全绿，`tsc` 0 错，`check:rules` 通过。

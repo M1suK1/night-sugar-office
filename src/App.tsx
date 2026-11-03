@@ -1106,8 +1106,8 @@ export default function App() {
         forced={phase === 'roster'}
         randomize={phase === 'roster'}
         cardsOnly={boxUsable >= OPENING_CARDS}
-        onConfirm={(girlIds, roster, custom) => {
-          if (!perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls })) return;
+        onConfirm={(girlIds, roster, custom, assistantId) => {
+          if (!perform({ type: 'setStarters', girlIds, roster, customLeaders: custom.leaders, customGirls: custom.girls, assistantId })) return;
           setModal(null);
           // 只在开场编成时推进相位；从设置页重开编成不该把人送回序章。
           if (phase === 'roster') setPhase(state.prologueSeen ? 'play' : 'prologue');

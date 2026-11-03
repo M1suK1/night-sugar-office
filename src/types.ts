@@ -1104,6 +1104,8 @@ export type GameAction =
   | {
       type: 'setStarters';
       girlIds: string[];
+      /** 开局编成时直接指派的助手（同时是对外代表）；缺省取名册第一位。 */
+      assistantId?: string;
       roster: Record<FactionId, FactionRoster>;
       /** 编进势力的自定义少女快照（契约卡库/名册里的人也可以被编成）。 */
       customLeaders?: FactionLeader[];
