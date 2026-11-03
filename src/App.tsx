@@ -58,7 +58,7 @@ import { WitchFormDialog } from './components/WitchFormDialog';
 import { CommandConsole } from './components/CommandConsole';
 import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
-import { blockingIncidents } from './incidents';
+import { blockingIncidents, openIncidentFor } from './incidents';
 import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
@@ -150,6 +150,10 @@ export default function App() {
   const [binding, setBinding] = useState<PresetBinding>(loadBinding);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [incidentFocus, setIncidentFocus] = useState<string | null>(null);
+  /** 点过「稍后再说」的事件：不再自己弹，但还留在任务列表里。换日重置。 */
+  const [deferredIncidents, setDeferredIncidents] = useState<string[]>([]);
+  // 换了一天，昨天说「稍后再说」的事还得再摆一次：不催就没人管了。
+  useEffect(() => { setDeferredIncidents([]); }, [state.day]);
   const [arcBusy, setArcBusy] = useState<string | null>(null);
   const STARTED_KEY = 'night-sugar-office:started';
   // 相位取代「已开始」布尔：标题页 → 编成 → 序章 → 正片。会话标记只记「已进入正片」。
@@ -1019,7 +1023,9 @@ export default function App() {
   const blockingPending = blockingIncidents(state);
   const shelfIncidents = pendingIncidents.filter(incident => !blockingPending.some(item => item.id === incident.id));
   const pendingIncident = blockingPending[0]
-    ?? (incidentFocus ? pendingIncidents.find(incident => incident.id === incidentFocus) : undefined);
+    ?? (incidentFocus ? pendingIncidents.find(incident => incident.id === incidentFocus) : undefined)
+    // 没有任何阻塞事件时，也把最新一条还没推迟过的摆出来：事件本来就该自己找上门。
+    ?? openIncidentFor(state, deferredIncidents);
   const startStory = (girlId: string) => {
     const target = state.girls.find(item => item.id === girlId);
     if (!target?.storyPlan) { notify('先生成或画一张故事蓝图，再按蓝图开场。', false); return; }
@@ -1430,7 +1436,7 @@ export default function App() {
       </Dialog>;
     })()}
     {/* 弹窗事件排队：对话框或开场演出还开着时先不弹，避免盖掉玩家正在做的事。 */}
-    {!modal && state.prologueSeen && pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => { perform({ type: 'resolveIncident', incidentId: pendingIncident.id, ...(optionId ? { optionId } : {}) }); setIncidentFocus(null); }} onGirl={girl} />}
+    {!modal && state.prologueSeen && pendingIncident && <IncidentDialog incident={pendingIncident} state={state} onChoose={optionId => { perform({ type: 'resolveIncident', incidentId: pendingIncident.id, ...(optionId ? { optionId } : {}) }); setIncidentFocus(null); }} onDefer={blockingPending.length ? undefined : () => setDeferredIncidents(list => [...list, pendingIncident.id])} onGirl={girl} />}
     {modal?.type === 'event' && (() => {
       const target = state.events.find(event => event.id === modal.id);
       if (!target) return null;

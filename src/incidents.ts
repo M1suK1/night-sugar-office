@@ -435,3 +435,17 @@ export function mergeIncidentPool(state: GameState, raws: unknown[], at: { day: 
   state.incidentPool = [...state.incidentPool, ...fresh];
   return fresh.length;
 }
+
+/**
+ * 该主动弹出来的那一条：先看必须立刻决定的，再看还没被「稍后再说」推迟的。
+ *
+ * 以前只有 blocking 的会自己弹，于是叙事者拟的非阻塞事件全都沉在任务列表里，
+ * 玩家不点就永远看不到——事件白生成了。
+ */
+export function openIncidentFor(state: GameState, deferred: readonly string[] = []): Incident | undefined {
+  const blocking = blockingIncidents(state);
+  if (blocking.length) return blocking[0];
+  return state.incidents
+    .filter(incident => incident.status === 'pending' && !deferred.includes(incident.id))
+    .at(-1);
+}

@@ -13,7 +13,7 @@ const kindLabel: Record<Incident['kind'], string> = {
 
 const categoryLabel = { report: '通报', decision: '要拿主意', scene: '一段剧情' } as const;
 
-export function IncidentDialog({ incident, state, onChoose, onGirl }: { incident: Incident; state: GameState; onChoose: (optionId?: string) => void; onGirl?: (id: string) => void }) {
+export function IncidentDialog({ incident, state, onChoose, onDefer, onGirl }: { incident: Incident; state: GameState; onChoose: (optionId?: string) => void; onDefer?: () => void; onGirl?: (id: string) => void }) {
   const girl = incident.girlId ? state.girls.find(item => item.id === incident.girlId) : undefined;
   const district = incident.district ? districts[incident.district] : undefined;
   const category = incidentCategoryOf(incident);
@@ -58,7 +58,11 @@ export function IncidentDialog({ incident, state, onChoose, onGirl }: { incident
             </button>
           )}
         </div>
-        <footer className="incident-foot"><Sparkles size={12} />处理完才能继续推进时间；放着不管它也会到点过去，只是会留下代价。</footer>
+        <footer className="incident-foot">
+          <Sparkles size={12} />
+          {onDefer ? '这件事不急着现在决定：可以先收进任务列表，晚点再处理。' : '处理完才能继续推进时间；放着不管它也会到点过去，只是会留下代价。'}
+          {onDefer && <button id="incident-defer" type="button" className="incident-defer" onClick={onDefer}>稍后再说</button>}
+        </footer>
       </div>
     </div>
   );

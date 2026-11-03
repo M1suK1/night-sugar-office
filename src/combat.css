@@ -970,3 +970,8 @@
 .voice-tone input{flex:1;min-width:0;border:0;background:transparent;padding:0;color:#e6d9e4;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;font-size:11px;letter-spacing:.01em;outline:0;caret-color:#f3aec9}
 .voice-tone input::placeholder{color:#5e4d6b;font-size:10px}
 .voice-tone small{flex:0 0 auto;font-family:var(--font-data);font-size:8px;color:#7d6a89}
+
+/* v81 事件：非阻塞事件的「稍后再说」 */
+.incident-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.incident-defer{margin-left:auto;flex:0 0 auto;padding:4px 10px;border:1px solid #ffffff1f;border-radius:5px;background:#ffffff08;color:#cbb6c2;font-size:9px;letter-spacing:.04em;cursor:pointer;transition:.2s}
+.incident-defer:hover{border-color:#d996ad66;color:#f7e6ee;background:#f3aec914}
