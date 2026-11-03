@@ -769,3 +769,9 @@
 - [x] 新增动作 `allocateStats`（`applyAllocateStats`）：滑条一次提交四项、只克隆一次 state；点数不够时整批作废，不会半截生效。
 - [x] 新增样式：`.allocate-row.slider`、`.allocate-actions`、`.allocate-delta`、`.llm-budget-hint`。
 - [x] 测试：新增 `tests/v60.test.ts`（预设与预算取大、无预设不吃内置 8000、批量加点成功/失败原子性/封顶 120）。
+## 修：1 级少女一单委托就升级
+
+- [x] **原因**：委托经验按**委托的推荐等级**算（`battleExp(rec) = 30 + 10×(rec−1)`），而升级需求按**她自己的等级**算（`expNeeded(1) = 60`）。1 级少女去打推荐等级 4 的战斗委托，基础值正好 60 → 一单升一级；绝望委托（推荐等级 +2）更是一单能连升。
+- [x] 新增 `missionExp(girl, recommendedLevel, kind)`：基础值照旧按推荐等级算，再按**她自己的等级需求封顶**——战斗最多 50%、调查最多 25%。封顶之内高难委托依旧给得更多。
+- [x] `battle.ts` / `investigation.ts` 两处结算改走 `missionExp`；界面说明同步改成「一次最多给 50% / 25%，两次战斗或四次调查升一级」。
+- [x] 测试：新增 `tests/v61.test.ts`（1 级打推荐 4 级战斗不升、两次才升、调查四次升、高难仍多于低难、满级 0）。

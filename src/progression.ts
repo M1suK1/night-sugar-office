@@ -33,6 +33,25 @@ export function battleExp(recommendedLevel: number): number {
 export function investigationExp(recommendedLevel: number): number {
   return Math.round(battleExp(recommendedLevel) / 2);
 }
+
+/**
+ * 委托经验的封顶比例。
+ *
+ * 界面一直写着「连续两次达标战斗或四次调查可提升一级」，但经验是按委托的
+ * 推荐等级算的：1 级少女去打推荐等级 4 的战斗委托，基础值就是 60，正好等于
+ * 1 级的需求（60），于是一单就升级。这里按**她自己的等级需求**封顶：
+ * 一次战斗最多半级、一次调查最多四分之一级，既保住「两次 / 四次」的节奏，
+ * 又保留高难委托给得更多的差别（封顶之内）。
+ */
+export const MISSION_EXP_SHARE = { battle: 0.5, investigation: 0.25 } as const;
+
+export function missionExp(girl: Girl, recommendedLevel: number, kind: 'battle' | 'investigation'): number {
+  const need = expNeeded(girl.level);
+  if (need <= 0) return 0;
+  const base = kind === 'battle' ? battleExp(recommendedLevel) : investigationExp(recommendedLevel);
+  const cap = Math.max(1, Math.floor(need * MISSION_EXP_SHARE[kind]));
+  return Math.min(base, cap);
+}
 export function growthFor(archetype: Archetype = '输出'): [StatKey, StatKey] {
   if (archetype === '输出') return ['magic', 'agility'];
   if (archetype === '守护') return ['empathy', 'magic'];

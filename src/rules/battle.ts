@@ -9,7 +9,7 @@ import { canIntercept, factionGirlsOf, rosterMembers } from '../factions.ts';
 import { openFrontIn } from '../fronts.ts';
 import { recordMissionRun } from '../missionHistory.ts';
 import { clampPollution, districtName, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, purifyTo } from '../pollution.ts';
-import { battleExp } from '../progression.ts';
+import { missionExp } from '../progression.ts';
 import { effectiveDistrictEffect, factionName } from '../territories.ts';
 import type { BattleState, GameState, Girl, Interception, Mission, Scar, StatKey } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
@@ -196,7 +196,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     girl.hp = Math.max(1, unit.hp);
     girl.spirit = effectiveGuard(girl);
     if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
-      grantExpWithNotice(state, girl, battleExp(mission.recommendedLevel));
+      grantExpWithNotice(state, girl, missionExp(girl, mission.recommendedLevel, 'battle'));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
     }
     girl.bond = Math.max(0, Math.min(100, girl.bond + rewards.bond));

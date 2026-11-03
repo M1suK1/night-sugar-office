@@ -351,7 +351,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="growth-columns">
             <div className="growth-col">
             <div className="growth-hero"><div><small>当前目标</small><strong>{girl.goal}</strong><span>{girl.goalKind}倾向 · Lv.{girl.level}</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : `Lv.${girl.level}`}</div></div>
-            <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>战斗经验按推荐等级结算；连续两次达标战斗或四次调查可提升一级。</small></div>
+            <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>经验按委托推荐等级结算，但一次最多给到当前等级需求的 50%（调查 25%）：两次达标战斗或四次调查正好升一级。</small></div>
             <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small></div>
             <div className="allocate-block" id="girl-allocate">
               {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => {
