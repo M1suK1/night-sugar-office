@@ -6,12 +6,11 @@ import { districtPin } from '../rules/missions.ts';
 import { applyPct, districtAt, districts } from '../districts.ts';
 import { endingLabel, ensureGraph, graphBeats } from '../storygraph.ts';
 import { absoluteMinutes, deadlineFor } from '../shift.ts';
-import { deployIncidentCard } from '../rules/encounters.ts';
-import { customIncidentCards } from '../content/library.ts';
+import { buildNodeIncident, stampIncident } from './storyIncidents.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
 import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
 import { pickEquipmentOfTier, pickMissionTemplate } from '../nightPick.ts';
-import type { CharacterEvent, GameState, Girl, Incident, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
+import type { CharacterEvent, GameState, Girl, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
 // v35 从 src/game.ts 拆出：故事蓝图的推进与故事委托（两者互相调用，合成一个模块）。
 
 // v35 从 src/game.ts 拆出：故事蓝图的节点推进。
@@ -106,32 +105,12 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     if (node.kind === 'incident') {
       if (node.data.kind !== 'incident') return;
       const spec = node.data.spec;
-      const card = spec.cardId ? customIncidentCards().find(entry => entry.id === spec.cardId) : undefined;
-      const incident: Incident = card
-        ? { ...deployIncidentCard(state, card), id: 'inc-' + story.id + '-' + node.id, storylineId: story.id }
-        : {
-          id: 'inc-' + story.id + '-' + node.id, day: state.day, kind: spec.kind, source: 'rule',
-          title: spec.title || node.title, body: spec.body,
-          faction: spec.faction, district: spec.district,
-          options: spec.options.map((option, index) => ({ id: 'o' + (index + 1), label: option.label, hint: option.hint, effect: option.effect })),
-          status: 'pending', storylineId: story.id,
-        };
-      // 蓝图里可以写触发时机：immediate 走到就上桌；dayStart / wave 先进待用池，由那两处投放。
-      const trigger = spec.trigger ?? 'immediate';
-      const ttl = Math.max(30, Math.min(480, spec.ttlMinutes ?? 240));
-      const blocking = spec.blocking ?? true;
-      const ready: Incident = {
-        ...incident,
-        id: incident.id,
-        storyNodeId: node.id,
-        ttlMinutes: ttl,
-        blocking,
-        expiresAt: nowAbs(state) + ttl,
-        ...(trigger === 'dayStart' ? { trigger: { kind: 'dayStart' as const } } : {}),
-        ...(trigger === 'wave' ? { trigger: { kind: 'wave' as const, wave: Math.min(2, state.shift.wave) } } : {}),
-      };
+      const built = buildNodeIncident(state, story.id, node.id, node.title, spec);
+      const { incident: ready, immediate } = stampIncident(state, built, {
+        trigger: spec.trigger, ttlMinutes: spec.ttlMinutes, blocking: spec.blocking, storyNodeId: node.id,
+      });
       run.waiting = { kind: 'incident', ref: ready.id };
-      if (trigger === 'immediate') state.incidents.unshift(ready);
+      if (immediate) state.incidents.unshift(ready);
       else state.incidentPool.push(ready);
       return;
     }
@@ -194,11 +173,6 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
     }
     return;
   }
-}
-
-/** 当夜绝对分钟，给超时用。 */
-function nowAbs(state: GameState): number {
-  return state.day * 1440 + state.minutes;
 }
 
 export function resolveStoryWait(state: GameState, storylineId: string, kind: 'mission' | 'incident' | 'opinion' | 'event' | 'choice' | 'wait', ref: string, result: 'success' | 'failure' = 'success', chosenPort?: string): void {
@@ -399,12 +373,15 @@ export function completeStoryMission(state: GameState, mission: Mission): Charac
   }
   if (spec?.followUpIncident) {
     const followUp = spec.followUpIncident;
-    const ttl = Math.max(30, Math.min(480, followUp.ttlMinutes ?? 240));
-    const incident: Incident = {
+    // 追加卡的 trigger 已经在洗白时收敛成 dayStart / wave 或 undefined（＝立刻）。
+    const { incident } = stampIncident(state, {
       ...followUp,
       id: `inc-story-${beat.id}-${state.day}`, day: state.day, status: 'pending', source: followUp.source ?? 'rule',
-      ttlMinutes: ttl, expiresAt: nowAbs(state) + ttl, blocking: followUp.blocking ?? true,
-    };
+    }, {
+      trigger: followUp.trigger?.kind === 'dayStart' ? 'dayStart' : followUp.trigger?.kind === 'wave' ? 'wave' : 'immediate',
+      ttlMinutes: followUp.ttlMinutes, blocking: followUp.blocking,
+      wave: followUp.trigger?.kind === 'wave' ? followUp.trigger.wave : undefined,
+    });
     state.incidents.unshift(incident);
     state.incidents = state.incidents.slice(0, 5);
     state.logs.unshift({ id: `log-story-incident-${beat.id}`, time: dateLabel(state.day, state.minutes), kind: 'incident', text: `${girl.name}的事刚放下，桌上又多了一件必须现在决定的事。` });
