@@ -218,16 +218,28 @@ export function districtPin(districtId: DistrictId, salt: string): { x: number; 
 /** 污染度决定难度档：辖区越脏，高危与绝望越多。 */
 export type DifficultyTier = '低危' | '中危' | '高危' | '绝望';
 
-export function pickDifficulty(state: GameState, district: DistrictId, missionId: string): DifficultyTier {
+export function pickDifficulty(state: GameState, district: DistrictId, missionId: string, baseline?: DifficultyTier): DifficultyTier {
   const level = clampPollution(state.pollution?.[district] ?? 0);
   const weights: Record<DifficultyTier, number> = difficultyWeights(level);
   const order: DifficultyTier[] = ['低危', '中危', '高危', '绝望'];
-  let roll = hashText(`${missionId}:difficulty`) % 100;
-  for (const tier of order) {
-    roll -= weights[tier];
-    if (roll < 0) return tier;
+  // 模板写的档位是锚点：辖区污染只在这一档上下浮动一档。
+  // 不带锚点时才按旧行为全区间抽——「高危模板在干净辖区变成低危」正是这里缺了锚点。
+  const anchor = baseline ? order.indexOf(baseline) : -1;
+  const usable = order.map((tier, index) => ({ tier, weight: anchor < 0 || Math.abs(index - anchor) <= 1 ? weights[tier] : 0 }));
+  const total = usable.reduce((sum, entry) => sum + entry.weight, 0);
+  if (total <= 0) return baseline ?? '低危';
+  let roll = hashText(`${missionId}:difficulty`) % total;
+  for (const entry of usable) {
+    roll -= entry.weight;
+    if (roll < 0) return entry.tier;
   }
-  return '低危';
+  return baseline ?? '低危';
+}
+
+/** 实际危险度与模板基线不同时给界面一句说明；一致时不显示。 */
+export function missionBaselineNote(mission: Pick<Mission, 'difficulty' | 'scaledFrom'>): string | undefined {
+  if (!mission.scaledFrom || mission.scaledFrom === mission.difficulty) return undefined;
+  return `模板基线 ${mission.scaledFrom}`;
 }
 
 /** 抽到的难度反向缩放模板：低危更短更便宜，绝望更长更贵、目标更高。 */
@@ -262,9 +274,11 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
     ? LONG_MIN_DAYS + (hashText(`long:${state.day}:${wave}:${slot}`) % (LONG_MAX_DAYS - LONG_MIN_DAYS + 1))
     : undefined;
   const id = `c-${state.day}-${wave}-${slot}-${template.id}`;
-  // v24：难度由这一片辖区自己的污染度抽，再反向缩放模板。
-  // 模板里写的 `difficulty` 只是基线，工坊预览与故事线套用才会用到它。
-  const difficulty = template.storylineId ? template.difficulty as DifficultyTier : pickDifficulty(state, regionId, id);
+  // v24：难度由这一片辖区自己的污染度抽，再反向缩放模板；
+  // 但模板写的 `difficulty` 是锚点——辖区污染只能在它上下浮动一档，
+  // 否则同一张「高危」模板会在干净辖区变成「低危」，地图与工坊里看到的是两个数。
+  const baseline = DIFFICULTY_SCALE[template.difficulty as DifficultyTier] ? template.difficulty as DifficultyTier : undefined;
+  const difficulty = template.storylineId ? baseline ?? '中危' : pickDifficulty(state, regionId, id, baseline);
   const scale = DIFFICULTY_SCALE[difficulty] ?? DIFFICULTY_SCALE['中危'];
   const baseTarget = Math.round(template.target * scale.target);
   const baseReward = Math.round(template.reward * scale.reward);

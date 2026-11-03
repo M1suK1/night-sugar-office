@@ -938,3 +938,4 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .starter-assistant-chip i { font-style: normal; font-size: 10px; color: #8f8799; }
 .starter-assistant-chip.active i { color: #f3aec9; }
 .starter-assistant-empty { font-size: 10.5px; color: #7d7688; }
+.mission-baseline-note{margin-left:auto;font-size:9px;color:#8a7a93;letter-spacing:.04em;white-space:nowrap;padding-top:2px}

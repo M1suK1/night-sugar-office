@@ -8,6 +8,7 @@ import { factionColor, factionName } from '../territories';
 import { windowLabel } from '../shift';
 import { cityAveragePollution, clampPollution, pollutionEffect, pollutionLines, pollutionRelief, pollutionTier, pollutionTierColors, pollutionTierLabel, pollutionTierNames, pollutionTierOrder } from '../pollution';
 import { canIntercept, factionPurification } from '../factions';
+import { missionBaselineNote } from '../rules/missions';
 import { frontRemaining } from '../fronts';
 import { factionAttitude } from '../economy';
 
@@ -44,7 +45,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
         return <button id={`mission-list-${m.id}`} className="mission-list-row" key={m.id} onClick={() => onMission(m.id)}>
           <Icon size={24} />
           <div>
-            <small>{region.name} · {m.category} · {m.difficulty} · {m.work === 'combat' ? `${m.squad.length} 人编队` : '调查'}</small>
+            <small>{region.name} · {m.category} · {m.difficulty}{missionBaselineNote(m) ? `（${missionBaselineNote(m)}）` : ''} · {m.work === 'combat' ? `${m.squad.length} 人编队` : '调查'}</small>
             <h3>{m.title}</h3>
             <span>{m.duration} 分钟 · {m.reward} 星砂{m.window ? ` · ${windowLabel[m.window]}委托` : ''}{deadline && m.status === 'open' ? ` · ${deadline}` : ''}</span>
           </div>

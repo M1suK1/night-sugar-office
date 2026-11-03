@@ -11,6 +11,7 @@ import { factionName } from '../territories';
 import { clampPollution, pollutionEffect, pollutionIsEstimated, pollutionLines, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierColors, pollutionTierLabel } from '../pollution';
 import { MonsterGlyph } from './MonsterGlyph';
 import { applyEliteBuff, eliteBuffById } from '../content/eliteBuffs';
+import { missionBaselineNote } from '../rules/missions';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
   if (girl.retired) return { ok: false, reason: '已退役' };
@@ -42,12 +43,14 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
     setSelected(current => current.includes(girl.id) ? current.filter(id => id !== girl.id) : current.length >= limit ? current : [...current, girl.id]);
   };
   const workIcon = mission.work === 'combat' ? <Swords size={14} /> : <ScanEye size={14} />;
+  const baselineNote = missionBaselineNote(mission);
   return (
     <div className="mission-dialog-content">
       <div className="modal-eyebrow">{workIcon}城市委托 / {mission.category} · {workLabels[mission.work]}</div>
       <div className="mission-title-row">
         <h2>{mission.title}</h2>
         <span className={`pill work-${mission.work}`}>{mission.difficulty}</span>
+        {baselineNote && <small className="mission-baseline-note">{baselineNote}</small>}
       </div>
       <p className="mission-description">{mission.description}</p>
       <div className="mission-facts">

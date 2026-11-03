@@ -117,7 +117,7 @@ const factionOrder: FactionId[] = ['witch', 'association', 'government'];
 
 function worldBrief(state: GameState) {
   const open = state.missions.filter(m => m.status === 'open');
-  const urgent = open.filter(m => m.boss || m.difficulty === '高').length;
+  const urgent = open.filter(m => m.boss || m.difficulty === '高危' || m.difficulty === '绝望').length;
   const bossMission = state.boss ? state.missions.find(m => m.id === state.boss?.missionId) : undefined;
   const boss = bossMission ? `周期魔物正在城内，相关委托「${bossMission.title}」尚未解决。` : '当前没有周期魔物。';
   const standings = factionOrder.map(id => `${factionInfo[id].name} ${state.factions[id].standing}`).join('，');
