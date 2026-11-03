@@ -105,6 +105,15 @@ function trimRequest(request?: LlmRequestSnapshot): LlmRequestSnapshot | undefin
   return request;
 }
 
+type LlmFinishListener = (info: { kind: string; ok: boolean }) => void;
+let llmFinishListener: LlmFinishListener | undefined;
+
+/** 注册「一次叙事者操作结束」的回调（目前只用来播完成提示音）；返回注销函数。 */
+export function onLlmFinished(listener: LlmFinishListener): () => void {
+  llmFinishListener = listener;
+  return () => { if (llmFinishListener === listener) llmFinishListener = undefined; };
+}
+
 function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { endpoint: string }): LlmLogEntry {
   const full: LlmLogEntry = {
     ...entry,
@@ -115,6 +124,7 @@ function recordLlmLog(entry: Omit<LlmLogEntry, 'id' | 'at' | 'endpoint'> & { end
     request: trimRequest(entry.request),
     response: entry.response,
   };
+  try { llmFinishListener?.({ kind: entry.kind, ok: entry.ok }); } catch { /* 提示音出错不该影响请求结果 */ }
   try {
     let next = [full, ...loadLlmLog()].slice(0, LOG_LIMIT);
     // 请求段不再裁剪后，日志可能撞到 localStorage 配额；优先保住最新一条完整记录。

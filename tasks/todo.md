@@ -852,3 +852,9 @@
 - [x] `App` 里交互剧情不再包 `.story-overlay`：那层带 `backdrop-filter`，会让里面的 `position:fixed` 以它为包含块，全屏会打折扣；`SceneEvent` 仍走旧居中弹窗。
 - [x] 只补了必须的几条样式（`.event-center`、`.event-composer`、`.event-player-art`、`.battle-note-line.player-turn`），其余全部复用战斗札记。
 - [ ] 视觉验收仍待你刷新页面确认（沙箱里 Chromium spawn EPERM，无法截图）。
+## 加：叙事者完成提示音
+
+- [x] 新增 `src/audio.ts`：WebAudio 现场合成两声短音（成功上行、失败下行），不需要音频资源；350ms 内连击只响一次（批量任务不炸耳朵）；没有 AudioContext 的环境静默跳过。
+- [x] `llm.ts` 新增 `onLlmFinished(listener)`，在 `recordLlmLog` 收尾时通知一次——所有叙事者操作（提案、新闻、私语、战斗札记、突发、蓝图…）都自动覆盖，重试不会被算成两次。
+- [x] 设置 → 通用新增「叙事者提示音」开关（`#settings-llm-chime`），默认开，存 localStorage（`night-sugar:llm-chime`）；连接测试不响。
+- [x] 测试：新增 `tests/v69.test.ts` 三条（该不该响的判定、无 localStorage 的默认值、无 AudioContext 时空操作不抛错）。

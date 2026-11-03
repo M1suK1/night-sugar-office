@@ -3,6 +3,8 @@ import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert,
 import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
+import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
+import { onLlmFinished } from './llm';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
@@ -140,6 +142,7 @@ export default function App() {
   const [saved, setSaved] = useState(true);
   const [pendingSave, setPendingSave] = useState<GameState | null>(null);
   const [reduced, setReduced] = useState(readReduced);
+  const [chime, setChime] = useState(loadChimeEnabled);
   const [autoGenerate, setAutoGenerate] = useState(readAutoGenerate);
   const [presets, setPresets] = useState<ChatPreset[]>(loadPresets);
   const [binding, setBinding] = useState<PresetBinding>(loadBinding);
@@ -274,6 +277,12 @@ export default function App() {
       if (queued) void persist(queued);
     }
   }
+  // 叙事者每一次操作结束（成功或失败）都问一次音频模块该不该响；开关存 localStorage。
+  useEffect(() => onLlmFinished(info => {
+    const kind = resolveChime(info, chime);
+    if (kind) playChime(kind);
+  }), [chime]);
+  useEffect(() => { saveChimeEnabled(chime); }, [chime]);
   useEffect(() => { document.documentElement.classList.toggle('reduced-motion', reduced); try { localStorage.setItem('night-sugar:motion', reduced ? 'reduced' : 'full'); } catch { /* Preferences are optional when storage is unavailable. */ } }, [reduced]);
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
@@ -1331,7 +1340,7 @@ export default function App() {
         notify(`已导入 ${entries.length} 张契约卡（分 ${planCardBatches(entries).length} 批读取）。`);
       }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} />}
+      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} chime={chime} onChime={setChime} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
