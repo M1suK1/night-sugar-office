@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
@@ -33,9 +33,13 @@ function gearSummary(item: Equipment) {
   return item.passive ?? (stats || item.description);
 }
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocate }: {
+const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
+const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
+
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
-  onAllocate?: (stat: 'magic' | 'insight' | 'agility' | 'empathy') => void;
+  /** 滑条一次提交四项：由 allocateStats 一次落地，避免连续 +1 互相盖掉。 */
+  onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
@@ -58,7 +62,19 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onPersonality: (text: string) => void;
   onEquip: (itemId: string, slot: 'weapon' | 'charm') => void; onExportCard: () => void; onUseItem: (itemId: string) => void; onUnequip: (slot: 'weapon' | 'charm') => void;
 }) {
-  const [tab, setTab] = useState('overview');
+  const [pending, setPending] = useState<Record<'magic' | 'insight' | 'agility' | 'empathy', number>>({ ...NO_POINTS });
+  const pendingTotal = ALLOCATE_KEYS.reduce((sum, key) => sum + pending[key], 0);
+  // 换人或点数变动（提交成功后）就把滑条归零，避免残留上一次的分配。
+  useEffect(() => { setPending({ ...NO_POINTS }); }, [girl.id, girl.unspentPoints]);
+  /** 单条滑条：总量不超过剩余点数，单项不超过 120。 */
+  const setPendingFor = (key: 'magic' | 'insight' | 'agility' | 'empathy', raw: number) => {
+    const free = girl.unspentPoints ?? 0;
+    const others = ALLOCATE_KEYS.reduce((sum, entry) => sum + (entry === key ? 0 : pending[entry]), 0);
+    const room = Math.max(0, Math.min(free - others, 120 - girl.stats[key]));
+    const value = Math.max(0, Math.min(room, Math.round(Number.isFinite(raw) ? raw : 0)));
+    setPending(current => ({ ...current, [key]: value }));
+  };
+    const [tab, setTab] = useState('overview');
   const [equipmentDrawer, setEquipmentDrawer] = useState<'weapon' | 'charm' | null>(null);
   const [dragOver, setDragOver] = useState<'weapon' | 'charm' | null>(null);
   const [overWitch, setOverWitch] = useState(false);
@@ -338,11 +354,28 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>战斗经验按推荐等级结算；连续两次达标战斗或四次调查可提升一级。</small></div>
             <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small></div>
             <div className="allocate-block" id="girl-allocate">
-              {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => <div key={key} className="allocate-row">
-                <span>{statLabels[key]}<small>{statHint[key]}</small></span>
-                <strong>{girl.stats[key]}</strong>
-                <button id={`girl-allocate-${key}`} type="button" className="btn small" disabled={!(girl.unspentPoints ?? 0) || girl.stats[key] >= 120 || girl.retired || Boolean(girl.dead)} onClick={() => onAllocate?.(key)}>+1</button>
-              </div>)}
+              {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => {
+                const free = girl.unspentPoints ?? 0;
+                const cap = Math.max(0, Math.min(free + pending[key], 120 - girl.stats[key]));
+                const locked = Boolean(girl.retired) || Boolean(girl.dead);
+                return <div key={key} className={`allocate-row slider${pending[key] ? ' is-pending' : ''}`}>
+                  <span>{statLabels[key]}<small>{statHint[key]}</small></span>
+                  <strong>{girl.stats[key]}{pending[key] ? <em className="allocate-delta"> +{pending[key]}</em> : null}</strong>
+                  <input
+                    id={`girl-allocate-${key}`}
+                    type="range" min={0} max={cap} step={1} value={Math.min(pending[key], cap)}
+                    disabled={locked || cap === 0}
+                    aria-label={`${statLabels[key]} 加点`}
+                    aria-valuetext={`${girl.stats[key] + pending[key]}（本次 + ${pending[key]}）`}
+                    onChange={event => setPendingFor(key, Number(event.target.value))}
+                  />
+                  <output htmlFor={`girl-allocate-${key}`}>{pending[key]}</output>
+                </div>;
+              })}
+              <div className="allocate-actions">
+                <button id="girl-allocate-reset" type="button" className="btn small" disabled={!pendingTotal} onClick={() => setPending({ ...NO_POINTS })}>重置</button>
+                <button id="girl-allocate-confirm" type="button" className="btn small primary" disabled={!pendingTotal} onClick={() => { if (pendingTotal) { onAllocateMany?.(pending); setPending({ ...NO_POINTS }); } }}>确认加点 · {pendingTotal} 点</button>
+              </div>
               <p className="small-note">{(girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
             </div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>

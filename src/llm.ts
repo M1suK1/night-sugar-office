@@ -579,10 +579,18 @@ export function budgetForTask(budget: LlmBudget, task?: LlmTaskKey): number {
   return clampBudget(own, clampBudget(budget.unified, BUDGET_UNIFIED_DEFAULT));
 }
 
-/** 生成任务实际使用的运行时：预设提供采样参数与词条，输出额度以设置里的预算为准。 */
+/**
+ * 生成任务实际使用的运行时：预设提供采样参数与词条。
+ *
+ * 输出额度两个旋钮都算数：设置里的输出预算与预设自带的「最大输出」取**较大者**，
+ * 再夹在 BUDGET_MAX 以内。改预设、改预算，哪个调高都能真的抬高上限。
+ */
 export function taskRuntime(preset: ChatPreset | undefined, task: LlmTaskKey): PresetRuntime {
   const runtime = presetRuntime(preset);
-  return { ...runtime, maxTokens: budgetForTask(loadLlmBudget(), task) };
+  const budget = budgetForTask(loadLlmBudget(), task);
+  // 没绑定预设时不算预设那一份（否则会退化成内置预设的 8000，白白放宽所有任务）。
+  const presetTokens = preset ? runtime.maxTokens ?? 0 : 0;
+  return { ...runtime, maxTokens: Math.min(BUDGET_MAX, Math.max(budget, presetTokens)) };
 }
 
 function cloneSettings(settings: LlmSettings): LlmSettings {

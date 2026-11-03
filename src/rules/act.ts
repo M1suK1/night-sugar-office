@@ -13,7 +13,7 @@ import {
   applyBuyItem, applyEquipItem, applyUnequipItem, applyUseItem,
 } from './itemOps.ts';
 import {
-  applyAllocateStat, applyBuild, applyChangeOutfit, applyClearWitchForm,
+  applyAllocateStat, applyAllocateStats, applyBuild, applyChangeOutfit, applyClearWitchForm,
   applyDeleteVariant, applyImportWardrobe, applyRemoveOutfit, applyRenameOutfit,
   applySetExpression, applySetLevelUpMode, applySetOutfitDescription, applySetPersonality,
   applySetVariant, applySetVariants, applySetWitchForm,
@@ -73,6 +73,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'setExpression': return applySetExpression(state, action);
     case 'setPersonality': return applySetPersonality(state, action);
     case 'allocateStat': return applyAllocateStat(state, action);
+    case 'allocateStats': return applyAllocateStats(state, action);
     case 'setLevelUpMode': return applySetLevelUpMode(state, action);
     case 'endNight': return endNight(state);
     case 'importWardrobe': return applyImportWardrobe(state, action);

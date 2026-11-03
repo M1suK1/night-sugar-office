@@ -1495,3 +1495,15 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   .office-tabs { flex-wrap: wrap; }
   .office-tab-note { display: none; }
 }
+.allocate-row.slider{grid-template-columns:minmax(0,1fr) 54px minmax(70px,1fr) 18px}
+.allocate-row.slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:pointer}
+.allocate-row.slider input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:3px;background:#ffffff1f}
+.allocate-row.slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:11px;margin-top:-4px;border-radius:50%;background:#f3aec9;border:0;box-shadow:0 0 0 3px #f3aec926}
+.allocate-row.slider input[type=range]:disabled{cursor:not-allowed;opacity:.4}
+.allocate-row.slider input[type=range]:focus-visible{outline:1px solid #f3aec980;outline-offset:3px;border-radius:4px}
+.allocate-row.slider output{font:500 10px/1 var(--font-data);color:#8d7a96;text-align:right}
+.allocate-row.slider.is-pending output{color:#f3aec9}
+.allocate-delta{color:#f3aec9;font-style:normal;font-size:9px;margin-left:3px}
+.allocate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.allocate-actions .primary{border-color:#f3aec966;color:#f8d7e4}
+.llm-budget-hint{display:block;font-style:normal;font-size:8px;color:#6b5c74;margin-top:1px}

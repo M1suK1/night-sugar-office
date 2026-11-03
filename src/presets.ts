@@ -176,7 +176,7 @@ export interface SamplingField {
 export const SAMPLING_FIELDS: SamplingField[] = [
   { key: 'temp_openai', label: '温度', min: 0, max: 2, step: 0.05, hint: '越高越发散；JSON 任务建议 0.2–0.5。', applied: true, aliases: ['temperature'] },
   { key: 'top_p_openai', label: 'Top P', min: 0, max: 1, step: 0.01, hint: '核采样阈值，和温度二选一调整。', applied: true, aliases: ['top_p'] },
-  { key: 'openai_max_tokens', label: '最大输出', min: 64, max: 32768, step: 32, hint: '预设自带的上限只作参考：实际额度由 设置 → 输出预算（可按任务单独填）决定；真被截断时会自动放大额度重试一次。', applied: true, aliases: ['max_tokens'] },
+  { key: 'openai_max_tokens', label: '最大输出', min: 64, max: 32768, step: 32, hint: '这里的「最大输出」与 设置 → 输出预算 取较大者生效；两边哪个调高都能抬上限，真被截断时还会自动放大额度重试一次。', applied: true, aliases: ['max_tokens'] },
   { key: 'pres_pen_openai', label: '存在惩罚', min: -2, max: 2, step: 0.05, hint: '减少重复话题。', applied: true, aliases: ['presence_penalty'] },
   { key: 'freq_pen_openai', label: '频率惩罚', min: -2, max: 2, step: 0.05, hint: '减少重复用词。', applied: true, aliases: ['frequency_penalty'] },
   { key: 'openai_max_context', label: '上下文预算', min: 2000, max: 400000, step: 1000, hint: '本地裁剪对话历史的上限（字符近似）。', applied: false, aliases: ['max_context'] },

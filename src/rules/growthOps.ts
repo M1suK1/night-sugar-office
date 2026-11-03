@@ -61,6 +61,24 @@ export function applyAllocateStat(state: GameState, action: Extract<GameAction, 
       return { state: next, ok: true, message: `${girl.name}的${stat}提升到 ${girl.stats[action.stat]}，还剩 ${girl.unspentPoints ?? 0} 点。` };
 }
 
+/** allocateStats 的动作处理器：属性点滑条一次提交四项，只克隆一次 state。 */
+export function applyAllocateStats(state: GameState, action: Extract<GameAction, { type: 'allocateStats' }>): ActionResult {
+  const next = clone(state);
+  const girl = findRosterGirl(next, action.girlId);
+  if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+  const spent: string[] = [];
+  for (const key of ['magic', 'insight', 'agility', 'empathy'] as const) {
+    const want = Math.max(0, Math.round(Number(action.plan[key] ?? 0)));
+    if (!want) continue;
+    const result = allocatePoint(girl, key, want);
+    // 点数不够就整批作废：返回原状态，绝不半截生效。
+    if (!result.ok) return { state, ok: false, message: result.message };
+    spent.push(`${statLabel[key]} +${want}`);
+  }
+  if (!spent.length) return { state, ok: false, message: '还没有要加的点。' };
+  return { state: next, ok: true, message: `${girl.name}：${spent.join('、')}，还剩 ${girl.unspentPoints ?? 0} 点。` };
+}
+
 /** setLevelUpMode 的动作处理器（v35 从 act 拆出）。 */
 export function applySetLevelUpMode(state: GameState, action: Extract<GameAction, { type: 'setLevelUpMode' }>): ActionResult {
       if (state.levelUpMode === action.mode) return { state, ok: false, message: '已经是这个模式了。' };

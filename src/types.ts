@@ -1121,6 +1121,8 @@ export type GameAction =
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }
   | { type: 'allocateStat'; girlId: string; stat: StatKey; amount?: number }
+  /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
+  | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }

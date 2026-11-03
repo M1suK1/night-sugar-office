@@ -220,7 +220,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
       </>}
       <section className="llm-budget" aria-label="输出预算">
         <div className="llm-budget-head"><b>输出预算</b><span>{budget.unified} tokens 统一值</span></div>
-        <p className="llm-budget-note">预设里的「最大输出」只作参考，实际额度由这里决定。思维链也吃这份额度，给太宽反而容易被废话占满；填不满或截断时会自动放大一倍重试一次。</p>
+        <p className="llm-budget-note">这里的额度与预设里的「最大输出」取较大者生效。思维链也吃这份额度，给太宽反而容易被废话占满；填不满或截断时会自动放大一倍重试一次。</p>
         <div className="llm-budget-unified">
           <label htmlFor="settings-budget-unified">统一值</label>
           <input id="settings-budget-unified" type="number" inputMode="numeric" min={BUDGET_MIN} max={BUDGET_MAX} step={128} value={budget.unified} onChange={e => setUnified(e.target.value)}/>
@@ -230,7 +230,7 @@ export function SettingsDialog({state,reduced,onReduced,onExport,onImport,onRese
           {LLM_BUDGET_TASKS.map(item => <li key={item.key}>
             <label htmlFor={`settings-budget-task-${item.key}`}>{item.label}</label>
             <input id={`settings-budget-task-${item.key}`} type="number" inputMode="numeric" min={BUDGET_MIN} max={BUDGET_MAX} step={128} value={budget.tasks[item.key] ?? ''} placeholder={String(budget.unified)} onChange={e => setTaskBudget(item.key, e.target.value)}/>
-            <small>{budget.tasks[item.key] === undefined ? '跟随统一值' : `自定义 · 生效 ${budgetForTask(budget, item.key)}`}</small>
+            <small>{budget.tasks[item.key] === undefined ? '跟随统一值' : `自定义 · 生效 ${budgetForTask(budget, item.key)}`}<em className="llm-budget-hint">与预设取较大者</em></small>
           </li>)}
         </ul>
       </section>
