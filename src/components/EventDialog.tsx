@@ -126,20 +126,15 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
         <h2>{event.title}</h2>
         <p className="event-title">{event.hook}</p>
       </header>
-      <div className="session-body">
-        <aside className="session-cast" aria-label="在场角色">
-          {cast.map(person => {
-            const shown = preview && preview.id === person.id ? preview.expression : latest && latest.id === person.id ? latest.expression : person.expression ?? 'calm';
-            return <figure key={person.id} className="story-portrait" style={{ ['--note-color' as string]: person.color }}>
-              <div className="story-portrait-art"><GirlPortrait girl={{ ...person, expression: shown }} variant="full" /></div>
-              <figcaption><b>{person.name}</b><small>{expressionLabel[shown]}</small></figcaption>
-            </figure>;
-          })}
-          <figure className="story-portrait player" aria-label="所长（玩家）">
-            <div className="story-portrait-art"><span>所长</span></div>
+      {/* 版式与战斗札记一致：两侧长条立绘、中间文字，行动输入框留在下方。 */}
+      <div className={['event-stage', 'has-left', cast.length ? 'has-right' : ''].filter(Boolean).join(' ')}>
+        <aside className="event-rail left" aria-label="所长（玩家）">
+          <figure className="event-portrait player" aria-label="所长（玩家）">
+            <div className="event-portrait-art"><span>所长</span></div>
             <figcaption><b>所长</b><small>你</small></figcaption>
           </figure>
         </aside>
+        <main className="event-center">
         <div className="session-stream" role="log" aria-live="polite">
           {turns.length === 0 && <div className="session-loading"><LoaderCircle size={18} className="spin" />叙事者正在写开场白</div>}
           {turns.map((turn, turnIndex) => turn.role === 'player' ? (
@@ -164,6 +159,20 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, onCl
           {loading && turns.length > 0 && <div className="session-loading"><LoaderCircle size={16} className="spin" />她在等你说完</div>}
           <div ref={end} />
         </div>
+        </main>
+        <aside className="event-rail right" aria-label="在场角色">
+          {cast.map(person => {
+            const shown = preview && preview.id === person.id ? preview.expression : latest && latest.id === person.id ? latest.expression : person.expression ?? 'calm';
+            const speaking = Boolean(preview && preview.id === person.id) || Boolean(latest && latest.id === person.id);
+            return <figure key={person.id} className={`event-portrait ${speaking ? 'speaking' : ''}`} style={{ ['--note-color' as string]: person.color }}>
+              <div className="event-portrait-art">
+                <GirlPortrait girl={{ ...person, expression: shown }} variant="full" />
+                <span className="event-portrait-expression">{expressionLabel[shown]}</span>
+              </div>
+              <figcaption><b>{person.name}</b><small>{person.codename ?? '契约者'}</small></figcaption>
+            </figure>;
+          })}
+        </aside>
       </div>
       <footer className="session-foot">
         {options.length > 0 && <div className="session-options">{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}

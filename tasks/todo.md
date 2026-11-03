@@ -837,3 +837,10 @@
 - [x] mission spec 的 `followUpIncident` 改为走这套洗白；`storyRun` 投放时补上 `ttlMinutes` / `expiresAt` / `blocking`，超时同样沿剧情继续。
 - [x] 提示词（`sl-draft` 的 mission 段）补 `followUpIncident`：写法和 incident 节点完全一样、没有出边、只在「委托刚放下桌上就多一件事」时写；纯通报加 `blocking:false` 且不给选项；需要玩家先做选择就用 incident 节点。
 - [x] 测试：新增 `tests/v68.test.ts` 五条（标题正文缺一即丢、trigger 与 ttl 夹住、选项最多三条、委托节点上的追加卡能洗出来、坏卡整张丢弃不影响蓝图）。
+## 改：角色事件界面套用战斗札记的版式
+
+- [x] `EventDialog` 的交互剧情改成三栏舞台：左侧所长（虚线占位 + 「你」）、中间旁白与台词、右侧在场角色长条立绘；底部选项、行动输入框、结束按钮原样保留。
+- [x] 立绘卡沿用战斗札记的语言：3:4.2 长条、底部表情角标、有人说话时描边发光（`.event-portrait.speaking`）、名字 + 身份两行。
+- [x] 新增 `.event-stage` / `.event-rail` / `.event-portrait` / `.event-center` 一套样式（`dialogs.css`），窄屏（≤980px）自动收成单列并隐藏侧栏。
+- [x] 保留全部既有 id（`#event-close`、`#story-action`、`#story-submit`、`#story-end*`、`#story-option-*`、`#story-rewrite-*`），浏览器流程脚本不用改。
+- [ ] 视觉验收：本机沙箱里 Chromium 起不来（spawn EPERM），没能截图自查；需要你刷新页面看一眼两侧立绘的宽度与中间文字的可读性。
