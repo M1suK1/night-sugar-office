@@ -225,7 +225,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
       if (girl.dead) continue;
       gainTrait(state, girl, mission.title, 0.35);
       if (battle.outcome === 'repelled') addCondition(state, girl, mission.title);
-      if (hashText(`${girl.id}:${mission.id}:${state.day}`) % 100 < 28) {
+      if (autoOpinionRoll(battle.outcome, girl.id, mission.id, state.day)) {
         state.opinions.unshift(makeOpinion(state, girl, '同伴', `想再去一次「${mission.title}」`, `这次没有彻底解决。她认为下一次可以做得更好。`, '申请把该委托重新排入优先队列。'));
       }
     }
@@ -393,4 +393,21 @@ export function defeatBoss(state: GameState, day: number): void {
   state.nextBossDay = day + (boss.defeatGapDays ?? 10);
   for (const district of Object.keys(state.pollution) as DistrictId[]) state.pollution[district] = 0;
   state.logs.unshift({ id: `log-boss-defeat-${day}`, time: dateLabel(day, state.minutes), kind: 'battle', text: `${boss.name}倒了。整座城的糖味散了，九个街区的污染一起归零。` });
+}
+
+/**
+ * 战后要不要替她递一条默认议题。
+ *
+ * 击退不算失败也不算胜利：委托还在池子里，报酬按八成结，她已经带着状态回来了。
+ * 这种时候再自动递一条「想再去一次」，只会把议事日填满同义重复的条目
+ * ——击退不再生成默认议题，想谈什么由玩家自己找她。
+ */
+export function autoOpinionRoll(
+  outcome: 'victory' | 'defeat' | 'repelled' | 'draw' | undefined,
+  girlId: string,
+  missionId: string,
+  day: number,
+): boolean {
+  if (outcome === 'repelled' || outcome === 'victory') return false;
+  return hashText(`${girlId}:${missionId}:${day}`) % 100 < 28;
 }
