@@ -9,10 +9,22 @@ export interface AutoGenerateState {
   day: number;
   /** 最近一次自动生成发生在第几日的开门时。缺省按「就是今天」处理，避免读档补发。 */
   generatedDay?: number;
+  /** 序章是否看完。没看完就是在初始化途中，这时候生成会拿默认名册起草。 */
+  prologueSeen?: boolean;
 }
 
-export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean): boolean {
+/**
+ * 该不该自动补一次提案。
+ *
+ * 除了「换日了」之外还有两道闸：
+ *  - 开局那一夜（`openingDay`）不补：首夜由 `openingFill` 用本地内容摆好桌子，
+ *    此时玩家还没走完序章、也还没挑人，让叙事者照着默认名册写提案只会写错人。
+ *  - 序章没看完不补：那说明游戏还在初始化（编成 / 读档 / 建号途中）。
+ */
+export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean, openingDay = 0): boolean {
   if (!enabled) return false;
+  if (state.prologueSeen === false) return false;
+  if (state.day <= openingDay) return false;
   const generated = typeof state.generatedDay === 'number' ? state.generatedDay : state.day;
   return state.day > generated;
 }

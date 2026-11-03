@@ -322,12 +322,14 @@ export default function App() {
     if (!loaded) return;
     // 存档里没有这个日号（旧档、或被读档清洗掉）：先补一个今天的值，不生成。
     if (typeof state.generatedDay !== 'number') { setState(prev => ({ ...prev, generatedDay: prev.day })); return; }
-    if (!shouldAutoGenerate(state, autoGenerate)) return;
+    // 开局那一夜与序章未看完时都不补：初始化没结束就让叙事者照着默认名册写，会写出一份错人的提案。
+    if (!shouldAutoGenerate(state, autoGenerate, OPENING_NEWS_DAY)) return;
+    if (modal) return;
     if (generatingRef.current || !llmHasKey()) return;
     // 先把「今天已经补过」记进存档，再发请求：失败也不会在读档时反复重放。
     setState(prev => (prev.generatedDay === prev.day ? prev : { ...prev, generatedDay: prev.day }));
     void generateContent('auto');
-  }, [state.day, state.generatedDay, autoGenerate, loaded]);
+  }, [state.day, state.generatedDay, autoGenerate, loaded, modal, state.prologueSeen]);
   /** 播报一律走函数式更新：异步生成回来时，别拿旧快照把这一整份状态盖回去。 */
   const commitCityNews = (news: CityNews | null) => {
     let ok = false;
