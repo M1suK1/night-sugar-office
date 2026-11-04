@@ -9,6 +9,8 @@ export interface PortraitSubject {
   name: string;
   color: string;
   portrait: string;
+  /** 立绘在资产库时的 id：与 portrait 二选一，界面会自己解析。 */
+  portraitAsset?: string;
   codename?: string;
   expression?: Expression;
   wardrobe?: Outfit[];
@@ -70,7 +72,7 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
   const corruption = girl.corruption ?? 0;
   const gemCore = girl.witch ? '#d85a7f' : corruption >= 40 ? '#c478b8' : '#fff2f8';
 
-  const assetPortrait = usePortraitSrc(girl);
+  const assetPortrait = usePortraitSrc({ portrait: girl.portrait, portraitAsset: girl.portraitAsset });
   const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : (girl.portrait || assetPortrait);
   const variantKey = expressionVariantKey(activeOutfitId, expression);
   const expressionVariant = girl.importedVariants?.[variantKey];

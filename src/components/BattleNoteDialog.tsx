@@ -18,7 +18,9 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
     id: actor.girlId ?? actor.uid,
     name: actor.name,
     color: actor.color,
-    portrait: actor.portrait,
+    // 单位快照可能只剩资产 id；存档里那位少女的立绘更完整，优先用她的。
+    portrait: girl?.portrait || actor.portrait,
+    portraitAsset: girl?.portraitAsset ?? actor.portraitAsset,
     codename: actor.codename,
     expression,
     portraitSpec: actor.portraitSpec,

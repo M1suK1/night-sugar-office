@@ -4,6 +4,7 @@ import type { BattleState, BattleUnit, BattleEvent } from '../types';
 import { outcomeLabel } from '../combat';
 import { findMonster } from '../content/monsters';
 import { MonsterGlyph } from './MonsterGlyph';
+import { usePortraitSrc } from '../usePortrait';
 
 const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复' };
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
@@ -11,10 +12,12 @@ const effectStats: Record<string, string> = { magic: '魔力', insight: '洞察'
 
 function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean; compact?: boolean }) {
   const monster = unit.side === 'enemy' ? (unit.monster ?? findMonster(unit.portrait)) : undefined;
+  // 存过档的立绘会被搬进资产库，单位里只剩 portraitAsset；直接 <img src={id}> 就是一块空白。
+  const portraitSrc = usePortraitSrc({ portrait: unit.portrait, portraitAsset: unit.portraitAsset });
   return (
     <article className={`battle-unit ${unit.side} ${unit.down ? 'down' : ''} ${active ? 'active' : ''}`} style={{ '--unit-color': unit.color } as React.CSSProperties}>
       <div className="battle-unit-art">
-        {monster ? <MonsterGlyph monster={monster} size={compact ? 46 : 68} /> : <img src={unit.portrait} alt="" />}
+        {monster ? <MonsterGlyph monster={monster} size={compact ? 46 : 68} /> : portraitSrc ? <img src={portraitSrc} alt="" /> : <span className="battle-unit-fallback">{unit.name.slice(0, 1)}</span>}
         {unit.down && <span className="down-stamp">无法行动</span>}
       </div>
       <div className="battle-unit-info">

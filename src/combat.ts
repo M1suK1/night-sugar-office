@@ -101,7 +101,7 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   const gear = equipmentOf(girl);
   const extraSkills = gear.map(item => item.skillId).filter((id): id is string => Boolean(id));
   return {
-    uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, color: girl.color,
+    uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, expression: girl.expression, portraitSpec: girl.portraitSpec,
     hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
     stats: effectiveStats(girl), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,

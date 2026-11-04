@@ -924,7 +924,7 @@ export interface WhisperJob {
 }
 
 export interface BattleUnit {
-  uid: string; side: 'ally' | 'enemy'; name: string; portrait: string; color: string;
+  uid: string; side: 'ally' | 'enemy'; name: string; portrait: string; /** 立绘在资产库时只有这个 id。 */ portraitAsset?: string; color: string;
   hp: number; maxHp: number; spirit: number; maxSpirit: number;
   stats: Record<StatKey, number>; skills: string[]; cooldown: Record<string, number>;
   effects: ActiveEffect[]; down: boolean; insightRoll: number; scarHit: number;

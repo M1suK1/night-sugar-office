@@ -25,6 +25,8 @@ export interface BattleActor {
   name: string;
   codename?: string;
   portrait: string;
+  /** 立绘在资产库时只有这个 id。 */
+  portraitAsset?: string;
   color: string;
   expression: Expression;
   down: boolean;
@@ -47,7 +49,8 @@ function downRoundMap(battle: BattleState): Map<string, number> {
 export function battleActors(battle: BattleState): BattleActor[] {
   const downs = downRoundMap(battle);
   return battle.units.map(unit => {
-    const speakable = Boolean(unit.girlId && unit.portrait);
+    // 立绘搬进资产库之后 portrait 会是空串，只剩 portraitAsset；只认 portrait 会把整队人都判成「不能说话」。
+    const speakable = Boolean(unit.girlId && (unit.portrait || unit.portraitAsset));
     return {
       uid: unit.uid,
       side: unit.side,
@@ -55,6 +58,7 @@ export function battleActors(battle: BattleState): BattleActor[] {
       name: unit.name,
       codename: unit.codename,
       portrait: unit.portrait,
+      portraitAsset: unit.portraitAsset,
       color: unit.color,
       expression: unit.expression ?? 'calm',
       down: unit.down,
