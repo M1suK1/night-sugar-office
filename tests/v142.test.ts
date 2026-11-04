@@ -19,6 +19,8 @@ test('v142 三种形态都能生成，且都带着说明', () => {
       if (offer.kind === 'loan') {
         assert.ok((offer.hours ?? 0) >= 1 && (offer.hours ?? 0) <= 6);
         assert.equal(offer.rate, expeditionGoldPerHour(base));
+      } else if (offer.kind === 'tribute') {
+        assert.ok((offer.amount ?? 0) >= 200 && (offer.amount ?? 0) <= 1000, '索款在 200–1000 之间');
       } else {
         assert.ok(offer.mission, '共建/破坏要带上委托');
         assert.equal(offer.mission!.envoyKind, offer.kind);
@@ -26,7 +28,7 @@ test('v142 三种形态都能生成，且都带着说明', () => {
       }
     }
   }
-  assert.deepEqual([...kinds].sort(), ['coop', 'loan', 'raid'], '三类型都出现过');
+  assert.deepEqual([...kinds].sort(), ['coop', 'loan', 'raid', 'tribute'], '四种形态都出现过');
 });
 
 test('v142 没有空闲少女时不会给借调', () => {
@@ -76,10 +78,11 @@ test('v143 借调：先付钱、好感 +1、不加疲劳、到点回岗', () => 
   const base = createInitialState();
   let faction: FactionId | undefined;
   let offer: ReturnType<typeof envoyOfferOf> | undefined;
+  let offerDay = base.day;
   for (const candidate of FACTIONS) {
     for (let day = 14; day < 40; day += 1) {
       const next = envoyOfferOf({ ...base, day }, candidate);
-      if (next.kind === 'loan') { faction = candidate; offer = next; break; }
+      if (next.kind === 'loan') { faction = candidate; offer = next; offerDay = day; break; }
     }
     if (offer) break;
   }
@@ -87,7 +90,8 @@ test('v143 借调：先付钱、好感 +1、不加疲劳、到点回岗', () => 
   const girl = base.girls.find(item => item.status === 'idle' && !item.retired)!;
   const standing = base.factions[faction!].standing;
   const fatigue = girl.fatigue;
-  const result = act({ ...base, day: offer!.kind === 'loan' || true ? base.day : base.day }, {
+  // 用找到的那一天，否则重算出来的形态会换人（v85 又多了索款这一种）。
+  const result = act({ ...base, day: offerDay }, {
     type: 'acceptFactionTask', faction: faction!, girlId: girl.id, hours: 2,
   });
   // 同一天不一定正好是借调：直接按 offer 的类型断言

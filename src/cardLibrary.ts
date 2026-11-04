@@ -17,7 +17,7 @@
  *  - 任何一步失败都只返回原因，不抛异常——调用方负责回退。
  */
 import { parseGirlCard } from './cards.ts';
-import { baseStatsAt } from './progression.ts';
+import { MAX_LEVEL, baseStatsAt, growthFor } from './progression.ts';
 import type { GirlCard } from './types.ts';
 
 /** 开局从卡库取几位。与内置名册同样的 6 人，宿舍也是 6 个床位。 */
@@ -157,8 +157,23 @@ export function pickLibraryFiles(files: LibraryFile[], count: number, exclude: S
  * 只改卡面字段：血量这类派生物在导入时由 hydrate 重算，这里不硬塞。
  */
 export function normalizeOpeningLevel(girl: GirlCard['girl']): GirlCard['girl'] {
+  return normalizeToLevel(girl, 1);
+}
+
+/**
+ * 把一张卡的等级与四维归一到指定等级（高级招聘用）。
+ *
+ * 成长口径跟升级一致：主属性每级 +2、副属性每级 +1，其余不动。卡里原本的等级只用来
+ * 反推基准，所以同一张卡落到 1 级和落到 4 级，属性差正好是三级成长。
+ */
+export function normalizeToLevel(girl: GirlCard['girl'], level: number): GirlCard['girl'] {
+  const target = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
   const base = baseStatsAt(girl.stats, girl.level, girl.archetype);
-  return { ...girl, level: 1, stats: base };
+  const [main, secondary] = growthFor(girl.archetype);
+  const stats = { ...base };
+  stats[main] = base[main] + (target - 1) * 2;
+  stats[secondary] = base[secondary] + (target - 1);
+  return { ...girl, level: target, stats };
 }
 
 export interface LibraryCardsResult {

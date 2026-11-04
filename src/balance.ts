@@ -41,6 +41,15 @@ export interface BalanceRules {
   pollutionRewardPct: number;
   /** 战斗委托：每多一只魔物，奖励额外提高的百分点。 */
   rewardPerExtraMonster: number;
+  /** 索款：势力直接要钱，200–1000 星砂，每 200 换 1 点好感。 */
+  envoyTributeWeight: number;
+  envoyTributeMin: number;
+  envoyTributeMax: number;
+  envoyTributePerStanding: number;
+  /** 借星砂：1 点安定换多少星砂、每天最多几点、每次扣多少好感。 */
+  factionLoanPerPoint: number;
+  factionLoanDailyCap: number;
+  factionLoanStandingCost: number;
   /** 借调：好感与最长小时数。 */
   envoyLoanStandingGain: number;
   envoyLoanMaxHours: number;
@@ -80,9 +89,9 @@ export const BALANCE_KEY = 'night-sugar:balance';
 
 export const DEFAULT_BALANCE: BalanceRules = {
   clinicBase: 120,
-  clinicPerHp: 9,
+  clinicPerHp: 5,
   clinicKinkFee: 320,
-  clinicHpPerHour: 12,
+  clinicHpPerHour: 30,
   clinicHpPerHourPerLevel: 10,
   clinicCostDiscountPerLevel: 5,
   expeditionMembersPerLevel: 1,
@@ -103,6 +112,13 @@ export const DEFAULT_BALANCE: BalanceRules = {
   pollutionTargetPct: 16,
   pollutionRewardPct: 22,
   rewardPerExtraMonster: 15,
+  envoyTributeWeight: 20,
+  envoyTributeMin: 200,
+  envoyTributeMax: 1000,
+  envoyTributePerStanding: 200,
+  factionLoanPerPoint: 300,
+  factionLoanDailyCap: 10,
+  factionLoanStandingCost: 2,
   envoyLoanStandingGain: 1,
   envoyLoanMaxHours: 6,
   dormFatiguePerHour: 8,
@@ -163,6 +179,13 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'pollutionTargetPct', label: '污染·判定难度', hint: '每 100 点污染让委托目标值加成多少百分比。', min: 0, max: 60, step: 2, unit: '%', group: '污染与难度' },
   { key: 'pollutionRewardPct', label: '污染·报酬加成', hint: '每 100 点污染让委托报酬加成多少百分比。', min: 0, max: 80, step: 2, unit: '%', group: '污染与难度' },
   { key: 'rewardPerExtraMonster', label: '多怪奖励加成', hint: '战斗委托每多一只魔物，奖励额外提高多少百分比。', min: 0, max: 60, step: 5, unit: '%', group: '污染与难度' },
+  { key: 'envoyTributeWeight', label: '索款权重', hint: '势力代表直接索要星砂的权重。', min: 0, max: 80, step: 5, group: '势力代表' },
+  { key: 'envoyTributeMin', label: '索款下限', hint: '一次索款最少要多少星砂。', min: 100, max: 1000, step: 100, unit: '星砂', group: '势力代表' },
+  { key: 'envoyTributeMax', label: '索款上限', hint: '一次索款最多要多少星砂。', min: 200, max: 2000, step: 100, unit: '星砂', group: '势力代表' },
+  { key: 'envoyTributePerStanding', label: '索款每档', hint: '每多少星砂换 1 点好感。', min: 100, max: 500, step: 50, unit: '星砂', group: '势力代表' },
+  { key: 'factionLoanPerPoint', label: '借星砂单价', hint: '向势力借 1 点安定能换多少星砂。', min: 100, max: 800, step: 50, unit: '星砂', group: '势力代表' },
+  { key: 'factionLoanDailyCap', label: '借星砂每日上限', hint: '一天最多能借出多少点安定。', min: 1, max: 40, step: 1, unit: '点', group: '势力代表' },
+  { key: 'factionLoanStandingCost', label: '借星砂好感代价', hint: '每次借星砂扣该势力多少好感。', min: 0, max: 10, step: 1, unit: '好感', group: '势力代表' },
   { key: 'envoyLoanStandingGain', label: '借调好感', hint: '把少女借给势力，涨多少好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyLoanMaxHours', label: '借调最长小时', hint: '一次最多借几个小时。', min: 1, max: 12, step: 1, unit: '小时', group: '势力代表' },
   { key: 'dormFatiguePerHour', label: '宿舍恢复', hint: '宿舍每小时恢复的疲劳；影响挂机节奏。', min: 1, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },

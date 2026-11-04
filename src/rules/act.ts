@@ -6,14 +6,14 @@ import {
   applySetStoryPlan, applyStartCharacterEvent, applyStartStorySession, applyStartStoryline,
 } from './storyOps.ts';
 import {
-  applyAcceptFactionTask, applyAdvancedRecruit, applyCreateGirl, applyImportCard,
+  applyAcceptFactionTask, applyAdvancedRecruit, applyBorrowStability, applyCreateGirl, applyImportCard,
   applyImportCards, applyRefillMarket, applyUpgradeMarket,
 } from './cardOps.ts';
 import {
   applyBuyItem, applyEquipItem, applyUnequipItem, applyUseItem,
 } from './itemOps.ts';
 import {
-  applyAllocateStat, applyAllocateStats, applyBuild, applyChangeOutfit, applyClearWitchForm,
+  applyAllocateStat, applyAllocateStats, applyBuild, applyChangeOutfit, applyClearWitchForm, applySuppressWitch,
   applyDeleteVariant, applyImportWardrobe, applyRemoveOutfit, applyRenameOutfit,
   applySetExpression, applySetLevelUpMode, applySetOutfitDescription, applySetPersonality, applySetPortrait, applySetProfileText,
   applySetVariant, applySetVariants, applySetWitchForm,
@@ -86,6 +86,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'unequipItem': return applyUnequipItem(state, action);
     case 'useItem': return applyUseItem(state, action);
     case 'acceptFactionTask': return applyAcceptFactionTask(state, action);
+    case 'borrowStability': return applyBorrowStability(state, action);
     case 'upgradeMarket': return applyUpgradeMarket(state, action);
     case 'advancedRecruit': return applyAdvancedRecruit(state, action);
     case 'importCard': return applyImportCard(state, action);
@@ -98,6 +99,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'setOutfitDescription': return applySetOutfitDescription(state, action);
     case 'setWitchForm': return applySetWitchForm(state, action);
     case 'clearWitchForm': return applyClearWitchForm(state, action);
+    case 'suppressWitch': return applySuppressWitch(state, action);
     case 'mergeIncidentPool': return applyMergeIncidentPool(state, action);
     case 'addIncident': return applyAddIncident(state, action);
     case 'joinFront': return applyJoinFront(state, action);

@@ -19,7 +19,7 @@ import { loadBalance } from '../balance.ts';
 import { expeditionGoldPerHour } from '../expedition.ts';
 import { absoluteMinutes } from '../shift.ts';
 import { archive, book, clone, dateLabel, findGirl, hashText } from '../rules/core.ts';
-import type { ActionResult, GameAction, GameState, Girl, GirlCard, Storyline, Trait } from '../types.ts';
+import type { ActionResult, FactionId, GameAction, GameState, Girl, GirlCard, Storyline, Trait } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
 /** acceptFactionTask 的动作处理器（v35 从 act 拆出）。 */
@@ -48,12 +48,59 @@ export function applyAcceptFactionTask(state: GameState, action: Extract<GameAct
         return { state: next, ok: true, message: `${girl.name}被${representative}借走 ${hours} 小时，先付了 ${pay} 星砂。` };
       }
 
+      if (offer.kind === 'tribute') {
+        const balance = loadBalance();
+        const step = Math.max(100, balance.envoyTributePerStanding);
+        const min = Math.max(100, balance.envoyTributeMin);
+        const max = Math.max(min, balance.envoyTributeMax);
+        // 允许玩家加钱到下一档（多给的每 200 都算好感），但不超过上限。
+        const requested = Math.round(action.amount ?? offer.amount ?? min);
+        const amount = Math.max(0, Math.min(max, Math.ceil(requested / step) * step));
+        if (amount < min) return { state, ok: false, message: `最少要 ${min} 星砂。` };
+        if (next.gold < amount) return { state, ok: false, message: `手头只有 ${next.gold} 星砂，付不起 ${amount}。` };
+        const gain = Math.floor(amount / step);
+        next.gold -= amount; book(next, next.day, -amount);
+        info.standing = Math.min(100, info.standing + gain);
+        info.envoyTaskId = `tribute-${faction}-${next.day}`;
+        next.logs.unshift({ id: `log-envoy-tribute-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `付给${factionInfo[faction].name} ${amount} 星砂的协调费，好感 +${gain}。`, delta: -amount });
+        return { state: next, ok: true, message: `${representative}收下 ${amount} 星砂，好感 +${gain}。` };
+      }
+
       const mission = offer.mission;
       if (!mission) return { state, ok: false, message: '这份委托没有生成出来，换个势力试试。' };
       next.missions.unshift(mission);
       info.envoyTaskId = mission.id;
       next.logs.unshift({ id: `log-envoy-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `接下${factionInfo[faction].name}代表${representative}的${offer.kind === 'raid' ? '破坏行动' : '委托'}「${mission.title}」。` });
       return { state: next, ok: true, message: `${representative}把任务书推了过来。` };
+}
+
+/**
+ * borrowStability 的动作处理器（v85）：向势力借星砂。
+ *
+ * 安定度一直是只进不出——除了高级招聘没什么地方能花，这里给它一个正经出口：
+ * 1 点安定 = 300 星砂，每天最多 10 点，每借一次扣该势力 2 点好感，且当天不能重复。
+ */
+export function applyBorrowStability(state: GameState, action: Extract<GameAction, { type: 'borrowStability' }>): ActionResult {
+  const next = clone(state);
+  const balance = loadBalance();
+  const info = next.factions[action.faction];
+  if (!info) return { state, ok: false, message: '未知势力。' };
+  const cap = Math.max(1, Math.round(balance.factionLoanDailyCap));
+  const ledger = next.factionBorrow && next.factionBorrow.day === next.day
+    ? next.factionBorrow
+    : { day: next.day, total: 0, factions: [] as FactionId[] };
+  if (ledger.factions.includes(action.faction)) return { state, ok: false, message: '今天已经向这个势力借过了。' };
+  const points = Math.max(1, Math.round(action.points));
+  if (ledger.total + points > cap) return { state, ok: false, message: `今天最多还能借 ${Math.max(0, cap - ledger.total)} 点安定。` };
+  if (next.reputation < points) return { state, ok: false, message: `城市安定度不足，只有 ${next.reputation} 点。` };
+  if (info.standing < 30) return { state, ok: false, message: `${factionInfo[action.faction].short}还没到你开这个口。` };
+  const pay = points * Math.max(1, balance.factionLoanPerPoint);
+  next.reputation -= points;
+  next.gold += pay; book(next, next.day, pay);
+  info.standing = Math.max(0, info.standing - Math.max(0, balance.factionLoanStandingCost));
+  next.factionBorrow = { day: next.day, total: ledger.total + points, factions: [...ledger.factions, action.faction] };
+  next.logs.unshift({ id: `log-borrow-${next.day}-${action.faction}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `拿 ${points} 点城市安定向${factionInfo[action.faction].name}换到 ${pay} 星砂（好感 -${balance.factionLoanStandingCost}）。`, delta: pay });
+  return { state: next, ok: true, message: `换到 ${pay} 星砂，安定 -${points}。` };
 }
 
 /** upgradeMarket 的动作处理器（v35 从 act 拆出）。 */
@@ -80,6 +127,14 @@ export function applyAdvancedRecruit(state: GameState, action: Extract<GameActio
       if (next.candidates.length >= next.poolLimits.candidates) return { state, ok: false, message: `候选名册已满（${next.poolLimits.candidates} 位），请先签约或等待刷新。` };
       next.gold -= cost.gold; next.reputation -= cost.stability; book(next, next.day, -cost.gold);
       next.advancedDay = next.day;
+      const fromLibrary = action.cards?.[0];
+      if (fromLibrary) {
+        // v85：高级招聘不再现场编人——直接从契约卡库取一张，等级归一到指定的 N 级。
+        const imported = importCardInto(next, fromLibrary);
+        if (!imported.ok) return { state, ok: false, message: imported.message };
+        next.logs.unshift({ id: `log-advanced-${next.day}-library`, time: dateLabel(next.day, next.minutes), kind: 'dispatch', text: `协会渠道从契约卡库提了「${imported.name}」（Lv.${level}）进候选名册。` });
+        return { state: next, ok: true, message: `协会渠道从卡库提了一位 ${level} 级候选：${imported.name}。` };
+      }
       const girl = makeCandidate(next, level, next.day + level * 31);
       girl.candidateUntilDay = next.day + 3;
       next.candidates.unshift(girl);

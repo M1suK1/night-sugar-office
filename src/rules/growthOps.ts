@@ -7,7 +7,7 @@ import { sanitizeVoice } from '../voice.ts';
 import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
 import { allocatePoint, statLabel } from '../progression.ts';
 import { buildCost } from '../rules/roster.ts';
-import { book, clone, dateLabel, findRosterGirl } from '../rules/core.ts';
+import { book, clone, dateLabel, findRosterGirl, pushNotice } from '../rules/core.ts';
 import type { ActionResult, GameAction, GameState, Outfit } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -246,9 +246,9 @@ export function applySetWitchForm(state: GameState, action: Extract<GameAction, 
       const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!action.outfit) {
+        // v85：魔女化不再能靠取消礼装自己退。要压回去只能用一支月光抑制剂。
         if (!girl.witch) return { state, ok: false, message: `${girl.name}现在没有处于魔女化状态。` };
-        girl.witch = false;
-        return { state: next, ok: true, message: `${girl.name}已恢复普通形态；魔女化立绘仍留在衣柜第五格。` };
+        return { state, ok: false, message: `魔女化不会自己退。要在诊所给${girl.name}用一支月光抑制剂（clearWitchForm）才能压回去。` };
       }
       const activate = action.activate !== false;
       const witchAt = loadBalance().corruptionThreshold;
@@ -259,8 +259,20 @@ export function applySetWitchForm(state: GameState, action: Extract<GameAction, 
       const witchPersonality = action.personality?.trim().slice(0, 600);
       if (witchPersonality) girl.witchPersonality = witchPersonality;
       if (!activate) return { state: next, ok: true, message: `${girl.name}的魔女化立绘已保存到衣柜第五格。` };
+      const firstTime = !girl.witch;
       girl.witch = true;
       if (!girl.witchPersonality?.trim()) girl.witchPersonality = defaultWitchPersonality(girl);
+      if (firstTime) {
+        // 第一次踏进魔女形态：给她一条单独的通知，别只混在日志里。
+        const seen = (next.notices ?? []).some(notice => notice.kind === 'witch' && notice.girlId === girl.id);
+        if (!seen) {
+          pushNotice(next, {
+            kind: 'witch', day: next.day, minutes: next.minutes, title: `${girl.name}魔女化了`,
+            text: '侵蚀漫过阈值之后她就回不去了：形态锁定，只能用月光抑制剂压回来。',
+            girlId: girl.id,
+          });
+        }
+      }
       next.logs.unshift({ id: `log-witchform-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}允许你保存了她的魔女化立绘。` });
       return { state: next, ok: true, message: `${girl.name}已切换到魔女化立绘，普通服装暂时锁定。` };
 }
@@ -270,8 +282,9 @@ export function applyClearWitchForm(state: GameState, action: Extract<GameAction
       const next = clone(state); const girl = findRosterGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
       if (!girl.witchForm) return { state, ok: false, message: '还没有保存过魔女化立绘。' };
+      // v85：形态锁定之后立绘不能摘——先用抑制剂压回普通形态。
+      if (girl.witch) return { state, ok: false, message: `${girl.name}还在魔女形态里，先用抑制剂压回去再撤立绘。` };
       girl.witchForm = undefined;
-      girl.witch = false;
       return { state: next, ok: true, message: `${girl.name}的魔女化立绘已撤下，第五格重新空出。` };
 }
 
@@ -289,4 +302,18 @@ export function applySetPortrait(state: GameState, action: Extract<GameAction, {
     text: portrait ? `${girl.name}的立绘重新载入。` : `${girl.name}的立绘被清空。`,
   });
   return { state: next, ok: true, message: portrait ? '立绘已重新载入。' : '立绘已清空。' };
+}
+
+/** suppressWitch 的动作处理器（v85）：用月光抑制剂把魔女形态压回去，立绘留在第五格。 */
+export function applySuppressWitch(state: GameState, action: Extract<GameAction, { type: 'suppressWitch' }>): ActionResult {
+  const next = clone(state);
+  const girl = findRosterGirl(next, action.girlId);
+  if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+  if (!girl.witch) return { state, ok: false, message: `${girl.name}现在不是魔女形态。` };
+  if ((next.inventory['moon-drug'] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有月光抑制剂，压不回去。' };
+  next.inventory['moon-drug'] -= 1;
+  girl.witch = false;
+  girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, next.day + 10);
+  next.logs.unshift({ id: `log-witch-suppress-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `给${girl.name}用了一支月光抑制剂，魔女形态压了回去（剩下 ${next.inventory['moon-drug']} 支）。` });
+  return { state: next, ok: true, message: `${girl.name}恢复了普通形态，抑制剂剩 ${next.inventory['moon-drug']} 支。` };
 }

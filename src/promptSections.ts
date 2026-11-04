@@ -168,6 +168,8 @@ ${OOC_GUARD}`),
 2b. 普通提案 authorKind 写 "girl"；代表提案写 "leader" 并填 authorFaction，authorId 必须是该方首领。
 2c. 关系类提案（可选，不必每晚都有）：允许 accept 带 {kind:"truce",pair,days:5–20} 或 {kind:"territory",district,faction}，reject 可带 {kind:"war",pair}；这类提案必须由 leader 提出，pair 必须包含 authorFaction，accept 至少要支付 3000 星砂或割让辖区。没有关系变化时不要写这些字段。
 3. opinions 是 1–{{council.cap}} 条议题的数组（本次至少需要 {{council.need}} 条）；每条的 options 恰好 2 项，id 只能是 accept 与 reject。
+   · 题材尽量错开（钱、人、势力、辖区、私人心愿各一条），其中**优先留一条「给事务所星砂」的**：accept 的 changes 写正数 gold，代价压在 fatigue / bond / corruption / 势力态度上。
+   · 同一天出现同类议案是允许的，不要为了凑类型硬造；确实没有合适的收入型题材，就照实写。
 4. 暂缓由系统固定处理（提出者羁绊 −1、所属势力态度 −2、下个议事日重新提出），你不要写 defer。
 5. reject 只写提出者自己的羁绊下降（bond −2，最多 −5）；不要附带势力态度、星砂、安定度、物品、时间、疲劳、侵蚀或生命的变化——驳回就是驳回，不是罚单。
 6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。

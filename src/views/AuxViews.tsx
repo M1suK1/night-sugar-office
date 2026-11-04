@@ -26,7 +26,9 @@ type BaseViewProps = {
   onStartExpedition: (ids: string[]) => void;
   onRecallExpedition: (id: string) => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
-  onAcceptTask: (faction: FactionId, girlId?: string, hours?: number) => void;
+  onAcceptTask: (faction: FactionId, girlId?: string, hours?: number, amount?: number) => void;
+  /** v85：拿城市安定向势力换星砂。 */
+  onBorrowStability?: (faction: FactionId, points: number) => void;
   onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onCare?: (girlId: string, mode: 'resting') => void;
   onAssistant?: (girlId?: string) => void;
@@ -115,7 +117,7 @@ export function BaseView({
   onStartExpedition,
   onRecallExpedition,
   onDecide,
-  onAcceptTask,
+  onAcceptTask, onBorrowStability,
   onClinic,
   onCare,
   onAssistant,
@@ -324,7 +326,13 @@ export function BaseView({
                           <strong>{representative.name} <small>{representative.title} · {info.name}</small></strong>
                           <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
                           <div className="av-envoy-task">
-                            {offer.kind === 'loan' ? (
+                            {offer.kind === 'tribute' ? (
+                              <>
+                                <b id={`av-envoy-title-${fid}`}>协调费 · {offer.amount?.toLocaleString('zh-CN')} 星砂</b>
+                                <span>每 {200} 星砂换 1 点好感；给多少都行，多给不封顶到 {(offer.amount ?? 0) + 800} 为止</span>
+                                <span className="av-envoy-reward">{offer.note}</span>
+                              </>
+                            ) : offer.kind === 'loan' ? (
                               <>
                                 <b id={`av-envoy-title-${fid}`}>借调人手 · {offer.hours} 小时</b>
                                 <span>按星象台同期结算：每小时 {offer.rate} 星砂，共 {((offer.hours ?? 1) * (offer.rate ?? 0)).toLocaleString('zh-CN')} 星砂</span>
@@ -342,7 +350,27 @@ export function BaseView({
                               <b id={`av-envoy-title-${fid}`}>今天没有可派的活</b>
                             )}
                           </div>
-                          {offer.kind === 'loan' && !done && (
+                          {offer.kind === 'tribute' && !done && (
+                            <div className="av-envoy-loan" role="group" aria-label="选择给多少协调费">
+                              {[0, 200, 400].map(extra => {
+                                const amount = Math.min(1000, (offer.amount ?? 200) + extra);
+                                return (
+                                  <button
+                                    key={extra}
+                                    id={`av-envoy-tribute-${fid}-${amount}`}
+                                    type="button"
+                                    className="av-envoy-loan-pick"
+                                    onClick={() => onAcceptTask(fid, undefined, undefined, amount)}
+                                  >
+                                    <span>{extra === 0 ? '标准' : extra === 200 ? '加一档' : '加两档'} · {amount.toLocaleString('zh-CN')} 星砂（好感 +{Math.floor(amount / 200)}）</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {offer.kind === 'tribute' ? (
+                            <span className={`av-btn av-btn-small ${done ? '' : 'ghost'}`} aria-hidden="true">{done ? '今日已领' : '选金额'}</span>
+                          ) : offer.kind === 'loan' && !done && (
                             <div className="av-envoy-loan" role="group" aria-label="选择借调的契约者">
                               {loanGirls.length ? loanGirls.map(girl => (
                                 <button
@@ -358,7 +386,19 @@ export function BaseView({
                             </div>
                           )}
                         </div>
-                        {offer.kind === 'loan' ? (
+                        {offer.kind === 'tribute' ? (
+                          onBorrowStability && state.reputation > 0 && standing >= 30 ? (
+                            <button
+                              id={`av-envoy-borrow-${fid}`}
+                              type="button"
+                              className="av-btn av-btn-small"
+                              title="拿城市安定换星砂：1 点 = 300 星砂，每天最多 10 点，好感 −2"
+                              onClick={() => onBorrowStability(fid, Math.min(5, state.reputation))}
+                            >
+                              借 5 点安定<ArrowUpRight size={12} />
+                            </button>
+                          ) : <span className="av-btn av-btn-small ghost" aria-hidden="true">{standing >= 30 ? '安定不足' : '好感不足 30'}</span>
+                        ) : offer.kind === 'loan' ? (
                           <span className={`av-btn av-btn-small ${done ? '' : 'ghost'}`} aria-hidden="true">{done ? '今日已领' : '选人借出'}</span>
                         ) : (
                           <button

@@ -39,12 +39,15 @@ export function envoyOfferOf(state: GameState, faction: FactionId): EnvoyOffer {
   if (owned.length) kinds.push('coop');
   if (targets.length) kinds.push('raid');
   if (idle.length) kinds.push('loan');
+  // 索款只要玩家付得起最低档就能提，付不起就不提这份单子。
+  if (state.gold >= Math.max(1, balance.envoyTributeMin)) kinds.push('tribute');
   if (!kinds.length) kinds.push('coop');
 
   const weights: Record<EnvoyKind, number> = {
     coop: Math.max(1, balance.envoyCoopWeight),
     raid: Math.max(1, balance.envoyRaidWeight),
     loan: Math.max(1, balance.envoyLoanWeight),
+    tribute: Math.max(0, balance.envoyTributeWeight) || 1,
   };
   const total = kinds.reduce((sum, kind) => sum + weights[kind], 0);
   let roll = seed % total;
@@ -76,6 +79,19 @@ export function envoyOfferOf(state: GameState, faction: FactionId): EnvoyOffer {
     return {
       kind: 'raid', faction, mission, target: pickTarget.faction, hostility,
       note: `去${districts[district].name}打${factionInfo[pickTarget.faction].short}的人（${squad.length} 人）：对方好感 -${balance.envoyRaidTargetStandingLoss}，两方火气 +${hostility}，报酬高 ${balance.envoyRaidRewardPct}%。`,
+    };
+  }
+
+  if (kind === 'tribute') {
+    const min = Math.max(100, balance.envoyTributeMin);
+    const max = Math.max(min, balance.envoyTributeMax);
+    const step = Math.max(100, balance.envoyTributePerStanding);
+    const steps = Math.max(1, Math.floor((max - min) / step) + 1);
+    const amount = min + (seed % steps) * step;
+    const standing = Math.floor(amount / step);
+    return {
+      kind: 'tribute', faction, amount,
+      note: `${factionInfo[faction].short}要一笔 ${amount} 星砂的「协调费」：给钱，好感 +${standing}；不给也不掉好感，只是这单作废。`,
     };
   }
 

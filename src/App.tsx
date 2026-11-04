@@ -85,7 +85,7 @@ import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
 import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
-import { LIBRARY_START_ROSTER, readLibraryCards } from './cardLibrary';
+import { LIBRARY_START_ROSTER, normalizeToLevel, readLibraryCards } from './cardLibrary';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -991,6 +991,22 @@ export default function App() {
     if (!boxEmpty) setModal({ type: 'cardbox' });
   };
 
+  /**
+   * 高级招聘：先扫卡库挑一张，把卡随动作交给规则层。
+   *
+   * 规则层的动作是同步的，读卡是异步的，所以顺序必须是「读 → 归一 → 下发」。
+   * 卡库读不到（静态部署 / 空库）时不下发卡，规则层退回现场合成，界面会标「临时登记」。
+   */
+  const advancedRecruit = async (level: number) => {
+    const library = await readLibraryCards(1, { exclude: usedCardIds(state) });
+    const card = library.ok ? library.cards[0] : undefined;
+    if (card) {
+      perform({ type: 'advancedRecruit', level, cards: [{ ...card, girl: normalizeToLevel(card.girl, level) }] });
+      return;
+    }
+    perform({ type: 'advancedRecruit', level });
+  };
+
   /** 首夜空缺：先本地兜底，有 key 再让叙事者补上委托与弹窗。 */
   const [openingBusy, setOpeningBusy] = useState(false);
   const openingRunning = useRef(false);
@@ -1438,7 +1454,8 @@ export default function App() {
           onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })}
           onRecallExpedition={id => perform({ type: 'recallExpedition', expeditionId: id })}
           onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })}
-          onAcceptTask={(faction, girlId, hours) => perform({ type: 'acceptFactionTask', faction, girlId, hours })}
+          onAcceptTask={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })}
+            onBorrowStability={(faction, points) => perform({ type: 'borrowStability', faction, points })}
           onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })}
           onCare={(girlId, mode) => perform({ type: 'care', girlId, mode })}
           onAssistant={girlId => perform({ type: 'setAssistant', girlId })}
@@ -1455,7 +1472,7 @@ export default function App() {
       ) : page === 'council' ? (
         <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} />
       ) : page === 'market' ? (
-        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => perform({ type: 'advancedRecruit', level })} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
+        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => void advancedRecruit(level)} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
       ) : (
         <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onBattleNote={openBattleNote} onChronicle={() => setModal({ type: 'chronicle' })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
       )}

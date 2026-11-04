@@ -7,7 +7,7 @@ export type Archetype = '输出' | '守护' | '控制' | '治愈' | '侦查' | '
 export type GirlStatus = 'idle' | 'mission' | 'healing' | 'resting' | 'retired' | 'expedition' | 'left';
 
 /** 势力代表委托的三种形态（v84）。 */
-export type EnvoyKind = 'coop' | 'raid' | 'loan';
+export type EnvoyKind = 'coop' | 'raid' | 'loan' | 'tribute';
 
 export interface EnvoyOffer {
   kind: EnvoyKind;
@@ -19,6 +19,8 @@ export interface EnvoyOffer {
   /** 借调：可借 1–6 小时，每小时收益与星象台同口径。 */
   hours?: number;
   rate?: number;
+  /** 索款：这次要多少星砂（200–1000，每 200 换 1 点好感）。 */
+  amount?: number;
   /** 破坏行动预计加多少火气（按对方辖区污染与安定加权）。 */
   hostility?: number;
   /** 给界面用的短说明。 */
@@ -1050,7 +1052,7 @@ export type PollutionMap = Record<DistrictId, number>;
 /** 一次值得被看见的结果：委托完成、角色升级。 */
 export interface GameNotice {
   id: string;
-  kind: 'mission' | 'level';
+  kind: 'mission' | 'level' | 'witch';
   day: number;
   minutes: number;
   title: string;
@@ -1066,6 +1068,8 @@ export interface GameState {
   assistantId?: string; opinions: Opinion[]; expeditions: Expedition[]; councilDay: number;
   pensionDebt: number;
   factions: Record<FactionId, FactionState>; inventory: Record<string, number>;
+  /** v85：借星砂的当日台账（借了谁、借了几点）。 */
+  factionBorrow?: { day: number; total: number; factions: FactionId[] };
   marketStock: MarketStockEntry[];
   poolLimits: { missions: number; monsters: number; candidates: number; combatMissions?: number; investigationMissions?: number }; removedMonsters: string[];
   marketLevel: number; marketDay: number; advancedDay?: number;
@@ -1204,9 +1208,10 @@ export type GameAction =
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }
-  | { type: 'acceptFactionTask'; faction: FactionId; /** 借调时要指定借谁、借几小时。 */ girlId?: string; hours?: number }
+  | { type: 'acceptFactionTask'; faction: FactionId; /** 借调时要指定借谁、借几小时。 */ girlId?: string; hours?: number; /** 索款时可以加钱到下一档。 */ amount?: number }
+  | { type: 'borrowStability'; faction: FactionId; points: number }
   | { type: 'upgradeMarket' }
-  | { type: 'advancedRecruit'; level: number }
+  | { type: 'advancedRecruit'; level: number; /** 卡库挑来的那张卡：有就从卡库进入候选，没有就现场合成。 */ cards?: GirlCard[] }
   | { type: 'createGirl'; draft: GirlDraft }
   | { type: 'importCard'; card: GirlCard }
   /** 卡库一次交上来一叠，逐张走 importCard 的登记逻辑。 */
@@ -1221,6 +1226,8 @@ export type GameAction =
   | { type: 'setOutfitDescription'; girlId: string; outfitId: string; description: string }
   | { type: 'setWitchForm'; girlId: string; outfit: Outfit | null; activate?: boolean; personality?: string }
   | { type: 'clearWitchForm'; girlId: string }
+  /** v85：用一支月光抑制剂把魔女形态压回去（魔女化不能自己退）。 */
+  | { type: 'suppressWitch'; girlId: string }
   | { type: 'addIncident'; incident: Incident }
   /** 模型生成的一批弹窗，进待用池（由 game 侧洗数据）。 */
   | { type: 'mergeIncidentPool'; entries: unknown[] }

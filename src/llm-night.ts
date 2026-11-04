@@ -785,7 +785,7 @@ export function shouldWarnAllSpend(opinions: readonly {
 function spendWarning(validation: NightValidation): void {
   const opinions = validation.proposal?.opinions;
   if (!opinions || !shouldWarnAllSpend(opinions)) return;
-  validation.warnings.push('三条提案全都在花星砂：至少留一条不花钱的（人事纠纷、排班不满、辖区争议），代价落在关系上。');
+  validation.warnings.push('这批提案全都在花星砂：可以考虑补一条给事务所星砂的（协会拨款、势力预付、辖区补贴），代价压在疲劳或羁绊上。');
 }
 
 function validateNightProposalCore(raw: unknown, state: GameState): NightValidation {

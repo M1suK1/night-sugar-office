@@ -61,8 +61,10 @@ export function defaultOpinionOptions(topic: Opinion['topic'], context: OpinionD
   let acceptOutcomes: OpinionOutcome[] = [];
 
   if (topic === '经费') {
-    accept = [...baseAccept, { kind: 'gold', amount: -600 }, ...bond(3)];
-    reject.push({ kind: 'gold', amount: -300 });
+    // v85：议案不能全是花钱的——「经费」这条反过来，协会拨一笔钱进来，
+    // 代价压在排班（疲劳）与关系（羁绊）上。
+    accept = [...baseAccept, { kind: 'gold', amount: 900 }, ...fatigue(8), ...bond(-1)];
+    reject.push({ kind: 'faction', faction: faction ?? 'association', amount: -1 });
   } else if (topic === '排班') {
     accept = [...baseAccept, { kind: 'minutes', amount: 30 }, ...bond(3), ...fatigue(-4)];
     reject.push({ kind: 'minutes', amount: 30 }, ...fatigue(5));
@@ -82,7 +84,9 @@ export function defaultOpinionOptions(topic: Opinion['topic'], context: OpinionD
     reject.push({ kind: 'minutes', amount: 60 }, ...fatigue(5));
   }
 
-  const acceptEffect = `批准后${authorName}的羁绊上升。`;
+  const acceptEffect = topic === '经费'
+    ? `批准后协会拨款到账（+${900} 星砂），代价是${authorName}要连着加班，羁绊略降。`
+    : `批准后${authorName}的羁绊上升。`;
   const deferEffect = faction ? `羁绊下降，${factionLabel(faction)}的态度下降，留待下个议事日。` : '羁绊下降，留待下个议事日。';
   const rejectEffect = `驳回会降低羁绊${faction ? `与${factionLabel(faction)}的态度` : ''}，并扣掉相应资源。`;
   return [

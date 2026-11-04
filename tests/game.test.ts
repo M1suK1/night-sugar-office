@@ -313,15 +313,16 @@ test('诊所按缺失血量收费并按时长回血，治疗中拒绝出勤', ()
   girl.hp = 30; girl.fatigue = 40;
   const quote = clinicQuote(girl);
   assert.equal(quote.missing, 90);
-  assert.equal(quote.cost, 930);
-  assert.equal(quote.minutes, 300);
+  // v85：诊所改成每点血 5 星砂、每小时回 30 血。
+  assert.equal(quote.cost, 570);
+  assert.equal(quote.minutes, 180);
   const h = act(s, { type: 'clinic', girlId: 'yue', mode: 'treat' });
   assert.equal(h.ok, true);
-  assert.equal(h.state.gold, s.gold - 930);
+  assert.equal(h.state.gold, s.gold - 570);
   const treating = h.state.girls[0];
   assert.equal(treating.status, 'healing');
-  assert.equal(treating.remaining, 300);
-  assert.equal(treatmentFor(h.state, 'yue')?.paid, 930);
+  assert.equal(treating.remaining, 180);
+  assert.equal(treatmentFor(h.state, 'yue')?.paid, 570);
   assert.equal(act(h.state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' }).ok, false);
   const later = act(h.state, { type: 'advance', minutes: 60 }).state.girls[0];
   assert.ok(later.hp > 30 && later.hp < 100, `一小时应只回一部分，实际 ${later.hp}`);
@@ -491,11 +492,12 @@ test('星象台远行按小时结算并可以召回', () => {
   assert.equal(recalled.state.girls.find(g => g.id === 'yue')!.status, 'idle');
 });
 test('会客厅议题可以批准、驳回或暂缓', () => {
-  const s = createInitialState(); const opinion: Opinion = { id: 'op-test', day: 14, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '白光太像诊所。', request: '申请 600 星砂。', status: 'pending', options: [] };
+  // v85：「经费」改成协会拨款（给钱），所以这里用「设施」验证花钱的那一支。
+  const s = createInitialState(); const opinion: Opinion = { id: 'op-test', day: 14, authorId: 'yue', topic: '设施', title: '修补星象台', text: '裂缝又大了。', request: '申请 900 星砂。', status: 'pending', options: [] };
   s.opinions = [opinion];
   const accepted = act(s, { type: 'decideOpinion', opinionId: 'op-test', decision: 'accept' });
   assert.equal(accepted.ok, true);
-  assert.equal(accepted.state.gold, s.gold - 600);
+  assert.equal(accepted.state.gold, s.gold - 900);
   assert.equal(accepted.state.opinions[0].status, 'accepted');
   assert.equal(act(accepted.state, { type: 'decideOpinion', opinionId: 'op-test', decision: 'reject' }).ok, false);
   const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-test', decision: 'reject' });
@@ -504,20 +506,20 @@ test('会客厅议题可以批准、驳回或暂缓', () => {
 });
 test('驳回会同时扣掉星砂、降低羁绊与所属势力态度', () => {
   const s = createInitialState(); s.factions.witch.standing = 50;
-  const options = defaultOpinionOptions('经费', { authorId: 'yue', authorName: '月', faction: 'witch' });
-  s.opinions = [{ id: 'op-reject', day: s.day, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '', request: '', status: 'pending', faction: 'witch', options }];
+  const options = defaultOpinionOptions('设施', { authorId: 'yue', authorName: '月', faction: 'witch' });
+  s.opinions = [{ id: 'op-reject', day: s.day, authorId: 'yue', topic: '设施', title: '修补星象台', text: '', request: '', status: 'pending', faction: 'witch', options }];
   const before = { gold: s.gold, bond: s.girls.find(g => g.id === 'yue')!.bond, standing: s.factions.witch.standing };
   const rejected = act(s, { type: 'decideOpinion', opinionId: 'op-reject', decision: 'reject' });
   assert.equal(rejected.ok, true);
-  assert.equal(rejected.state.gold, before.gold - 300);
+  assert.equal(rejected.state.gold, before.gold - 200);
   assert.equal(rejected.state.girls.find(g => g.id === 'yue')!.bond, before.bond - 2);
   assert.equal(rejected.state.factions.witch.standing, before.standing - 4);
   assert.match(rejected.state.logs[0].text, /星砂/);
 });
 test('资源不足时批准与驳回锁定，暂缓保底并在下个议事日回归', () => {
   const s = createInitialState(); s.gold = 0; s.factions.witch.standing = 0;
-  const options = defaultOpinionOptions('经费', { authorId: 'yue', authorName: '月', faction: 'witch' });
-  const opinion: Opinion = { id: 'op-poor', day: s.day, authorId: 'yue', topic: '经费', title: '换一盏暖灯', text: '', request: '', status: 'pending', faction: 'witch', options };
+  const options = defaultOpinionOptions('设施', { authorId: 'yue', authorName: '月', faction: 'witch' });
+  const opinion: Opinion = { id: 'op-poor', day: s.day, authorId: 'yue', topic: '设施', title: '修补星象台', text: '', request: '', status: 'pending', faction: 'witch', options };
   s.opinions = [opinion];
   assert.equal(previewOpinionOption(s, opinion, options[0]).ok, false);
   assert.equal(previewOpinionOption(s, opinion, options[2]).ok, false);
@@ -1538,7 +1540,19 @@ test('魔女化立绘在侵蚀 40 后解锁，可切换与还原', () => {
   const witch = on.state.girls.find(girl => girl.id === 'yue')!;
   assert.equal(witch.witch, true);
   assert.equal(witch.witchForm?.form, 'witch');
-  assert.equal(act(on.state, { type: 'setWitchForm', girlId: 'yue', outfit: null }).state.girls.find(girl => girl.id === 'yue')!.witch, false);
+  // v85：魔女化锁定——取消礼装不再能自己退，只能用抑制剂。
+  const stuck = act(on.state, { type: 'setWitchForm', girlId: 'yue', outfit: null });
+  assert.equal(stuck.ok, false);
+  assert.match(stuck.message, /月光抑制剂/);
+  const noDrug = act(on.state, { type: 'suppressWitch', girlId: 'yue' });
+  assert.equal(noDrug.ok, false, '仓库里没有抑制剂就压不回去');
+  const stocked = structuredClone(on.state);
+  stocked.inventory['moon-drug'] = 2;
+  const released = act(stocked, { type: 'suppressWitch', girlId: 'yue' });
+  assert.equal(released.ok, true);
+  assert.equal(released.state.girls.find(girl => girl.id === 'yue')!.witch, false);
+  assert.equal(released.state.inventory['moon-drug'], 1, '消耗一支抑制剂');
+  assert.ok((released.state.notices ?? []).some(notice => notice.kind === 'witch' && notice.girlId === 'yue'), '第一次魔女化会留一条通知');
 });
 
 test('魔女化立绘可提前预留，切换后锁定服装并改写可编辑的负面性格', () => {
@@ -1575,7 +1589,11 @@ test('魔女化立绘可提前预留，切换后锁定服装并改写可编辑�
   assert.equal(editedWitch.witchPersonality, '只想把所长留在身边，其他声音都该消失。');
   assert.equal(editedWitch.personality, witch.personality);
 
-  const restored = act(edited.state, { type: 'setWitchForm', girlId: 'yue', outfit: null });
+  // v85：压回普通形态要消耗一支月光抑制剂。
+  const stocked = structuredClone(edited.state);
+  stocked.inventory['moon-drug'] = 1;
+  const restored = act(stocked, { type: 'suppressWitch', girlId: 'yue' });
+  assert.equal(restored.ok, true, restored.message);
   const normal = restored.state.girls.find(girl => girl.id === 'yue')!;
   assert.equal(normal.witch, false);
   assert.equal(normal.witchForm?.id, 'witchform');
@@ -1885,7 +1903,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 39, '在 34 项之上再加 v85 的污染四项与多怪奖励');
+  assert.equal(BALANCE_FIELDS.length, 46, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项与借星砂三项');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);
