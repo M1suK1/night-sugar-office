@@ -82,6 +82,7 @@ import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
 import { cardboxCards, loadCardBox, saveCardBox } from './cardbox';
 import { StarterDialog } from './components/StarterDialog';
+import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
 import { loadLibrary, withCustomStock, type ContentLibrary } from './content/library';
 import { districtOrder, districts, effectLines } from './districts';
@@ -163,6 +164,8 @@ export default function App() {
     setPointsMuted(next);
     savePointsMuted(next);
   };
+  /** 开局读卡进度：null 表示没在读。 */
+  const [starterLoad, setStarterLoad] = useState<{ done: number; total: number; note: string } | null>(null);
   /** 点过「稍后再说」的事件：不再自己弹，但还留在任务列表里。换日重置。 */
   const [deferredIncidents, setDeferredIncidents] = useState<string[]>([]);
   // 换了一天，昨天说「稍后再说」的事还得再摆一次：不催就没人管了。
@@ -881,14 +884,19 @@ export default function App() {
       // 落盘时还会被搬进资产库（v92），存档不会跟着变胖。
       const picks = unusedCards(box, next, OPENING_CARDS);
       if (picks.length) {
+        setStarterLoad({ done: 0, total: picks.length, note: `正在读 ${picks.length} 张契约卡…` });
         // 卡库开局不摆内置候选：这些位置都留给玩家的卡。
         next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
-        next = await importCardsInBatches(next, picks);
+        next = await importCardsInBatches(next, picks, (done, total) => {
+          setStarterLoad({ done, total, note: done >= total ? '正在把立绘降维…' : `第 ${done} / ${total} 批读卡` });
+        });
         const slimmed = await slimStateImages(next);
         next = slimmed.state;
         if (slimmed.changed) console.info('[卡库] 开局选人池已把立绘降到长边 640，避免一次读进几十 MB。');
       }
-    } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ }
+    } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ } finally {
+      setStarterLoad(null);
+    }
     setState(next);
     // 空白档案里没有契约者，先别进编成，否则四个位置一个都填不满。
     setPhase(mode === 'blank' && !next.girls.length && !next.candidates.length ? 'prologue' : 'roster');
@@ -1379,6 +1387,7 @@ export default function App() {
       {modal.type === 'hire' && selectedGirl && <HireDialog girl={selectedGirl} state={state} onConfirm={() => { if (perform({ type: 'hire', girlId: selectedGirl.id })) setModal(null); }} />}
       {modal.type === 'build' && <BuildDialog state={state} initialRoom={modal.id} onConfirm={roomId => { if (perform({ type: 'build', roomId })) setModal(null); }} />}
       {modal.type === 'room' && <RoomDialog state={state} id={modal.id} onGirl={girl} onTalk={talk} onBuild={() => setModal({ type: 'build', id: modal.id })} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })} onRecall={id => perform({ type: 'recallExpedition', expeditionId: id })} onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })} onRest={girlId => perform({ type: 'care', girlId, mode: 'resting' })} onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })} />}
+      {starterLoad && <StarterLoading done={starterLoad.done} total={starterLoad.total} note={starterLoad.note} />}
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
