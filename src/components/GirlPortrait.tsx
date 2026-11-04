@@ -86,7 +86,9 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
           src={shownPortrait}
           onError={event => { event.currentTarget.style.visibility = 'hidden'; event.currentTarget.parentElement?.classList.add('failed'); }}
           alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`}
-          style={cropStyle(activeVariant ? undefined : girl.portraitCrop, framing)}
+          // avatar 不看 crop：小头像是给「认人」用的，细粒度取景放大会把人脸挤出画面，
+          // 统一按人像位置裁，所有头像至少都看得到脸。
+          style={cropStyle(variant === 'avatar' ? undefined : activeVariant ? undefined : girl.portraitCrop, framing)}
         />
       </span>
     );
