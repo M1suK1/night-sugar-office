@@ -88,9 +88,12 @@ export function treatmentFor(state: GameState, girlId: string): Treatment | unde
  * 开局那点星砂根本招不起人——经济压力大半来自这里。现在统一按「基础 + 等级 + 四维」
  * 走，四维总和 260 的五级少女大致 1000 星砂，越强越贵但仍然招得起。
  */
-export function contractCost(level: number, statSum: number): number {
+export const SKILL_PREMIUM = { ultimate: 150, signature: 60 } as const;
+
+export function contractCost(level: number, statSum: number, skillPremium = 0): number {
   const safeLevel = Number.isFinite(level) ? Math.max(1, Math.round(level)) : 1;
   const safeSum = Number.isFinite(statSum) ? Math.max(0, Math.round(statSum)) : 260;
-  const price = Math.round(700 + safeLevel * 25 + safeSum * 0.6);
+  const premium = Number.isFinite(skillPremium) ? Math.max(0, Math.min(600, Math.round(skillPremium))) : 0;
+  const price = Math.round(700 + safeLevel * 25 + safeSum * 0.6) + premium;
   return Math.max(300, Math.min(2000, price));
 }

@@ -1,5 +1,5 @@
 import { sanitizeVoice } from '../voice.ts';
-import { contractCost } from './roster.ts';
+import { contractCost, SKILL_PREMIUM } from './roster.ts';
 import { parseExpressionVariantKey, sanitizeExpressionVariants } from '../expressions.ts';
 import { cardboxReport } from '../cardbox.ts';
 import { customOutfitFor } from '../rules/outfits.ts';
@@ -158,7 +158,8 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     factionTag: cardOrigin,
     portrait: g.portrait ?? '', level: g.level, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-    skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: contractCost(g.level, g.stats.magic + g.stats.insight + g.stats.agility + g.stats.empathy),
+    skill: getSkill(g.skillIds[2]).name, skills: [...g.skillIds], description: g.appearance, cost: contractCost(g.level, g.stats.magic + g.stats.insight + g.stats.agility + g.stats.empathy,
+      g.skillIds.reduce((acc, id) => acc + (getSkill(id).tier === 'ultimate' ? SKILL_PREMIUM.ultimate : getSkill(id).tier === 'signature' ? SKILL_PREMIUM.signature : 0), 0)),
     scars: [], relationships: {}, archetype: g.archetype, quote: g.quote,
     goal: g.goal, goalKind: '成长', traits: cardTraits, conditions: [],
     contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
@@ -250,8 +251,8 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         description: trait.description.trim().slice(0, 120) || '写在契约背面的那句话。',
       }));
       const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
-      // 以前按技能稀有度额外加价（终极 +700、专属 +300），三个好技能就能把一张一级卡抬到两千多；
-      // 价格现在只跟等级与四维走，契约费维持在千元左右。
+      // 技能溢价收温和版：终极 +150、专属 +60。三个好技能大约 +360，一级卡落在 1,2xx。
+      const premium = draft.skillIds.reduce((acc, id) => acc + (getSkill(id).tier === 'ultimate' ? SKILL_PREMIUM.ultimate : getSkill(id).tier === 'signature' ? SKILL_PREMIUM.signature : 0), 0);
       const id = `g_${hashText(`${draft.name}:${next.day}:${next.minutes}:${next.candidates.length}`).toString(16).padStart(8, '0')}`;
       const voice = sanitizeVoice(draft.voice);
       const customOutfit = customOutfitFor({ color: draft.color, outfitDescription: draft.outfitDescription, portrait: draft.portrait, portraitSpec: draft.appearanceSpec });
@@ -269,7 +270,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
         portrait: sanitizePortraitSrc(draft.portrait) ?? sanitizePortraitSrc(wardrobe.find(outfit => outfit.portrait)?.portrait) ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: contractCost(1, sum),
+        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: contractCost(1, sum, premium),
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
         goal: draft.goal, goalKind: '成长', traits, conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
