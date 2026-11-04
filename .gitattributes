@@ -1,0 +1,2 @@
+# 契约卡是数据文件：里面是 base64 图片，不要做换行转换，也不要当文本 diff
+data/cards/*.json -text -diff

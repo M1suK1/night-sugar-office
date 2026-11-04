@@ -10,6 +10,7 @@ artifacts/
 # 本地文件通道的默认落点：目录要留在仓库里，玩家自己导出的存档与卡不进版本库
 data/saves/*.json
 data/cards/*.json
+# 例外：≤3.5MB 的十几张契约卡是有意入库的（git add -f 加进来），别把这条当漏规则删了
 
 # fix-imports.mjs 的临时输入
 tools/.tsc.txt
