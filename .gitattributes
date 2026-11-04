@@ -1,2 +1,6 @@
 # 契约卡是数据文件：里面是 base64 图片，不要做换行转换，也不要当文本 diff
 data/cards/*.json -text -diff
+
+# Windows 批处理必须是 CRLF：LF 会让 cmd 找不到 :label
+*.bat -text
+*.cmd -text

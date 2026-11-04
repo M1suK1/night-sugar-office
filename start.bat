@@ -74,12 +74,22 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+rem 新版 npm 默认不跑依赖的安装脚本，esbuild 的 postinstall 被跳过就没有原生二进制，
+rem build 时的报错会是一句莫名其妙的 esbuild failureErrorWithLog。先把它的脚本放行。
+echo [夜糖] 放行 esbuild 的安装脚本（新版 npm 默认不跑）...
+call npm install-scripts approve esbuild >nul 2>nul
 echo [夜糖] 重新绑定 esbuild 的原生二进制...
 call npm rebuild esbuild
 if errorlevel 1 (
-  echo [夜糖] npm rebuild esbuild 失败。可以删掉 node_modules 再运行 start.bat 重装。
-  pause
-  exit /b 1
+  echo [夜糖] 自动重绑没成功，改成整包重装（会重新跑一次安装脚本）...
+  call npm install --foreground-scripts
+  if errorlevel 1 (
+    echo [夜糖] 仍然失败。请把上面的 npm 报错行发出来；也可以手动执行：
+    echo        npm install-scripts approve esbuild
+    echo        npm rebuild esbuild
+    pause
+    exit /b 1
+  )
 )
 echo [夜糖] 修好了。现在运行 start.bat 试试；还报错就把 build-error.log 里的 ERROR 段落发出来。
 pause
