@@ -165,6 +165,8 @@ export default function App() {
     setPointsMuted(next);
     savePointsMuted(next);
   };
+  /** 上一次提案失败的原文：留着给「重新生成」按钮用。 */
+  const [proposalError, setProposalError] = useState<string | null>(null);
   /** 开局读卡进度：null 表示没在读。 */
   const [starterLoad, setStarterLoad] = useState<{ done: number; total: number; note: string } | null>(null);
   /** 点过「稍后再说」的事件：不再自己弹，但还留在任务列表里。换日重置。 */
@@ -638,6 +640,7 @@ export default function App() {
   };
   const generateContent = async (mode: 'manual' | 'auto' = 'manual'): Promise<{ ok: boolean; message: string }> => {
     if (generatingRef.current) return { ok: false, message: '叙事者还在写上一份提案。' };
+    setProposalError(null);
     const gate = canAcceptGeneratedContent(state);
     if (!gate.ok) {
       if (mode === 'auto') notify(`夜间自动补充跳过：${gate.message}`, false);
@@ -648,6 +651,7 @@ export default function App() {
     try {
       const result = await generateDaily(loadLlmConfig(), state, worldBrief(state), taskRuntime(boundPreset('daily', presets, binding), 'daily'));
       if (!result.ok) {
+        setProposalError(result.message);
         if (mode === 'auto') notify(`夜间自动补充停笔：${result.message}`, false);
         return { ok: false, message: result.message };
       }
@@ -1392,6 +1396,13 @@ export default function App() {
       {modal.type === 'hire' && selectedGirl && <HireDialog girl={selectedGirl} state={state} onConfirm={() => { if (perform({ type: 'hire', girlId: selectedGirl.id })) setModal(null); }} />}
       {modal.type === 'build' && <BuildDialog state={state} initialRoom={modal.id} onConfirm={roomId => { if (perform({ type: 'build', roomId })) setModal(null); }} />}
       {modal.type === 'room' && <RoomDialog state={state} id={modal.id} onGirl={girl} onTalk={talk} onBuild={() => setModal({ type: 'build', id: modal.id })} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })} onRecall={id => perform({ type: 'recallExpedition', expeditionId: id })} onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })} onRest={girlId => perform({ type: 'care', girlId, mode: 'resting' })} onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })} />}
+      {proposalError && (
+        <div className="proposal-retry" role="alert" id="proposal-retry-panel">
+          <span>{proposalError}</span>
+          <button id="proposal-retry" type="button" className="btn small" onClick={() => void generateContent('manual')}>重新生成</button>
+          <button type="button" className="llm-reset" aria-label="关闭" onClick={() => setProposalError(null)}>×</button>
+        </div>
+      )}
       {starterLoad && <StarterLoading done={starterLoad.done} total={starterLoad.total} note={starterLoad.note} />}
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}

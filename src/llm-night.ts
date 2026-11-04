@@ -486,16 +486,6 @@ function parseOutcomes(ctx: Ctx, value: unknown, path: string): OpinionOutcome[]
   return value.map((entry, index) => parseOutcome(ctx, entry, `${path}[${index}]`)).filter((entry): entry is OpinionOutcome => Boolean(entry));
 }
 
-function materialPenalty(changes: OpinionChange[]): boolean {
-  return changes.some(change => {
-    if (change.kind === 'gold' || change.kind === 'reputation') return change.amount < 0;
-    if (change.kind === 'item') return change.amount < 0;
-    if (change.kind === 'minutes') return change.amount > 0;
-    if (change.kind === 'girl') return change.field === 'fatigue' || change.field === 'corruption' ? change.amount > 0 : change.field === 'hp' && change.amount < 0;
-    return false;
-  });
-}
-
 function validateOption(ctx: Ctx, option: OpinionOption, path: string, faction: FactionId, authorId: string) {
   type BondChange = Extract<OpinionChange, { kind: 'girl' }>;
   const allBonds = (option.changes ?? []).filter((change): change is BondChange => change.kind === 'girl' && change.field === 'bond');
@@ -517,13 +507,13 @@ function validateOption(ctx: Ctx, option: OpinionOption, path: string, faction: 
     return;
   }
   if (option.id === 'reject') {
-    const penalty = materialPenalty(option.changes ?? []);
+    // 驳回就是驳回：只允许动提出者的羁绊，不再附带势力态度或资源罚单。
     if (otherBonds.length) error(ctx, path, '驳回只能改动提出者的羁绊');
-    if (!leaderAuthor && (bond.length !== 1 || bond[0].amount !== -2)) error(ctx, path, '驳回必须只包含提出者羁绊 −2');
-    if (factionChanges.length !== 1 || !factionChanges.some(change => change.kind === 'faction' && change.faction === faction && change.amount === -4)) {
-      error(ctx, path, '驳回必须只包含所属势力态度 −4');
-    }
-    if (!penalty && !outcomes.some(outcome => outcome.kind === 'war')) error(ctx, path, '驳回必须包含至少一项实际资源惩罚或开战后果');
+    const onlyAuthorBond = (option.changes ?? []).every(change =>
+      change.kind === 'girl' && change.girlId === authorId && change.field === 'bond');
+    if (!onlyAuthorBond) error(ctx, path, '驳回只能写提出者的 bond 下降，不要写势力态度、星砂、道具或其他人的变化');
+    if (!leaderAuthor && bond.length !== 1) error(ctx, path, '驳回要写一条提出者的羁绊变化（−2，最多 −5）');
+    if (bond.length === 1 && (bond[0]!.amount > -2 || bond[0]!.amount < -5)) error(ctx, path, '羁绊降幅取 −2 到 −5');
     return;
   }
   const cost = (option.changes ?? []).some(change => {

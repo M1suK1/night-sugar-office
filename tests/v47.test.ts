@@ -27,7 +27,7 @@ function slimProposal() {
         ],
         options: [
           { id: 'accept', label: '批准', effect: '多一盏灯，账上少一笔。', changes: [{ kind: 'gold', amount: -600 }, { kind: 'reputation', amount: 1 }], outcomes: [] },
-          { id: 'reject', label: '驳回', effect: '灯不添，人也留不住。', changes: [{ kind: 'girl', girlId: author.id, field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
+          { id: 'reject', label: '驳回', effect: '灯不添，人也留不住。', changes: [{ kind: 'girl', girlId: author.id, field: 'bond', amount: -2 }], outcomes: [] },
         ],
       }],
       envoy: { faction: 'association', title: '协会的临时借调', description: '协会想借调一个人去替他们清点旧档案，说是清点，其实是认人。', work: 'investigation', difficulty: '中危' },

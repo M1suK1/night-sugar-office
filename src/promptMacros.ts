@@ -81,7 +81,13 @@ function leadersText(state: GameState | undefined): string {
   if (!state) return NOT_STARTED;
   return (['association', 'government', 'witch'] as const).map(faction => {
     const rep = factionRepresentativeOf(state, faction);
-    return `- ${rep.name}（${rep.id}）· ${rep.title} · ${factionInfo[faction].name} · Lv.${rep.level}`;
+    // 首领也是要出场的人：只给名字与头衔，模型写出来的首领就成了没有长相的空壳。
+    const looks = [rep.appearance?.trim(), rep.personality?.trim()].filter(Boolean);
+    const lookLine = looks.length ? `
+  外貌与性格：${looks.join('；')}` : '';
+    const quote = rep.quote?.trim() ? `
+  语气参考：「${rep.quote.trim()}」` : '';
+    return `- ${rep.name}（${rep.id}）· ${rep.title} · ${factionInfo[faction].name} · Lv.${rep.level}${lookLine}${quote}`;
   }).join('\n');
 }
 

@@ -134,7 +134,7 @@ const nightProposal = (): NightProposalV2 => ({
     options: [
       { id: 'accept', label: '批准', effect: '从本月经费中拨出一笔钱，把窗边重新布置。', changes: [{ kind: 'gold', amount: -600 }, { kind: 'girl', girlId: 'yue', field: 'bond', amount: 3 }], outcomes: [] },
       { id: 'defer', label: '暂缓', effect: '今晚先不动窗边，等下次例会再说。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -1 }, { kind: 'faction', faction: 'witch', amount: -2 }], outcomes: [] },
-      { id: 'reject', label: '驳回', effect: '窗边保持原样，经费也不能动。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 }, { kind: 'faction', faction: 'witch', amount: -4 }, { kind: 'gold', amount: -300 }], outcomes: [] },
+      { id: 'reject', label: '驳回', effect: '窗边保持原样，经费也不能动。', changes: [{ kind: 'girl', girlId: 'yue', field: 'bond', amount: -2 }], outcomes: [] },
     ],
   },
   envoy: {

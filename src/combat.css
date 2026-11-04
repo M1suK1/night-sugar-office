@@ -1048,3 +1048,9 @@
 
 /* v108 列表小头像：没有立绘就画名字首字，别留一块空白 */
 .girl-thumb-fallback{display:inline-grid;place-items:center;background:linear-gradient(160deg,#241a2c,#120e18);color:color-mix(in srgb, var(--thumb-color,#c478b8) 78%,#ffffff 22%);font-family:var(--font-display);font-size:13px;line-height:1;border-radius:4px}
+
+/* v109 提案生成失败：右下角留一条带「重新生成」的提示 */
+.proposal-retry{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:130;display:flex;align-items:center;gap:10px;max-width:min(760px,92vw);padding:10px 12px;border:1px solid #e08e9b55;border-radius:8px;background:#1b1017;box-shadow:0 14px 34px #0008;color:#f0c6d2}
+.proposal-retry>span{flex:1;min-width:0;font-size:10px;line-height:1.8;letter-spacing:.02em}
+.proposal-retry .btn.small{padding:4px 10px;font-size:9px;white-space:nowrap}
+.proposal-retry .llm-reset{flex:0 0 auto;font-size:13px;line-height:1;color:#a992a6}

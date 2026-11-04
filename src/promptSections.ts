@@ -169,7 +169,7 @@ ${OOC_GUARD}`),
 2c. 关系类提案（可选，不必每晚都有）：允许 accept 带 {kind:"truce",pair,days:5–20} 或 {kind:"territory",district,faction}，reject 可带 {kind:"war",pair}；这类提案必须由 leader 提出，pair 必须包含 authorFaction，accept 至少要支付 3000 星砂或割让辖区。没有关系变化时不要写这些字段。
 3. opinions 是 1–3 条议题的数组；每条的 options 恰好 2 项，id 只能是 accept 与 reject。
 4. 暂缓由系统固定处理（提出者羁绊 −1、所属势力态度 −2、下个议事日重新提出），你不要写 defer。
-5. reject 必须包含提出者羁绊 −2、该议题 faction 的势力态度 −4，并至少包含一项实际资源惩罚（星砂、安定度、物品、时间、疲劳、侵蚀或生命）。
+5. reject 只写提出者自己的羁绊下降（bond −2，最多 −5）；不要附带势力态度、星砂、安定度、物品、时间、疲劳、侵蚀或生命的变化——驳回就是驳回，不是罚单。
 6. accept 必须同时包含至少一项成本/风险，以及至少一项收益/结果。
 7. opinions[].dialogue 写 3–5 句，speakerId 必须是名册上的角色；expression 只能是 ${ENUM_TEXT.expressions}。
 8. 不再生成新魔物，不要输出 monster 字段。

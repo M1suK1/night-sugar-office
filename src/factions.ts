@@ -266,6 +266,9 @@ export interface FactionRepresentative {
   portraitSpec?: PortraitSpec;
   quote?: string;
   note?: string;
+  /** 首领也是要出场的人：外貌与性格要跟着代表一起传下去，提示词才写得出他的样子。 */
+  appearance?: string;
+  personality?: string;
   kind: 'leader' | 'envoy';
 }
 
@@ -282,6 +285,8 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     portraitSpec: leader.portraitSpec,
     quote: leader.quote,
     note: leader.note,
+    appearance: (leader as { appearance?: string }).appearance,
+    personality: (leader as { personality?: string }).personality,
     kind: 'leader',
   };
 }
