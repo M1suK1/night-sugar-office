@@ -290,7 +290,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           <p>{cardsOnly
             ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
             : forced
-              ? '卡库还没满，先用默认阵容补满；其余卡可以用「从契约卡库添加」随时补进来。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
+              ? '卡库还没满，先用默认阵容补满；卡库一次会摆满，也可以用「从契约卡库添加」随时补。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
               : '挑 2 位少女签进事务所（最多 6 位），再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
         <div className="starter-head-actions">
@@ -313,7 +313,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       {tab === 'own' ? (
         <section className="starter-own">
           <div className="starter-bar">
-            <span id="starter-count">已选 {picked.length} / 6 · 至少 2 人</span>
+            <span id="starter-count">已选 {picked.length} / 6 · 至少 2 人 · 池子 {pool.length} 人</span>
             <div className="starter-bar-actions">
               <button id="starter-add-card" type="button" className="btn ghost" onClick={onAddCard}><UserRoundPlus size={13} />从契约卡库添加</button>
               <button id="starter-add-custom" type="button" className="btn ghost" onClick={onAddCustom}>现场登记一位</button>
