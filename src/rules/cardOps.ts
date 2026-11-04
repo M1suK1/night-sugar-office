@@ -1,3 +1,4 @@
+import { sanitizeVoice } from '../voice.ts';
 import { contractCost } from './roster.ts';
 import { parseExpressionVariantKey, sanitizeExpressionVariants } from '../expressions.ts';
 import { cardboxReport } from '../cardbox.ts';
@@ -162,6 +163,8 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     goal: g.goal, goalKind: '成长', traits: cardTraits, conditions: [],
     contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
     appearance: g.appearance, personality: g.personality, witchPersonality: g.witchPersonality, outfitDescription: g.outfitDescription,
+    // 卡里的语料要跟着人走：自定义建人时 LLM 写的那段说话方式全在这。
+    voice: sanitizeVoice(g.voice),
     wardrobe: g.wardrobe?.length
       ? g.wardrobe
       : [customOutfitFor({ color: g.color, outfitDescription: g.outfitDescription, portrait: g.portrait, portraitSpec: g.portraitSpec })],
@@ -249,6 +252,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
       const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
       const extra = draft.skillIds.reduce((acc, id) => acc + (getSkill(id).tier === 'ultimate' ? 700 : getSkill(id).tier === 'signature' ? 300 : 0), 0);
       const id = `g_${hashText(`${draft.name}:${next.day}:${next.minutes}:${next.candidates.length}`).toString(16).padStart(8, '0')}`;
+      const voice = sanitizeVoice(draft.voice);
       const customOutfit = customOutfitFor({ color: draft.color, outfitDescription: draft.outfitDescription, portrait: draft.portrait, portraitSpec: draft.appearanceSpec });
       const wardrobe = draft.wardrobe?.length ? draft.wardrobe.slice(0, 4) : [customOutfit];
       const witchForm = draft.witchForm ? { ...draft.witchForm, id: 'witchform' as const, form: 'witch' as const } : undefined;
@@ -269,6 +273,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         goal: draft.goal, goalKind: '成长', traits, conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
         appearance: draft.appearance, personality: draft.personality, outfitDescription: draft.outfitDescription,
+        voice,
         portraitHint: draft.portraitHint?.trim().slice(0, 80) ?? '',
         wardrobe, outfitId, importedVariants, witchForm, expression: 'calm', corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7,
         factionTag: draft.factionTag,

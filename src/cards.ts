@@ -1,3 +1,4 @@
+import { sanitizeVoice } from './voice.ts';
 import type { Expression, Girl, GirlCard, Outfit, StatKey, Storyline, Trait, TraitPolarity } from './types';
 import { sanitizeStoryPlan } from './storyplan.ts';
 import { EXPRESSIONS, sanitizeExpressionVariants } from './expressions.ts';
@@ -43,6 +44,8 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
       witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
       factionTag: girl.factionTag,
+      // 语料不进卡就等于丢：卡一旦离开这台机器，她的说话方式就再也找不回来。
+      voice: girl.voice,
     },
   };
 }
@@ -150,6 +153,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       personality: typeof g.personality === 'string' ? g.personality.slice(0, 240) : '安静。',
       witchPersonality: typeof g.witchPersonality === 'string' && g.witchPersonality.trim() ? g.witchPersonality.trim().slice(0, 600) : undefined,
       outfitDescription: typeof g.outfitDescription === 'string' ? g.outfitDescription.slice(0, 240) : '值夜制服。',
+      voice: sanitizeVoice(g.voice),
       level: g.level, stats: Object.fromEntries(STAT_KEYS.map(key => [key, Math.round((g.stats as Record<string, number>)[key])])) as Record<StatKey, number>,
       skillIds: [...g.skillIds], traitIds: traits.map(trait => trait.id), traits, skippedTraits: skippedTraits || undefined, portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',

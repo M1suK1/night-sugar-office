@@ -249,6 +249,8 @@ export interface GirlCard {
     name: string; codename: string; title: string; element: Element; archetype?: Archetype;
     color: string; quote?: string; goal: string; appearance: string; personality: string; outfitDescription: string;
     level: number; stats: Record<StatKey, number>; skillIds: string[]; traitIds: string[];
+    /** 语料：说话方式、口头习惯、例话。旧卡没有这三项。 */
+    voice?: GirlVoice;
     /** 特性的完整定义。自定义特性（`custom-trait-*`）不在全局目录里，只能靠这份定义还原。 */
     traits?: Trait[];
     /** 只在导入时算出来：有多少条特性没能还原。导出不会写这个字段。 */
