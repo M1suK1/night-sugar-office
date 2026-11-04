@@ -323,7 +323,7 @@ export function BaseView({
                             : <i>{representative.name.slice(0, 1)}</i>}
                         </span>
                         <div className="av-envoy-copy">
-                          <strong>{representative.name} <small>{representative.title} · {info.name}</small></strong>
+                          <strong>{representative.name} <small>{representative.title} · {info.name}</small>{representative.witch && <em className="av-envoy-witch">魔女形态</em>}</strong>
                           <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
                           <div className="av-envoy-task">
                             {offer.kind === 'tribute' ? (

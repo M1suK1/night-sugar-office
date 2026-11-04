@@ -42,6 +42,7 @@ export const factionLeaders: Record<'association' | 'government' | 'witch', Fact
     note: '把量产损耗写进预算，也记得每一个编号的忌日——两件事她都不打算改。',
   },
   witch: {
+    witch: true,
     id: 'leader-witch',
     faction: 'witch',
     name: '蚀医·夜鸮',

@@ -269,6 +269,8 @@ export interface FactionRepresentative {
   /** 首领也是要出场的人：外貌与性格要跟着代表一起传下去，提示词才写得出他的样子。 */
   appearance?: string;
   personality?: string;
+  /** v85：这位首领默认以魔女形态出场（目前只有月蚀庭）。 */
+  witch?: boolean;
   kind: 'leader' | 'envoy';
 }
 
@@ -287,6 +289,8 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     note: leader.note,
     appearance: (leader as { appearance?: string }).appearance,
     personality: (leader as { personality?: string }).personality,
+    // v85：月蚀庭的首领开局就是魔女形态；玩家自己的月蚀庭角色不沾这条。
+    witch: leader.witch || undefined,
     kind: 'leader',
   };
 }

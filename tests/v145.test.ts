@@ -7,6 +7,7 @@ import { clinicQuote } from '../src/rules/roster.ts';
 import { defaultOpinionOptions } from '../src/opinions.ts';
 import { normalizeToLevel } from '../src/cardLibrary.ts';
 import { envoyOfferOf } from '../src/rules/envoy.ts';
+import { factionGirlsOf, factionRepresentativeOf } from '../src/factions.ts';
 import type { GirlCard } from '../src/types.ts';
 
 test('v145 借星砂：1 点安定换 300 星砂、每天最多 10 点、好感 −2', () => {
@@ -97,4 +98,16 @@ test('v145 经费议案是给钱的类型，代价压在疲劳与羁绊上', () 
   assert.equal(gold.length, 1);
   assert.ok((gold[0] as { amount: number }).amount > 0, '批准后是收入');
   assert.ok(accept.changes.some(change => change.kind === 'girl' && (change as { field: string }).field === 'fatigue'));
+});
+
+test('v145 月蚀庭的首领与随从默认魔女形态，玩家的月蚀庭角色不受影响', () => {
+  const s = createInitialState();
+  const representative = factionRepresentativeOf(s, 'witch');
+  assert.equal(representative.witch, true, '月蚀庭首领默认魔女形态');
+  assert.equal(factionRepresentativeOf(s, 'association').witch, undefined);
+  for (const girl of factionGirlsOf('witch')) assert.equal(girl.witch, true, girl.name + ' 默认魔女形态');
+  for (const girl of factionGirlsOf('association')) assert.notEqual(girl.witch, true);
+  // 玩家自己名册里的月蚀庭角色不跟着变
+  const own = s.girls.find(girl => girl.factionTag === 'witch');
+  if (own) assert.equal(Boolean(own.witch), false);
 });

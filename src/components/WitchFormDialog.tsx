@@ -6,10 +6,12 @@ import { safeOptimizedImageDataUrl } from '../image';
 import { fileDropProps } from '../drop';
 import { GirlPortrait } from './GirlPortrait';
 
-export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose, initialFile }: {
+export function WitchFormDialog({ girl, onSave, onRemove, onSuppress, onDescribe, onClose, initialFile }: {
   girl: Girl;
   onSave: (outfit: Outfit, personality: string) => boolean;
   onRemove: () => boolean;
+  /** v85：用一支月光抑制剂把魔女形态压回去。 */
+  onSuppress?: () => boolean;
   onDescribe: (portrait: string) => Promise<{ name: string; description: string; personality: string } | null>;
   onClose: () => void;
   /** 从档案页把图片直接拖进来时，由外部带过来，挂载后自动裁切。 */
@@ -104,12 +106,13 @@ export function WitchFormDialog({ girl, onSave, onRemove, onDescribe, onClose, i
           {note && <p className="witch-form-note" role="status">{note}</p>}
           <div className="witch-form-actions">
             <button id="witch-form-save" type="button" className="btn primary" disabled={busy || !preview} onClick={save}>保存到第五格</button>
-            {girl.witchForm && <button id="witch-form-remove" type="button" className="btn witch-form-remove" disabled={busy} onClick={remove}><Trash2 size={14} />移除</button>}
+            {girl.witch && onSuppress && <button id="witch-form-suppress" type="button" className="btn" disabled={busy} onClick={() => { if (onSuppress()) onClose(); else setNote('压不回去：仓库里没有月光抑制剂。'); }}>用抑制剂压回去</button>}
+            {girl.witchForm && <button id="witch-form-remove" type="button" className="btn witch-form-remove" disabled={busy || Boolean(girl.witch)} title={girl.witch ? '魔女形态还锁着，先用抑制剂压回去' : undefined} onClick={remove}><Trash2 size={14} />移除</button>}
           </div>
         </div>
       </div>
 
-      <p className="small-note">魔女化状态会锁定这张立绘，并改用带有负面倾向的性格记录；恢复普通形态后，原本的性格不会被覆盖。</p>
+      <p className="small-note">魔女化一旦成形就锁着：立绘不能单独摘，只能用一支月光抑制剂压回普通形态。压回来后原本的性格不会被覆盖。</p>
     </div>
   );
 }

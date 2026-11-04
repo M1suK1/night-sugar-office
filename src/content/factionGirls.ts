@@ -45,18 +45,21 @@ export const factionGirls: FactionGirl[] = [
   },
   {
     id: 'fg-witch-mian', faction: 'witch', name: '黑川眠', codename: '夜祷', title: '对外代表 / 夜祷使',
+    witch: true,
     portrait: '', color: '#B98AD9', level: 9, stats: { magic: 63, insight: 58, agility: 49, empathy: 45 },
     skills: ['dream-touch', 'deep-dream-fall', 'sheep-nebula'], tag: 'witch',
     quote: '交易可以谈，措辞不行。', note: '表面仍谈交易，实际每句话都要被净血派审核。',
   },
   {
     id: 'fg-witch-soga', faction: 'witch', name: '苏我夜', codename: '庭医', title: '庭医',
+    witch: true,
     portrait: '', color: '#B98AD9', level: 8, stats: { magic: 50, insight: 63, agility: 46, empathy: 66 },
     skills: ['flower-thorn', 'spring-growth', 'flower-prescription'], tag: 'witch',
     quote: '配方是我的，给谁由我决定。', note: '救治派，暗中给普通魔法少女配药。',
   },
   {
     id: 'fg-witch-shika', faction: 'witch', name: '鹿岛棘', codename: '棘', title: '净血猎手',
+    witch: true,
     portrait: '', color: '#B98AD9', level: 8, stats: { magic: 68, insight: 54, agility: 70, empathy: 30 },
     skills: ['frequency-prick', 'moon-phase', 'silent-band'], tag: 'witch',
     quote: '没受洗的，本来就不该走这条路。', note: '专门伏击协会护送队与市役所回收车。',
