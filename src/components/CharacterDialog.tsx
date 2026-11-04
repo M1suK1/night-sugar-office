@@ -435,7 +435,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <div><span>退休金标准</span><b>{pensionFor(girl)} <small>星砂 / 10 日</small></b><small>{girl.retired ? '每月从事务所账户划拨' : '退役后开始计发'}</small></div>
               <div><span>欠缴</span><b className={pensionArrears(girl) ? 'warn' : ''}>{pensionArrears(girl)}</b><small>{girl.pensionMissed} 日未结</small></div>
             </div>
-            {!girl.retired && <button id="girl-renew" className="btn full renew-btn" disabled={state.gold < renewCost} onClick={onRenew}><RefreshCw size={15} />续签契约 · {renewCost.toLocaleString()} 星砂（含欠缴与羁绊系数）</button>}
+            {!girl.retired && <button id="girl-renew" className="btn full renew-btn" disabled={state.gold < renewCost} onClick={onRenew}><RefreshCw size={15} />续签契约 · {renewCost.toLocaleString()} 星砂（契约价的一半，含欠缴）</button>}
             {girl.retired && girl.retiredReason === 'contract' && <button id="girl-rehire" className="btn full" onClick={onRehire}><UserRoundCheck size={15} />返聘 · {600 + girl.level * 120} 星砂</button>}
             {girl.retired && <p className="small-note"><Phone size={12} />已退役，可进行远程联络。每次通话 40 星砂，每日首次提升羁绊。</p>}
             {!candidate && <button id="girl-assistant-toggle" className={`btn full ${isAssistant ? 'active' : ''}`} onClick={onAssistant}><ShieldCheck size={15} />{isAssistant ? '取消值班助理' : '设为值班助理'} · 需羁绊 40</button>}

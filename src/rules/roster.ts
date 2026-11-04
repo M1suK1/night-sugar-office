@@ -1,4 +1,5 @@
 import { loadBalance } from '../balance.ts';
+import { getSkill } from '../content/skills.ts';
 import { effectiveMaxHp, effectiveStats } from '../economy.ts';
 import type { GameState, Girl, Mission, Treatment } from '../types.ts';
 // v35 从 src/game.ts 拆出：席位、派遣名额、门诊与记忆清除报价。
@@ -89,6 +90,21 @@ export function treatmentFor(state: GameState, girlId: string): Treatment | unde
  * 走，四维总和 260 的五级少女大致 1000 星砂，越强越贵但仍然招得起。
  */
 export const SKILL_PREMIUM = { ultimate: 150, signature: 60 } as const;
+
+/** 技能带来的溢价：极意 150、专属 60，其余不计。契约价与续约价共用同一份。 */
+export function skillPremiumOf(skillIds: readonly string[] = []): number {
+  return skillIds.reduce((sum, id) => {
+    const tier = getSkill(id).tier;
+    return sum + (tier === 'ultimate' ? SKILL_PREMIUM.ultimate : tier === 'signature' ? SKILL_PREMIUM.signature : 0);
+  }, 0);
+}
+
+/** 一名少女此刻的契约总价：等级 + 四维 + 技能溢价。 */
+export function contractPriceFor(girl: Girl): number {
+  const stats = effectiveStats(girl);
+  const sum = stats.magic + stats.insight + stats.agility + stats.empathy;
+  return contractCost(girl.level, sum, skillPremiumOf(girl.skills));
+}
 
 export function contractCost(level: number, statSum: number, skillPremium = 0): number {
   const safeLevel = Number.isFinite(level) ? Math.max(1, Math.round(level)) : 1;
