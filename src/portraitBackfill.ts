@@ -16,12 +16,17 @@ export function portraitsMissing(girls: readonly Girl[]): Girl[] {
 export async function backfillPortraits(
   girls: readonly Girl[],
   readCard: (hash: string) => Promise<string | undefined>,
+  box: readonly { hash: string; name: string }[] = [],
 ): Promise<{ portraits: Map<string, string>; filled: number }> {
-  const targets = portraitsMissing(girls);
+  // 没有 cardId 的人（现场登记、旧版本导入）按同名卡兜一层：
+  // 名字是玩家自己给的，同名基本就是同一张卡。
+  const byName = new Map(box.map(entry => [entry.name, entry.hash]));
+  const targets = girls.filter(girl => !girl.portrait && (girl.cardId || byName.has(girl.name)));
   const portraits = new Map<string, string>();
   for (const girl of targets) {
+    const hash = girl.cardId ?? byName.get(girl.name)!;
     let raw: string | undefined;
-    try { raw = await readCard(girl.cardId!); } catch { raw = undefined; }
+    try { raw = await readCard(hash); } catch { raw = undefined; }
     if (!raw) continue;
     let card: { girl?: { portrait?: unknown } } | undefined;
     try { card = JSON.parse(raw) as { girl?: { portrait?: unknown } }; } catch { card = undefined; }

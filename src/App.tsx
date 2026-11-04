@@ -237,7 +237,7 @@ export default function App() {
         if (sessionStorage.getItem(STARTED_KEY) === '1' && !boot.state.startersPicked && !boot.state.blank) setPhase('roster');
       } catch { /* 没有存储时按标题页处理。 */ }
       // 读档也补一次：卡里有图、存档里却是剪影的人（旧版本导入的），启动时就修好。
-      void backfillPortraits([...boot.state.girls, ...boot.state.candidates], hash => readCardRaw(hash)).then(async refill => {
+      void backfillPortraits([...boot.state.girls, ...boot.state.candidates], hash => readCardRaw(hash), await loadCardBox().catch(() => [])).then(async refill => {
         if (!alive || !refill.filled) return;
         let patched = boot.state;
         for (const [girlId, portrait] of refill.portraits) {

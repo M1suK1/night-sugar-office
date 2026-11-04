@@ -1045,3 +1045,6 @@
 /* v102 立绘读不出来时退回首字，而不是留一个破图 */
 .girl-portrait.imported.failed{position:relative;background:linear-gradient(160deg,#191320,#0b0910)}
 .girl-portrait.imported.failed::after{content:attr(data-fallback);position:absolute;inset:0;display:grid;place-items:center;font-family:var(--font-display);font-size:26px;color:#c8a7b5;opacity:.75}
+
+/* v108 列表小头像：没有立绘就画名字首字，别留一块空白 */
+.girl-thumb-fallback{display:inline-grid;place-items:center;background:linear-gradient(160deg,#241a2c,#120e18);color:color-mix(in srgb, var(--thumb-color,#c478b8) 78%,#ffffff 22%);font-family:var(--font-display);font-size:13px;line-height:1;border-radius:4px}

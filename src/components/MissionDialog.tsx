@@ -1,3 +1,4 @@
+import { GirlThumb } from './GirlThumb';
 import { useState } from 'react';
 import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
@@ -149,7 +150,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
               return (
                 <button id={`assign-${person.id}`} key={person.id} aria-pressed={picked} className={`assignment-girl ${picked ? 'selected' : ''} ${fatalRisk ? 'fatal-risk' : ''}`} disabled={!check.ok}
                   onClick={() => toggle(person)}>
-                  <img src={person.portrait} alt="" />
+                  <GirlThumb girl={person} />
                   <span>
                     <b>{person.name}<i className="assignment-role" title="职业">{person.archetype ?? '未定'}</i></b>
                     <small>{!check.ok ? check.reason : `${statLabels[mission.requirement]} ${person.stats[mission.requirement]} · 疲劳 ${person.fatigue}`}</small>
@@ -183,7 +184,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           </> : mission.status === 'active' ? <>
             <Radio size={30} /><h3>{assigned.map(g => g.name).join('、')}正在执行委托</h3>
             <p>距离出勤返回还有 {Math.min(...assigned.map(g => g.remaining), 999)} 分钟。推进时间流逝即可完成战况结算{mission.work === 'combat' ? '并归档实战报告' : ''}。</p>
-            <div className="result-squad">{assigned.map(g => <button key={g.id} id={`mission-assigned-${g.id}`} className="btn" onClick={() => onGirl(g.id)}><img src={g.portrait} alt="" />{g.name}<Heart size={13} /></button>)}</div>
+            <div className="result-squad">{assigned.map(g => <button key={g.id} id={`mission-assigned-${g.id}`} className="btn" onClick={() => onGirl(g.id)}><GirlThumb girl={g} />{g.name}<Heart size={13} /></button>)}</div>
           </> : <>
             <Check size={30} /><h3>这个心愿，已经被好好守护。</h3><p>最后一次结果：{mission.lastOutcome === 'victory' ? '战斗胜利' : mission.lastOutcome === 'repelled' ? '暂时击退' : '调查完成'}。{mission.work === 'combat' ? `委托报酬${mission.lastOutcome === 'repelled' ? '按八成结算' : '已全额'}入账星砂金库。` : '委托报酬已全额入账星砂金库。'}</p>
             {mission.work === 'combat' && lastBattle && onBattle && <div className="mission-result-actions"><button id="mission-view-battle" className="btn" onClick={() => onBattle(lastBattle.id)}><ScrollText size={15} />查看战斗记录</button></div>}

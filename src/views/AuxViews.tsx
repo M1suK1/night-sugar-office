@@ -1,3 +1,4 @@
+import { GirlThumb } from '../components/GirlThumb';
 import { useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
@@ -193,7 +194,7 @@ export function BaseView({
                   title={`${girl.name} · ${statusText[girl.status]} · 血量 ${girl.hp}/${girl.maxHp}`}
                   aria-label={`查看${girl.name}，${statusText[girl.status]}`}
                 >
-                  <img className="av-room-avatar" src={girl.portrait} alt="" loading="lazy" />
+                  <GirlThumb className="av-room-avatar" girl={girl} />
                   {(state.whisperUnread?.[girl.id] ?? 0) > 0 && <span className="whisper-badge" aria-label={`有 ${state.whisperUnread?.[girl.id]} 条新消息`}>{state.whisperUnread?.[girl.id]}</span>}
                   <span>{girl.name}<small>HP {girl.hp} · 蚀 {girl.corruption ?? 0}%</small></span>
                 </button>
