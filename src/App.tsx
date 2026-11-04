@@ -80,7 +80,8 @@ import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
-import { cardboxCards, loadCardBox, saveCardBox } from './cardbox';
+import { backfillPortraits } from './portraitBackfill';
+import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -235,6 +236,18 @@ export default function App() {
       try {
         if (sessionStorage.getItem(STARTED_KEY) === '1' && !boot.state.startersPicked && !boot.state.blank) setPhase('roster');
       } catch { /* 没有存储时按标题页处理。 */ }
+      // 读档也补一次：卡里有图、存档里却是剪影的人（旧版本导入的），启动时就修好。
+      void backfillPortraits([...boot.state.girls, ...boot.state.candidates], hash => readCardRaw(hash)).then(async refill => {
+        if (!alive || !refill.filled) return;
+        let patched = boot.state;
+        for (const [girlId, portrait] of refill.portraits) {
+          const result = act(patched, { type: 'setPortrait', girlId, portrait });
+          if (result.ok) patched = result.state;
+        }
+        if (patched === boot.state) return;
+        setState(patched);
+        console.info(`[卡库] 读档补回 ${refill.filled} 张立绘。`);
+      });
       setBooted(true);
       setLoaded(true);
     })();
@@ -892,6 +905,13 @@ export default function App() {
         });
         const slimmed = await slimStateImages(next);
         next = slimmed.state;
+        // 卡里明明有图、名册里却是剪影的，按 cardId 补回来。
+        const refill = await backfillPortraits([...next.girls, ...next.candidates], hash => readCardRaw(hash));
+        for (const [girlId, portrait] of refill.portraits) {
+          const patched = act(next, { type: 'setPortrait', girlId, portrait });
+          if (patched.ok) next = patched.state;
+        }
+        if (refill.filled) console.info(`[卡库] 从卡里补回了 ${refill.filled} 张立绘。`);
         if (slimmed.changed) console.info('[卡库] 开局选人池已把立绘降到长边 640，避免一次读进几十 MB。');
       }
     } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ } finally {
