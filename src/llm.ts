@@ -1109,7 +1109,9 @@ interface JsonCallOutcome {
  */
 const DEFAULT_TOKEN_BUDGET = 8000;
 /** 截断重试的上限：低于这个额度都值得再试一次，再高就是上下文不够而不是额度不够。 */
-const RETRY_TOKEN_CEILING = 16384;
+const RETRY_TOKEN_CEILING = 32768;
+/** 蓝图这类几千字的结构化输出：下限直接给 32000，别让思维链把正文挤掉。 */
+const LONG_FORM_TOKEN_FLOOR = 32000;
 
 async function chatJson(
   config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0, ctx: MacroContext = {},
@@ -1496,7 +1498,7 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
   const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '' };
   const macroCtx: MacroContext = { state, focus: girl };
-  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, 8000, macroCtx);
+  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx);
   if (!first.result.ok) {
     const message = `生成蓝图失败：${first.result.message}`;
     recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -1528,7 +1530,7 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
 
 只输出修正后的完整 JSON。不要解释，不要省略节点。
 按上面的规则逐条修正下列问题后再输出；若某条规则已经在【连线总则】里写过，以那边为准。`;
-    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, 8000, macroCtx);
+    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx);
     if (!second.result.ok) {
       const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
       recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
