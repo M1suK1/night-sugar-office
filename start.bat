@@ -46,24 +46,34 @@ goto build_serve
 
 :build_serve
 echo [夜糖] 正在构建...
-call npm run build
-if errorlevel 1 (
-  echo [夜糖] 构建失败，已停止。可以跑 start.bat dev 看详细报错。
-  pause
-  exit /b 1
-)
+call :run_build
+if errorlevel 1 exit /b 1
 goto serve
 
 :build_only
 echo [夜糖] 正在构建...
-call npm run build
+call :run_build
+if errorlevel 1 exit /b 1
+echo [夜糖] 构建完成，产物在 dist\ 。用 start.bat 开门。
+pause
+exit /b 0
+
+rem ── 构建并保留日志 ──────────────────────────────────────────
+rem 输出先写进 build-error.log 再整篇回放：这样窗口关掉、报错刷没了，
+rem 日志也还在项目根目录，方便直接把 ERROR 段落贴出来。
+:run_build
+call npm run build > "build-error.log" 2>&1
 if errorlevel 1 (
-  echo [夜糖] 构建失败，已停止。
+  echo.
+  echo ───────── 构建输出 ─────────
+  type "build-error.log"
+  echo ───────────────────────────
+  echo [夜糖] 构建失败。完整日志已存到 build-error.log。
+  echo [夜糖] 想看浏览器里的报错浮层就运行 start.bat dev。
   pause
   exit /b 1
 )
-echo [夜糖] 构建完成，产物在 dist\ 。用 start.bat 开门。
-pause
+del "build-error.log" >nul 2>nul
 exit /b 0
 
 :serve
