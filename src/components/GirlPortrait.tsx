@@ -1,3 +1,4 @@
+import { usePortraitSrc } from '../usePortrait';
 import { useId } from 'react';
 import type { Expression, Outfit, PortraitSpec } from '../types';
 import { currentExpressionOutfitId, expressionLabel, expressionVariantKey, expressionOutfits } from '../expressions';
@@ -69,7 +70,8 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
   const corruption = girl.corruption ?? 0;
   const gemCore = girl.witch ? '#d85a7f' : corruption >= 40 ? '#c478b8' : '#fff2f8';
 
-  const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : girl.portrait;
+  const assetPortrait = usePortraitSrc(girl);
+  const portrait = wardrobe?.portrait?.startsWith('data:') ? wardrobe.portrait : (girl.portrait || assetPortrait);
   const variantKey = expressionVariantKey(activeOutfitId, expression);
   const expressionVariant = girl.importedVariants?.[variantKey];
   const activeVariant = expressionVariant?.startsWith('data:image/') ? expressionVariant : undefined;
