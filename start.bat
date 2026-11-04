@@ -36,10 +36,18 @@ if not exist "node_modules" (
   )
 )
 
+rem 构建会 import 这个文件；仓库没更新到最新时它缺失，esbuild 只会丢一句难懂的错误。
+if not exist "scripts\static-cards.mjs" (
+  echo [夜糖] 缺少 scripts\static-cards.mjs（构建要用它）。请先在仓库里 git pull 更新。
+  pause
+  exit /b 1
+)
+
 set "MODE=%~1"
 if /i "%MODE%"=="dev" goto dev
 if /i "%MODE%"=="build" goto build_only
 if /i "%MODE%"=="rebuild" goto build_serve
+if /i "%MODE%"=="repair" goto repair
 if exist "dist\index.html" goto serve
 echo [夜糖] 还没有构建产物，先构建一次...
 goto build_serve
@@ -58,6 +66,25 @@ echo [夜糖] 构建完成，产物在 dist\ 。用 start.bat 开门。
 pause
 exit /b 0
 
+:repair
+echo [夜糖] 正在修复依赖（esbuild 这类原生包装坏了会直接 build 报错）...
+call npm install
+if errorlevel 1 (
+  echo [夜糖] npm install 失败，请检查网络或代理设置。
+  pause
+  exit /b 1
+)
+echo [夜糖] 重新绑定 esbuild 的原生二进制...
+call npm rebuild esbuild
+if errorlevel 1 (
+  echo [夜糖] npm rebuild esbuild 失败。可以删掉 node_modules 再运行 start.bat 重装。
+  pause
+  exit /b 1
+)
+echo [夜糖] 修好了。现在运行 start.bat 试试；还报错就把 build-error.log 里的 ERROR 段落发出来。
+pause
+exit /b 0
+
 rem ── 构建并保留日志 ──────────────────────────────────────────
 rem 输出先写进 build-error.log 再整篇回放：这样窗口关掉、报错刷没了，
 rem 日志也还在项目根目录，方便直接把 ERROR 段落贴出来。
@@ -70,6 +97,7 @@ if errorlevel 1 (
   echo ───────────────────────────
   echo [夜糖] 构建失败。完整日志已存到 build-error.log。
   echo [夜糖] 想看浏览器里的报错浮层就运行 start.bat dev。
+  echo [夜糖] 如果日志里是 esbuild 的原生包问题，运行 start.bat repair 重装一次。
   pause
   exit /b 1
 )
