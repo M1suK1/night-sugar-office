@@ -1,3 +1,4 @@
+import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
 import { focusGirlOf } from './storyFocus.ts';
 import { dailyHistoryBlock } from './opinionHistory.ts';
@@ -1004,6 +1005,22 @@ function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], lab
   if (!meta) return;
   meta.request = requestSnapshot(messages, requestParams(config, params), labels, meta.slots);
   meta.response = { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined };
+  // 同一条记录也落盘：data/llm-logs/YYYY-MM-DD.jsonl，方便直接 grep 与对照。
+  persistLlmLog({
+    scope: labels[labels.length - 1] ?? '叙事者',
+    labels,
+    model: config.model,
+    provider: config.provider,
+    params: requestParams(config, params) as unknown as Record<string, unknown>,
+    ok: result.ok,
+    finish: result.ok ? result.finish : undefined,
+    usage: result.usage,
+    messages: messages.map(message => ({
+      role: message.role,
+      content: typeof message.content === 'string' ? message.content : '[图像/结构化输入]',
+    })),
+    response: result.ok && typeof result.text === 'string' ? result.text : (result.ok ? '' : String(result.message ?? '')),
+  });
 }
 
 const JSON_RETRY_MESSAGE = '上一次输出在写到 JSON 中途被截断了。这一次只输出完整的 JSON 对象，不要思维链、不要解释、不要 Markdown 代码块。';

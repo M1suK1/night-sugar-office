@@ -20,6 +20,8 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const DATA_DIR = join(ROOT, 'data');
 export const SAVES_DIR = join(DATA_DIR, 'saves');
 export const CARDS_DIR = join(DATA_DIR, 'cards');
+/** 叙事引擎的请求/响应日志：按天一个 jsonl，方便直接 grep。 */
+export const LOGS_DIR = join(DATA_DIR, 'llm-logs');
 
 const MAX_BYTES = 24 * 1024 * 1024;
 const KINDS = new Map([['save', SAVES_DIR], ['card', CARDS_DIR]]);
@@ -83,10 +85,24 @@ export async function handleLocalApi(req, res) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const route = url.pathname.replace(/^\/api/, '') || '/';
   try {
+    if (route === '/logs' && req.method === 'POST') {
+      const body = await readBody(req);
+      const parsed = JSON.parse(body || '{}');
+      const text = typeof parsed?.text === 'string' ? parsed.text : '';
+      if (!text.trim()) { json(res, 400, { ok: false, error: '没有要写的内容。' }); return; }
+      await ensure(LOGS_DIR);
+      const day = typeof parsed?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.day)
+        ? parsed.day
+        : new Date().toISOString().slice(0, 10);
+      await fs.appendFile(join(LOGS_DIR, `${day}.jsonl`), text.endsWith('\n') ? text : `${text}\n`, 'utf8');
+      json(res, 200, { ok: true, file: join(LOGS_DIR, `${day}.jsonl`) });
+      return;
+    }
     if (route === '/paths' && req.method === 'GET') {
       await ensure(SAVES_DIR);
       await ensure(CARDS_DIR);
-      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR });
+      await ensure(LOGS_DIR);
+      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR, logs: LOGS_DIR });
       return;
     }
     if (route === '/cards' && req.method === 'GET') {

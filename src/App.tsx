@@ -1,3 +1,4 @@
+import { postLlmLog, setLlmLogSink } from './llmLog';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
@@ -340,6 +341,8 @@ export default function App() {
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
   useEffect(() => { saveProposalCheck(proposalCheck); }, [proposalCheck]);
+  // 叙事引擎日志落盘：只有本地接口（npm run dev / start.cmd）能写，静态部署时 fetch 会失败并被忽略。
+  useEffect(() => { setLlmLogSink(postLlmLog); return () => setLlmLogSink(null); }, []);
   useEffect(() => {
     if (!loaded) return;
     // 存档里没有这个日号（旧档、或被读档清洗掉）：先补一个今天的值，不生成。
