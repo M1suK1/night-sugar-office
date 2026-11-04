@@ -185,6 +185,11 @@ export function hydrate(girl: GirlInput, options: { clone?: boolean } = {}): Gir
   if (g.witch && !g.witchPersonality?.trim()) g.witchPersonality = defaultWitchPersonality(g);
   g.portraitHint ??= '';
   g.storyPlan = g.storyPlan ? sanitizeStoryPlan(g.storyPlan) ?? undefined : undefined;
+  if (Array.isArray(g.storyPlans)) {
+    g.storyPlans = g.storyPlans.slice(0, 3).map(item => (item ? sanitizeStoryPlan(item) : null));
+    // 第 1 段的别名继续跟 storyPlans[0] 对齐，旧代码只读 storyPlan 也不会走空。
+    if (g.storyPlans[0]) g.storyPlan = g.storyPlans[0] ?? g.storyPlan;
+  }
   g.eventBadge ??= undefined;
   g.pendingTalk ??= undefined;
   g.expression ??= 'calm';

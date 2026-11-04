@@ -1523,7 +1523,7 @@ function parseStoryBlueprintGraph(raw: Record<string, unknown>): { graph: StoryG
  * 让模型直接写一张完整故事蓝图。
  * 只允许一次修复；两次都不合格就返回失败，绝不写半张图到存档里。
  */
-export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
+export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime, state?: GameState, options: { slot?: number } = {}): Promise<{ ok: true; data: GeneratedStoryBlueprint } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
@@ -1531,7 +1531,14 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
   }
   // v49：结构、端口、节点写法与自检都在预设的 storyline 分区里；这里只留玩家方向与锁定契约。
   const body = storylineContract();
-  const context = direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '';
+  const slot = Math.max(1, Math.min(3, Math.round(options.slot ?? 1)));
+  // 第 2/3 段要先看上一段怎么收的：结局里的损失与承诺必须在下一段里继续生效。
+  const prior = state ? priorSegmentBrief(state, girl.id, slot) : '';
+  const context = [
+    slot > 1 ? `这是${girl.name}的第 ${slot} 段故事。` : '',
+    prior,
+    direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '',
+  ].filter(Boolean).join('\n');
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
   const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '', contractId: 'storyline:contract' };
   const macroCtx: MacroContext = { state, focus: girl };
@@ -1567,7 +1574,7 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
 
 只输出修正后的完整 JSON。不要解释，不要省略节点。
 按上面的规则逐条修正下列问题后再输出；若某条规则已经在【连线总则】里写过，以那边为准。`;
-    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx);
+    const second = await chatJson(config, preset, 'storyline', repairBody, '请只输出修正后的完整故事蓝图 JSON。', ['共用词条 + 故事线词条 + 蓝图结构契约', '修复上一次蓝图'], meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx, context);
     if (!second.result.ok) {
       const message = `蓝图未通过校验，修复请求失败：${second.result.message}`;
       recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(second.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -2240,6 +2247,7 @@ import { girlSkillPool } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
+import { priorSegmentBrief } from './storyplan.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';

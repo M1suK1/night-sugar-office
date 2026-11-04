@@ -32,6 +32,64 @@ export function storyPlanTemplate(title = '', premise = ''): StoryPlan {
   };
 }
 
+/**
+ * 第 `slot` 段用的蓝图。
+ *
+ * 三段各一张图：`storyPlans[slot-1]`。旧档与旧卡只有 `storyPlan`，它算第 1 段，
+ * 所以第 2/3 段在读之前必须先让叙事者另写一张——不能拿同一张图重跑。
+ */
+export function planForSlot(
+  girl: { storyPlan?: StoryPlan; storyPlans?: (StoryPlan | null)[] },
+  slot: number,
+): StoryPlan | undefined {
+  const index = Math.max(1, Math.min(STORY_SLOT_MAX, Math.round(slot))) - 1;
+  const stored = girl.storyPlans?.[index];
+  if (stored) return stored;
+  return index === 0 ? girl.storyPlan : undefined;
+}
+
+/** 写入第 `slot` 段的蓝图；第 1 段同时更新 `storyPlan`，旧代码与旧卡继续能读。 */
+export function setPlanForSlot(
+  girl: { storyPlan?: StoryPlan; storyPlans?: (StoryPlan | null)[] },
+  slot: number,
+  next: StoryPlan | null,
+): void {
+  const index = Math.max(1, Math.min(STORY_SLOT_MAX, Math.round(slot))) - 1;
+  const list = Array.isArray(girl.storyPlans) ? [...girl.storyPlans] : [];
+  while (list.length < STORY_SLOT_MAX) list.push(null);
+  list[index] = next;
+  girl.storyPlans = list;
+  if (index === 0) girl.storyPlan = next ?? undefined;
+}
+
+/**
+ * 上一段留下的东西：结局、前提、走过的几幕。
+ *
+ * 第 2/3 段的蓝图要接着它写——结局里死掉的人不能复活、许下的承诺不能当没发生。
+ * 没有上一段（第 1 段）时返回空串。
+ */
+export function priorSegmentBrief(
+  state: { storylines: { girlId: string; status: string; slot?: number; title: string; premise: string; ending?: string; beats?: { title: string }[] }[] },
+  girlId: string,
+  slot: number,
+): string {
+  if (slot <= 1) return '';
+  const finished = state.storylines
+    .filter(story => story.girlId === girlId && story.status === 'done')
+    .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
+  const last = finished[finished.length - 1];
+  if (!last) return '';
+  const beats = (last.beats ?? []).map(beat => beat.title).filter(Boolean).slice(-6);
+  return [
+    `【第 ${slot} 段 · 必须承接第 ${last.slot ?? finished.length} 段】`,
+    `上一段《${last.title}》的结局：${last.ending || '已收束（没有写出结局名）'}`,
+    last.premise ? `上一段的前提：${last.premise.slice(0, 240)}` : '',
+    beats.length ? `上一段走过的地方：${beats.join('、')}` : '',
+    '要求：这一段从那个结局之后开始写；已经发生过的事不能复位（死掉的人不会回来、断掉的关系不会自动修复、当众许下的承诺要算数）。',
+    '不要重演上一段用过的事件、委托与场景，换新的地点、新的对手与新的代价；也不要再写一次同样的结局。',
+  ].filter(Boolean).join('\n');
+}
+
 export function hasStoryGraph(plan?: StoryPlan | null): plan is StoryPlan & { graph: StoryGraph } {
   return Boolean(plan?.graph && Array.isArray(plan.graph.nodes) && plan.graph.nodes.length > 0);
 }

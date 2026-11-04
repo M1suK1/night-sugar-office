@@ -4244,10 +4244,17 @@ test('故事线按三段排队：前一段讲完才能开下一段，第四段�
   const closed = structuredClone(start.state);
   closed.storylines[0].status = 'done';
   closed.storylines[0].ending = '留下';
-  const second = act(closed, { type: 'startStoryline', girlId: girl.id });
-  assert.equal(second.ok, true);
+  // v138：三段各一张蓝图，第 2 段没写过就不许拿第 1 段的图重跑。
+  const blocked = act(closed, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /第 2 段/);
+  const planned = structuredClone(closed);
+  planned.girls.find(item => item.id === girl.id)!.storyPlans = [null, storyPlanTemplate('第二段', '承接上一段的结局。'), null];
+  const second = act(planned, { type: 'startStoryline', girlId: girl.id });
+  assert.equal(second.ok, true, second.message);
   assert.equal(second.state.storylines[0].slot, 2);
   assert.equal(second.state.storylines[0].requires, closed.storylines[0].id);
+  assert.equal(second.state.storylines[0].title, '第二段', '第 2 段用自己的那张图');
 
   const full = structuredClone(closed);
   for (let index = 0; index < 3; index += 1) {

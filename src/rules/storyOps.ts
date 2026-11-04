@@ -3,7 +3,7 @@ import { applyStoryEffect } from '../rules/storyCore.ts';
 import { STORY_SESSION_TURNS, buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
 import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } from '../rules/storyRun.ts';
 import { ensureGraph, validateGraph } from '../storygraph.ts';
-import { STORY_SLOT_MAX, playableStoryPlan, sanitizeStoryPlan } from '../storyplan.ts';
+import { STORY_SLOT_MAX, planForSlot, playableStoryPlan, sanitizeStoryPlan, setPlanForSlot } from '../storyplan.ts';
 import { archive, clone, dateLabel, findGirl } from '../rules/core.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
@@ -18,7 +18,11 @@ export function applyStartStoryline(state: GameState, action: Extract<GameAction
       const slot = finished.length + 1;
       if (slot > STORY_SLOT_MAX) return { state, ok: false, message: `${girl.name}的三段故事都讲完了，剩下的日子该往前走了。` };
       if (girl.bond < 20) return { state, ok: false, message: `${girl.name}还没有到愿意讲过去的程度（羁绊 20）。` };
-      const plan = girl.storyPlan;
+      // 三段各一张图：第 2/3 段没写过就先让叙事者写一张，不能拿第 1 段的图重跑。
+      const plan = planForSlot(girl, slot);
+      // 第 1 段没蓝图时仍用本地模板兜底（旧行为）；第 2/3 段必须有自己那张图，
+      // 否则就只能拿上一段的图重跑，那正是要修掉的事。
+      if (!plan && slot > 1) return { state, ok: false, message: `第 ${slot} 段还没有故事蓝图，先让叙事者按上一段的结局写一张。` };
       if (plan && !playableStoryPlan(plan)) return { state, ok: false, message: '这张蓝图还没有开始或结束节点，先补完再开场。' };
       if (plan) {
         const blockers = validateGraph(ensureGraph(plan)).filter(issue => issue.level === 'error');
@@ -41,18 +45,19 @@ export function applyStartStoryline(state: GameState, action: Extract<GameAction
 export function applySetStoryPlan(state: GameState, action: Extract<GameAction, { type: 'setStoryPlan' }>): ActionResult {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
+      const slot = Math.max(1, Math.min(STORY_SLOT_MAX, Math.round(action.slot ?? 1)));
       if (!action.plan) {
-        girl.storyPlan = undefined
-        return { state: next, ok: true, message: '已移除故事蓝图。' };
+        setPlanForSlot(girl, slot, null);
+        return { state: next, ok: true, message: `已移除第 ${slot} 段的故事蓝图。` };
       }
       const plan = sanitizeStoryPlan(action.plan);
-      if (!plan) return { state, ok: false, message: '剧本至少要有一幕，或者一张带开始与结束节点的蓝图。' };
-      girl.storyPlan = plan;
+      if (!plan) return { state: next, ok: false, message: '剧本至少要有一幕，或者一张带开始与结束节点的蓝图。' };
+      setPlanForSlot(girl, slot, plan);
       return {
         state: next, ok: true,
         message: plan.graph
-          ? `「${plan.title}」的蓝图已保存到${girl.name}的卡片里（${plan.graph.nodes.length} 个节点）。`
-          : `「${plan.title}」已保存到${girl.name}的卡片里。`,
+          ? `第 ${slot} 段「${plan.title}」的蓝图已保存到${girl.name}的卡片里（${plan.graph.nodes.length} 个节点）。`
+          : `第 ${slot} 段「${plan.title}」已保存到${girl.name}的卡片里。`,
       };
 }
 

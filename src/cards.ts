@@ -22,7 +22,7 @@ export function girlCardHash(card: GirlCard): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${hash(value)}`)
     .join('|');
-  const plan = g.storyPlan ? hash(JSON.stringify(g.storyPlan)) : '';
+  const plan = hash(JSON.stringify([g.storyPlan ?? null, g.storyPlans ?? null]));
   return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan, g.factionTag ?? ''].join(':'));
 }
 
@@ -36,6 +36,7 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       color: girl.color, quote: girl.quote, goal: girl.goal, appearance: girl.appearance, personality: girl.personality,
       witchPersonality: girl.witchPersonality?.trim() || undefined,
       outfitDescription: girl.outfitDescription, level: girl.level, storyPlan: girl.storyPlan ? { ...girl.storyPlan, beats: girl.storyPlan.beats.map(beat => ({ ...beat })) } : undefined,
+      storyPlans: Array.isArray(girl.storyPlans) ? girl.storyPlans.map(plan => plan ? { ...plan, beats: plan.beats.map(beat => ({ ...beat })) } : null) : undefined,
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
       // 自定义特性只活在这位少女身上，不写进卡片就再也还原不出来。
       traits: girl.traits.map(trait => ({ ...trait, tags: [...trait.tags] })),
@@ -161,6 +162,9 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       importedVariants: sanitizeExpressionVariants(g.importedVariants),
       witchForm,
       storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
+    storyPlans: Array.isArray((g as Record<string, unknown>).storyPlans)
+      ? ((g as Record<string, unknown>).storyPlans as unknown[]).slice(0, 3).map(item => sanitizeStoryPlan(item))
+      : undefined,
       // 旧卡片没有出身，或写进了已经废弃的 'office'：一律按名字确定性补齐，保证导入结果稳定。
       factionTag: sanitizeGirlFaction((g as Record<string, unknown>).factionTag, g.name!.trim()),
     },

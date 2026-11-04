@@ -172,7 +172,7 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
     outfitId: g.wardrobe?.length ? (g.outfitId ?? g.wardrobe[0].id) : 'custom',
     expression: g.expression ?? 'calm',
     corruption: 0, equipment: {}, custom: true, candidateUntilDay: next.day + 7, cardId: key, cardRevision: signature(g, card.storylines),
-    portraitSpec: g.portraitSpec, portraitHint: g.portraitHint ?? '', importedVariants: g.importedVariants,
+    portraitSpec: g.portraitSpec, portraitHint: g.portraitHint ?? '', importedVariants: g.importedVariants, storyPlans: g.storyPlans,
     witchForm: g.witchForm ? { ...g.witchForm, id: 'witchform', form: 'witch' } : undefined,
   }, { clone: false });
   next.candidates.unshift(girl);

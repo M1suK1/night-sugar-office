@@ -256,7 +256,7 @@ export interface GirlCard {
     /** 只在导入时算出来：有多少条特性没能还原。导出不会写这个字段。 */
     skippedTraits?: number;
     portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
-    portraitHint?: string; witchForm?: Outfit; witchPersonality?: string; storyPlan?: StoryPlan; importedVariants?: Record<string, string>;
+    portraitHint?: string; witchForm?: Outfit; witchPersonality?: string; storyPlan?: StoryPlan; /** 三段剧情各一张蓝图，索引 0–2；storyPlan 是第 1 段的旧字段。 */ storyPlans?: (StoryPlan | null)[]; importedVariants?: Record<string, string>;
     /** 出身；旧卡没有时按名字确定性补齐。 */
     factionTag?: GirlFaction;
   };
@@ -465,6 +465,8 @@ export interface StoryRun {
 export interface StoryPlan {
   title: string; premise: string; tone: string; beats: StoryBeat[];
   graph?: StoryGraph;
+  /** 这一段是从上一段的哪个结局接过来的（写进提示词，也方便界面上说清楚）。 */
+  continuesFrom?: string;
 }
 export interface IncidentEffect {
   gold?: number; reputation?: number;
@@ -736,7 +738,7 @@ export interface Girl {
   portraitCrop?: CropBox;
   retired?: boolean; dead?: boolean; diedAt?: string; archetype?: Archetype; quote?: string;
   lastTalkDay?: number; talksToday?: number;
-  goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[]; storyPlan?: StoryPlan;
+  goal: string; goalKind: GoalKind; traits: Trait[]; conditions: Condition[]; storyPlan?: StoryPlan; /** 三段剧情各一张蓝图；storyPlan 继续作为第 1 段的别名。 */ storyPlans?: (StoryPlan | null)[];
   cloneOf?: string; generation?: number;
   clinicRest?: boolean;
   contractEndDay: number; contractDays: number; contractRenewals: number;
@@ -1197,7 +1199,7 @@ export type GameAction =
   | { type: 'mergeIncidentPool'; entries: unknown[] }
   | { type: 'resolveIncident'; incidentId: string; optionId?: string }
   | { type: 'startStoryline'; girlId: string; direction?: string }
-  | { type: 'setStoryPlan'; girlId: string; plan: StoryPlan | null }
+  | { type: 'setStoryPlan'; girlId: string; plan: StoryPlan | null; slot?: number }
   | { type: 'addStoryline'; storyline: Storyline }
   | { type: 'decideStoryChoice'; storylineId: string; beatId: string; choiceId: string }
   | { type: 'advanceStoryline'; storylineId: string }

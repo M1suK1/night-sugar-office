@@ -3,6 +3,7 @@ import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVariantKey } from '../expressions';
+import { planForSlot } from '../storyplan';
 import { activePersonality } from '../personality';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
@@ -58,9 +59,9 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onExpressionVariants: () => void;
   onWardrobe: () => void;
   onStory: () => void;
-  onStoryBlueprint: () => void;
-  onStoryRegenerate: () => void;
-  onStoryGraph: () => void;
+  onStoryBlueprint: (slot?: number) => void;
+  onStoryRegenerate: (slot?: number) => void;
+  onStoryGraph: (slot?: number) => void;
   storyBusy: boolean;
   onStoryChoice: (storylineId: string, beatId: string, choiceId: string) => void;
   onStoryPort: (storylineId: string, port: string) => void;
@@ -130,7 +131,11 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
     : undefined;
   const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
   const beat = waitingMission ?? current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
-  const planGraph = girl.storyPlan?.graph;
+  // 三段各一张蓝图：面板上说的是「下一段」那张图（第 1 段没写就是它）。
+  const finishedStories = state.storylines.filter(item => item.girlId === girl.id && item.status === 'done').length;
+  const nextSlot = Math.max(1, Math.min(3, finishedStories + 1));
+  const slotPlan = planForSlot(girl, nextSlot);
+  const planGraph = slotPlan?.graph;
   const planEnds = planGraph?.nodes.filter(node => node.kind === 'end').length ?? 0;
   const graphChoice = storyline?.graph && storyline.run?.waiting?.kind === 'choice'
     ? storyline.graph.nodes.find(node => node.id === storyline.run?.waiting?.ref)
@@ -249,7 +254,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               {girl.witch && <p className="personality-warning">显化夜之形将把她内心最深层的执念扭曲放大为偏执、占有与多疑；唯有褪下魔女礼装、重返平静日常，原本温和的人格记忆方能重新主导心智。</p>}
             </section>
             <section className="story-panel" aria-labelledby="story-title">
-              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : girl.storyPlan?.graph ? `${girl.storyPlan.graph.nodes.length} 节点` : '未开启'}</em></div>
+              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.slot ?? 1} 段 · 第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : slotPlan?.graph ? `第 ${nextSlot} 段 · ${slotPlan.graph.nodes.length} 节点` : `第 ${nextSlot} 段 · 待生成`}</em></div>
               <ol className="story-slots" id="dossier-story-slots">
                 {Array.from({ length: 3 }, (_, index) => {
                   const slot = index + 1;
@@ -315,28 +320,28 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 </div>
               ) : (
                 <>
-                {girl.storyPlan && (
+                {slotPlan && (
                   <div className="story-plan-card" id="dossier-story-plan">
-                    <b>{girl.storyPlan.title}</b>
-                    <small>{planGraph ? `${planGraph.nodes.length} 个节点 · ${planEnds} 个结局 · 随契约卡一起导出` : `${girl.storyPlan.beats.length} 幕手稿 · 开场时会编译成蓝图`}</small>
+                    <b>第 {nextSlot} 段 · {slotPlan.title}</b>
+                    <small>{planGraph ? `${planGraph.nodes.length} 个节点 · ${planEnds} 个结局 · 随契约卡一起导出` : `${slotPlan.beats.length} 幕手稿 · 开场时会编译成蓝图`}{slotPlan.continuesFrom ? ` · 承接上一段的结局：${slotPlan.continuesFrom}` : ''}</small>
                     {planGraph ? (
                       <span className="story-plan-tags">{planGraph.nodes.slice(0, 8).map(node => <em key={node.id}>{node.title || '未命名'}</em>)}{planGraph.nodes.length > 8 && <em>+{planGraph.nodes.length - 8}</em>}</span>
                     ) : (
-                      <span className="story-plan-tags">{girl.storyPlan.beats.map((planBeat, planIndex) => <em key={planBeat.id}>{planIndex + 1}. {planBeat.title || '未命名'}</em>)}</span>
+                      <span className="story-plan-tags">{slotPlan.beats.map((planBeat, planIndex) => <em key={planBeat.id}>{planIndex + 1}. {planBeat.title || '未命名'}</em>)}</span>
                     )}
                   </div>
                 )}
                 <div className="story-start-row">
-                  {girl.storyPlan ? (
+                  {slotPlan ? (
                     <>
-                      <button id="dossier-story-start" type="button" className="btn" disabled={girl.bond < 20 || storyBusy} onClick={onStory}>{planGraph ? '按蓝图开场' : '按手稿开场'}{girl.bond < 20 ? '（羁绊需 20）' : ''}</button>
-                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph} disabled={storyBusy}>编辑蓝图</button>
-                      <button id="dossier-story-regenerate" type="button" className="btn ghost" onClick={onStoryRegenerate} disabled={storyBusy}>{storyBusy ? '重写中…' : '重新生成'}</button>
+                      <button id="dossier-story-start" type="button" className="btn" disabled={girl.bond < 20 || storyBusy} onClick={onStory}>开始第 {nextSlot} 段{planGraph ? '' : '（手稿）'}{girl.bond < 20 ? '（羁绊需 20）' : ''}</button>
+                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={() => onStoryGraph(nextSlot)} disabled={storyBusy}>编辑第 {nextSlot} 段蓝图</button>
+                      <button id="dossier-story-regenerate" type="button" className="btn ghost" onClick={() => onStoryRegenerate(nextSlot)} disabled={storyBusy}>{storyBusy ? '重写中…' : '按上一段结局重写'}</button>
                     </>
                   ) : (
                     <>
-                      <button id="dossier-story-blueprint" type="button" className="btn primary" onClick={onStoryBlueprint} disabled={storyBusy}>{storyBusy ? '叙事者正在画…' : '生成故事蓝图'}</button>
-                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={onStoryGraph} disabled={storyBusy}>手动画蓝图</button>
+                      <button id="dossier-story-blueprint" type="button" className="btn primary" onClick={() => onStoryBlueprint(nextSlot)} disabled={storyBusy}>{storyBusy ? '叙事者正在画…' : `生成第 ${nextSlot} 段蓝图`}</button>
+                      <button id="dossier-story-graph" type="button" className="btn ghost" onClick={() => onStoryGraph(nextSlot)} disabled={storyBusy}>手动画蓝图</button>
                     </>
                   )}
                 </div>

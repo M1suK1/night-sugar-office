@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Clock3, Copy, CopyPlus, Flag, Gift, GitBranch, MessageSquare, Pencil, Play, Plus, Sparkles, Target, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Girl, IncidentCard, StatKey, StoryEffect, StoryGraph, StoryNode, StoryNodeKind } from '../types.ts';
 import { NODE_LABELS, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph } from '../storygraph.ts';
-import { storyPlanTemplate } from '../storyplan.ts';
+import { planForSlot, storyPlanTemplate } from '../storyplan.ts';
 import { missionTemplates, statLabels, type MissionTemplateOption } from '../game.ts';
 
 const NODE_W = 190;
@@ -50,20 +50,21 @@ function portY(node: StoryNode, port: string): number {
   return node.y + 26 + index * 18;
 }
 
-export function StoryGraphDialog({ girl, incidents, roster, notice, onSave, onClose }: { girl: Girl; incidents: IncidentCard[]; roster?: Girl[]; notice?: string; onSave: (graph: StoryGraph, meta?: { title: string; premise: string; tone: string }) => void; onClose: () => void }) {
+export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, onSave, onClose }: { girl: Girl; /** 这是第几段的蓝图：三段各一张图。 */ slot?: number; incidents: IncidentCard[]; roster?: Girl[]; notice?: string; onSave: (graph: StoryGraph, meta?: { title: string; premise: string; tone: string }) => void; onClose: () => void }) {
   const initial = useMemo(() => {
-    if (girl.storyPlan?.graph) return structuredClone(girl.storyPlan.graph);
-    if (girl.storyPlan?.beats?.length) return compileBeatsToGraph(girl.storyPlan);
+    const plan = planForSlot(girl, slot);
+    if (plan?.graph) return structuredClone(plan.graph);
+    if (plan?.beats?.length) return compileBeatsToGraph(plan);
     const template = storyPlanTemplate('新的故事', '一句话写下这个故事的开头。');
     return compileBeatsToGraph({ ...template, beats: template.beats.slice(0, 1) });
-  }, [girl]);
+  }, [girl, slot]);
   const templates = useMemo(() => missionTemplates(), []);
   const [graph, setGraph] = useState<StoryGraph>(initial);
   const [metaOpen, setMetaOpen] = useState(false);
   const [meta, setMeta] = useState({
-    title: girl.storyPlan?.title ?? '新的故事',
-    premise: girl.storyPlan?.premise ?? '',
-    tone: girl.storyPlan?.tone ?? '克制',
+    title: planForSlot(girl, slot)?.title ?? '新的故事',
+    premise: planForSlot(girl, slot)?.premise ?? '',
+    tone: planForSlot(girl, slot)?.tone ?? '克制',
   });
   const initialId = initial.nodes.find(node => node.kind === 'start')?.id ?? null;
   const [selected, setSelected] = useState<string | null>(initialId);

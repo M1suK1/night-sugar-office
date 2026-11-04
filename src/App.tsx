@@ -6,6 +6,7 @@ import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployInci
 import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
 import { shouldAutoGenerate } from './autoGenerate';
+import { planForSlot } from './storyplan';
 import { loadProposalCheck, saveProposalCheck, type ProposalCheckMode } from './proposalCheck';
 import { portraitMissing } from './portraitReload';
 import { onLlmFinished } from './llm';
@@ -108,7 +109,7 @@ type Modal =
   | { type: 'battle-note'; id: string }
   | { type: 'event'; id: string }
   | { type: 'story'; id: string }
-  | { type: 'story-graph'; id: string }
+  | { type: 'story-graph'; id: string; slot?: number }
   | { type: 'codex'; id?: string }
   | { type: 'presets'; scope?: PromptScope; presetId?: string }
   | { type: 'settings'; boot?: boolean }
@@ -1181,29 +1182,34 @@ export default function App() {
     if (!target?.storyPlan) { notify('先生成或画一张故事蓝图，再按蓝图开场。', false); return; }
     perform({ type: 'startStoryline', girlId });
   };
-  const generateBlueprint = async (girlId: string) => {
+  const generateBlueprint = async (girlId: string, slot = 1) => {
     if (storyBusy) return;
     const target = state.girls.find(item => item.id === girlId);
     if (!target) return;
+    const wanted = Math.max(1, Math.min(3, Math.round(slot)));
     setStoryBusy(girlId);
     setStoryNotice(null);
     try {
-      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, taskRuntime(boundPreset('storyline', presets, binding), 'storyline'), latestState.current ?? state);
+      const result = await generateStoryBlueprint(loadLlmConfig(), target, undefined, taskRuntime(boundPreset('storyline', presets, binding), 'storyline'), latestState.current ?? state, { slot: wanted });
+      const priorEnding = [...(latestState.current ?? state).storylines]
+        .filter(story => story.girlId === girlId && story.status === 'done')
+        .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+        .at(-1)?.ending;
       if (result.ok) {
-        const plan: StoryPlan = { title: result.data.title, premise: result.data.premise, tone: result.data.tone, beats: [], graph: result.data.graph };
-        if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
-        setModal({ type: 'story-graph', id: girlId });
-        notify(`蓝图写好了：${result.data.graph.nodes.length} 个节点、${result.data.graph.nodes.filter(node => node.kind === 'end').length} 个结局。先检查，再按蓝图开场。`);
+        const plan: StoryPlan = { title: result.data.title, premise: result.data.premise, tone: result.data.tone, beats: [], graph: result.data.graph, continuesFrom: wanted > 1 ? priorEnding : undefined };
+        if (!perform({ type: 'setStoryPlan', girlId, plan, slot: wanted }, true)) return;
+        setModal({ type: 'story-graph', id: girlId, slot: wanted });
+        notify(`第 ${wanted} 段蓝图写好了：${result.data.graph.nodes.length} 个节点、${result.data.graph.nodes.filter(node => node.kind === 'end').length} 个结局。先检查，再按蓝图开场。`);
         return;
       }
-      if (target.storyPlan) {
+      if (planForSlot(target, wanted)) {
         notify(`这次没有重写蓝图：${result.message} 原来的蓝图还在。`, false);
         return;
       }
       const plan = fallbackStoryPlan(target);
-      if (!perform({ type: 'setStoryPlan', girlId, plan }, true)) return;
+      if (!perform({ type: 'setStoryPlan', girlId, plan, slot: wanted }, true)) return;
       setStoryNotice(`这次生成没有通过：${result.message} 先用本地四幕模板起了一张蓝图，你可以直接改。`);
-      setModal({ type: 'story-graph', id: girlId });
+      setModal({ type: 'story-graph', id: girlId, slot: wanted });
       notify('叙事者这次没写成，先用本地模板起了一张蓝图。', false);
     } catch (error) {
       notify(`生成蓝图时出错了：${error instanceof Error ? error.message : '未知错误'}`, false);
@@ -1471,7 +1477,7 @@ export default function App() {
     </div>
     <div className="toast-region" role="status" aria-live="polite" aria-atomic="false">{toasts.slice(0, 3).map(entry => <div className={`game-toast ${entry.ok ? '' : 'warning'}`} key={entry.id}>{entry.ok ? <Check size={18} /> : <Info size={18} />}<p>{entry.message}</p><button id={`dismiss-toast-${entry.id}`} onClick={() => setToasts(list => dismissToast(list, entry.id))} aria-label="关闭提示"><X size={15} /></button></div>)}</div>
     {modal && modal.type !== 'event' && modal.type !== 'story-graph' && modal.type !== 'workshop' && modal.type !== 'battle-note' && modal.type !== 'starter' && <Dialog label={modalTitle} onClose={() => setModal(modal.type === 'expression' || modal.type === 'witch-form' ? { type: 'girl', id: modal.id } : null)} wide={modal.type === 'girl' || modal.type === 'talk' || modal.type === 'battle' || modal.type === 'codex' || modal.type === 'memorial' || modal.type === 'custom' || modal.type === 'chronicle' || modal.type === 'presets' || modal.type === 'wardrobe' || modal.type === 'expression' || modal.type === 'witch-form' || modal.type === 'faction' || modal.type === 'office' || modal.type === 'cardbox'}>
-      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={() => void generateBlueprint(selectedGirl.id)} onStoryRegenerate={() => { if (window.confirm('重新生成会覆盖当前蓝图，确定吗？')) void generateBlueprint(selectedGirl.id); }} onStoryGraph={() => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id }); }} storyBusy={storyBusy === selectedGirl.id}
+      {modal.type === 'girl' && selectedGirl && <CharacterDialog key={`girl-${selectedGirl.id}`} girl={selectedGirl} state={state} onCare={mode => perform({ type: 'care', girlId: selectedGirl.id, mode })} onTalk={() => talk(selectedGirl.id)} onAssign={() => setModal({ type: 'assign', id: selectedGirl.id })} onHire={() => setModal({ type: 'hire', id: selectedGirl.id })} onRetire={() => { if (perform({ type: 'retire', girlId: selectedGirl.id })) setModal(null); }} onClinic={(mode, kink) => perform({ type: 'clinic', girlId: selectedGirl.id, mode, kink })} onAssistant={() => perform({ type: 'setAssistant', girlId: state.assistantId === selectedGirl.id ? undefined : selectedGirl.id })} onRemote={() => talk(selectedGirl.id, true)} onRenew={() => perform({ type: 'renewContract', girlId: selectedGirl.id })} onRehire={() => perform({ type: 'rehire', girlId: selectedGirl.id })} onChangeOutfit={outfitId => perform({ type: 'changeOutfit', girlId: selectedGirl.id, outfitId })} onExpression={expression => perform({ type: 'setExpression', girlId: selectedGirl.id, expression })} onExpressionVariants={() => setModal({ type: 'expression', id: selectedGirl.id })} onWardrobe={() => setModal({ type: 'wardrobe', id: selectedGirl.id })} onStory={() => startStory(selectedGirl.id)} onStoryBlueprint={(slot?: number) => void generateBlueprint(selectedGirl.id, slot ?? 1)} onStoryRegenerate={(slot?: number) => { if (window.confirm('重新生成会覆盖这一段的蓝图，确定吗？')) void generateBlueprint(selectedGirl.id, slot ?? 1); }} onStoryGraph={(slot?: number) => { setStoryNotice(null); setModal({ type: 'story-graph', id: selectedGirl.id, slot: slot ?? 1 }); }} storyBusy={storyBusy === selectedGirl.id}
           onStoryMission={(missionId) => setModal({ type: 'mission', id: missionId })} onStoryChoice={(storylineId, beatId, choiceId) => perform({ type: 'decideStoryChoice', storylineId, beatId, choiceId })} onStoryPort={(storylineId, port) => perform({ type: 'chooseStoryPort', storylineId, port })} onEvent={() => void startEvent(selectedGirl.id)} onWitch={() => { if (selectedGirl.witch) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: null }); else if (selectedGirl.witchForm) perform({ type: 'setWitchForm', girlId: selectedGirl.id, outfit: selectedGirl.witchForm }); else setModal({ type: 'witch-form', id: selectedGirl.id }); }} onWitchForm={() => setModal({ type: 'witch-form', id: selectedGirl.id })} onWitchFile={file => setModal({ type: 'witch-form', id: selectedGirl.id, portraitFile: file })} onPersonality={text => perform({ type: 'setPersonality', girlId: selectedGirl.id, text })} onProfileText={(field, text) => perform({ type: 'setProfileText', girlId: selectedGirl.id, field, text })} memories={finishedSessionEvents(state, selectedGirl.id).map(event => ({ id: event.id, title: event.title, day: event.day, rounds: (event.turns ?? []).filter(turn => turn.role === 'player').length }))} onMemory={eventId => setModal({ type: 'event', id: eventId })} portraitBroken={portraitMissing(selectedGirl)} onPortraitFile={async file => {
         try {
           const dataUrl = await resizeImageFile(file);
@@ -1523,17 +1529,19 @@ export default function App() {
       {modal?.type === 'story-graph' && selectedGirl && (
         <StoryGraphDialog
           girl={selectedGirl}
+          slot={modal.slot ?? 1}
           incidents={library.incidents}
           roster={[...state.girls, ...state.candidates]}
           notice={storyNotice ?? undefined}
           onClose={() => { setStoryNotice(null); setModal({ type: 'girl', id: selectedGirl.id }); }}
           onSave={(graph, meta) => {
-            const base = selectedGirl.storyPlan ?? storyPlanTemplate(`${selectedGirl.name}的故事`, '');
+            const slot = modal.slot ?? 1;
+            const base = planForSlot(selectedGirl, slot) ?? storyPlanTemplate(`${selectedGirl.name}的故事`, '');
             const plan: StoryPlan = { ...base, graph, ...(meta ?? {}) };
-            if (!perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan }, true)) return;
+            if (!perform({ type: 'setStoryPlan', girlId: selectedGirl.id, plan, slot }, true)) return;
             setStoryNotice(null);
             setModal({ type: 'girl', id: selectedGirl.id });
-            notify(`蓝图已保存：${graph.nodes.length} 个节点、${graph.nodes.filter(node => node.kind === 'end').length} 个结局。`);
+            notify(`第 ${slot} 段蓝图已保存：${graph.nodes.length} 个节点、${graph.nodes.filter(node => node.kind === 'end').length} 个结局。`);
           }}
         />
       )}
