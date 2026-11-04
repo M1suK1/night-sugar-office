@@ -1354,7 +1354,7 @@ test('SillyTavern 预设导入采样参数、主提示与忽略清单', () => {
   assert.ok(wrapped.system.includes('原始系统提示'));
   assert.ok(wrapped.system.includes('主提示文本'));
   assert.ok(wrapped.system.includes('约束文本'));
-  assert.equal(builtinPresets().length, 3);
+  assert.ok(builtinPresets().length >= 3, '三个代码预设仍在，另加八份出厂预设');
   const nested = importPresetObject({ name: 'ST 导出', settings: { temp_openai: 1.1, prompts: [{ identifier: 'main', content: '嵌套主提示' }] } });
   assert.equal(nested.preset?.prompts?.[0]?.content, '嵌套主提示');
   const clamped = presetRuntime({ ...parsed.preset!, settings: { ...parsed.preset!.settings, temp_openai: 9, openai_max_tokens: 1 } });
@@ -1363,7 +1363,7 @@ test('SillyTavern 预设导入采样参数、主提示与忽略清单', () => {
 });
 
 test('内置预设的最大输出统一抬到 6000–10000', () => {
-  const builtins = builtinPresets();
+  const builtins = builtinPresets().filter(preset => preset.id.startsWith('builtin-'));
   assert.equal(builtins.length, 3);
   for (const preset of builtins) {
     const runtime = presetRuntime(preset);
@@ -1758,7 +1758,10 @@ test('每个生成任务独立绑定预设，旧三档绑定会迁移', () => {
 });
 test('默认预设按任务拆开并改名为对应任务', () => {
   const builtins = builtinPresets();
-  const workspace = ensureTaskPresets(builtins, { ...DEFAULT_PRESET_BINDING });
+  // v140：默认绑定本来就一个用途一份预设，不需要拆；这里复现「所有用途共用一个预设」的旧状态。
+  const shared = { ...DEFAULT_PRESET_BINDING };
+  for (const task of PROMPT_TASK_SCOPES) shared[task] = 'builtin-balanced';
+  const workspace = ensureTaskPresets(builtins, shared);
   assert.equal(workspace.created, PROMPT_TASK_SCOPES.length);
   assert.equal(Object.values(workspace.binding).length, PROMPT_TASK_SCOPES.length);
   assert.equal(new Set(Object.values(workspace.binding)).size, PROMPT_TASK_SCOPES.length);
@@ -1769,7 +1772,7 @@ test('默认预设按任务拆开并改名为对应任务', () => {
     assert.equal(preset.builtin, false);
     assert.ok(presetPrompts(preset).length >= DEFAULT_PROMPTS.length);
   }
-  assert.equal(builtins.length, 3, '不应修改内置预设');
+  assert.ok(builtins.length >= 3, '不应修改内置预设');
   const again = ensureTaskPresets(workspace.presets, workspace.binding);
   assert.equal(again.created, 0);
   assert.equal(again.presets.length, workspace.presets.length);

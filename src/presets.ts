@@ -6,6 +6,7 @@
  */
 import { SECTION_PROMPTS } from './promptSections.ts';
 import { contractPrompts } from './promptContracts.ts';
+import { SHIPPED_PRESETS } from './content/presets/shipped/index.ts';
 import { resolveMacros, type MacroContext } from './promptMacros.ts';
 import { promptTokens } from './tokens.ts';
 
@@ -343,6 +344,37 @@ function defaultPromptCopies(extra: PromptEntry[] = []): PromptEntry[] {
   return [...DEFAULT_PROMPTS.map(entry => ({ ...entry })), ...contractPrompts().map(entry => ({ ...entry })), ...extra.map(entry => ({ ...entry }))];
 }
 
+/**
+ * 仓库自带的八份出厂预设（每日提案 / 故事线 / 完整剧情 / 角色对话 / 私人事件 / 战斗札记 / 角色起草 / 服装词条）。
+ *
+ * 它们是只读的内置预设：想改就「复制一份」，改副本，原件永远跟着仓库走。
+ * 导出文件里没有 contract 标记，这里按契约词条 id 补回来，否则契约会退化成普通词条、
+ * 既重复注入也改不动。
+ */
+export function shippedPresets(): ChatPreset[] {
+  const contractIds = new Set(contractPrompts().map(entry => entry.id));
+  const stamp = '2026-01-01T00:00:00.000Z';
+  const out: ChatPreset[] = [];
+  for (const shipped of SHIPPED_PRESETS) {
+    const result = importPresetObject(shipped.raw);
+    const preset = result.preset;
+    if (!preset) continue;
+    out.push({
+      ...preset,
+      id: shipped.id,
+      name: shipped.name.slice(0, 40),
+      description: `出厂预设 · 服务「${shipped.scope}」用途。只读；要改就复制一份。`,
+      builtin: true,
+      createdAt: stamp,
+      updatedAt: stamp,
+      prompts: preset.prompts?.map(entry => (entry.id && contractIds.has(entry.id)
+        ? { ...entry, contract: true, builtin: true }
+        : entry)),
+    });
+  }
+  return out;
+}
+
 export function builtinPresets(): ChatPreset[] {
   const stamp = '2026-01-01T00:00:00.000Z';
   return [
@@ -365,6 +397,7 @@ export function builtinPresets(): ChatPreset[] {
         { id: 'restraint', name: '克制约束', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '保持克制：少用感叹号，不写大段独白，情绪藏在动作与停顿里。每次只说 1–3 句。' },
       ]),
     },
+    ...shippedPresets(),
   ];
 }
 
@@ -936,17 +969,17 @@ export function renderPresetSystem(rawEntries: PromptEntry[], vars: Record<strin
 export type PresetBinding = Record<PromptTask, string>;
 
 export const DEFAULT_PRESET_BINDING: PresetBinding = {
-  chat: 'builtin-balanced',
-  daily: 'builtin-strict',
+  chat: 'shipped-chat',
+  daily: 'shipped-daily',
   news: 'builtin-balanced',
-  profile: 'builtin-strict',
-  storyline: 'builtin-balanced',
-  event: 'builtin-balanced',
-  arc: 'builtin-balanced',
+  profile: 'shipped-profile',
+  storyline: 'shipped-storyline',
+  event: 'shipped-event',
+  arc: 'shipped-arc',
   incident: 'builtin-balanced',
-  outfit: 'builtin-strict',
-  battle: 'builtin-balanced',
-  whisper: 'builtin-balanced',
+  outfit: 'shipped-outfit',
+  battle: 'shipped-battle',
+  whisper: 'shipped-chat',
 };
 
 const LEGACY_TASK: Partial<Record<PromptTask, 'chat' | 'generate' | 'story'>> = {
