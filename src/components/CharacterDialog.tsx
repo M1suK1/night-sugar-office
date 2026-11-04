@@ -484,10 +484,10 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <div className="appearance-head"><span className="appearance-index">01</span><div><h3 id="voice-title">她怎么说话</h3><small>只进提示词：她说话的方式，不是对她的描述。</small></div><em>{voiceFilled ? '已写语料' : '还没写'}</em></div>
                 <label className="voice-tone">
                   <span>说话方式</span>
-                  <input id="dossier-voice-tone" maxLength={30} value={voiceToneDraft} placeholder="短句，先反问再回答"
+                  <input id="dossier-voice-tone" maxLength={120} value={voiceToneDraft} placeholder="短句，先反问再回答"
                     onChange={event => setVoiceToneDraft(event.target.value)}
                     onBlur={() => { if (voiceToneDraft !== (girl.voice?.tone ?? '')) onProfileText?.('voiceTone', voiceToneDraft); }} />
-                  <small>{voiceToneDraft.length}/40</small>
+                  <small>{voiceToneDraft.length}/120</small>
                 </label>
                 <div className="text-pair">
                   <label className="text-panel">
