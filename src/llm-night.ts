@@ -183,7 +183,14 @@ function optionalInteger(ctx: Ctx, value: unknown, path: string, min: number, ma
 }
 
 function choice<T extends string>(ctx: Ctx, value: unknown, allowed: readonly T[], path: string, fallback: T): T {
-  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) return value as T;
+  const list = allowed as readonly string[];
+  if (typeof value === 'string' && list.includes(value)) return value as T;
+  // 模型偶尔把枚举示例抄成「calm|smile|surprise」；取出第一个合法值，别整条判成 fallback。
+  if (typeof value === 'string') {
+    for (const token of value.split(/[|\/／、,，\s]+/).map(part => part.trim()).filter(Boolean)) {
+      if (list.includes(token)) return token as T;
+    }
+  }
   error(ctx, path, `必须是 ${allowed.join(' / ')} 之一`);
   return fallback;
 }

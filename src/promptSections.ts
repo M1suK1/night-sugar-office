@@ -296,7 +296,8 @@ export function arcContract(targets: string): string {
 export function arcOpeningContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""]}',
+    '{"narration":"","lines":[{"speakerId":"","expression":"smile","text":"","mode":"speech|thought"}],"options":["","",""]}',
+    'expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。',
     'narration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 24 字、用「你……」开头。',
     '不要写数值与技能名。',
   ].join('\n');
@@ -306,7 +307,8 @@ export function arcOpeningContract(): string {
 export function arcTurnContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}',
+    '{"narration":"","lines":[{"speakerId":"","expression":"smile","text":"","mode":"speech|thought"}],"options":["","",""],"bond":0}',
+    'expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。',
     'narration 900–3000 字；lines 2–8 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 24 字、用「你……」开头。',
     'after 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。',
     'bond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。',
@@ -318,9 +320,9 @@ export function arcTurnContract(): string {
 export function battleContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
-    '{"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"calm|smile|surprise|sad|angry|shy","text":"","mode":"speech|thought"}]}',
+    '{"format":"continuous","title":"","hook":"","summary":"","narration":"","lines":[{"after":0,"speakerSide":"ally|enemy","speakerId":"","expression":"smile","text":"","mode":"speech|thought"}]}',
     'narration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。',
-    'expression 只能取 calm / smile / surprise / sad / angry / shy；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。',
+    'expression 只能取 calm / smile / surprise / sad / angry / shy，每句自己挑一个，不许写竖线列表，也不许整篇同一个表情；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。',
     '不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。',
     '战报里出现的「眩晕」是心防被打穿后的状态（她被打穿、站不稳），不是技能，也不是她对自己施放：写成「她心防被打穿，陷入眩晕」这类描述，不要写成「X 使用眩晕」。',
   ].join('\n');
@@ -365,8 +367,9 @@ export function arcUserHint(kind: 'beat' | 'opening' | 'turn', name = ''): strin
 export function dialogueContract(): string {
   return [
     '【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：',
-    '{"lines":[{"text":"说出口的台词","action":"可省略的动作或神态","expression":"calm|smile|surprise|sad|angry|shy"}]}',
+    '{"lines":[{"text":"说出口的台词","action":"可省略的动作或神态","expression":"smile"}]}',
     '一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。',
+    'expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要三条都用同一个值。',
   ].join('\n');
 }
 

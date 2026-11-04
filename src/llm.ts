@@ -258,7 +258,16 @@ function expressionOf(value: unknown): Expression {
   if (typeof value !== 'string') return 'calm';
   const key = value.trim().toLowerCase() as Expression;
   if (DIALOGUE_EXPRESSIONS.includes(key)) return key;
-  return EXPRESSION_WORDS[value.trim()] ?? 'calm';
+  const chinese = EXPRESSION_WORDS[value.trim()];
+  if (chinese) return chinese;
+  // 模型有时会把枚举示例原样抄成「calm|smile|surprise」；取第一个认得的，别整句判成平静。
+  for (const token of value.split(/[|\/／、,，\s]+/).map(part => part.trim()).filter(Boolean)) {
+    const lower = token.toLowerCase() as Expression;
+    if (DIALOGUE_EXPRESSIONS.includes(lower)) return lower;
+    const mapped = EXPRESSION_WORDS[token];
+    if (mapped) return mapped;
+  }
+  return 'calm';
 }
 
 function cleanLine(value: unknown): string {
