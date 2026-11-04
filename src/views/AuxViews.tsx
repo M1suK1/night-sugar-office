@@ -556,7 +556,7 @@ export function BaseView({
                   </div>
                 ) : (
                   <>
-                    <p className="av-module-hint">派 1–2 名待命成员进入星象台远行：每人每小时带回 300 星砂与 10 点经验，偶尔还会带回一段能写进档案的见闻（断药期不可参加）。</p>
+                    <p className="av-module-hint">派 1–{2 + Math.max(0, (state.rooms.find(room => room.type === 'observatory')?.level ?? 1) - 1)} 名待命成员进入星象台远行：每人每小时带回 {300 + Math.max(0, (state.rooms.find(room => room.type === 'observatory')?.level ?? 1) - 1) * 50} 星砂与 10 点经验，偶尔还会带回一段能写进档案的见闻（断药期不可参加）。每升一级星象台，人数上限 +1、每小时收益 +50 星砂。</p>
                     <div className="av-exp-roster" role="group" aria-label="选择远行成员">
                       {eligible.length ? eligible.map(girl => (
                         <button

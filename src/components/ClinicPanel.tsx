@@ -57,8 +57,10 @@ export function ClinicPanel({ state, girls, onTreat, onClear, onGirl }: {
         <section className="clinic-injured" aria-label="等待治疗">
           {ongoing.length > 0 && <h4><Stethoscope size={13} />等待治疗</h4>}
           {injured.map(girl => {
-            const quote = clinicQuote(girl, false);
-            const kinkQuote = clinicQuote(girl, true);
+            // 诊所等级决定治疗速度与费用折扣：面板报价必须和真正扣款一致。
+            const clinicLevel = state.rooms.find(room => room.type === 'clinic')?.level ?? 1;
+            const quote = clinicQuote(girl, false, clinicLevel);
+            const kinkQuote = clinicQuote(girl, true, clinicLevel);
             const affordable = state.gold >= quote.cost;
             const kinkAffordable = state.gold >= kinkQuote.cost;
             return (

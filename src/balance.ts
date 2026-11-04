@@ -11,6 +11,16 @@ export interface BalanceRules {
   clinicKinkFee: number;
   /** 治疗每小时恢复的血量。 */
   clinicHpPerHour: number;
+  /** 月光诊所每升 1 级，治疗速度额外 +多少血/小时。 */
+  clinicHpPerHourPerLevel: number;
+  /** 月光诊所每升 1 级，各项费用降低的百分点（治疗 / 重塑 / 清除 / 复制）。 */
+  clinicCostDiscountPerLevel: number;
+  /** 星象台每升 1 级，远行队伍人数上限 +几人。 */
+  expeditionMembersPerLevel: number;
+  /** 星象台每升 1 级，每人每小时的星砂收益 +多少。 */
+  expeditionGoldPerLevel: number;
+  /** 宿舍扩建价相对其它设施的折扣（百分点）：50 = 半价。 */
+  dormBuildDiscountPct: number;
   /** 宿舍每小时恢复的疲劳。 */
   dormFatiguePerHour: number;
   /** 侵蚀达到多少可以显形魔女化礼装。 */
@@ -50,6 +60,11 @@ export const DEFAULT_BALANCE: BalanceRules = {
   clinicPerHp: 9,
   clinicKinkFee: 320,
   clinicHpPerHour: 12,
+  clinicHpPerHourPerLevel: 10,
+  clinicCostDiscountPerLevel: 5,
+  expeditionMembersPerLevel: 1,
+  expeditionGoldPerLevel: 50,
+  dormBuildDiscountPct: 50,
   dormFatiguePerHour: 8,
   corruptionThreshold: 40,
   squadLimit: 3,
@@ -88,6 +103,11 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'clinicPerHp', label: '每点血量费用', hint: '按缺失血量累加，越重的伤越贵。', min: 0, max: 60, step: 1, unit: '星砂', group: '运营与诊所' },
   { key: 'clinicKinkFee', label: '治疗癖好加价', hint: '选择带癖好的治疗时额外收取。', min: 0, max: 3000, step: 10, unit: '星砂', group: '运营与诊所' },
   { key: 'clinicHpPerHour', label: '治疗速度', hint: '每小时恢复的血量；决定治疗占用多久。', min: 1, max: 60, step: 1, unit: '血/小时', group: '运营与诊所' },
+  { key: 'clinicHpPerHourPerLevel', label: '诊所每级加速', hint: '诊所升 1 级，治疗速度再加这么多血/小时。', min: 0, max: 40, step: 1, unit: '血/小时', group: '基地设施' },
+  { key: 'clinicCostDiscountPerLevel', label: '诊所每级折扣', hint: '诊所升 1 级，治疗 / 重塑 / 清除 / 复制费用降这么多百分点。', min: 0, max: 25, step: 1, unit: '%', group: '基地设施' },
+  { key: 'expeditionMembersPerLevel', label: '星象台每级人数', hint: '星象台升 1 级，远行队伍人数上限加几人。', min: 0, max: 3, step: 1, unit: '人', group: '基地设施' },
+  { key: 'expeditionGoldPerLevel', label: '星象台每级收益', hint: '星象台升 1 级，每人每小时多带回多少星砂。', min: 0, max: 500, step: 10, unit: '星砂', group: '基地设施' },
+  { key: 'dormBuildDiscountPct', label: '宿舍扩建折扣', hint: '宿舍扩建价相对其它设施的折扣，50 表示半价。', min: 0, max: 90, step: 5, unit: '%', group: '基地设施' },
   { key: 'dormFatiguePerHour', label: '宿舍恢复', hint: '宿舍每小时恢复的疲劳；影响挂机节奏。', min: 1, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },
   { key: 'corruptionThreshold', label: '魔女化阈值', hint: '侵蚀达到该值后解锁魔女化礼装。', min: 10, max: 100, step: 5, unit: '侵蚀', group: '运营与诊所' },
   { key: 'squadLimit', label: '派遣上限', hint: '单个委托最多派几人。', min: 1, max: 5, step: 1, unit: '人', group: '运营与诊所' },

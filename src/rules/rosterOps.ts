@@ -1,7 +1,8 @@
 import { effectiveGuard, effectiveMaxHp } from '../economy.ts';
 import { absoluteMinutes } from '../shift.ts';
 import { statusLabels } from '../rules/labels.ts';
-import { MEMORY_CLEAR_COST, capacity, clinicQuote, inWithdrawal, seatsTaken, treatmentFor } from '../rules/roster.ts';
+import { loadBalance } from '../balance.ts';
+import { MEMORY_CLEAR_COST, capacity, clinicPrice, clinicQuote, inWithdrawal, seatsTaken, treatmentFor } from '../rules/roster.ts';
 import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from '../office.ts';
 import { factionInfo } from '../content/items.ts';
 import { factionCollapsed, leaderById, leaderTitle, rosterLeader } from '../factions.ts';
@@ -193,7 +194,12 @@ export function applyStartExpedition(state: GameState, action: Extract<GameActio
       if (next.expeditions.length >= 1) return { state, ok: false, message: '星象台一次只能支持一支远行队伍。' };
       const observatory = next.rooms.find(r => r.type === 'observatory');
       if (!observatory) return { state, ok: false, message: '需要先建造星象台。' };
-      if (action.memberIds.length < 1 || action.memberIds.length > 2) return { state, ok: false, message: '远行队伍需要 1–2 人。' };
+      // 星象台每升 1 级多带一个人：1 级 2 人，4 级 5 人。
+      const perLevel = Math.max(0, Math.round(loadBalance().expeditionMembersPerLevel));
+      const maxMembers = 2 + Math.max(0, observatory.level - 1) * perLevel;
+      if (action.memberIds.length < 1 || action.memberIds.length > maxMembers) {
+        return { state, ok: false, message: `远行队伍需要 1–${maxMembers} 人（星象台 ${observatory.level} 级）。` };
+      }
       const members = action.memberIds.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g));
       if (members.length !== action.memberIds.length) return { state, ok: false, message: '队伍成员无效。' };
       for (const girl of members) {
@@ -218,6 +224,11 @@ export function applyRecallExpedition(state: GameState, action: Extract<GameActi
 }
 
 /** clinic 的动作处理器（v35 从 act 拆出）。 */
+/** 月光诊所当前等级（没有诊所按 1 级算）。 */
+function clinicLevel(state: GameState): number {
+  return state.rooms.find(room => room.type === 'clinic')?.level ?? 1;
+}
+
 export function applyClinic(state: GameState, action: Extract<GameAction, { type: 'clinic' }>): ActionResult {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
@@ -225,7 +236,7 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
       if (action.mode === 'treat') {
         if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}正在${statusLabels[girl.status]}，现在不能开始治疗。` };
         if (treatmentFor(next, girl.id)) return { state, ok: false, message: `${girl.name}已经在治疗台上了。` };
-        const quote = clinicQuote(girl, Boolean(action.kink));
+        const quote = clinicQuote(girl, Boolean(action.kink), clinicLevel(next));
         if (!quote.kink && quote.missing <= 0) return { state, ok: false, message: `${girl.name}没有需要处理的伤口。` };
         if (next.gold < quote.cost) return { state, ok: false, message: `这次治疗需要 ${quote.cost} 星砂，当前不足。` };
         const startedAt = absoluteMinutes(next.day, next.minutes);
@@ -247,9 +258,10 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
       }
       if (action.mode === 'wipe') {
         if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆重塑。' };
-        if (next.gold < 4000) return { state, ok: false, message: '记忆重塑需要 4,000 星砂。' };
+        const wipeCost = clinicPrice(4000, clinicLevel(next));
+        if (next.gold < wipeCost) return { state, ok: false, message: `记忆重塑需要 ${wipeCost.toLocaleString('en-US')} 星砂。` };
         const oldLevel = girl.level;
-        next.gold -= 4000; book(next, next.day, -4000);
+        next.gold -= wipeCost; book(next, next.day, -wipeCost);
         girl.level = 1; girl.exp = 0;
         girl.stats = { ...girl.baseStats };
         girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
@@ -258,16 +270,17 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
         girl.maxSpirit = effectiveGuard(girl);
         girl.spirit = girl.maxSpirit;
         girl.status = 'idle'; girl.remaining = 0; girl.conditions = [];
-        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级与能力回到起点，疤痕仍在。`, delta: -4000 });
+        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级与能力回到起点，疤痕仍在。`, delta: -wipeCost });
         return { state: next, ok: true, message: `${girl.name}的能力已重塑至 1 级。` };
       }
       if (action.mode === 'clear') {
         if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆清除。' };
         const mental = girl.scars.filter(scar => scar.kind === 'mental');
         if (!mental.length) return { state, ok: false, message: `${girl.name}没有可清除的精神疤痕。` };
-        if (next.gold < MEMORY_CLEAR_COST) return { state, ok: false, message: `记忆清除需要 ${MEMORY_CLEAR_COST.toLocaleString('en-US')} 星砂。` };
+        const clearCost = clinicPrice(MEMORY_CLEAR_COST, clinicLevel(next));
+        if (next.gold < clearCost) return { state, ok: false, message: `记忆清除需要 ${clearCost.toLocaleString('en-US')} 星砂。` };
         const target = mental.find(scar => scar.id === action.clearScarId) ?? mental[0];
-        next.gold -= MEMORY_CLEAR_COST; book(next, next.day, -MEMORY_CLEAR_COST);
+        next.gold -= clearCost; book(next, next.day, -clearCost);
         girl.scars = girl.scars.filter(scar => scar.id !== target.id);
         // 疤痕少了，上限跟着回来：血量按剩余疤痕重算，心防按当前共情重算。
         girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
@@ -277,16 +290,17 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
         next.logs.unshift({
           id: `log-clear-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'clinic',
           text: `${girl.name}做了一次记忆清除。「${target.name}」被折好收进档案袋，等级与能力没有动。`,
-          delta: -MEMORY_CLEAR_COST,
+          delta: -clearCost,
         });
         return { state: next, ok: true, message: `${girl.name}的精神疤痕「${target.name}」已被清除。` };
       }
       if (action.mode === 'clone') {
         if (girl.cloneOf || girl.generation) return { state, ok: false, message: '复制体不能再次被复制。' };
         if (girl.level < 3) return { state, ok: false, message: '只有 3 级以上的契约者可以进行复制。' };
-        if (next.gold < 18000) return { state, ok: false, message: '复制契约需要 18,000 星砂。' };
+        const cloneCost = clinicPrice(18000, clinicLevel(next));
+        if (next.gold < cloneCost) return { state, ok: false, message: `复制契约需要 ${cloneCost.toLocaleString('en-US')} 星砂。` };
         if (seatsTaken(next) >= capacity(next)) return { state, ok: false, message: '没有空余席位安置复制体。' };
-        next.gold -= 18000; book(next, next.day, -18000);
+        next.gold -= cloneCost; book(next, next.day, -cloneCost);
         const seed = hashText(`${girl.id}:${next.day}:${next.minutes}`).toString(16).padStart(8, '0');
         const copy: Girl = {
           ...clone(girl), id: `g_${seed}`, name: `${girl.name}·复制体`, codename: `${girl.codename} II`, level: 1, exp: 0,
@@ -297,7 +311,7 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
           contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, missionId: undefined,
         };
         next.girls.push(copy);
-        next.logs.unshift({ id: `log-clone-${copy.id}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `以${girl.name}为原体完成复制契约。复制体「${copy.name}」从 1 级开始。`, delta: -18000 });
+        next.logs.unshift({ id: `log-clone-${copy.id}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `以${girl.name}为原体完成复制契约。复制体「${copy.name}」从 1 级开始。`, delta: -cloneCost });
         return { state: next, ok: true, message: `${copy.name}已加入名册。` };
       }
       return { state, ok: false, message: '未知的诊所项目。' };

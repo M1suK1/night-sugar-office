@@ -1,3 +1,4 @@
+import { loadBalance } from '../balance.ts';
 import { outcomeLabel } from '../combat.ts';
 import { bossTemplateOf, pickBoss } from '../content/bosses.ts';
 import type { DistrictId } from '../districts.ts';
@@ -60,7 +61,10 @@ export function settleExpedition(state: GameState, expeditionId: string, at: { d
   const seed = hashText(`${expedition.id}:${expedition.cyclesDone}:${at.day}:${at.minutes}`);
   // 每人每小时 300 星砂、10 点经验：星象台以前一轮只给 60–180，
   // 比派遣还亏，没人愿意把人放上去。
-  const gain = EXPEDITION_GOLD_PER_HOUR * members.length;
+  // 星象台每升 1 级，每人每小时多带回一批星砂。
+  const observatoryLevel = state.rooms.find(room => room.type === 'observatory')?.level ?? 1;
+  const perHour = EXPEDITION_GOLD_PER_HOUR + Math.max(0, observatoryLevel - 1) * loadBalance().expeditionGoldPerLevel;
+  const gain = perHour * members.length;
   const found = seed % 10 < 6;
   state.gold += gain;
   book(state, at.day, gain);

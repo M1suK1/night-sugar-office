@@ -18,8 +18,31 @@ export function seatsTaken(state: GameState): number {
   return seatedGirls(state).length;
 }
 
-export function buildCost(room: { level: number }): number {
-  return 2400 * Math.max(1, room.level);
+export function buildCost(room: { level: number; type?: string }): number {
+  const base = 2400 * Math.max(1, room.level);
+  // 宿舍要养人、又不产出收益，扩建价按折扣走（默认半价）。
+  if (room.type === 'dorm') {
+    const off = Math.max(0, Math.min(90, loadBalance().dormBuildDiscountPct)) / 100;
+    return Math.round(base * (1 - off));
+  }
+  return base;
+}
+
+/** 月光诊所当前等级带来的治疗速度（血/小时）。 */
+export function clinicHpPerHour(level: number): number {
+  const balance = loadBalance();
+  return Math.max(1, balance.clinicHpPerHour + Math.max(0, level - 1) * balance.clinicHpPerHourPerLevel);
+}
+
+/** 月光诊所当前等级带来的费用折扣（0–1，越大越便宜）。 */
+export function clinicDiscount(level: number): number {
+  const balance = loadBalance();
+  return Math.max(0, Math.min(60, Math.max(0, level - 1) * balance.clinicCostDiscountPerLevel)) / 100;
+}
+
+/** 诊所相关费用按等级打折后的价格。 */
+export function clinicPrice(base: number, level: number): number {
+  return Math.max(0, Math.round(base * (1 - clinicDiscount(level))));
 }
 
 export function chance(girl: Girl, mission: Mission): number {
@@ -64,15 +87,16 @@ export interface ClinicQuote { missing: number; cost: number; minutes: number; p
  * 普通治疗：按缺失血量收费，半小时一档向上取整（12 点/小时 → 30 分钟恢复 6 点），最长 5 小时。
  * 治疗癖好：与血量无关，固定 2 小时、单独收费。
  */
-export function clinicQuote(girl: Girl, kink = false): ClinicQuote {
+export function clinicQuote(girl: Girl, kink = false, level = 1): ClinicQuote {
   const balance = loadBalance();
   const missing = Math.max(0, effectiveMaxHp(girl) - girl.hp);
+  const perHour = clinicHpPerHour(level);
   if (kink) {
-    return { missing, cost: balance.clinicKinkFee, minutes: 120, perHour: 0, maxMinutes: 120, kink: true };
+    return { missing, cost: clinicPrice(balance.clinicKinkFee, level), minutes: 120, perHour: 0, maxMinutes: 120, kink: true };
   }
-  const raw = Math.ceil((missing / Math.max(1, balance.clinicHpPerHour)) * 60);
+  const raw = Math.ceil((missing / perHour) * 60);
   const minutes = Math.min(300, Math.max(30, Math.ceil(raw / 30) * 30));
-  return { missing, cost: balance.clinicBase + missing * balance.clinicPerHp, minutes, perHour: balance.clinicHpPerHour, maxMinutes: 300, kink: false };
+  return { missing, cost: clinicPrice(balance.clinicBase + missing * balance.clinicPerHp, level), minutes, perHour, maxMinutes: 300, kink: false };
 }
 /** 正在进行的治疗；没有则返回 undefined。 */
 

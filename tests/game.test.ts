@@ -1883,7 +1883,11 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 17, 'v44 起在运营十项之外多了六个灯下私语字段，v50 再加一个城市新闻开关与一条分组');
+  assert.equal(BALANCE_FIELDS.length, 22, 'v44 六个私语字段 + v50 城市新闻开关 + v141 五个基地设施字段');
+  for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct']) {
+    assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);
+    assert.equal(typeof (DEFAULT_BALANCE as unknown as Record<string, number>)[key], 'number', `${key} 要有默认值`);
+  }
   clearBalanceCache();
 });
 

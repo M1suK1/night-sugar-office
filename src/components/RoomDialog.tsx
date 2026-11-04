@@ -121,7 +121,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
           <button id="room-expedition-recall" type="button" className="btn" onClick={() => onRecall(expedition.id)}>召回队伍</button>
         </> : <>
           <h3>派一支小队，去城市之外听听</h3>
-          <p>1–2 名成员，每小时带回星砂与见闻。</p>
+          <p>人数上限 = 等级 + 1，每人每小时收益随等级 +50 星砂。</p>
           <div className="room-pick-list">
             {eligible.map(g => (
               <button key={g.id} id={`room-expedition-${g.id}`} type="button" className={picked.includes(g.id) ? 'picked' : ''} aria-pressed={picked.includes(g.id)} onClick={() => setPicked(current => current.includes(g.id) ? current.filter(v => v !== g.id) : current.length >= 2 ? current : [...current, g.id])}>
