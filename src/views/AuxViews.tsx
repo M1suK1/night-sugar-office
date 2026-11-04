@@ -39,6 +39,16 @@ type LogKind = GameState['logs'][number]['kind'];
 
 const number = (value: number) => value.toLocaleString('zh-CN');
 const hm = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+/** 下一轮星象结算还有多久：按 lastSettled + 60 分钟算，跨夜也成立。 */
+function nextSettleLabel(expedition: GameState['expeditions'][number], state: GameState): string {
+  const next = expedition.lastSettledDay * 1440 + expedition.lastSettledMinutes + 60;
+  const now = state.day * 1440 + state.minutes;
+  const left = next - now;
+  if (left <= 0) return '即将结算';
+  const minutes = left % 60;
+  return minutes === 0 ? `${Math.floor(left / 60)} 小时后` : `${Math.floor(left / 60)} 小时 ${minutes} 分后`;
+}
+
 const statusText: Record<Girl['status'], string> = { idle: '闲暇中', mission: '任务执行中', healing: '正在治疗', resting: '正在休息', retired: '已退役', expedition: '星象台远行', left: '已离开' };
 const roomIcons = { lounge: Cat, clinic: HeartPulse, dorm: BedDouble, observatory: Telescope };
 const metricNames: Record<Metric, string> = { income: '委托收入', expense: '经营支出', reputation: '城市安定度' };
@@ -534,12 +544,12 @@ export function BaseView({
                     <div className="av-exp-members">
                       {expeditionMembers.map(girl => (
                         <button key={girl.id} id={`av-exp-member-${girl.id}`} type="button" className="av-exp-member" onClick={() => onGirl(girl.id)}>
-                          <img src={girl.portrait} alt="" loading="lazy" />
+                          <GirlThumb girl={girl} />
                           <span>{girl.name}<small>{statusText[girl.status]} · 疲劳 {girl.fatigue}</small></span>
                         </button>
                       ))}
                     </div>
-                    <p><Compass size={13} />已观测 {expedition.cyclesDone} 轮。每 60 分钟结算 60–180 星砂，疲劳达 95 自动返程。</p>
+                    <p><Compass size={13} />已观测 {expedition.cyclesDone} 轮 · 每人每小时 300 星砂 + 10 经验 · 下一轮 {nextSettleLabel(expedition, state)} · 疲劳达 95 自动返程。</p>
                     <button id="av-expedition-recall" type="button" className="av-btn av-btn-small" onClick={() => onRecallExpedition(expedition.id)}>
                       召回队伍 · 未结算的一轮作废
                     </button>
