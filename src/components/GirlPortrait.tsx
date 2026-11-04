@@ -80,9 +80,11 @@ export function GirlPortrait({ girl, variant = 'card', className = '', bare = fa
         className={`girl-portrait ${variant} imported ${activeVariant ? 'expression-variant' : ''} ${bare ? 'bare' : ''} ${className}`}
         data-expression={expression}
         data-expression-variant={activeVariant ? expression : undefined}
+        data-fallback={girl.name.slice(0, 1)}
       >
         <img
           src={shownPortrait}
+          onError={event => { event.currentTarget.style.visibility = 'hidden'; event.currentTarget.parentElement?.classList.add('failed'); }}
           alt={activeVariant ? `${girl.name}的${expressionLabel(expression)}表情` : `${girl.name}的立绘`}
           style={cropStyle(activeVariant ? undefined : girl.portraitCrop, framing)}
         />

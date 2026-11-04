@@ -220,8 +220,7 @@ export function CardLibraryDialog({ onImport, notify }: {
           return <li key={entry.hash} id={`cardbox-row-${short}`} className={`cardbox-card ${on ? 'on' : ''}`} onClick={() => toggle(entry.hash)}>
             <input id={`cardbox-check-${short}`} type="checkbox" checked={on} aria-label={`选择 ${entry.name}`} onChange={() => toggle(entry.hash)} />
             <span className="cardbox-card-mark" aria-hidden="true" style={{ color, borderColor: `${color}66` }}>{entry.name.slice(0, 1)}</span>
-            <span className="cardbox-name">{entry.name}<small>{entry.fileName}</small></span>
-            <span className="cardbox-card-meta">Lv.{entry.level} · {entry.element}</span>
+            <span className="cardbox-name" title={entry.fileName}>{entry.name}</span>
             <span className="cardbox-tag" style={{ color, borderColor: `${color}55` }}>{cardBoxTagLabel(entry.factionTag)}</span>
           </li>;
         })}
