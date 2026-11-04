@@ -1,3 +1,4 @@
+import { loadProposalCheck, repairRejectOptions } from './proposalCheck.ts';
 import type {
   Archetype, Element, Equipment, FactionId, GameState, Girl,
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
@@ -748,6 +749,8 @@ function parseCandidate(ctx: Ctx, value: unknown): NightCandidateSpec {
 
 /** 把模型 JSON 规范化成运行时可用的提案；所有硬错误都会阻止采纳。 */
 export function validateNightProposal(raw: unknown, state: GameState): NightValidation {
+  // 宽松模式：驳回写多了就地改成「只掉提出者羁绊」，不整份作废。
+  if (loadProposalCheck() !== 'strict') raw = repairRejectOptions(raw);
   const validation = validateNightProposalCore(raw, state);
   spendWarning(validation);
   return validation;

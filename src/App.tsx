@@ -5,6 +5,7 @@ import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployInci
 import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
 import { shouldAutoGenerate } from './autoGenerate';
+import { loadProposalCheck, saveProposalCheck, type ProposalCheckMode } from './proposalCheck';
 import { portraitMissing } from './portraitReload';
 import { onLlmFinished } from './llm';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
@@ -165,6 +166,8 @@ export default function App() {
     setPointsMuted(next);
     savePointsMuted(next);
   };
+  /** 提案审查力度：严格会整份作废，宽松就地修好驳回。 */
+  const [proposalCheck, setProposalCheck] = useState<ProposalCheckMode>(loadProposalCheck);
   /** 上一次提案失败的原文：留着给「重新生成」按钮用。 */
   const [proposalError, setProposalError] = useState<string | null>(null);
   /** 开局读卡进度：null 表示没在读。 */
@@ -336,6 +339,7 @@ export default function App() {
   useEffect(() => { document.documentElement.classList.toggle('reduced-motion', reduced); try { localStorage.setItem('night-sugar:motion', reduced ? 'reduced' : 'full'); } catch { /* Preferences are optional when storage is unavailable. */ } }, [reduced]);
   useEffect(() => { if (!auto) return; const timer = window.setInterval(() => { if (!document.hidden) setState(s => act(s, { type: 'advance', minutes: 5 }).state); }, 12000); return () => clearInterval(timer); }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
+  useEffect(() => { saveProposalCheck(proposalCheck); }, [proposalCheck]);
   useEffect(() => {
     if (!loaded) return;
     // 存档里没有这个日号（旧档、或被读档清洗掉）：先补一个今天的值，不生成。
@@ -1424,7 +1428,7 @@ export default function App() {
         notify(`已导入 ${entries.length} 张契约卡（分 ${planCardBatches(entries).length} 批读取）。`);
       }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} chime={chime} onChime={setChime} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} />}
+      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} chime={chime} onChime={setChime} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} proposalCheck={proposalCheck} onProposalCheck={setProposalCheck} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
