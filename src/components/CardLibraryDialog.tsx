@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileJson, FolderOpen, Info, Loader2, ScanLine, Search, Trash2, Upload, X } from 'lucide-react';
 import {
-  CARD_BOX_LIMIT, cardBoxTagLabel, cardboxAdd, cardboxFilter, cardboxRemove, loadCardBox,
+  CARD_BOX_LIMIT, cardboxAdd, cardboxFilter, cardboxRemove, loadCardBox,
 } from '../cardbox.ts';
 import type { CardBoxEntry } from '../cardbox.ts';
 import { girlFactionColors } from '../factions.ts';
@@ -221,7 +221,6 @@ export function CardLibraryDialog({ onImport, notify }: {
             <input id={`cardbox-check-${short}`} type="checkbox" checked={on} aria-label={`选择 ${entry.name}`} onChange={() => toggle(entry.hash)} />
             <span className="cardbox-card-mark" aria-hidden="true" style={{ color, borderColor: `${color}66` }}>{entry.name.slice(0, 1)}</span>
             <span className="cardbox-name" title={entry.fileName}>{entry.name}</span>
-            <span className="cardbox-tag" style={{ color, borderColor: `${color}55` }}>{cardBoxTagLabel(entry.factionTag)}</span>
           </li>;
         })}
       </ul>
