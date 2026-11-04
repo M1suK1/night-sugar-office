@@ -1,7 +1,7 @@
 import type { Girl, GirlVoice } from './types.ts';
 
 /** 语料各段的上限：进提示词，所以要短。 */
-export const VOICE_TONE_MAX = 40;
+export const VOICE_TONE_MAX = 60;
 /** 一条口头习惯本来就要说完一句话（自称 + 语气 + 回避什么），18 字会把它砍在半句上。 */
 export const VOICE_HABIT_MAX = 60;
 /** 例话是她说出口的一整句，按 80 字放行。 */
@@ -15,11 +15,16 @@ function clean(value: unknown): string {
 }
 
 function cleanList(value: unknown, perItem: number, limit: number): string[] {
-  if (!Array.isArray(value)) return [];
+  // 模型有时把数组写成一段字符串："「甲」","「乙」"。这里先拆开再清洗，
+  // 否则整段会变成一个超长条目，界面上看到的就是一串带引号的残句。
+  const raw = typeof value === 'string'
+    ? value.split(/\r?\n|"。?"|","|；|;/).filter(Boolean)
+    : value;
+  const list: unknown[] = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const item of value) {
-    const text = clean(item).slice(0, perItem);
+  for (const item of list) {
+    const text = clean(typeof item === 'string' ? item.replace(/^["']+|["']+$/g, '') : item).slice(0, perItem);
     if (!text || seen.has(text)) continue;
     seen.add(text);
     out.push(text);
