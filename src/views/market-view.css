@@ -197,3 +197,36 @@
 @media(max-width:1180px){.av-sold-preview{height:210px}}
 @media(max-width:940px){.av-sold-preview{height:260px}}
 @media(max-width:600px){.av-sold-preview{height:160px}}
+
+/* v117 货架卡片重排：跟事务所整体风格对齐，数值放大到能一眼看清 */
+.av-supply-group{border-color:#ffffff14;background:linear-gradient(160deg,#151021,#0d0b12)}
+.av-supply-group>header{gap:10px;align-items:center;margin-bottom:12px}
+.av-supply-seal{width:32px;height:32px;font-family:var(--font-display);font-size:12px;background:#0e0b14}
+.av-supply-standing{font-size:9px}
+.av-supply-standing b{font-size:13px}
+.av-supply-grid{gap:10px}
+.av-supply-card{
+  display:flex;flex-direction:column;gap:9px;
+  padding:13px 14px 12px;
+  border:1px solid #ffffff12;border-radius:9px;
+  background:linear-gradient(180deg,#141020,#0d0a12);
+  box-shadow:inset 0 1px 0 #ffffff08;
+}
+.av-supply-card:hover{border-color:#d996ad44;box-shadow:inset 0 1px 0 #ffffff0c,0 10px 24px #0006}
+.av-supply-title{gap:8px;font-size:12.5px;color:#f0dde8}
+.av-supply-title b{font-weight:500;letter-spacing:.02em}
+.av-supply-card p{margin:0;font-size:10px;line-height:1.95;letter-spacing:.01em;color:#a294a4}
+.av-supply-card .av-supply-stats{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;
+  margin:0;padding:8px 0 0;border-top:1px solid #ffffff0d;
+}
+.av-supply-card .av-supply-stats li{font-size:11px;color:#b6a6b6}
+.av-supply-card .av-supply-stats li b{font-family:var(--font-data);font-size:11.5px;font-weight:600;color:#f4e6ef}
+.av-supply-card .av-supply-stats li.stat-good b{color:#8fd6a8}
+.av-supply-card .av-supply-stats li.stat-bad b{color:#ef9aa6}
+.av-supply-buy{margin-top:auto;padding-top:9px;border-top:1px solid #ffffff0d;align-items:center}
+.av-supply-buy>span{font-family:var(--font-data);font-size:13px;color:#f4e6ef;letter-spacing:.02em}
+.av-supply-buy>span small{font-size:9px;color:#9b8493;margin-left:2px}
+.av-supply-buy .av-supply-limit{font-size:8px;color:#7d6a89;margin-left:6px}
+.av-supply-buy .av-btn{min-height:28px;padding:0 12px;font-size:10px;gap:4px}
+.av-supply-title em.av-supply-summary{font-size:8px;color:#9b8493;max-width:46%}
