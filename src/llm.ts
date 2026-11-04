@@ -1108,6 +1108,30 @@ interface JsonCallOutcome {
  * 没选预设时也显式给一个额度：交给服务端默认值（常见 4096）会截断较长的提案与蓝图。
  */
 const DEFAULT_TOKEN_BUDGET = 8000;
+
+/**
+ * 每种生成的最低输出预算。
+ *
+ * 推理模型的思维链也吃这份额度：几千字的蓝图、几条长台词的事件，很容易被截在
+ * 最后一个括号上，然后整份作废、只能重 roll。这里按「这一项平均要写多少字」给下限，
+ * 调用方传更小的值会被抬到这里；预设里配得更小也同样被抬。
+ */
+export const SCOPE_TOKEN_FLOOR: Record<string, number> = {
+  storyline: 32000,
+  arc: 24000,
+  event: 16000,
+  battle: 16000,
+  profile: 16000,
+  incident: 12000,
+  news: 12000,
+  daily: 12000,
+  outfit: 12000,
+  dialogue: 8000,
+};
+
+export function tokenFloorFor(scope: string): number {
+  return SCOPE_TOKEN_FLOOR[scope] ?? 0;
+}
 /** 截断重试的上限：低于这个额度都值得再试一次，再高就是上下文不够而不是额度不够。 */
 const RETRY_TOKEN_CEILING = 32768;
 /** 蓝图这类几千字的结构化输出：下限直接给 32000，别让思维链把正文挤掉。 */
@@ -1120,6 +1144,8 @@ async function chatJson(
   const cfg = applyPresetApi(runtime, config);
   if (meta) meta.slots = slotList(runtime);
   let params: LlmCallParams = presetParams(runtime) ?? {};
+  // 统一抬到这一用途的下限：调用方传 0 或很小的值都不再让正文被截断。
+  tokenFloor = Math.max(tokenFloor, tokenFloorFor(scope));
   // 设置里的输出预算优先：预算比契约下限低就按预算来，截断后还有一次自动放大重试。
   if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: Math.max(runtime.maxTokens, tokenFloor) };
   else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
@@ -1180,7 +1206,8 @@ async function generateDailyCore(config: LlmConfig, state: GameState, context?: 
   if (!validation.ok || !validation.proposal) {
     return { ok: false, message: `提案未通过本地校验：${validation.errors.slice(0, 6).join('；')}` };
   }
-  if (source.truncated) return { ok: false, message: jsonFailureMessage('生成失败：', source) };
+  // 截断但结构通过：收下并提醒一次。补收尾的活儿交给 jsonRepair，别再逼玩家重 roll。
+  if (source.truncated) validation.warnings.push('这次输出被截断过，本地已按括号补齐；若发现内容缺段，可以再生成一次。');
   return { ok: true, data: validation.proposal, warnings: validation.warnings };
 }
 
