@@ -27,6 +27,7 @@ export function Conversation({ girl, state, onSend, remote = false, modelEnabled
   const messages = useMemo<Message[]>(() => Array.isArray(stored)
     ? stored
     : [{ role: 'girl' as const, text: `「所长，今晚想聊些什么？」${girl.name}为你留出了身边的位置。`, expression: 'smile' as const }], [stored, girl.name]);
+  const expressionLabel: Record<Expression, string> = { calm: '平静', smile: '微笑', surprise: '惊讶', sad: '低落', angry: '生气', shy: '害羞' };
   const groups = useMemo(() => groupMessages(messages), [messages]);
   const latestExpression = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -48,7 +49,8 @@ export function Conversation({ girl, state, onSend, remote = false, modelEnabled
     <div className="conversation-character" style={{ '--girl-color': girl.color } as React.CSSProperties}>
       <div className="conversation-orbit" />
       <GirlPortrait key={shownExpression} girl={{ ...girl, expression: shownExpression }} variant="full" />
-      <div><span className="eyebrow">{remote ? '远程通话' : '今夜的片刻'}</span><h2>{girl.name}</h2><p>{girl.codename}</p><span className="conversation-bond"><Heart size={13} />羁绊 {girl.bond}</span></div>
+      <div><span className="eyebrow">{remote ? '远程通话' : '今夜的片刻'}</span><h2>{girl.name}</h2><p>{girl.codename}</p><span className="conversation-bond"><Heart size={13} />羁绊 {girl.bond}</span>
+          <span className="conversation-expression" id="conversation-expression">{expressionLabel[shownExpression]}</span></div>
     </div>
     <div className="conversation-main">
       <div className="conversation-heading"><div><MessageCircle size={17} /><b>灯下私语</b><span><MapPin size={12} />{remote ? '城南 · 家中' : state.rooms.find(room => room.id === girl.roomId)?.name}</span></div><button id="toggle-conversation-memory" className={`icon-btn ${memory ? 'selected' : ''}`} aria-pressed={memory} aria-label="查看对话记忆与场景上下文" onClick={() => setMemory(value => !value)}><BookOpen size={18} /></button></div>

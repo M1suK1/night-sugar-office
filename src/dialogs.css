@@ -971,3 +971,12 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 /* v105 卡库格子：称号一行、名字可以完整看到 */
 .cardbox-card .cardbox-name{flex:1;min-width:0}
 .cardbox-card .cardbox-card-mark{flex:0 0 auto}
+
+/* v121 导入立绘没有差分图：按表情做轻微的调色，悬停时看得见变化 */
+.girl-portrait.imported img{transition:filter .25s ease,transform .25s ease}
+.girl-portrait.imported[data-expression="smile"] img{filter:saturate(1.08) brightness(1.04)}
+.girl-portrait.imported[data-expression="surprise"] img{filter:brightness(1.06) contrast(1.03)}
+.girl-portrait.imported[data-expression="sad"] img{filter:saturate(.78) brightness(.94) hue-rotate(6deg)}
+.girl-portrait.imported[data-expression="angry"] img{filter:saturate(1.16) brightness(.97) hue-rotate(-8deg)}
+.girl-portrait.imported[data-expression="shy"] img{filter:sepia(.14) saturate(1.12) hue-rotate(-6deg) brightness(1.03)}
+.conversation-expression{margin-left:8px;padding:3px 8px;border:1px solid #f3aec933;border-radius:999px;font-size:8px;letter-spacing:.08em;color:#d9aec7;background:#f3aec90a}
