@@ -946,9 +946,16 @@ export default function App() {
       setOpeningBusy(false);
     }
   };
+  /** 这一局是不是「从头开始」：读档进来的不动首夜，只在每天开门时由换日逻辑处理。 */
+  const openingFilledOnce = useRef(false);
   useEffect(() => {
     // 等存档读完再补首夜：否则会拿默认名册去写提案，模型写出来的全是内置角色。
     if (phase !== 'play' || !booted || !loaded) return;
+    // 读档进来的一局：首夜该补的在当时就补过了，不要在载入时又补一份提案与委托。
+    // 这里只处理「刚开的一局」——它没有 hadSave，且是从编成/序章走到正片的。
+    if (openingFilledOnce.current) return;
+    openingFilledOnce.current = true;
+    if (hadSave) return;
     // 只补「首夜」：补过（openingFilledAt ≠ 0）就交给每日自动补充，不再插手。
     if (state.openingFilledAt !== 0) return;
     void fillOpening();
@@ -983,7 +990,10 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'play' || !booted || !loaded) return;
     if (marketRefillDay.current === state.day) return;
+    const firstThisSession = marketRefillDay.current === 0;
     marketRefillDay.current = state.day;
+    // 读档回到同一天：货架保持存档里的样子，不要一进来就补货。
+    if (firstThisSession && hadSave) return;
     if (marketCardGap(state) <= 0) return;
     void refillMarketFromCards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
