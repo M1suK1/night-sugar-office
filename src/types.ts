@@ -119,6 +119,8 @@ export interface FactionLeader {
   cardId?: string;
   /** v85：月蚀庭的首领开局就是魔女形态。 */
   witch?: boolean;
+  /** 魔女化立绘（同 FactionGirl）。 */
+  witchForm?: Outfit;
 }
 
 /** 某一方现存的首领与随从（可在开局编成里重新分配）。 */
@@ -147,6 +149,8 @@ export interface FactionGirl {
   cardId?: string;
   /** v85：开局就按魔女形态出场（月蚀庭首领与随从）。 */
   witch?: boolean;
+  /** 魔女化立绘：卡里带了就一路带到名册，魔女形态优先用它。 */
+  witchForm?: Outfit;
 }
 export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {

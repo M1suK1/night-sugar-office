@@ -1,3 +1,4 @@
+import { witchAwarePortrait } from './factions.ts';
 import { loadBalance } from './balance.ts';
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, getSkill } from './content/skills.ts';
@@ -305,7 +306,7 @@ function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: n
   const maxHp = Math.round((60 + girl.level * 14) * scale);
   const maxSpirit = guardMax({ stats: girl.stats });
   return {
-    uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: girl.portrait, color: girl.color,
+    uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: witchAwarePortrait(girl), color: girl.color,
     girlId: girl.id, codename: girl.codename, portraitSpec: girl.portraitSpec,
     hp: maxHp, maxHp, spirit: maxSpirit, maxSpirit,
     stats: { ...girl.stats }, skills: [...girl.skills], cooldown: {}, effects: [], down: false,

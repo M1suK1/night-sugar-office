@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain,
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
+import { witchAwarePortrait } from '../factions';
 import { envoyOfferOf } from '../rules/envoy';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf, representativeNameOf, representativeTitleOf } from '../factions';
@@ -318,8 +319,8 @@ export function BaseView({
                     return (
                       <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
                         <span className="av-envoy-seal av-envoy-leader" title={`${info.name} · ${representative.name}`}>
-                          {representative.portrait
-                            ? <img src={representative.portrait} alt="" />
+                          {witchAwarePortrait(representative)
+                            ? <img src={witchAwarePortrait(representative)} alt="" />
                             : <i>{representative.name.slice(0, 1)}</i>}
                         </span>
                         <div className="av-envoy-copy">
@@ -646,7 +647,7 @@ export function BaseView({
                           aria-pressed={expeditionSquad.includes(girl.id)}
                           onClick={() => toggleExpedition(girl.id)}
                         >
-                          <img src={girl.portrait} alt="" loading="lazy" />
+                          <img src={witchAwarePortrait(girl)} alt="" loading="lazy" />
                           <span>{girl.name}<small>Lv.{girl.level} · 疲劳 {girl.fatigue}</small></span>
                           {expeditionSquad.includes(girl.id) && <Check size={13} />}
                         </button>

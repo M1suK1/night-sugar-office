@@ -7,7 +7,8 @@ import { clinicQuote } from '../src/rules/roster.ts';
 import { defaultOpinionOptions } from '../src/opinions.ts';
 import { normalizeToLevel } from '../src/cardLibrary.ts';
 import { envoyOfferOf } from '../src/rules/envoy.ts';
-import { factionGirlsOf, factionRepresentativeOf } from '../src/factions.ts';
+import { customGirlOf, factionGirlsOf, factionRepresentativeOf, subjectOfCustom, witchAwarePortrait } from '../src/factions.ts';
+import { sanitizeCustomGirl } from '../src/rules/candidate.ts';
 import type { GirlCard } from '../src/types.ts';
 
 test('v145 借星砂：1 点安定换 300 星砂、每天最多 10 点、好感 −2', () => {
@@ -110,4 +111,27 @@ test('v145 月蚀庭的首领与随从默认魔女形态，玩家的月蚀庭角
   // 玩家自己名册里的月蚀庭角色不跟着变
   const own = s.girls.find(girl => girl.factionTag === 'witch');
   if (own) assert.equal(Boolean(own.witch), false);
+});
+
+test('v145 编进月蚀庭的人默认魔女形态，卡上的魔女化立绘跟着进名册', () => {
+  const portrait = 'data:image/png;base64,AAAA';
+  const witchPortrait = 'data:image/png;base64,BBBB';
+  const witchForm = { id: 'witchform', form: 'witch' as const, name: '夜之形', description: '', palette: ['#2a1524'], layerKey: 'witch', portrait: witchPortrait };
+  const subject = subjectOfCustom({
+    id: 'card-demo', name: '夜莺', factionTag: 'witch', level: 4, color: '#b98ad9',
+    portrait, stats: { magic: 40, insight: 40, agility: 40, empathy: 40 },
+    skillIds: ['moon-slash', 'moon-guard', 'moon-ult'], codename: 'nightingale', witchForm,
+  });
+  const inWitch = customGirlOf('witch', subject);
+  assert.equal(inWitch.witch, true, '月蚀庭的人默认魔女形态');
+  assert.equal(witchAwarePortrait(inWitch), witchPortrait, '魔女形态优先用魔女化立绘');
+  const inAssociation = customGirlOf('association', subject);
+  assert.equal(inAssociation.witch, undefined, '别的势力不沾这条');
+  assert.equal(witchAwarePortrait(inAssociation), portrait);
+
+  // 存档往返：witchForm 不能被洗掉
+  const kept = sanitizeCustomGirl({ ...inWitch }, 'witch', 'card-demo');
+  assert.ok(kept);
+  assert.equal(kept!.witchForm?.portrait, witchPortrait);
+  assert.equal(kept!.witch, true);
 });

@@ -67,6 +67,9 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     titles: { association: '', government: '', witch: '', ...(src.titles ?? {}) },
     duty: src.duty ?? { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
     cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
+    witch: src.witch === true ? true : undefined,
+    // v85：卡上的魔女化立绘要跟着人进名册，否则月蚀庭的人永远只有普通立绘。
+    witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
 }
 /** 同上，随从版本。 */
@@ -91,6 +94,8 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
     note: '由事务所编入名册的少女。',
     cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
+    witch: src.witch === true ? true : undefined,
+    witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
 }
 

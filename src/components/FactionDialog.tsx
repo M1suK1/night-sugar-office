@@ -72,7 +72,7 @@ export function FactionDialog({ state, faction, onBase, onHire, onClose }: Facti
       <header id="faction-leader" className="faction-leader">
         <div id="faction-leader-portrait" className="faction-leader-art">
           <GirlPortrait
-            girl={{ id: leader.id, name: leader.name, color: leader.color, portrait: leader.portrait, portraitSpec: leader.portraitSpec }}
+            girl={{ id: leader.id, name: leader.name, color: leader.color, portrait: leader.portrait, portraitSpec: leader.portraitSpec, witch: Boolean(leader.witch), witchForm: leader.witchForm }}
             variant="full"
           />
           <span className="faction-leader-seal">{dossier.seal}</span>
@@ -146,7 +146,7 @@ export function FactionDialog({ state, faction, onBase, onHire, onClose }: Facti
                 <li key={girl.id} className={openGirl === girl.id ? 'open' : ''}>
                   <button id={`faction-girl-${girl.id}`} type="button" className="faction-girl" onClick={() => setOpenGirl(openGirl === girl.id ? undefined : girl.id)}>
                     <span className="faction-girl-art" style={{ '--girl-color': girl.color } as React.CSSProperties}>
-                      <GirlPortrait girl={{ id: girl.id, name: girl.name, color: girl.color, portrait: girl.portrait, codename: girl.codename, portraitSpec: girl.portraitSpec }} variant="avatar" />
+                      <GirlPortrait girl={{ id: girl.id, name: girl.name, color: girl.color, portrait: girl.portrait, codename: girl.codename, witch: Boolean(girl.witch), witchForm: girl.witchForm, portraitSpec: girl.portraitSpec }} variant="avatar" />
                     </span>
                     <span className="faction-girl-copy">
                       <b>{girl.name}<i>{girl.codename}</i></b>

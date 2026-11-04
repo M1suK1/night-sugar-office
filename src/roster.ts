@@ -53,6 +53,9 @@ function girlSubject(girl: Girl): RosterSubject {
     quote: girl.quote,
     title: girl.title,
     cardId: girl.cardId,
+    // v85：卡上的魔女化立绘跟着人走，编进势力时才能真的用上。
+    witch: girl.witch || undefined,
+    witchForm: girl.witchForm,
   });
 }
 

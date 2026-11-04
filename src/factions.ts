@@ -5,7 +5,7 @@
  * 首领与所属少女分别来自 `content/factionLeaders.ts` 与 `content/factionGirls.ts`。
  * 档案 UI 与结算都经由访问器读取，不各自复制一份数值。
  */
-import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey } from './types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey, Outfit } from './types.ts';
 import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
 import { factionGirls, girlsOfFaction } from './content/factionGirls.ts';
@@ -163,6 +163,8 @@ export interface RosterSubject {
   codename?: string;
   /** 来自契约卡库的卡编号。 */
   cardId?: string;
+  witch?: boolean;
+  witchForm?: Outfit;
 }
 
 /** 原属首领 → 面板条目。 */
@@ -190,12 +192,14 @@ export function subjectOfCustom(input: {
   id: string; name: string; factionTag: GirlFaction; level: number; color: string;
   portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
   skillIds: string[]; codename?: string; quote?: string; title?: string; cardId?: string;
+  witch?: boolean; witchForm?: Outfit;
 }): RosterSubject {
   return {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
     level: input.level, color: input.color, portrait: input.portrait,
     portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
     origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
+    witch: input.witch, witchForm: input.witchForm,
   };
 }
 
@@ -218,6 +222,9 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
     cardId: subject.cardId,
+    // v85：编进月蚀庭的人默认按魔女形态出场（玩家自己的角色不受影响，只在这里落到名册条目上）。
+    witch: subject.witch ?? (faction === 'witch' ? true : undefined),
+    witchForm: subject.witchForm,
   };
 }
 
@@ -227,6 +234,7 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
     id: subject.id, faction, name: subject.name, title: subject.title,
     portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
     quote: subject.quote, note: '由事务所编入名册的少女。',
+    witch: subject.witch ?? (faction === 'witch' ? true : undefined), witchForm: subject.witchForm,
     level: factionLeaderLevel(subject.level),
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skillIds: subject.skillIds ?? [],
@@ -271,6 +279,7 @@ export interface FactionRepresentative {
   personality?: string;
   /** v85：这位首领默认以魔女形态出场（目前只有月蚀庭）。 */
   witch?: boolean;
+  witchForm?: Outfit;
   kind: 'leader' | 'envoy';
 }
 
@@ -291,6 +300,7 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     personality: (leader as { personality?: string }).personality,
     // v85：月蚀庭的首领开局就是魔女形态；玩家自己的月蚀庭角色不沾这条。
     witch: leader.witch || undefined,
+    witchForm: leader.witchForm,
     kind: 'leader',
   };
 }
@@ -435,4 +445,15 @@ export function canIntercept(
   const standing = state.factions?.[owner]?.standing ?? 0;
   if (factionAttitude(standing).label !== '戒备') return false;
   return rosterMembers(state as unknown as Pick<GameState, 'factionRoster'>, owner).length > 0;
+}
+
+/**
+ * 名册里的人的立绘（v85）。
+ *
+ * 静态三方名册的 portrait 是空的（走程序化绘制），只有从卡库/编成进来的人才带图；
+ * 魔女形态的人优先用她卡上那张魔女化立绘，没有再退回普通立绘。
+ */
+export function witchAwarePortrait(person: { portrait?: string; witch?: boolean; witchForm?: { portrait?: string } }): string {
+  if (person.witch && person.witchForm?.portrait) return person.witchForm.portrait;
+  return person.portrait ?? '';
 }

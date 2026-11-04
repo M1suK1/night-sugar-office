@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, RotateCcw, Search, Star, UserRoundPlus, Users, X } from 'lucide-react';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState } from '../types';
 import { factionInfo } from '../content/items';
+import { parseGirlCard } from '../cards';
 import { FACTION_ORDER } from '../territories';
 import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, type RosterSubject } from '../factions';
-import { loadCardBox, type CardBoxEntry } from '../cardbox';
+import { loadCardBox, type CardBoxEntry , readCardRaw } from '../cardbox';
 import { STARTER_COUNT, cardFactionRoster, randomStarterAssignment, rosterPool, starterPicks } from '../roster';
 import { OPENING_CARDS } from '../opening';
 import { GirlPortrait } from './GirlPortrait';
@@ -256,16 +257,46 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     });
   };
 
-  const confirm = () => {
+  /**
+   * 编成确认（v85）。
+   *
+   * 卡库条目在池子里只有索引信息（立绘留空，避免几十 MB 全部解析）。被真正排进
+   * 三方名册的那几张卡要单独读回来：不然卡上做的魔女化立绘根本到不了名册，
+   * 名册里永远是程序化剪影。
+   */
+  const confirm = async () => {
+    const placed = FACTION_ORDER.flatMap(faction => [roster[faction].leaderId, ...roster[faction].memberIds]).filter(Boolean);
+    const hashes = [...new Set(placed)]
+      .filter(id => id.startsWith('card-'))
+      .map(id => id.slice('card-'.length));
+    const art = new Map<string, { portrait?: string; portraitSpec?: RosterSubject['portraitSpec']; witchForm?: RosterSubject['witchForm'] }>();
+    for (const hash of hashes.slice(0, 8)) {
+      try {
+        const raw = await readCardRaw(hash);
+        if (!raw) continue;
+        const parsed = parseGirlCard(raw);
+        if (!parsed.ok) continue;
+        const girl = parsed.card.girl;
+        art.set(`card-${hash}`, {
+          portrait: girl.portrait,
+          portraitSpec: girl.portraitSpec,
+          witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
+        });
+      } catch { /* 单张读失败就当没立绘，别挡住编成。 */ }
+    }
+    const enrich = (subject: RosterSubject): RosterSubject => {
+      const extra = art.get(subject.id);
+      return extra ? { ...subject, ...extra } : subject;
+    };
     const leaders: FactionLeader[] = [];
     const girls: FactionGirl[] = [];
     for (const faction of FACTION_ORDER) {
       const leaderId = roster[faction].leaderId;
       const leaderSubject = pool.find(subject => subject.id === leaderId);
-      if (leaderSubject && leaderSubject.origin === 'custom') leaders.push(customLeaderOf(faction, leaderSubject));
+      if (leaderSubject && leaderSubject.origin === 'custom') leaders.push(customLeaderOf(faction, enrich(leaderSubject)));
       for (const id of roster[faction].memberIds) {
         const subject = pool.find(item => item.id === id);
-        if (subject && subject.origin === 'custom') girls.push(customGirlOf(faction, subject));
+        if (subject && subject.origin === 'custom') girls.push(customGirlOf(faction, enrich(subject)));
       }
     }
     onConfirm(picked, roster, { leaders, girls }, assistantId);
@@ -498,7 +529,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
         </span>
         <div className="starter-foot-actions">
           {!legal && <button id="starter-fill" type="button" className="btn ghost" onClick={fillEmpty}>补齐空位</button>}
-          <button id="starter-confirm" type="button" className="btn" disabled={!legal} onClick={confirm}>确认编成</button>
+          <button id="starter-confirm" type="button" className="btn" disabled={!legal} onClick={() => void confirm()}>确认编成</button>
         </div>
       </footer>
       </div>
