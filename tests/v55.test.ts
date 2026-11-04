@@ -4,9 +4,13 @@ import { DEFAULT_TASK_BUDGETS, extractJsonObject, incidentEntriesFrom } from '..
 
 const entry = (title: string, category = 'decision') => ({ category, title, body: '桥头的冷藏货卡封印开裂，市役所限四十分钟内处理。', options: [] });
 
-test('v55 截断的回复不再滑进内层对象：宁可当没给出 JSON，也不返回半截', () => {
+test('v55 截断的回复不会滑进内层对象：要么补齐最外层，要么当没给出 JSON', () => {
   const cut = '{"entries":[{"category":"decision","title":"桥头的失控货卡","options":[{"label":"执行指令冲滩","hint":"保秩序"';
-  assert.equal(extractJsonObject(cut), null, '未闭合的对象不能滑动到内层选项对象');
+  // v122 起：只差收尾括号时按括号栈补齐，仍然必须保留最外层（entries），不能滑进内层的选项对象。
+  const salvaged = extractJsonObject(cut);
+  assert.ok(salvaged, '只差收尾的内容会被补齐');
+  assert.ok(Array.isArray(salvaged!.entries), '补齐后必须还是最外层结构');
+  assert.equal(extractJsonObject('{"entries":[{"category":'), null, '截在键名中间就放弃');
   const complete = '{"entries":[{"category":"decision","title":"桥头的失控货卡","options":[]}]}';
   assert.deepEqual(extractJsonObject(complete), { entries: [{ category: 'decision', title: '桥头的失控货卡', options: [] }] });
   assert.deepEqual(extractJsonObject('```json\n{"entries":[]}\n```'), { entries: [] }, '代码块照样能取');
