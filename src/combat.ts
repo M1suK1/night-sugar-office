@@ -77,14 +77,15 @@ function hitBonus(unit: BattleUnit): number {
  * 不再额外给基础补偿，同属性对拼就是技能的基础命中。
  */
 export function hitChanceOf(attacker: BattleUnit, target: BattleUnit, skill: Skill): {
-  base: number; insight: number; targetAgility: number; bonus: number; chance: number;
+  base: number; insight: number; targetAgility: number; bonus: number; chance: number; factor: number;
 } {
   const base = skillAccuracy(skill);
   const insight = statOf(attacker, 'insight');
   const targetAgility = statOf(target, 'agility');
   const bonus = hitBonus(attacker);
-  const chance = clamp(15, 95, Math.round(base + (insight - targetAgility) * 0.5 + bonus));
-  return { base, insight, targetAgility, bonus, chance };
+  const factor = 0.5;
+  const chance = clamp(15, 95, Math.round(base + (insight - targetAgility) * factor + bonus));
+  return { base, insight, targetAgility, bonus, chance, factor };
 }
 /** 速度值：敏捷决定先手；洞察不再参与排序。 */
 export function speedOf(unit: BattleUnit): number {
@@ -490,7 +491,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             if (target.spirit <= 0) {
               breakGuard(target);
               brokenThisRound.add(target.uid);
-              log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'spirit', amount: dealt, note: `${target.name}的心防被打穿，踉跄了一拍`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield: 0, dealt } } });
+              log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource: 'spirit', amount: dealt, note: `${target.name}的心防被打穿，踉跄了一拍`, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield: 0, dealt, guard: 1, broken: target.spiritBroken ? BROKEN_TAKEN_MUL : 1 } } });
             }
           } else if (skill.resource === 'spirit') {
             // 心防已破：共情伤害按 70% 折算成血量伤害，走护盾与减伤。
@@ -512,7 +513,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             unit.dealt += dealt;
             note = `${target.name}的血量 ${dealt}${isGuarded(target) ? '（护持 −30%）' : ''}`;
           }
-          if (note) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource, amount: dealt, note, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt } } });
+          if (note) log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: true, resource, amount: dealt, note, calc: { hit: hitCalc, damage: { magic, power: skill.power, variance, mitigation, raw, shield, dealt, guard: skill.resource === 'spirit' ? 1 : guardHpMul(target), broken: target.spiritBroken ? BROKEN_TAKEN_MUL : 1 } } });
           for (const rule of rulesOf(target)) {
             if (rule.trigger !== 'hit') continue;
             if (rule.effect === 'debuffAttacker') addEffect(unit, { kind: 'debuff', stat: rule.stat ?? 'hit', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });

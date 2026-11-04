@@ -943,8 +943,9 @@ export interface BattleUnit {
 }
 export interface BattleCalc {
   /** v33 起命中由洞察对敏捷计算；`agility` 只留给旧战报回放。 */
-  hit?: { base: number; insight?: number; agility?: number; targetAgility: number; bonus: number; chance: number; roll: number };
-  damage?: { magic: number; power: number; variance: number; mitigation: number; raw: number; shield: number; dealt: number };
+  hit?: { base: number; insight?: number; agility?: number; targetAgility: number; bonus: number; chance: number; roll: number; factor?: number };
+  /** guard 是心防未破时的血量折减（0.7），broken 是破防后受伤加成（1.4）；旧战报没有这两个字段。 */
+  damage?: { magic: number; power: number; variance: number; mitigation: number; raw: number; shield: number; dealt: number; guard?: number; broken?: number };
   heal?: { magic: number; power: number; raw: number; capped: number };
 }
 export interface BattleEvent {

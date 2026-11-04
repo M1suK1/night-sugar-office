@@ -44,18 +44,21 @@ function calcText(event: BattleEvent): string {
   if (calc.hit) {
     const h = calc.hit;
     const bonus = h.bonus ? ` + 修正 ${h.bonus}` : '';
-    const odds = h.insight === undefined
-      // 旧战报没有洞察，保留原来的敏捷对敏捷说明。
-      ? `基础 ${h.base} + 敏捷 ${h.agility ?? '?'} − 敌敏 ${h.targetAgility}${bonus}`
-      : `基础 ${h.base} + 洞察 ${h.insight} − 敌敏 ${h.targetAgility}${bonus}`;
+    // 差值只按 0.5 计入（旧战报没记系数，按同一套公式显示）。
+    const factor = h.factor ?? 0.5;
+    const pair = h.insight === undefined ? `敏捷 ${h.agility ?? '?'}` : `洞察 ${h.insight}`;
+    const odds = `基础 ${h.base} + (${pair} − 敌敏 ${h.targetAgility}) × ${factor}${bonus}`;
     parts.push(`命中 ${Math.round(h.chance)}% ＝ ${odds}；d100 ${h.roll.toFixed(1)} → ${event.hit ? '命中' : '落空'}`);
   }
   if (calc.damage) {
     const d = calc.damage;
     const mitigation = d.mitigation < 1 ? ` × 减伤 ${Math.round(d.mitigation * 100)}%` : '';
+    // 心防未破时血量伤害打七折，破防后受伤 +40%：这两步以前没写进算式，看着就像算错。
+    const guard = d.guard !== undefined && d.guard < 1 ? ` × 护持 ${d.guard.toFixed(2)}` : '';
+    const broken = d.broken !== undefined && d.broken > 1 ? ` × 破防 ${d.broken.toFixed(2)}` : '';
     const shield = d.shield > 0 ? ` − 护盾吸收 ${d.shield}` : '';
     const label = event.resource === 'spirit' ? '共情削减' : '伤害';
-    parts.push(`${label} ${d.raw} ＝ 魔力 ${d.magic} × 倍率 ${d.power} × 波动 ${d.variance.toFixed(2)}${mitigation}${shield} → 实际 ${d.dealt}`);
+    parts.push(`${label} ${d.raw} ＝ 魔力 ${d.magic} × 倍率 ${d.power} × 波动 ${d.variance.toFixed(2)}${mitigation}${guard}${broken}${shield} → 实际 ${d.dealt}`);
   }
   if (calc.heal) {
     const h = calc.heal;
