@@ -766,7 +766,7 @@
 .battle-note-side.dense .battle-note-portrait figcaption b { font-size: 13px; }
 .battle-note-side.dense .battle-note-portrait figcaption small { font-size: 6.5px; }
 
-.battle-note-portrait { flex: 0 1 auto; width: 47%; max-width: 100%; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 4px; border: 1px solid var(--note-color); border-radius: 4px; background: #08060b; box-shadow: 0 0 0 1px #0008, 0 10px 30px #0007, inset 0 0 22px color-mix(in srgb, var(--note-color) 12%, transparent); transition: transform .35s ease, filter .35s ease; filter: brightness(.62) saturate(.72); }
+.battle-note-portrait { flex: 0 1 auto; width: 47%; max-width: 100%; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 4px; border: 1px solid var(--note-color); border-radius: 4px; background: #08060b; box-shadow: 0 0 0 1px #0008, 0 10px 30px #0007, inset 0 0 22px color-mix(in srgb, var(--note-color) 12%, transparent); transition: transform .35s ease, opacity .35s ease; opacity: .62; }
 .battle-note-portrait:only-of-type { flex: 0 1 auto; width: 47%; max-width: 100%; }
 .battle-note-portrait:only-of-type .battle-note-portrait-art { flex: 0 0 auto; }
 .battle-note-portrait-art { position: relative; flex: 0 0 auto; width: 100%; height: auto; aspect-ratio: 1 / 4; margin: 0 auto; min-height: 0; overflow: hidden; }
@@ -776,11 +776,11 @@
 .battle-note-portrait-art .girl-portrait > svg { object-fit: cover; }
 .battle-note-portrait .portrait-vignette { background: linear-gradient(180deg, transparent 48%, #08060bdd 92%, #08060b 100%); }
 .battle-note-expression { position: absolute; top: 8px; right: 4px; z-index: 2; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--note-color) 35%, transparent); border-radius: 3px; background: #0b0910c9; color: #dcc7d8; font-size: 7px; letter-spacing: .08em; opacity: .65; }
-.battle-note-portrait.speaking { filter: brightness(1.05) saturate(1); transform: translateY(-5px); z-index: 2; }
+.battle-note-portrait.speaking { opacity: 1; transform: translateY(-5px); z-index: 2; }
 .battle-note-portrait.speaking .battle-note-expression { opacity: 1; border-color: var(--note-color); color: #fff0f6; }
 .battle-note-portrait.speaking .girl-portrait { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--note-color) 22%, transparent)); }
-.battle-note-portrait.down { filter: grayscale(1) brightness(.36); opacity: .58; }
-.battle-note-portrait.down.speaking { filter: grayscale(.8) brightness(.62); }
+.battle-note-portrait.down { filter: grayscale(1); opacity: .4; }
+.battle-note-portrait.down.speaking { filter: grayscale(1); opacity: .55; }
 .battle-note-portrait figcaption { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; box-sizing: border-box; margin-top: -10px; padding: 5px 4px 4px; border: 1px solid #ffffff12; border-top-color: color-mix(in srgb, var(--note-color) 65%, transparent); background: linear-gradient(180deg, #0c0a10e8, #08060bd9); box-shadow: 0 8px 24px #0008; }
 .battle-note-portrait figcaption b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 400; font-size: 14px; letter-spacing: .06em; color: #f5eaf1; }
 .battle-note-portrait figcaption small { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9d8ba4; font-family: var(--font-data); font-size: 7px; letter-spacing: .12em; }
