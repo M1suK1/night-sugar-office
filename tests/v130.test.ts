@@ -36,5 +36,5 @@ test('v130 心防未破的血量伤害比满伤低，破防后会更高', () => 
   const guards = battle.events.map(event => event.calc?.damage?.guard).filter((value): value is number => typeof value === 'number');
   const brokens = battle.events.map(event => event.calc?.damage?.broken).filter((value): value is number => typeof value === 'number');
   assert.ok(guards.every(value => value === 0.7 || value === 1), '护持系数只能是 0.7 或 1');
-  assert.ok(brokens.every(value => value === 1.4 || value === 1), '破防系数只能是 1.4 或 1');
+  assert.ok(brokens.every(value => value === 1.3 || value === 1), '破防系数只能是 1.3 或 1');
 });

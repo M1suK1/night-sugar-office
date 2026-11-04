@@ -12,8 +12,8 @@
 export const GUARD_PER_EMPATHY = 2;
 export const GUARD_HP_MUL = 0.7;
 export const BROKEN_SPIRIT_MUL = 0.7;
-/** 心防崩了以后，护持散掉，挨打更实：血量伤害 ×1.4。 */
-export const BROKEN_TAKEN_MUL = 1.4;
+/** 心防崩了以后，护持散掉，挨打更实：血量伤害 ×1.3。 */
+export const BROKEN_TAKEN_MUL = 1.3;
 export const GUARD_STUN_ROUNDS = 1;
 /** 装备能给到的心防百分比上限。 */
 export const GUARD_BONUS_PCT_MAX = 60;

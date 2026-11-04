@@ -83,7 +83,8 @@ export function hitChanceOf(attacker: BattleUnit, target: BattleUnit, skill: Ski
   const insight = statOf(attacker, 'insight');
   const targetAgility = statOf(target, 'agility');
   const bonus = hitBonus(attacker);
-  const factor = 0.5;
+  // 差值按全额计入：洞察高 1 点就是 +1% 命中，不再打对折。
+  const factor = 1;
   const chance = clamp(15, 95, Math.round(base + (insight - targetAgility) * factor + bonus));
   return { base, insight, targetAgility, bonus, chance, factor };
 }

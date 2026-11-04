@@ -17,8 +17,10 @@ const stats = (magic: number, insight: number, agility: number, empathy = 40) =>
 test('v33 命中由洞察对敏捷计算，不加基础补偿', () => {
   const even = hitChanceOf(unit('ally', stats(50, 50, 50)), unit('enemy', stats(50, 50, 50)), single);
   assert.equal(even.chance, 50, '同属性对拼就是技能基础命中');
+  // 差值的系数是 1：洞察高 40 点就是 +40% 命中。
   const sharp = hitChanceOf(unit('ally', stats(50, 90, 50)), unit('enemy', stats(50, 50, 50)), single);
-  assert.equal(sharp.chance, 70);
+  assert.equal(sharp.chance, 90);
+  assert.equal(sharp.factor, 1, '系数必须写进战报，否则算式对不上');
   const blind = hitChanceOf(unit('ally', stats(50, 10, 50)), unit('enemy', stats(50, 90, 90)), single);
   assert.equal(blind.chance, 15, '低洞察对高敏捷触底 15%');
   assert.equal(sharp.insight, 90);

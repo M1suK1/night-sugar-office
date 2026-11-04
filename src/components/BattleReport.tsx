@@ -47,7 +47,8 @@ function calcText(event: BattleEvent): string {
     // 差值只按 0.5 计入（旧战报没记系数，按同一套公式显示）。
     const factor = h.factor ?? 0.5;
     const pair = h.insight === undefined ? `敏捷 ${h.agility ?? '?'}` : `洞察 ${h.insight}`;
-    const odds = `基础 ${h.base} + (${pair} − 敌敏 ${h.targetAgility}) × ${factor}${bonus}`;
+    const diff = factor === 1 ? `（${pair} − 敌敏 ${h.targetAgility}）` : `（${pair} − 敌敏 ${h.targetAgility}）× ${factor}`;
+    const odds = `基础 ${h.base} + ${diff}${bonus}`;
     parts.push(`命中 ${Math.round(h.chance)}% ＝ ${odds}；d100 ${h.roll.toFixed(1)} → ${event.hit ? '命中' : '落空'}`);
   }
   if (calc.damage) {

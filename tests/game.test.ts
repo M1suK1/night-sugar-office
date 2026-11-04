@@ -4828,7 +4828,7 @@ test('v25 初始少女的心防由共情算出，不再是 80 + 等级 × 2', ()
 test('v25 护持减伤、破防后回满：常数与访问器', () => {
   assert.equal(GUARD_HP_MUL, 0.7);
   assert.equal(BROKEN_SPIRIT_MUL, 0.7);
-  assert.equal(BROKEN_TAKEN_MUL, 1.4);
+  assert.equal(BROKEN_TAKEN_MUL, 1.3);
   assert.equal(guardHpMul({ spirit: 30 }), 0.7);
   assert.equal(guardHpMul({ spirit: 0, spiritBroken: true }), 1);
   assert.equal(brokenSpiritDamage(100), 70);
