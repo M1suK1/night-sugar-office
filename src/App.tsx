@@ -42,7 +42,7 @@ import { slimStateImages } from './imageSlim';
 import { resizeImageFile, yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
-import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
+import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryEnding, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, type GirlResearch } from './llm';
 import { localCityNews, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
 import { loadBalance } from './balance';
 import { loadPlayerProfile } from './player';
@@ -569,6 +569,32 @@ export default function App() {
       const turn: StoryTurn = { id: turnId, role: 'narrator', text: result.turn.narration, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
       setState(prev => { const applied = act(prev, { type: 'replaceStoryTurn', eventId, turnId, turn }); return applied.ok ? applied.state : prev; });
       return true;
+    } finally {
+      setStoryBusyTurn(false);
+    }
+  };
+  /**
+   * 结束这一段剧情：先请叙事者写一个结局，再把它接在最后。
+   *
+   * 关掉界面交给玩家自己——他要看到这一段是怎么收的。
+   */
+  const endStorySession = async (eventId: string): Promise<boolean> => {
+    const event = state.events.find(item => item.id === eventId);
+    if (!event) return false;
+    if (storyBusyTurn) return false;
+    const config = loadLlmConfig();
+    // 没有配叙事者、或者正卡在蓝图岔路口：按老路子直接收尾。
+    if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
+      return perform({ type: 'finishStorySession', eventId });
+    }
+    setStoryBusyTurn(true);
+    try {
+      const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
+      if (!result.ok) {
+        notify(`收尾没有写出来：${result.message}`, false);
+        return perform({ type: 'finishStorySession', eventId });
+      }
+      return perform({ type: 'finishStorySession', eventId, ending: result.turn });
     } finally {
       setStoryBusyTurn(false);
     }
@@ -1562,7 +1588,7 @@ export default function App() {
       if (!target) return null;
       const subject = state.girls.find(item => item.id === target.girlId);
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
-      const dialog = <EventDialog event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => { if (perform({ type: 'finishStorySession', eventId })) setModal(null); }} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
+      const dialog = <EventDialog event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}
     {modal?.type === 'end-night' && <Dialog label="打烊与交接" onClose={() => setModal(null)}>

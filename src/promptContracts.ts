@@ -11,7 +11,7 @@
  */
 import type { PromptEntry, PromptScope } from './presets.ts';
 import {
-  arcContract, arcOpeningContract, arcTurnContract, battleContract,
+  arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, battleContract,
   dialogueContract, incidentBatchContract, newsContract, profileVoiceRule, storylineContract, storylineStartContract,
 } from './promptSections.ts';
 
@@ -40,6 +40,7 @@ const SPECS: ContractSpec[] = [
   { id: 'arc:contract', scope: 'arc', name: '故事线蓝图 · 结构契约', make: () => arcContract('demo-node') },
   { id: 'arc:opening', scope: 'arc', name: '蓝图开场 · 结构契约', make: arcOpeningContract },
   { id: 'arc:turn', scope: 'arc', name: '蓝图续写 · 结构契约', make: arcTurnContract },
+  { id: 'arc:ending', scope: 'arc', name: '剧情收尾 · 结构契约', make: arcEndingContract },
   { id: 'chat:contract', scope: 'chat', name: '角色对话 · 回复格式契约', make: dialogueContract },
   { id: 'whisper:contract', scope: 'whisper', name: '灯下私语 · 回复格式契约', make: dialogueContract },
 ];

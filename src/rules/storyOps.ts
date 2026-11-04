@@ -221,6 +221,18 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
         return { state: next, ok: true, message: '剧情引到了岔路口，选一条吧。' };
       }
       event.pendingChoice = undefined;
+      // 叙事者写好的结局接在最后：玩家点「结束事件」时不会当场关掉界面，
+      // 而是先看到这一段走到哪里为止。
+      if (action.ending && action.ending.narration.trim()) {
+        event.turns = [...(event.turns ?? []), {
+          id: `turn-end-${Date.now().toString(36)}`,
+          role: 'narrator' as const,
+          text: action.ending.narration.trim(),
+          lines: action.ending.lines ?? [],
+          options: [],
+          at: Date.now(),
+        }];
+      }
       event.status = 'done'; event.badge = false; event.sessionDone = true;
       const girl = findGirl(next, event.girlId);
       const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;

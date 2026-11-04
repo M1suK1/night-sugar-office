@@ -1162,7 +1162,7 @@ export type GameAction =
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
-  | { type: 'finishStorySession'; eventId: string }
+  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] } }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }

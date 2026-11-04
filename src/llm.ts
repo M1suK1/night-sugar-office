@@ -1893,6 +1893,54 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
 }
 
 /**
+ * 交互剧情的收尾：玩家决定把这一段停在这里，由叙事者写出结局。
+ *
+ * 与续写共用同一个 arc 用途与在场的人，但不给 options——这一轮之后没有下一轮。
+ */
+export async function generateStoryEnding(
+  config: LlmConfig,
+  state: GameState,
+  event: CharacterEvent,
+  preset?: PresetRuntime,
+): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] } } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  const cast = storyCast(state, event);
+  const briefs = cast.filter(person => person.id !== 'player').map(person => {
+    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
+    return girl ? storyCastBrief(girl) : person.name;
+  }).join('\n');
+  const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+  const context = [
+    `【这一段剧情】${event.title}`,
+    event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : '',
+    '【在场的人】',
+    briefs || '只有她和你',
+    '【此前的对话】',
+    storyHistory(event.turns ?? []) || '（这是第一轮）',
+    '【所长的决定】',
+    '所长把这段剧情停在这里。请写收尾：不要新选项，不要留待续的钩子。',
+    rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
+  ].filter(Boolean).join('\n');
+  const result = await callJson(config, preset, 'arc', arcEndingContract(), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
+    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:ending',
+  }, { state, focus: focusGirlOf(state, event) }, 0, context);
+  if (!result.ok) {
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
+    return result;
+  }
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
+  if (narration.length < 80) {
+    const message = `收尾只写了 ${narration.length} 字，太短了。可以再试一次。`;
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const lines = parseStoryLines(result.raw.lines, cast, 5);
+  recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `收尾：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
+  return { ok: true, turn: { narration, lines } };
+}
+
+/**
  * 交互剧情的一轮续写：读玩家这一句，写出她的反应、台词与下一轮的参考行动。
  *
  * `rewrite` 为真时要求换一种写法，用于「重写这一段」。
@@ -2192,7 +2240,7 @@ import { girlSkillPool } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
+import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

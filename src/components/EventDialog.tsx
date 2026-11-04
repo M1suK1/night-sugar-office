@@ -199,7 +199,10 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
               {loading && turns.length > 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={18} className="spin" /><b>她在等你说完</b></div>}
             </div>
 
-            {readOnly && <div className="session-readonly" id="session-readonly">这段剧情已经结束。你现在只是在回看。</div>}
+            {readOnly && <div className="session-readonly" id="session-readonly">
+              <span>这段剧情已经结束。你现在只是在回看{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '，结局在最后一段' : ''}。</span>
+              <button id="story-close" type="button" className="btn" onClick={onClose}>把这一段收进记忆</button>
+            </div>}
             {!readOnly && <footer className="event-composer">
               {event.pendingChoice && (
                 <div className="session-options branch-options" id="session-branch">
@@ -217,8 +220,8 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
                 <textarea id="story-action" rows={2} maxLength={300} value={draft} disabled={loading} placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话……'} onChange={input => setDraft(input.target.value)} onKeyDown={input => { if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') { input.preventDefault(); void submit(draft); } }} />
                 <button id="story-submit" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>行动</button>
                 {confirmEnd ? <span className="session-end-confirm">
-                  <button id="story-end-confirm" type="button" className="btn danger" onClick={() => onEnd(event.id)}>确认结束</button>
-                  <button id="story-end-cancel" type="button" className="btn" onClick={() => setConfirmEnd(false)}>再聊一会</button>
+                  <button id="story-end-confirm" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>{busy ? '正在收尾…' : '确认结束'}</button>
+                  <button id="story-end-cancel" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>再聊一会</button>
                 </span> : <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>{branch && !event.pendingChoice ? '导向结局' : '结束事件'}</button>}
               </div>}
             </footer>}

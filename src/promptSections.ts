@@ -292,6 +292,18 @@ export function arcContract(targets: string): string {
   ].join('\n');
 }
 
+/** 交互剧情的收尾契约：不写选项，只把这一段收束成一个结局。 */
+export function arcEndingContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
+    '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}]}',
+    '这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。',
+    'narration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。',
+    'lines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。',
+    '不要写数值、伤害、技能名，也不要写「第几轮」。',
+  ].join('\n');
+}
+
 /** 交互式开场的锁定契约。 */
 export function arcOpeningContract(): string {
   return [
@@ -357,9 +369,10 @@ export function eventUserHint(name: string): string {
 }
 
 /** 完整剧情（弧光）三处 user 指令。 */
-export function arcUserHint(kind: 'beat' | 'opening' | 'turn', name = ''): string {
+export function arcUserHint(kind: 'beat' | 'opening' | 'turn' | 'ending', name = ''): string {
   if (kind === 'opening') return '请写下这段剧情的开场白。';
   if (kind === 'turn') return '请接着写下一轮。';
+  if (kind === 'ending') return '请把这一段收束成结局：不要选项，写到她停在这里为止。';
   return `请写下${name}的这段剧情。`;
 }
 
