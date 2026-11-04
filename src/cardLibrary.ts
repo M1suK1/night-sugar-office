@@ -5,6 +5,11 @@
  * 候选池是现场合成的角色，卡库只是玩家手动去挑的加菜。这一层把「从哪来人」收成一处：
  * 本地跑（`npm run dev` / `start.cmd`）时优先读 `data/cards/`，读不到才回退内置角色。
  *
+ * 两条取卡通道，按顺序试：
+ *  1. `/api/cards`——本地跑（npm run dev / start.cmd）才有，能读磁盘上的全部卡；
+ *  2. `/cards/index.json`——构建时把 ≤3.5MB 的小卡复制成静态资源，静态托管（Cloudflare Pages）
+ *     也能有开局名册；大卡不进产物，留给玩家自己拖进来。
+ *
  * 约定：
  *  - 扫描只拿元数据（名字与字节数），大卡（带立绘，10–21MB）等真要用了再单张读；
  *  - 小卡优先：先读体积小的，避免为 6 个人一次拉上百 MB；
@@ -25,32 +30,96 @@ export interface LibraryFile {
   text?: string;
 }
 
+/** 卡库来源：本地接口能读全量；静态卡库只有构建时复制进去的小卡。 */
+export type LibraryKind = 'local' | 'static';
+
 export interface LibraryScan {
   ok: boolean;
+  kind: LibraryKind;
   dir: string;
   files: LibraryFile[];
   /** 没读成的原因，给界面显示。 */
   reason?: string;
+  /** 静态卡库的说明（体积上限之类），界面上照着写出来。 */
+  note?: string;
 }
 
-/** 扫本地卡库目录。静态部署没有 `/api/cards`，这里会返回 ok:false 并说明原因。 */
-export async function scanLibrary(dir = ''): Promise<LibraryScan> {
+/** 静态卡库的挂载点，与 scripts/static-cards.mjs 保持一致。 */
+export const STATIC_CARD_BASE = '/cards';
+export const STATIC_CARD_INDEX = '/cards/index.json';
+
+async function scanLocal(dir: string): Promise<LibraryScan> {
   try {
     const response = await fetch(`/api/cards${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`);
     const raw = await response.text();
     const data = JSON.parse(raw) as { ok?: boolean; dir?: string; files?: LibraryFile[]; message?: string };
     if (!data?.ok || !Array.isArray(data.files)) {
-      return { ok: false, dir, files: [], reason: data?.message ?? '本地卡库读不出来。' };
+      return { ok: false, kind: 'local', dir, files: [], reason: data?.message ?? '本地卡库读不出来。' };
     }
-    return { ok: true, dir: typeof data.dir === 'string' ? data.dir : dir, files: data.files.filter(file => file && typeof file.name === 'string') };
+    return { ok: true, kind: 'local', dir: typeof data.dir === 'string' ? data.dir : dir, files: data.files.filter(file => file && typeof file.name === 'string') };
   } catch {
-    return { ok: false, dir, files: [], reason: '连不上本地卡库接口（静态部署没有这个功能）。' };
+    return { ok: false, kind: 'local', dir, files: [], reason: '连不上本地卡库接口。' };
   }
 }
 
+/** 构建产物里的静态清单：CF Pages 这类纯静态托管靠它开局。 */
+async function scanStatic(): Promise<LibraryScan> {
+  try {
+    const response = await fetch(STATIC_CARD_INDEX);
+    if (!response.ok) return { ok: false, kind: 'static', dir: STATIC_CARD_BASE, files: [], reason: '这份部署里没有静态卡库。' };
+    const data = JSON.parse(await response.text()) as { ok?: boolean; dir?: string; files?: LibraryFile[]; note?: string; message?: string };
+    if (!data?.ok || !Array.isArray(data.files)) {
+      return { ok: false, kind: 'static', dir: STATIC_CARD_BASE, files: [], reason: data?.message ?? '静态卡库清单读不出来。' };
+    }
+    return {
+      ok: true,
+      kind: 'static',
+      dir: typeof data.dir === 'string' ? data.dir : STATIC_CARD_BASE,
+      files: data.files.filter(file => file && typeof file.name === 'string'),
+      note: typeof data.note === 'string' ? data.note : undefined,
+    };
+  } catch {
+    return { ok: false, kind: 'static', dir: STATIC_CARD_BASE, files: [], reason: '这份部署里没有静态卡库。' };
+  }
+}
+
+/**
+ * 扫卡库：先试本地接口，再试构建时复制的静态清单。
+ *
+ * 两条都拿不到才算失败——调用方据此回退内置名册，并把 `reason` 原样显示给玩家。
+ */
+export async function scanLibrary(dir = ''): Promise<LibraryScan> {
+  const local = await scanLocal(dir);
+  if (local.ok && local.files.length) return local;
+  const stat = await scanStatic();
+  if (stat.ok && stat.files.length) return stat;
+  return {
+    ok: false,
+    kind: dir ? 'local' : 'static',
+    dir: dir || STATIC_CARD_BASE,
+    files: [],
+    reason: local.files.length === 0 && local.ok
+      ? stat.reason ?? '卡库里没有可用的卡。'
+      : local.reason ?? stat.reason ?? '卡库里没有可用的卡。',
+  };
+}
+
 /** 读一张卡的内容：小卡在扫描时就带着 `text`，大卡再按名字取一次。 */
-export async function readLibraryFile(file: LibraryFile, dir = ''): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+export async function readLibraryFile(
+  file: LibraryFile,
+  source: { dir?: string; kind?: LibraryKind } = {},
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   if (typeof file.text === 'string' && file.text) return { ok: true, text: file.text };
+  if (source.kind === 'static') {
+    try {
+      const response = await fetch(`${STATIC_CARD_BASE}/${encodeURIComponent(file.name)}`);
+      if (!response.ok) return { ok: false, message: '这张卡不在这份静态卡库里。' };
+      return { ok: true, text: await response.text() };
+    } catch {
+      return { ok: false, message: '这张卡读不出来。' };
+    }
+  }
+  const dir = source.dir ?? '';
   try {
     const query = `${dir ? `dir=${encodeURIComponent(dir)}&` : ''}name=${encodeURIComponent(file.name)}`;
     const response = await fetch(`/api/cards?${query}`);
@@ -108,7 +177,7 @@ export async function readLibraryCards(count: number, options: { dir?: string; e
   const cards: GirlCard[] = [];
   const failed: string[] = [];
   for (const file of picked) {
-    const text = await readLibraryFile(file, scan.dir);
+    const text = await readLibraryFile(file, { dir: scan.dir, kind: scan.kind });
     if (!text.ok) { failed.push(file.name); continue; }
     const parsed = parseGirlCard(text.text);
     if (!parsed.ok) { failed.push(file.name); continue; }
