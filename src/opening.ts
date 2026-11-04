@@ -3,8 +3,18 @@ import { CARD_FILE_BYTES_MAX } from './fileLimits.ts';
 import { incidentPoolNeed } from './incidents.ts';
 import { spawnableMonsters } from './rules/encounters.ts';
 
-/** 首夜叙事者要补到的议案条数；本地不再生成默认议题。 */
+/**
+ * 首夜本地要补到的议案条数。
+ *
+ * v85：会客厅等级决定每天最多摆几条议题（2 级 3 条 … 4 级 5 条），开局补缺也跟着走。
+ */
 export const OPENING_OPINIONS = 3;
+
+/** 当前会客厅能摆几条议题（2 级 3 条、3 级 4 条、4 级 5 条）。 */
+export function councilCapacity(state: GameState): number {
+  const lounge = state.rooms.find(room => room.type === 'lounge');
+  return Math.max(3, Math.min(5, 1 + (lounge?.level ?? 2)));
+}
 /** 首夜本地兜底要凑到的待用弹窗事件条数。 */
 export const OPENING_INCIDENTS = 3;
 /**
@@ -58,7 +68,7 @@ export function openingGaps(state: GameState): OpeningGaps {
   // 魔物按「真实能上场的」算：注册表里的魔物 + 自制魔物，不再按复制出来的池子条目数。
   const monsterPool = spawnableMonsters(state).length;
   return {
-    opinions: Math.max(0, OPENING_OPINIONS - pendingOpinions),
+    opinions: Math.max(0, councilCapacity(state) - pendingOpinions),
     incidents: Math.max(0, Math.min(OPENING_INCIDENTS, incidentPoolNeed(state))),
     missions: Math.max(0, state.poolLimits.missions - openMissions),
     candidates: Math.max(0, state.poolLimits.candidates - state.candidates.length),

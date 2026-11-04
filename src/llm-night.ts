@@ -754,6 +754,12 @@ function parseCandidate(ctx: Ctx, value: unknown): NightCandidateSpec {
   };
 }
 
+/** 这次提案最多收几条议题：会客厅 2 级 3 条、3 级 4 条、4 级 5 条（最低 3）。 */
+export function opinionCapFor(state: GameState): number {
+  const loungeLevel = state.rooms.find(room => room.type === 'lounge')?.level ?? 2;
+  return Math.max(3, Math.min(5, 1 + loungeLevel));
+}
+
 /** 把模型 JSON 规范化成运行时可用的提案；所有硬错误都会阻止采纳。 */
 export function validateNightProposal(raw: unknown, state: GameState): NightValidation {
   // 宽松模式：驳回写多了就地改成「只掉提出者羁绊」，不整份作废。
@@ -801,8 +807,9 @@ function validateNightProposalCore(raw: unknown, state: GameState): NightValidat
   const loot = parseLoot(ctx, raw.loot);
   const envoy = parseMission(ctx, raw.envoy, 'envoy');
   const envoyBody = record(ctx, raw.envoy, 'envoy');
+  const opinionCap = opinionCapFor(state);
   const opinionRows = Array.isArray(raw.opinions)
-    ? raw.opinions.slice(0, 3)
+    ? raw.opinions.slice(0, opinionCap)
     : raw.opinion ? [raw.opinion] : [];
   const opinions = opinionRows.map(row => parseOpinion(ctx, row));
   const proposal: NightProposalV2 = {
