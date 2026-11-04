@@ -1501,7 +1501,7 @@ export default function App() {
         </div>
       )}
       {starterLoad && <StarterLoading done={starterLoad.done} total={starterLoad.total} note={starterLoad.note} />}
-      {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
+      {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}

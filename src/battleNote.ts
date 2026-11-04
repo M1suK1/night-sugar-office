@@ -74,6 +74,23 @@ export function battleCast(battle: BattleState): BattleActor[] {
   return battleActors(battle).filter(actor => actor.speakable);
 }
 
+/**
+ * 战报里该用哪张立绘。
+ *
+ * 三种来源按可靠性排：
+ *  1. 单位快照里的 data URL（当场拍的，最准）；
+ *  2. 单位快照里的资产 id（v92 之后存的）；
+ *  3. 当前存档里那位少女的立绘（旧战报快照根本没记资产 id，只能回查）。
+ */
+export function portraitSourceOf(
+  unit: { portrait: string; portraitAsset?: string; girlId?: string },
+  girl?: { portrait?: string; portraitAsset?: string },
+): { portrait: string; portraitAsset?: string } {
+  const portrait = unit.portrait || girl?.portrait || '';
+  const portraitAsset = unit.portraitAsset ?? girl?.portraitAsset;
+  return portraitAsset ? { portrait, portraitAsset } : { portrait };
+}
+
 export function totalBattleRounds(battle: BattleState): number {
   return Math.max(1, battle.rounds || battle.round || 1);
 }

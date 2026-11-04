@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Play, Pause, SkipForward, FastForward, Swords, Heart, Sparkles, Trophy, Skull, Bandage, X, ScanEye, ArrowRight, Shield, Flame, Snowflake, TrendingDown, TrendingUp, Timer, BookOpen } from 'lucide-react';
-import type { BattleState, BattleUnit, BattleEvent } from '../types';
+import type { BattleState, BattleUnit, BattleEvent, Girl } from '../types';
 import { outcomeLabel } from '../combat';
+import { portraitSourceOf } from '../battleNote';
 import { findMonster } from '../content/monsters';
 import { MonsterGlyph } from './MonsterGlyph';
 import { usePortraitSrc } from '../usePortrait';
@@ -10,10 +11,12 @@ const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', sh
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
 const effectStats: Record<string, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情', hit: '命中', initiative: '先手' };
 
-function UnitCard({ unit, active, compact }: { unit: BattleUnit; active: boolean; compact?: boolean }) {
+function UnitCard({ unit, girl, active, compact }: { unit: BattleUnit; girl?: Girl; active: boolean; compact?: boolean }) {
   const monster = unit.side === 'enemy' ? (unit.monster ?? findMonster(unit.portrait)) : undefined;
-  // 存过档的立绘会被搬进资产库，单位里只剩 portraitAsset；直接 <img src={id}> 就是一块空白。
-  const portraitSrc = usePortraitSrc({ portrait: unit.portrait, portraitAsset: unit.portraitAsset });
+  // 图有三处可能：单位快照里的 data URL、单位快照里的资产 id、或者干脆只剩存档里那位少女。
+  // 旧战报的快照是「修复之前」存下的——那时候只写了空的 portrait，没有 portraitAsset，
+  // 所以这里按 girlId 回查当前存档，把她现在的立绘借过来用。
+  const portraitSrc = usePortraitSrc(portraitSourceOf(unit, girl));
   return (
     <article className={`battle-unit ${unit.side} ${unit.down ? 'down' : ''} ${active ? 'active' : ''}`} style={{ '--unit-color': unit.color } as React.CSSProperties}>
       <div className="battle-unit-art">
@@ -89,7 +92,8 @@ function EventRow({ event, units }: { event: BattleEvent; units: BattleUnit[] })
   );
 }
 
-export function BattleReport({ battle, hasNote, onNote, onClose }: { battle: BattleState; hasNote?: boolean; onNote?: () => void; onClose: () => void }) {
+export function BattleReport({ battle, girls = [], hasNote, onNote, onClose }: { battle: BattleState; /** 当前存档的少女：旧战报快照缺图时按 girlId 回查。 */ girls?: Girl[]; hasNote?: boolean; onNote?: () => void; onClose: () => void }) {
+  const girlById = useMemo(() => new Map(girls.map(girl => [girl.id, girl])), [girls]);
   const frames = battle.frames?.length ? battle.frames : [{ round: battle.round, units: battle.units, initiative: battle.initiative }];
   const [tab, setTab] = useState<'replay' | 'report'>('replay');
   const [index, setIndex] = useState(0);
@@ -144,9 +148,9 @@ export function BattleReport({ battle, hasNote, onNote, onClose }: { battle: Bat
           {frame.initiative.length === 0 && <span className="initiative-chip">尚无行动</span>}
         </div>
         <div className="battle-stage">
-          <div className="battle-side allies">{allies.map(u => <UnitCard key={u.uid} unit={u} active={frame.initiative[0] === u.uid} />)}</div>
+          <div className="battle-side allies">{allies.map(u => <UnitCard key={u.uid} unit={u} girl={girlById.get(u.girlId ?? '')} active={frame.initiative[0] === u.uid} />)}</div>
           <div className="battle-versus"><span>第</span><b>{round}</b><span>轮</span><Swords size={18} /></div>
-          <div className="battle-side enemies">{enemies.map(u => <UnitCard key={u.uid} unit={u} active={frame.initiative[0] === u.uid} />)}</div>
+          <div className="battle-side enemies">{enemies.map(u => <UnitCard key={u.uid} unit={u} girl={girlById.get(u.girlId ?? '')} active={frame.initiative[0] === u.uid} />)}</div>
         </div>
         <div className="battle-controls">
           <button id="battle-play" className="btn icon-text" onClick={() => { if (atEnd) { setIndex(0); setPlaying(true); } else setPlaying(p => !p); }}>
