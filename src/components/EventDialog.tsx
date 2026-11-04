@@ -5,6 +5,7 @@ import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { DirectorPortrait } from './DirectorPortrait';
 import { interleaveTurn } from '../storyLines';
+import { scrollTopForNewTurn } from '../storyScroll';
 
 const expressionLabel: Record<Expression, string> = {
   calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
@@ -92,6 +93,9 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [sending, setSending] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  /** 每一轮的 DOM 位置：新内容出现时停在它的开头，而不是滚到结尾。 */
+  const turnNodes = useRef(new Map<string, HTMLElement>());
+  const scrolledTurn = useRef('');
   const pool = useMemo(() => [...state.girls, ...state.candidates], [state.girls, state.candidates]);
   const cast = useMemo(() => {
     const ids = event.cast?.length ? event.cast : girl ? [girl.id] : [];
@@ -107,7 +111,31 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
     }
     return null;
   }, [turns]);
-  useEffect(() => { end.current?.scrollTo?.({ top: end.current.scrollHeight, behavior: 'smooth' }); }, [turns.length, busy]);
+  useEffect(() => {
+    const box = end.current;
+    if (!box) return;
+    const newest = turns.at(-1);
+    // 已经定位过这一轮就别再动：否则模型回来的第二次渲染会把人又甩下去。
+    if (!newest) return;
+    const node = turnNodes.current.get(newest.id);
+    if (!node) {
+      if (newest.id === scrolledTurn.current) return;
+      scrolledTurn.current = newest.id;
+      box.scrollTo({ top: 0, behavior: 'auto' });
+      return;
+    }
+    // 停在这一轮的第一个字上：直接滚到底会先把结局摊在眼前，把剧情剧透掉。
+    const top = scrollTopForNewTurn({
+      turnId: newest.id,
+      lastScrolledId: scrolledTurn.current,
+      boxTop: box.getBoundingClientRect().top,
+      nodeTop: node.getBoundingClientRect().top,
+      scrollTop: box.scrollTop,
+    });
+    if (top === null) return;
+    scrolledTurn.current = newest.id;
+    box.scrollTo({ top, behavior: 'smooth' });
+  }, [turns.length, turns.at(-1)?.id]);
   const loading = busy || sending;
   const rounds = turns.filter(turn => turn.role === 'player').length;
   const lastNarrator = [...turns].reverse().find(turn => turn.role === 'narrator');
@@ -164,13 +192,13 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
             <div ref={end} className="battle-note-body" role="log" aria-live="polite">
               {turns.length === 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={22} className="spin" /><b>叙事者正在写开场白</b><span>她先开口，你随后决定用什么方式接下去。</span></div>}
               {turns.map((turn, turnIndex) => turn.role === 'player' ? (
-                <div key={turn.id} className="battle-note-line right player-turn">
+                <div key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="battle-note-line right player-turn">
                   <DirectorPortrait className="director-inline" />
                   <span className="battle-note-speaker">所长</span>
                   <span className="battle-note-bubble">{turn.text}</span>
                 </div>
               ) : (
-                <section key={turn.id} className="story-narrator-turn">
+                <section key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="story-narrator-turn">
                   {(() => {
                     // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
                     const paragraphs = turn.text.split(/\n+/).filter(Boolean);
