@@ -18,7 +18,7 @@ import { rosterPool } from '../src/roster.ts';
 import { subjectOfCustom } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
-import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot } from '../src/llm.ts';
+import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot, tokenFloorFor } from '../src/llm.ts';
 import { buildNightCatalog, buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
@@ -863,8 +863,9 @@ test('叙事输出被 length 截断时会放大 token 额度重试一次', async
     const result = await generateGirlProfile({ endpoint: 'https://mock.test/v1', apiKey: 'k', model: 'mock' }, undefined, undefined, { id: 'truncate-test', name: '截断测试', maxTokens: 400, maxContext: 4000 });
     assert.equal(result.ok, true);
     assert.equal(calls.length, 2);
-    assert.equal(calls[0].max_tokens, 400);
-    assert.equal(calls[1].max_tokens, 8000);
+    // v124：每种用途都有最低预算，起草（profile）下限 16000，截断后翻倍到 32000。
+    assert.equal(calls[0].max_tokens, tokenFloorFor('profile'));
+    assert.equal(calls[1].max_tokens, Math.min(32768, tokenFloorFor('profile') * 2));
     assert.equal(calls[1].messages.at(-1).role, 'user');
   } finally {
     globalThis.fetch = original;
