@@ -1,14 +1,14 @@
 @echo off
-setlocal
-chcp 65001 >nul
+setlocal enabledelayedexpansion
+chcp 65001 >nul 2>nul
 cd /d "%~dp0"
 title 夜糖事务所 / Night Sugar Office
 
 rem ── 唯一的 Windows 启动入口 ────────────────────────────────
-rem   start.cmd           有构建产物就直接开门（没有就先构建一次）
-rem   start.cmd rebuild   强制重新构建再开门
-rem   start.cmd dev       开发服务器（改代码即时刷新）
-rem   start.cmd build     只构建，不启动
+rem   start.bat           有构建产物就直接开门（没有就先构建一次）
+rem   start.bat rebuild   强制重新构建再开门
+rem   start.bat dev       开发服务器（改代码即时刷新）
+rem   start.bat build     只构建，不启动
 rem
 rem 构建模式用 scripts/serve.mjs 起本地服务：它同时提供 /api/* 本地文件通道，
 rem 所以生产模式一样能读 data/cards 里的全部卡库。
@@ -48,7 +48,7 @@ goto build_serve
 echo [夜糖] 正在构建...
 call npm run build
 if errorlevel 1 (
-  echo [夜糖] 构建失败，已停止。可以跑 start.cmd dev 看详细报错。
+  echo [夜糖] 构建失败，已停止。可以跑 start.bat dev 看详细报错。
   pause
   exit /b 1
 )
@@ -62,19 +62,21 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo [夜糖] 构建完成，产物在 dist\ 。用 start.cmd 开门。
+echo [夜糖] 构建完成，产物在 dist\ 。用 start.bat 开门。
 pause
 exit /b 0
 
 :serve
 echo [夜糖] 正在开门... 浏览器会自动打开 http://127.0.0.1:5173
 echo [夜糖] 要关掉事务所：按 Ctrl+C，或直接关闭这个窗口。
-rem 先起服务再开浏览器：等两秒，免得浏览器比服务器先到、看到一片空白。
-start "" cmd /c "timeout /t 2 >nul & start "" http://127.0.0.1:5173"
+echo [夜糖] 改了代码想跑最新版：先关掉窗口，再运行 start.bat rebuild
+rem 交给 PowerShell 延迟两秒开浏览器：cmd 里再嵌一层带引号的 start 很容易被引号吃掉。
+start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:5173'"
 node scripts/serve.mjs
-if errorlevel 1 (
-  echo [夜糖] 服务没有起来。如果 5173 端口被占用，先关掉占用它的程序再试。
-  pause
+rem 走到这里通常是 Ctrl+C 关掉了服务，不算失败；只有端口被占用才是真起不来。
+set "CODE=%ERRORLEVEL%"
+if not "%CODE%"=="0" (
+  echo [夜糖] 服务已停止（退出码 %CODE%）。如果 5173 端口被占用，先关掉占用它的程序再试。
 )
 exit /b 0
 
