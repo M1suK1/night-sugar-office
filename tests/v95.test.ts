@@ -8,7 +8,7 @@ test('v95 开局的选人池上限是 30 人', () => {
   assert.ok(OPENING_CARD_BYTES > CARD_FILE_BYTES_MAX, '读卡预算跟着放宽，才能铺满 30 人');
 });
 
-test('v105 开局一次读满选人池，编成界面才看得全', () => {
-  assert.equal(OPENING_IMPORT_CARDS, OPENING_CARDS, '开局读的卡数要等于池子上限');
-  assert.equal(OPENING_IMPORT_CARDS, 30);
+test('v106 开局不预读卡：先进卡库让玩家挑，挑完再导入', () => {
+  assert.equal(OPENING_IMPORT_CARDS, 0);
+  assert.equal(OPENING_CARDS, 30, '池子上限仍是 30，挑满也装得下');
 });

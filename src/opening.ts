@@ -19,13 +19,12 @@ export const FIRST_BOSS_DAY = 24;
 export const OPENING_CARDS = 30;
 
 /**
- * 开局一次性读进来的卡数。
+ * 开局预读的卡数。
  *
- * 之前为了缩短开局等待只读了 9 张，结果编成界面只能看到已导入的那几个人
- * （格子列表读的是 state，不是卡库），玩家以为池子只有二十来个。
- * 现在读条已经把等待交代清楚，就直接读满一池：编成界面能一次看到 OPENING_CARDS 位。
+ * 现在是 0：点「开始新游戏」不读任何卡，先打开卡库让玩家自己挑，挑完再按选择导入。
+ * 读图那几秒因此落在玩家已经做完决定之后，也不会再把「默认前几张」硬塞进名册。
  */
-export const OPENING_IMPORT_CARDS = OPENING_CARDS;
+export const OPENING_IMPORT_CARDS = 0;
 /**
  * 开局愿意一次性读进内存的卡面总量。
  *

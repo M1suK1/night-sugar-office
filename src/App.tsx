@@ -71,9 +71,9 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
-import { OPENING_CARDS, OPENING_IMPORT_CARDS } from './opening';
+import { OPENING_CARDS } from './opening';
 import { cardFileGuard, saveFileGuard } from './fileLimits';
-import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
+import { marketCardGap, marketNeedsCards, unusedCards, usedCardIds } from './cardMarket';
 import { planCardBatches } from './cardImport';
 import type { CardBoxEntry } from './cardbox';
 import { CardLibraryDialog } from './components/CardLibraryDialog';
@@ -886,40 +886,25 @@ export default function App() {
     return working;
   };
 
-  /** 开始新游戏：标准开局 → 卡库先摆 OPENING_IMPORT_CARDS 张（其余在编成界面按需导入）→ 进编成。 */
+  /**
+   * 开始新游戏：标准开局 → 如果卡库里有卡，先进卡库让玩家自己挑要导入的人 → 再进编成。
+   *
+   * 以前是开局自动读一批卡进来，玩家既没法挑、也要等读图。现在开局一张都不读：
+   * 拆成「你挑 → 我读 → 进编成」，读图那点时间就落在玩家已经选好之后。
+   */
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
-    let next = act(state, { type: 'reset', mode }).state;
+    const next = act(state, { type: 'reset', mode }).state;
+    let boxEmpty = false;
     try {
       const box = await loadCardBox();
       setBoxUsable(box.length);
-      // 只按张数取满：以前还按「卡面总量」砍一刀，48MB 预算下 3MB 一张的卡只装得下十几位，
-      // 界面上就永远凑不满选人池。改成读进来之后统一降维（长边 640），30 张也压得住，
-      // 落盘时还会被搬进资产库（v92），存档不会跟着变胖。
-      const picks = unusedCards(box, next, OPENING_IMPORT_CARDS);
-      if (picks.length) {
-        setStarterLoad({ done: 0, total: picks.length, note: `正在读 ${picks.length} 张契约卡…` });
-        // 卡库开局不摆内置候选：这些位置都留给玩家的卡。
-        next = { ...next, candidates: next.candidates.filter(girl => girl.custom) };
-        next = await importCardsInBatches(next, picks, (done, total) => {
-          setStarterLoad({ done, total, note: done >= total ? '正在把立绘降维…' : `第 ${done} / ${total} 批读卡` });
-        });
-        const slimmed = await slimStateImages(next);
-        next = slimmed.state;
-        // 卡里明明有图、名册里却是剪影的，按 cardId 补回来。
-        const refill = await backfillPortraits([...next.girls, ...next.candidates], hash => readCardRaw(hash));
-        for (const [girlId, portrait] of refill.portraits) {
-          const patched = act(next, { type: 'setPortrait', girlId, portrait });
-          if (patched.ok) next = patched.state;
-        }
-        if (refill.filled) console.info(`[卡库] 从卡里补回了 ${refill.filled} 张立绘。`);
-        if (slimmed.changed) console.info('[卡库] 开局选人池已把立绘降到长边 640，避免一次读进几十 MB。');
-      }
-    } catch { /* 卡库读不出来就按默认名册开局，不挡路。 */ } finally {
-      setStarterLoad(null);
-    }
+      boxEmpty = !box.some(entry => !usedCardIds(next).has(entry.hash));
+    } catch { boxEmpty = true; /* 卡库读不出来就当没卡，按默认名册开局。 */ }
     setState(next);
     // 空白档案里没有契约者，先别进编成，否则四个位置一个都填不满。
     setPhase(mode === 'blank' && !next.girls.length && !next.candidates.length ? 'prologue' : 'roster');
+    // 有卡就先让玩家在卡库里挑；挑完（或直接关掉）都落到编成界面。
+    if (!boxEmpty) setModal({ type: 'cardbox' });
   };
 
   /** 首夜空缺：先本地兜底，有 key 再让叙事者补上委托与弹窗。 */
@@ -1416,7 +1401,12 @@ export default function App() {
       {modal.type === 'memorial' && <MemorialDialog state={state} />}
       {modal.type === 'slots' && <SaveSlotsDialog boot={modal.boot} onSave={saveToSlot} onLoad={loadFromSlot} onDelete={deleteSlot} onRestart={restartGame} onLoadFile={loadLocalSave} onContinue={modal.boot && hadSave ? () => { setModal(null); enterPlay(); } : undefined} day={hadSave ? state.day : undefined} girls={hadSave ? state.girls.length : undefined} startersPicked={state.startersPicked} />}
       {modal.type === 'cardbox' && <CardLibraryDialog notify={notify} onImport={async (entries, onProgress) => {
-        const next = await importCardsInBatches(state, entries, onProgress);
+        setStarterLoad({ done: 0, total: Math.max(1, entries.length), note: `正在读 ${entries.length} 张契约卡…` });
+        const next = await importCardsInBatches(state, entries, (done, total) => {
+          setStarterLoad({ done, total, note: `第 ${done} / ${total} 批读卡` });
+          onProgress?.(done, total);
+        });
+        setStarterLoad(null);
         if (next === state) { notify('选中的卡都已经在名册里了。', false); return; }
         setState(next);
         setModal(null);
