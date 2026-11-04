@@ -10,9 +10,14 @@ test('v93 序章看完 + 编成定下才补提案，首夜也不再等一天', (
   assert.equal(shouldAutoGenerate(ready, true), true, '第 14 夜就允许补，不再硬性等到 15');
 });
 
-test('v93 初始化没结束就不生成：序章未看、编成未定都算', () => {
-  assert.equal(shouldAutoGenerate({ day: 20, generatedDay: 19, prologueSeen: false, startersPicked: true }, true), false);
-  assert.equal(shouldAutoGenerate({ day: 20, generatedDay: 19, prologueSeen: true, startersPicked: false }, true), false);
+test('v93 开局流程没结束就不生成：序章未看、编成未定都算', () => {
+  assert.equal(shouldAutoGenerate({ day: 14, generatedDay: 13, prologueSeen: false, startersPicked: true }, true), false);
+  assert.equal(shouldAutoGenerate({ day: 14, generatedDay: 13, prologueSeen: true, startersPicked: false }, true), false);
   assert.equal(shouldAutoGenerate({ day: 20, generatedDay: 19, prologueSeen: true, blank: true }, true), true, '空白档没有编成这一步，直接放行');
   assert.equal(shouldAutoGenerate({ day: 20, generatedDay: 20, prologueSeen: true, startersPicked: true }, true), false, '同一天补过就不再补');
+});
+
+test('v93 第一夜之后这两道闸不再拦人：旗子没写进存档也要能补', () => {
+  assert.equal(shouldAutoGenerate({ day: 15, generatedDay: 14, prologueSeen: false, startersPicked: false }, true), true);
+  assert.equal(shouldAutoGenerate({ day: 15, generatedDay: 14, prologueSeen: true, startersPicked: false }, true), true);
 });

@@ -26,10 +26,16 @@ export interface AutoGenerateState {
  *
  * 两道闸都过了之后，首夜也可以照常补——玩家已经认过人了，没必要再等一夜。
  */
+export const OPENING_DAY = 14;
+
 export function shouldAutoGenerate(state: AutoGenerateState, enabled: boolean): boolean {
   if (!enabled) return false;
-  if (state.prologueSeen === false) return false;
-  if (!state.startersPicked && !state.blank) return false;
+  // 序章闸同样只管开局那一夜：第 15 日还在「播开场」是不可能的，
+  // 拿它继续拦只会让 flag 没写进存档的人一直拿不到提案。
+  if (state.prologueSeen === false && state.day <= OPENING_DAY) return false;
+  // 开局那一夜才需要挡：默认名册会让提案认错人。第 15 日起名册早就定了，
+  // 再按 startersPicked 拦就只是「从没点过确认编成的人永远拿不到提案」。
+  if (!state.startersPicked && !state.blank && state.day <= OPENING_DAY) return false;
   const generated = typeof state.generatedDay === 'number' ? state.generatedDay : state.day;
   return state.day > generated;
 }

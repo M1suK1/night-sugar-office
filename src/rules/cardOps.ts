@@ -189,6 +189,8 @@ function importCardInto(next: GameState, card: GirlCard): { ok: true; name: stri
 export function applyImportCard(state: GameState, action: Extract<GameAction, { type: 'importCard' }>): ActionResult {
   const next = clone(state);
   const result = importCardInto(next, action.card);
+  // 从卡库导入就等于定下了名册：否则没点过「确认编成」的存档永远等不到每日提案。
+  if (result.ok) next.startersPicked = true;
   return result.ok ? { state: next, ok: true, message: result.message } : { state, ok: false, message: result.message };
 }
 
@@ -207,6 +209,7 @@ export function applyImportCards(state: GameState, action: Extract<GameAction, {
   if (!added.length) {
     return { state, ok: false, message: `没有新的契约卡进名册。${skipped.length ? `跳过重复 ${skipped.length} 张。` : ''}${failed.length ? `${failed.length} 张没能登记。` : ''}` };
   }
+  next.startersPicked = true;
   next.logs.unshift({ id: `log-cardbox-${next.day}-${next.minutes}-${added.length}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `契约卡库导入 ${added.length} 张：${added.join('、')}。` });
   return { state: next, ok: true, message: cardboxReport(added.length, skipped.length, failed.length) };
 }

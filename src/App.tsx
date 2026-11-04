@@ -206,6 +206,8 @@ export default function App() {
   const lastIncidentDay = useRef(state.day);
   const officeSynced = useRef(false);
   const generatingRef = useRef(false);
+  /** 已经提示过「今天没自动补」的日号，避免同一天反复弹。 */
+  const skippedNoticeDay = useRef(0);
   const savingRef = useRef(false);
   const queuedSave = useRef<GameState | null>(null);
   const latestState = useRef<GameState | null>(null);
@@ -364,7 +366,15 @@ export default function App() {
     // 存档里没有这个日号（旧档、或被读档清洗掉）：先补一个今天的值，不生成。
     if (typeof state.generatedDay !== 'number') { setState(prev => ({ ...prev, generatedDay: prev.day })); return; }
     // 序章看完 + 编成定下才补：那之前名册还是默认的，写出来的提案会认错人。
-    if (!shouldAutoGenerate(state, autoGenerate)) return;
+    if (!shouldAutoGenerate(state, autoGenerate)) {
+      // 换日了却没补：把原因说出来，别再让人干等一份不会来的提案。
+      const generated = typeof state.generatedDay === 'number' ? state.generatedDay : state.day;
+      if (autoGenerate && state.day > generated && skippedNoticeDay.current !== state.day) {
+        skippedNoticeDay.current = state.day;
+        notify('夜间自动补充被拦住了：开局流程（序章或编成）还没走完。', false);
+      }
+      return;
+    }
     if (modal) return;
     if (generatingRef.current || !llmHasKey()) return;
     // 先把「今天已经补过」记进存档，再发请求：失败也不会在读档时反复重放。
