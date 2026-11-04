@@ -837,6 +837,7 @@ export default function App() {
     const next = importState(await file.text());
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
+    setHadSave(true);
     setPendingSave(next);
   };
   const loadLocalSave = async (name: string) => {
@@ -845,7 +846,8 @@ export default function App() {
     const next = importState(text);
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    setHadSave(true);
     setPendingSave(next);
   };
 
@@ -854,7 +856,8 @@ export default function App() {
     const next = await readSlot(id).then(async slotState => (slotState ? hydrateStatePortraits(slotState) : null));
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    setHadSave(true);
     setPendingSave(next);
   };
   const deleteSlot = async (id: SaveSlotId) => { await clearSlot(id); notify(`存档位 ${id} 已清空。`); };
@@ -954,6 +957,8 @@ export default function App() {
     // 读档进来的一局：首夜该补的在当时就补过了，不要在载入时又补一份提案与委托。
     // 这里只处理「刚开的一局」——它没有 hadSave，且是从编成/序章走到正片的。
     if (openingFilledOnce.current) return;
+    // 只在「名册定下 + 序章看完」之后才允许补齐：那之前玩家还没挑人，补出来的全是默认角色。
+    if (!state.startersPicked || !state.prologueSeen) return;
     openingFilledOnce.current = true;
     if (hadSave) return;
     // 只补「首夜」：补过（openingFilledAt ≠ 0）就交给每日自动补充，不再插手。
