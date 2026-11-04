@@ -20,7 +20,14 @@ import { ensureMissionPools, ensureMonsterPool } from './pools.ts';
 import { syncShift } from './time.ts';
 // v35 从 src/game.ts 拆出：开局状态构造。
 
-export function createInitialState(pack: ContentPack = createSeedPack(), seed = pack.hash): GameState {
+/**
+ * 开局状态。
+ *
+ * `roster: 'empty'` 只给骨架（房间、委托、经济、辖区），名册与候选取空——
+ * 角色改由本地卡库提供（见 src/cardLibrary.ts）。默认仍用内置名册，
+ * 静态部署或卡库读不到时靠它兜底。
+ */
+export function createInitialState(pack: ContentPack = createSeedPack(), seed = pack.hash, options: { roster?: 'seed' | 'empty' } = {}): GameState {
   const all = pack.girls.map(girl => hydrate(girl));
   const hired = all.filter(g => g.id !== 'lu');
   const candidates = all.filter(g => g.id === 'lu');
@@ -62,7 +69,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     customFactionLeaders: [],
     customFactionGirls: [],
     startersPicked: false,
-    girls: hired, candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
+    girls: options.roster === 'empty' ? [] : hired, candidates: options.roster === 'empty' ? [] : candidates, missions, rooms, logs, samples: sampleDays(), completed: [],
     messages: {}, memorial: [], battles: [], battleNotes: [], packHash: pack.hash,
     opinions: [], expeditions: [], councilDay: 14, pensionDebt: 0,
     factions: { witch: { standing: 50, stockDay: 14, envoyDay: 14 }, association: { standing: 50, stockDay: 14, envoyDay: 14 }, government: { standing: 50, stockDay: 14, envoyDay: 14 } },

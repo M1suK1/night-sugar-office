@@ -84,6 +84,7 @@ import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
 import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
+import { LIBRARY_START_ROSTER, readLibraryCards } from './cardLibrary';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -959,6 +960,22 @@ export default function App() {
    * 拆成「你挑 → 我读 → 进编成」，读图那点时间就落在玩家已经选好之后。
    */
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
+    // 角色来源：本地卡库优先（src/cardLibrary.ts）。读得到就空名册开局，六个人全从卡库来、统一 1 级；
+    // 读不到（静态部署、卡库为空）才回退内置名册，并且明说原因，不再静默换人。
+    if (mode === 'standard') {
+      const library = await readLibraryCards(LIBRARY_START_ROSTER, { exclude: usedCardIds(state) });
+      if (library.ok) {
+        const empty = act(state, { type: 'reset', mode, roster: 'empty' });
+        const imported = empty.ok ? act(empty.state, { type: 'importCards', cards: library.cards }) : empty;
+        if (imported.ok) {
+          setState(imported.state);
+          setPhase('roster');
+          notify(`名册来自本地卡库：${library.cards.map(card => card.girl.name).join('、')}（统一 1 级）。`);
+          return;
+        }
+      }
+      notify(`没读到本地卡库（${library.reason ?? '卡库为空'}），这一局先用内置名册。`, false);
+    }
     const next = act(state, { type: 'reset', mode }).state;
     let boxEmpty = false;
     try {

@@ -44,8 +44,8 @@ import type { ActionResult, GameAction, GameState } from '../types.ts';
 export function act(state: GameState, action: GameAction): ActionResult {
   switch (action.type) {
     case 'reset': {
-      const next = action.mode === 'blank' ? createBlankState() : createInitialState();
-      return { state: next, ok: true, message: action.mode === 'blank' ? '空白档案已建立：只有会客厅与启动资金。' : '进度已重置。' };
+      const next = action.mode === 'blank' ? createBlankState() : createInitialState(undefined, undefined, { roster: action.roster ?? 'seed' });
+      return { state: next, ok: true, message: action.mode === 'blank' ? '空白档案已建立：只有会客厅与启动资金。' : action.roster === 'empty' ? '进度已重置，名册留空等卡库补人。' : '进度已重置。' };
     }
     case 'advance': return advance(state, action.minutes);
     case 'dispatch': return dispatch(state, action.girlIds, action.missionId);

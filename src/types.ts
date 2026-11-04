@@ -1210,5 +1210,5 @@ export type GameAction =
   | { type: 'resolveEvent'; eventId: string; choiceId: string }
   | { type: 'saveBattleNote'; note: BattleNote }
   | { type: 'deleteBattleNote'; battleId: string }
-  | { type: 'reset'; mode?: 'standard' | 'blank' };
+  | { type: 'reset'; mode?: 'standard' | 'blank'; roster?: 'seed' | 'empty' };
 export interface ActionResult { state: GameState; ok: boolean; message: string; battle?: BattleState }
