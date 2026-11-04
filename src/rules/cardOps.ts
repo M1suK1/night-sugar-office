@@ -250,7 +250,8 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         description: trait.description.trim().slice(0, 120) || '写在契约背面的那句话。',
       }));
       const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
-      const extra = draft.skillIds.reduce((acc, id) => acc + (getSkill(id).tier === 'ultimate' ? 700 : getSkill(id).tier === 'signature' ? 300 : 0), 0);
+      // 以前按技能稀有度额外加价（终极 +700、专属 +300），三个好技能就能把一张一级卡抬到两千多；
+      // 价格现在只跟等级与四维走，契约费维持在千元左右。
       const id = `g_${hashText(`${draft.name}:${next.day}:${next.minutes}:${next.candidates.length}`).toString(16).padStart(8, '0')}`;
       const voice = sanitizeVoice(draft.voice);
       const customOutfit = customOutfitFor({ color: draft.color, outfitDescription: draft.outfitDescription, portrait: draft.portrait, portraitSpec: draft.appearanceSpec });
@@ -268,7 +269,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
         id, name: draft.name, codename: draft.codename, title: draft.title, element: draft.element, color: draft.color,
         portrait: sanitizePortraitSrc(draft.portrait) ?? sanitizePortraitSrc(wardrobe.find(outfit => outfit.portrait)?.portrait) ?? '', portraitCrop: draft.portraitCrop, level: 1, hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
         fatigue: 0, bond: 20, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: contractCost(1, sum) + extra,
+        skill: getSkill(draft.skillIds[2]).name, skills: draft.skillIds, description: draft.appearance, cost: contractCost(1, sum),
         scars: [], relationships: {}, archetype: draft.archetype, quote: draft.quote,
         goal: draft.goal, goalKind: '成长', traits, conditions: [],
         contractEndDay: next.day + 17, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
