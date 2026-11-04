@@ -23,6 +23,7 @@ import {
   applyDeleteCandidate, applyDeleteMission, applyDeleteMonster, applyJoinFront,
   applyMergeIncidentPool, applyResolveIncident, applySaveBattleNote, applySetPoolLimit,
 } from './factionOps.ts';
+import { applyAssignFactionRoster } from './rosterOps.ts';
 import {
   applyClinic, applyHire, applyHireLeader, applyOpeningFill,
   applyRecallExpedition, applyRehire, applyRenewContract, applyRetire,
@@ -87,6 +88,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'useItem': return applyUseItem(state, action);
     case 'acceptFactionTask': return applyAcceptFactionTask(state, action);
     case 'borrowStability': return applyBorrowStability(state, action);
+    case 'assignFactionRoster': return applyAssignFactionRoster(state, action);
     case 'upgradeMarket': return applyUpgradeMarket(state, action);
     case 'advancedRecruit': return applyAdvancedRecruit(state, action);
     case 'importCard': return applyImportCard(state, action);

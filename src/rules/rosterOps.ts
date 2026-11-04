@@ -143,6 +143,32 @@ export function applySetStarters(state: GameState, action: Extract<GameAction, {
       return { state: next, ok: true, message: '编成已确认。' };
 }
 
+/**
+ * assignFactionRoster 的动作处理器（v85 批三）。
+ *
+ * 开局把三方首领与随从整份换掉：卡库随机取人，校验走同一套 sanitizeFactionRoster，
+ * 已经在事务所名册里的少女不会被抢走。
+ */
+export function applyAssignFactionRoster(state: GameState, action: Extract<GameAction, { type: 'assignFactionRoster' }>): ActionResult {
+  const leaders = (Array.isArray(action.leaders) ? action.leaders : [])
+    .map(raw => sanitizeCustomLeader(raw, raw.faction, raw.id))
+    .filter((leader): leader is FactionLeader => Boolean(leader));
+  const girls = (Array.isArray(action.girls) ? action.girls : [])
+    .map(raw => sanitizeCustomGirl(raw, raw.faction, raw.id))
+    .filter((girl): girl is FactionGirl => Boolean(girl));
+  const parsed = sanitizeFactionRoster(action.roster, leaders, girls);
+  if (!parsed) return { state, ok: false, message: '三方阵容不合法。' };
+  const ownIds = new Set(state.girls.map(girl => girl.id));
+  const rostered = FACTION_ORDER.flatMap(faction => [parsed.roster[faction].leaderId, ...parsed.roster[faction].memberIds]);
+  if (rostered.some(id => ownIds.has(id))) return { state, ok: false, message: '事务所名册里的人不能同时坐势力位置。' };
+  const next = clone(state);
+  next.factionRoster = parsed.roster;
+  next.customFactionLeaders = parsed.leaders;
+  next.customFactionGirls = parsed.girls;
+  next.logs.unshift({ id: `log-faction-roster-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'base', text: `三方名册从契约卡库重新排定：${parsed.leaders.map(leader => leader.name).join('、')}。` });
+  return { state: next, ok: true, message: '三方阵容已按卡库排定。' };
+}
+
 /** hireLeader 的动作处理器（v35 从 act 拆出）。 */
 export function applyHireLeader(state: GameState, action: Extract<GameAction, { type: 'hireLeader' }>): ActionResult {
       const leader = leaderById(action.leaderId);

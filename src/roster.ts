@@ -5,11 +5,11 @@
  * （契约卡库里的卡、名册里、候选池里）也可以坐进这些位置。这里只负责把不同来源
  * 的数据折成同一种 `RosterSubject`，校验与快照仍在 `game.ts` 的 `setStarters`。
  */
-import type { FactionId, FactionRoster, GameState, Girl } from './types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlCard } from './types.ts';
 import type { CardBoxEntry } from './cardbox.ts';
 import { factionGirls } from './content/factionGirls.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
-import { customRosterOf, subjectOfCustom, subjectOfGirl, subjectOfLeader, type RosterSubject } from './factions.ts';
+import { customGirlOf, customLeaderOf, customRosterOf, subjectOfCustom, subjectOfGirl, subjectOfLeader, type RosterSubject } from './factions.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { usedCardIds } from './cardMarket.ts';
 
@@ -42,7 +42,7 @@ function girlSubject(girl: Girl): RosterSubject {
   return subjectOfCustom({
     id: girl.id,
     name: girl.name,
-    factionTag: girl.factionTag,
+    factionTag: girl.factionTag ?? 'association',
     level: girl.level,
     color: girl.color,
     portrait: girl.portrait,
@@ -198,4 +198,57 @@ export function cardFactionRoster(pool: RosterSubject[], taken: string[] = []): 
     roster[FACTION_ORDER[index]!].memberIds.push(subject.id);
   });
   return roster;
+}
+
+/**
+ * 卡 → 编成池条目（v85 批三）。
+ *
+ * 与 `cardSubject` 不同：这里手上已经有解析好的卡了，所以立绘、魔女化立绘、出身都跟着走，
+ * 直接拿去坐三方名册的位置。
+ */
+export function subjectFromCard(card: GirlCard, id: string): RosterSubject {
+  const girl = card.girl;
+  return subjectOfCustom({
+    id,
+    name: girl.name,
+    factionTag: girl.factionTag ?? 'association',
+    level: girl.level,
+    color: girl.color,
+    portrait: girl.portrait ?? '',
+    portraitSpec: girl.portraitSpec,
+    stats: { ...girl.stats },
+    skillIds: [...girl.skillIds],
+    codename: girl.codename,
+    quote: girl.quote,
+    title: girl.title,
+    witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
+  });
+}
+
+/**
+ * 开局：三方首领与随从全部从卡库随机取（v83 待定 1 的决定）。
+ *
+ * 卡不够 6 张时返回 null，调用方退回内置名册。首领与随从的等级仍按名册口径压
+ * （首领 10 级、随从 8–9 级），立绘与魔女化立绘原样带过去。
+ */
+export function factionSnapshotFromCards(
+  cards: GirlCard[],
+  options: { random?: () => number } = {},
+): { roster: Record<FactionId, FactionRoster>; leaders: FactionLeader[]; girls: FactionGirl[] } | null {
+  if (cards.length < 6) return null;
+  const pool = shuffleWith(cards.map((card, index) => subjectFromCard(card, `card-${card.girl.name}-${index}`)), options.random);
+  const roster = cardFactionRoster(pool);
+  if (!roster) return null;
+  const byId = new Map(pool.map(subject => [subject.id, subject]));
+  const leaders: FactionLeader[] = [];
+  const girls: FactionGirl[] = [];
+  for (const faction of FACTION_ORDER) {
+    const leader = byId.get(roster[faction].leaderId);
+    if (leader) leaders.push(customLeaderOf(faction, leader));
+    for (const memberId of roster[faction].memberIds) {
+      const member = byId.get(memberId);
+      if (member) girls.push(customGirlOf(faction, member));
+    }
+  }
+  return { roster, leaders, girls };
 }

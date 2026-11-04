@@ -1218,6 +1218,8 @@ export type GameAction =
   | { type: 'useItem'; girlId: string; itemId: string }
   | { type: 'acceptFactionTask'; faction: FactionId; /** 借调时要指定借谁、借几小时。 */ girlId?: string; hours?: number; /** 索款时可以加钱到下一档。 */ amount?: number }
   | { type: 'borrowStability'; faction: FactionId; points: number }
+  /** v85 批三：开局三方名册整体从卡库随机取。 */
+  | { type: 'assignFactionRoster'; roster: Record<FactionId, FactionRoster>; leaders: FactionLeader[]; girls: FactionGirl[] }
   | { type: 'upgradeMarket' }
   | { type: 'advancedRecruit'; level: number; /** 卡库挑来的那张卡：有就从卡库进入候选，没有就现场合成。 */ cards?: GirlCard[] }
   | { type: 'createGirl'; draft: GirlDraft }

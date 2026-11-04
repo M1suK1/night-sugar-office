@@ -86,6 +86,7 @@ import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
 import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
 import { LIBRARY_START_ROSTER, normalizeToLevel, readLibraryCards } from './cardLibrary';
+import { STARTER_COUNT, factionSnapshotFromCards } from './roster';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -963,15 +964,29 @@ export default function App() {
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
     // 角色来源：本地卡库优先（src/cardLibrary.ts）。读得到就空名册开局，六个人全从卡库来、统一 1 级；
     // 读不到（静态部署、卡库为空）才回退内置名册，并且明说原因，不再静默换人。
-    if (mode === 'standard') {
-      const library = await readLibraryCards(LIBRARY_START_ROSTER, { exclude: usedCardIds(state) });
-      if (library.ok) {
-        const empty = act(state, { type: 'reset', mode, roster: 'empty' });
-        const imported = empty.ok ? act(empty.state, { type: 'importCards', cards: library.cards }) : empty;
-        if (imported.ok) {
-          setState(imported.state);
-          setPhase('roster');
-          notify(`名册来自本地卡库：${library.cards.map(card => card.girl.name).join('、')}（统一 1 级）。`);
+    // v85 批三：名册与三方名册**都**从卡库随机取（「全随机」的决定）。
+    // 一次读 12 张：前 6 张进事务所名册，后 6 张坐三方位置，读不齐就退回内置名册。
+    if (mode === 'standard' || mode === 'blank') {
+      const library = await readLibraryCards(LIBRARY_START_ROSTER * 2, { exclude: usedCardIds(state) });
+      if (library.ok && library.cards.length >= STARTER_COUNT) {
+        const rosterCards = library.cards.slice(0, Math.min(LIBRARY_START_ROSTER, library.cards.length));
+        const factionCards = library.cards.slice(rosterCards.length);
+        const empty = act(state, { type: 'reset', mode, roster: mode === 'standard' ? 'empty' : undefined });
+        let working = empty;
+        if (empty.ok) {
+          const imported = act(empty.state, { type: 'importCards', cards: rosterCards });
+          if (imported.ok) working = imported;
+        }
+        if (working.ok) {
+          const snapshot = factionSnapshotFromCards(factionCards);
+          const assigned = snapshot ? act(working.state, { type: 'assignFactionRoster', ...snapshot }) : null;
+          const final = assigned?.ok ? assigned : working;
+          setState(final.state);
+          setPhase(mode === 'blank' && !final.state.girls.length ? 'prologue' : 'roster');
+          const factionNote = assigned?.ok
+            ? `三方名册也从卡库排定：${snapshot!.leaders.map(leader => leader.name).join('、')}`
+            : '三方名册沿用内置的一套';
+          notify(`名册来自本地卡库：${rosterCards.map(card => card.girl.name).join('、')}（统一 1 级）。${factionNote}。`);
           return;
         }
       }
