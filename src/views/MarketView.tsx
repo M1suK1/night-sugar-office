@@ -31,12 +31,14 @@ export type MarketViewProps = {
   onUpgradeMarket: () => void;
   onImportCard: (file: File) => void;
   onAdvancedRecruit: (level: number) => void;
+  /** v83 批三：市场空了直接从卡库补人。 */
+  onFillFromLibrary?: () => void;
   onCustom: () => void;
   onCardbox: () => void;
   onBuyItem: (itemId: string, stockId?: string) => void;
 };
 
-export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew, onUpgradeMarket, onAdvancedRecruit, onCustom, onCardbox, onBuyItem, onImportCard }: MarketViewProps) {
+export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew, onFillFromLibrary, onUpgradeMarket, onAdvancedRecruit, onCustom, onCardbox, onBuyItem, onImportCard }: MarketViewProps) {
   const [tab, setTab] = useState<Tab>('candidates');
   const [filter, setFilter] = useState<'all' | 'combat' | 'support'>('all');
   const [query, setQuery] = useState('');
@@ -79,8 +81,9 @@ export function MarketView({ state, onHire, onGirl, onRemote, onRehire, onRenew,
         return <CandidateCard key={slot.girl.id} girl={slot.girl} state={state} onHire={onHire} onGirl={onGirl} />;
       })}</div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>没有符合条件的候选者。<br />试试更换类型，或使用其他关键词。</p></div>) : pool.length === 0 ? <div className="av-empty" id="market-card-hint">
         <Archive size={26} strokeWidth={1} />
-        <p>卡库里的卡都用完了。</p>
-        <small>去契约卡库加几张新卡，市场会自己补货。</small>
+        <p>今天的候选池空了。</p>
+        <small>可以从契约卡库直接补几位，也可以去卡库加新卡。</small>
+        {onFillFromLibrary && <button id="market-fill-library" type="button" className="av-btn av-btn-small" onClick={onFillFromLibrary}><Archive size={13} />从卡库补 3 位</button>}
         <button id="market-open-cardbox" type="button" className="av-btn av-btn-small" onClick={onCardbox}><Archive size={13} />打开契约卡库</button>
       </div> : <div className="av-empty"><Search size={30} strokeWidth={1} /><p>今天的挂牌已经结束。</p><small>明日 00:00 会重新开窗。</small></div>}
     </div>}

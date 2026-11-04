@@ -107,4 +107,4 @@ fillFromLibrary(state, need: {candidates?, leaders?, roster?}): ActionResult
 
 - [x] 批 1 · `src/cardLibrary.ts`（扫描 / 单张读取 / 小卡优先随机挑 / 压 1 级）
 - [x] 批 2 · 开局走卡库：`reset({roster:'empty'})` + 六张卡入候选池 + 不可用时明示回退
-- [ ] 批 3 · 市场/候选/空白档统一走 `fillFromLibrary`；三方首领与随从改为卡库随机
+- [x] 批 3 · 市场/候选/空白档统一走 `fillFromLibrary`；三方首领与随从改为卡库随机（v85 期间完成）

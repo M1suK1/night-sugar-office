@@ -1001,9 +1001,44 @@ export default function App() {
     } catch { boxEmpty = true; /* 卡库读不出来就当没卡，按默认名册开局。 */ }
     setState(next);
     // 空白档案里没有契约者，先别进编成，否则四个位置一个都填不满。
+    // v83 批三：空白档也从卡库补两位候选，市场才不会一开局就是死的。
+    if (mode === 'blank' && !next.girls.length && !next.candidates.length) {
+      const library = await readLibraryCards(2, { exclude: usedCardIds(next) });
+      if (library.ok && library.cards.length) {
+        const filled = act(next, { type: 'importCards', cards: library.cards });
+        if (filled.ok) {
+          setState(filled.state);
+          setPhase('prologue');
+          notify(`空白档案从卡库补了 ${library.cards.length} 位候选。`);
+          return;
+        }
+      }
+    }
     setPhase(mode === 'blank' && !next.girls.length && !next.candidates.length ? 'prologue' : 'roster');
     // 有卡就先让玩家在卡库里挑；挑完（或直接关掉）都落到编成界面。
     if (!boxEmpty) setModal({ type: 'cardbox' });
+  };
+
+  /**
+   * 缺省补位（v83 批三）：市场没人时直接从卡库补几位候选。
+   *
+   * 市场和候选池以前空了就只能等第二天，或者玩家自己开卡库导入。这里统一走一条路：
+   * 读卡 → 归一 1 级 → importCards，读不到就照实说卡库为空。
+   */
+  const fillFromLibrary = async (count = 3): Promise<boolean> => {
+    const library = await readLibraryCards(count, { exclude: usedCardIds(state) });
+    if (!library.ok || !library.cards.length) {
+      notify(`卡库里没有可补的卡（${library.reason ?? '都已在名册里'}）。`, false);
+      return false;
+    }
+    const applied = act(state, { type: 'importCards', cards: library.cards });
+    if (!applied.ok) {
+      notify(applied.message, false);
+      return false;
+    }
+    setState(applied.state);
+    notify(`从卡库补了 ${library.cards.length} 位候选：${library.cards.map(card => card.girl.name).join('、')}。`);
+    return true;
   };
 
   /**
@@ -1487,7 +1522,7 @@ export default function App() {
       ) : page === 'council' ? (
         <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} />
       ) : page === 'market' ? (
-        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => void advancedRecruit(level)} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
+        <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => void advancedRecruit(level)} onFillFromLibrary={() => void fillFromLibrary(3)} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
       ) : (
         <RecordsView state={state} onBattle={id => setModal({ type: 'battle', id })} onBattleNote={openBattleNote} onChronicle={() => setModal({ type: 'chronicle' })} onCodex={() => setModal({ type: 'codex' })} onGirl={girl} />
       )}
