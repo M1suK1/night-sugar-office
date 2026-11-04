@@ -1,3 +1,4 @@
+import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
 import { focusGirlOf } from './storyFocus.ts';
@@ -1067,7 +1068,11 @@ export function extractJsonObject(text: string): Record<string, unknown> | null 
   for (let start = cleaned.indexOf('{'); start >= 0; start = cleaned.indexOf('{', start + 1)) {
     const end = matchBrace(cleaned, start);
     if (end < 0) {
-      // 括号没闭合，多半是被 length 截断了：把剩下的都交给解析器试一次，失败就当这次没给出 JSON。
+      // 括号没闭合，多半是被 length 截断了。先试着按括号栈补上收尾（通常只差几个 } ]），
+      // 补不出来再让解析器试一次——这样「只差收尾」的蓝图能救回来，而不是整份作废。
+      const repaired = closeTruncatedJson(cleaned.slice(start));
+      const salvaged = repaired ? parseJsonObject(repaired) : null;
+      if (salvaged) return salvaged;
       // 这里不能继续往内层找 {——截断的回复里内层的选项对象是完整的，
       // 滑过去就会返回一个语法合法、内容残缺的对象（表现成「没有给出可用的条目」）。
       return parseJsonObject(cleaned.slice(start));
