@@ -11,6 +11,8 @@ import { recordMissionRun } from '../missionHistory.ts';
 import { clampPollution, districtName, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, purifyTo } from '../pollution.ts';
 import { recomputeMaxHp, missionExp } from '../progression.ts';
 import { effectiveDistrictEffect, factionName } from '../territories.ts';
+import { loadBalance } from '../balance.ts';
+import { applyHostility, pairOf } from '../hostility.ts';
 import type { BattleState, GameState, Girl, Interception, Mission, Scar, StatKey } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
 import { addCondition, addCorruption, gainTrait } from './conditions.ts';
@@ -130,6 +132,8 @@ export function interceptionFor(state: GameState, mission: Mission): Interceptio
 
 export function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
   const interception = mission.interception;
+  // 破坏行动也要打「人」，但它不是被人拦截：敌人取自 interception，结算走自己的分支。
+  const raid = Boolean(mission.envoyKind === 'raid' && interception);
   const factionPool = rosterMembers(state, interception?.faction ?? 'association');
   const pool = factionPool.length ? factionPool : (interception ? factionGirlsOf(interception.faction) : []);
   const enemies = interception ? pool.filter(girl => interception.girlIds.includes(girl.id)) : [];
@@ -144,7 +148,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
   mission.attempts += 1;
   mission.lastOutcome = battle.outcome;
   const rewards = battle.rewards ?? { gold: 0, exp: 0, bond: 0 };
-  if (interception) {
+  if (interception && !raid) {
     settleInterception(state, mission, interception, battle, at);
   } else if (battle.outcome === 'victory') {
     state.gold += rewards.gold;
@@ -155,7 +159,22 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     mission.completedDay = at.day;
     completeStoryMission(state, mission);
     grantTemplateRewards(state, mission, at);
-    if (mission.faction) {
+    const envoyBalance = loadBalance();
+    if (mission.envoyKind === 'coop' && mission.envoyFaction) {
+      // 共建：只涨自己这边的好感，不再按老规矩 +6。
+      state.factions[mission.envoyFaction].standing = Math.min(100, state.factions[mission.envoyFaction].standing + envoyBalance.envoyCoopStandingGain);
+    } else if (mission.envoyKind === 'raid' && mission.envoyFaction) {
+      // 破坏：发起方好感不变；被破坏方掉好感，两势力火气上升。
+      const target = mission.envoyTarget;
+      if (target) {
+        state.factions[target].standing = Math.max(0, state.factions[target].standing - envoyBalance.envoyRaidTargetStandingLoss);
+      }
+      const pair = target ? pairOf(mission.envoyFaction, target) : undefined;
+      if (pair) {
+        applyHostility(state, [{ pair, delta: mission.envoyHostility ?? envoyBalance.envoyRaidHostility, reason: '有人在他们的辖区里被打了一顿' }]);
+      }
+      state.reputation = Math.max(0, state.reputation - 1);
+    } else if (mission.faction) {
       state.factions[mission.faction].standing = Math.min(100, state.factions[mission.faction].standing + 6);
       state.reputation = Math.max(0, Math.min(100, state.reputation + (mission.faction === 'witch' ? -2 : mission.faction === 'association' ? 2 : 1)));
       if (mission.faction === 'witch') applyWitchBounty(state);
@@ -165,7 +184,18 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `委托完成 · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}打赢了这一场，报酬 ${rewards.gold} 星砂。` });
   } else if (battle.outcome === 'defeat') {
     state.reputation = Math.max(0, state.reputation - 3);
-    if (mission.faction) state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
+    const envoyBalance = loadBalance();
+    if (mission.envoyKind === 'coop' && mission.envoyFaction) {
+      state.factions[mission.envoyFaction].standing = Math.max(0, state.factions[mission.envoyFaction].standing - envoyBalance.envoyCoopStandingLoss);
+    } else if (mission.envoyKind === 'raid' && mission.envoyFaction) {
+      // 打输了：对方没吃亏，但两家的火气照样往上走，城市安定再掉一点。
+      const target = mission.envoyTarget;
+      const pair = target ? pairOf(mission.envoyFaction, target) : undefined;
+      if (pair) applyHostility(state, [{ pair, delta: envoyBalance.envoyRaidFailureHostility, reason: '他们查到了是谁动的手' }]);
+      state.reputation = Math.max(0, state.reputation - 1);
+    } else if (mission.faction) {
+      state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
+    }
     book(state, at.day, 0);
     mission.squad = [];
     mission.girlId = undefined;

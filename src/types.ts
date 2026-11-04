@@ -6,6 +6,25 @@ export type Element = '星光系' | '糖霜系' | '月影系' | '梦境系' | '�
 export type Archetype = '输出' | '守护' | '控制' | '治愈' | '侦查' | '魔物';
 export type GirlStatus = 'idle' | 'mission' | 'healing' | 'resting' | 'retired' | 'expedition' | 'left';
 
+/** 势力代表委托的三种形态（v84）。 */
+export type EnvoyKind = 'coop' | 'raid' | 'loan';
+
+export interface EnvoyOffer {
+  kind: EnvoyKind;
+  faction: FactionId;
+  /** 共建：在该势力自己的辖区上完成；破坏：目标势力的辖区。借调没有委托。 */
+  mission?: Mission;
+  /** 破坏行动的目标势力。 */
+  target?: FactionId;
+  /** 借调：可借 1–6 小时，每小时收益与星象台同口径。 */
+  hours?: number;
+  rate?: number;
+  /** 破坏行动预计加多少火气（按对方辖区污染与安定加权）。 */
+  hostility?: number;
+  /** 给界面用的短说明。 */
+  note: string;
+}
+
 /** 主动离职的理由：心的位置变了、身体撑不住、或者契约款一直不到位。 */
 export type LeftReason = 'bond' | 'fatigue' | 'pension';
 
@@ -729,7 +748,7 @@ export interface Girl {
   id: string; name: string; codename: string; title: string; element: Element; color: string; portrait: string;
   level: number; hp: number; maxHp: number; baseMaxHp: number; spirit: number; maxSpirit: number;
   fatigue: number; bond: number; exp: number;
-  stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string;
+  stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string; /** 被借调给某个势力：到点自动回岗，借调期间不能派遣。 */ loan?: { faction: FactionId; until: number; rate: number };
   skill: string; skills: string[]; description: string; cost: number;
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   /** 立绘的 assets 键；有它就不必再背 dataURL。 */
@@ -788,6 +807,14 @@ export interface Mission {
   /** 完成时的业务日；地图只显示当天完成的委托，换日后旧委托仍留在记录里。 */
   completedDay?: number;
   recommendedLevel: number; faction?: FactionId; envoy?: boolean; boss?: boolean;
+  /** v84：代表委托的形态（共建 / 破坏）；旧档里接下的 envoy 委托没有这个字段。 */
+  envoyKind?: 'coop' | 'raid';
+  /** 代表委托属于哪个势力。 */
+  envoyFaction?: FactionId;
+  /** 破坏行动打的是哪个势力。 */
+  envoyTarget?: FactionId;
+  /** 破坏行动结算时加多少火气（按对方辖区污染与安定加权算出，发出时写死）。 */
+  envoyHostility?: number;
   /** 所属辖区；缺省时由坐标反推。 */
   district?: DistrictId;
   /** 接受时限：紧急（短）或长期（整晚）。 */
@@ -1177,7 +1204,7 @@ export type GameAction =
   | { type: 'equipItem'; girlId: string; itemId: string; slot: 'weapon' | 'charm' }
   | { type: 'unequipItem'; girlId: string; slot: 'weapon' | 'charm' }
   | { type: 'useItem'; girlId: string; itemId: string }
-  | { type: 'acceptFactionTask'; faction: FactionId }
+  | { type: 'acceptFactionTask'; faction: FactionId; /** 借调时要指定借谁、借几小时。 */ girlId?: string; hours?: number }
   | { type: 'upgradeMarket' }
   | { type: 'advancedRecruit'; level: number }
   | { type: 'createGirl'; draft: GirlDraft }

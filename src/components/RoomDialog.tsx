@@ -90,7 +90,7 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
     {tab === 'envoys' && (
       <div className="room-function">
         <h3>三方势力来使 · 每日委托</h3>
-        <p>月蚀庭任务 −2 安定，星灯协会 +2 安定，市役所 +1 安定；完成后对应势力声望 +6。</p>
+        <p>代表委托分三种：在自己的辖区做事（好感 +1、星砂 +10%）、去别人的辖区破坏（对方好感 −3、两方火气上升、星砂 +50%）、把少女借出去按时长收钱（好感 +1、不加疲劳）。</p>
         <div className="room-clinic-list">
           {(['witch', 'association', 'government'] as FactionId[]).map(fid => {
             const info = factionInfo[fid];

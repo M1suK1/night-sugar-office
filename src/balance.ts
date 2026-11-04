@@ -21,6 +21,22 @@ export interface BalanceRules {
   expeditionGoldPerLevel: number;
   /** 宿舍扩建价相对其它设施的折扣（百分点）：50 = 半价。 */
   dormBuildDiscountPct: number;
+  /** 代表委托三种形态的权重（共建 / 破坏 / 借调）。 */
+  envoyCoopWeight: number;
+  envoyRaidWeight: number;
+  envoyLoanWeight: number;
+  /** 共建：完成 +好感、额外星砂百分比、失败扣好感。 */
+  envoyCoopStandingGain: number;
+  envoyCoopRewardPct: number;
+  envoyCoopStandingLoss: number;
+  /** 破坏：被破坏方扣多少好感、额外星砂百分比、基础火气、失败时的火气。 */
+  envoyRaidTargetStandingLoss: number;
+  envoyRaidRewardPct: number;
+  envoyRaidHostility: number;
+  envoyRaidFailureHostility: number;
+  /** 借调：好感与最长小时数。 */
+  envoyLoanStandingGain: number;
+  envoyLoanMaxHours: number;
   /** 宿舍每小时恢复的疲劳。 */
   dormFatiguePerHour: number;
   /** 侵蚀达到多少可以显形魔女化礼装。 */
@@ -65,6 +81,18 @@ export const DEFAULT_BALANCE: BalanceRules = {
   expeditionMembersPerLevel: 1,
   expeditionGoldPerLevel: 50,
   dormBuildDiscountPct: 50,
+  envoyCoopWeight: 45,
+  envoyRaidWeight: 30,
+  envoyLoanWeight: 25,
+  envoyCoopStandingGain: 1,
+  envoyCoopRewardPct: 10,
+  envoyCoopStandingLoss: 1,
+  envoyRaidTargetStandingLoss: 3,
+  envoyRaidRewardPct: 50,
+  envoyRaidHostility: 8,
+  envoyRaidFailureHostility: 4,
+  envoyLoanStandingGain: 1,
+  envoyLoanMaxHours: 6,
   dormFatiguePerHour: 8,
   corruptionThreshold: 40,
   squadLimit: 3,
@@ -108,6 +136,18 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'expeditionMembersPerLevel', label: '星象台每级人数', hint: '星象台升 1 级，远行队伍人数上限加几人。', min: 0, max: 3, step: 1, unit: '人', group: '基地设施' },
   { key: 'expeditionGoldPerLevel', label: '星象台每级收益', hint: '星象台升 1 级，每人每小时多带回多少星砂。', min: 0, max: 500, step: 10, unit: '星砂', group: '基地设施' },
   { key: 'dormBuildDiscountPct', label: '宿舍扩建折扣', hint: '宿舍扩建价相对其它设施的折扣，50 表示半价。', min: 0, max: 90, step: 5, unit: '%', group: '基地设施' },
+  { key: 'envoyCoopWeight', label: '共建权重', hint: '代表委托里「在自己辖区干活」的比例。', min: 0, max: 100, step: 5, unit: '', group: '势力代表' },
+  { key: 'envoyRaidWeight', label: '破坏权重', hint: '代表委托里「去别人辖区打一场」的比例。', min: 0, max: 100, step: 5, unit: '', group: '势力代表' },
+  { key: 'envoyLoanWeight', label: '借调权重', hint: '代表委托里「借人」的比例。', min: 0, max: 100, step: 5, unit: '', group: '势力代表' },
+  { key: 'envoyCoopStandingGain', label: '共建好感', hint: '在自己辖区完成势力委托，涨多少势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyCoopRewardPct', label: '共建额外星砂', hint: '共建委托的星砂加成百分比。', min: 0, max: 200, step: 5, unit: '%', group: '势力代表' },
+  { key: 'envoyCoopStandingLoss', label: '共建失败扣好感', hint: '共建委托失败时扣多少势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyRaidTargetStandingLoss', label: '破坏扣好感', hint: '被破坏势力扣多少好感。', min: 0, max: 20, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyRaidRewardPct', label: '破坏额外星砂', hint: '破坏行动的星砂加成百分比。', min: 0, max: 300, step: 10, unit: '%', group: '势力代表' },
+  { key: 'envoyRaidHostility', label: '破坏基础火气', hint: '破坏行动给两势力加多少火气（再按对方辖区污染与安定加权）。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyRaidFailureHostility', label: '破坏失败火气', hint: '破坏失败时仍然加多少火气。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyLoanStandingGain', label: '借调好感', hint: '把少女借给势力，涨多少好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
+  { key: 'envoyLoanMaxHours', label: '借调最长小时', hint: '一次最多借几个小时。', min: 1, max: 12, step: 1, unit: '小时', group: '势力代表' },
   { key: 'dormFatiguePerHour', label: '宿舍恢复', hint: '宿舍每小时恢复的疲劳；影响挂机节奏。', min: 1, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },
   { key: 'corruptionThreshold', label: '魔女化阈值', hint: '侵蚀达到该值后解锁魔女化礼装。', min: 10, max: 100, step: 5, unit: '侵蚀', group: '运营与诊所' },
   { key: 'squadLimit', label: '派遣上限', hint: '单个委托最多派几人。', min: 1, max: 5, step: 1, unit: '人', group: '运营与诊所' },

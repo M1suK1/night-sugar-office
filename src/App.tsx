@@ -1438,7 +1438,7 @@ export default function App() {
           onStartExpedition={ids => perform({ type: 'startExpedition', memberIds: ids })}
           onRecallExpedition={id => perform({ type: 'recallExpedition', expeditionId: id })}
           onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })}
-          onAcceptTask={faction => perform({ type: 'acceptFactionTask', faction })}
+          onAcceptTask={(faction, girlId, hours) => perform({ type: 'acceptFactionTask', faction, girlId, hours })}
           onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })}
           onCare={(girlId, mode) => perform({ type: 'care', girlId, mode })}
           onAssistant={girlId => perform({ type: 'setAssistant', girlId })}

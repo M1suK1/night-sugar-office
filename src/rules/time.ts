@@ -1,4 +1,4 @@
-import { loadBalance } from '../balance.ts';
+import { factionName } from '../territories.ts';
 import { outcomeLabel } from '../combat.ts';
 import { bossTemplateOf, pickBoss } from '../content/bosses.ts';
 import type { DistrictId } from '../districts.ts';
@@ -49,9 +49,32 @@ export function bossTick(state: GameState, elapsed: number): void {
  * 生成一条议题；`variant` 让同一个时段也能补出不同的议题（首夜连补三条时用）。
  * 返回是否真的加了一条：同一个议题标题还挂在待议里就不再重复提。
  */
-/** 星象台：每人每小时的收益与经验。 */
-export const EXPEDITION_GOLD_PER_HOUR = 300;
-export const EXPEDITION_EXP_PER_HOUR = 10;
+// 收益口径搬到 src/expedition.ts（missions.ts 也要用，避免循环依赖）。
+import { EXPEDITION_EXP_PER_HOUR, expeditionGoldPerHour } from '../expedition.ts';
+export { EXPEDITION_EXP_PER_HOUR, EXPEDITION_GOLD_PER_HOUR, expeditionGoldPerHour } from '../expedition.ts';
+
+/**
+ * 借调到期：少女回到事务所。
+ *
+ * 借调沿用 `expedition` 状态（这样派遣、治疗、再次借出都会被现有规则挡住），
+ * 靠 girl.loan 区分「借出去了」和「在星象台上」。
+ */
+export function releaseDueLoans(state: GameState): number {
+  const now = absoluteMinutes(state.day, state.minutes);
+  let released = 0;
+  for (const girl of state.girls) {
+    if (!girl.loan) continue;
+    if (girl.loan.until > now) { girl.remaining = Math.max(0, girl.loan.until - now); continue; }
+    const faction = girl.loan.faction;
+    girl.loan = undefined;
+    girl.status = 'idle';
+    girl.remaining = 0;
+    girl.roomId = girl.roomId || 'lounge';
+    released += 1;
+    state.logs.unshift({ id: `log-loan-back-${girl.id}-${state.day}-${state.minutes}`, time: dateLabel(state.day, state.minutes), kind: 'council', text: `${girl.name}结束在${factionName[faction]}的借调，回到事务所。` });
+  }
+  return released;
+}
 
 export function settleExpedition(state: GameState, expeditionId: string, at: { day: number; minutes: number }): void {
   const expedition = state.expeditions.find(e => e.id === expeditionId);
@@ -62,9 +85,7 @@ export function settleExpedition(state: GameState, expeditionId: string, at: { d
   // 每人每小时 300 星砂、10 点经验：星象台以前一轮只给 60–180，
   // 比派遣还亏，没人愿意把人放上去。
   // 星象台每升 1 级，每人每小时多带回一批星砂。
-  const observatoryLevel = state.rooms.find(room => room.type === 'observatory')?.level ?? 1;
-  const perHour = EXPEDITION_GOLD_PER_HOUR + Math.max(0, observatoryLevel - 1) * loadBalance().expeditionGoldPerLevel;
-  const gain = perHour * members.length;
+  const gain = expeditionGoldPerHour(state) * members.length;
   const found = seed % 10 < 6;
   state.gold += gain;
   book(state, at.day, gain);
@@ -331,6 +352,7 @@ export function advance(state: GameState, minutes: number): ActionResult {
   }
   advanceClock(next, end);
   syncShift(next);
+  releaseDueLoans(next);
   for (const girl of next.girls) {
     if (girl.dead || girl.retired || girl.status === 'mission' || girl.status === 'expedition') continue;
     if (next.day > girl.contractEndDay && girl.pensionMissed >= 15) {

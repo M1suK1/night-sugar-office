@@ -14,8 +14,11 @@ import { advancedCost, marketSize, marketUpgradeCost } from '../economy.ts';
 import { factionInfo } from '../content/items.ts';
 import { sanitizePortraitSrc } from '../image.ts';
 import { applyCardStorylines } from '../cardStory.ts';
-import { factionTask } from '../rules/missions.ts';
-import { archive, book, clone, dateLabel, hashText } from '../rules/core.ts';
+import { envoyOfferOf } from '../rules/envoy.ts';
+import { loadBalance } from '../balance.ts';
+import { expeditionGoldPerHour } from '../expedition.ts';
+import { absoluteMinutes } from '../shift.ts';
+import { archive, book, clone, dateLabel, findGirl, hashText } from '../rules/core.ts';
 import type { ActionResult, GameAction, GameState, Girl, GirlCard, Storyline, Trait } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -24,11 +27,33 @@ export function applyAcceptFactionTask(state: GameState, action: Extract<GameAct
       const next = clone(state); const faction = action.faction; const info = next.factions[faction];
       if (!info) return { state, ok: false, message: '未知势力。' };
       if (info.envoyTaskId) return { state, ok: false, message: '今天已经接下这位代表的委托了。' };
-      const mission = factionTask(next, faction);
+      const offer = envoyOfferOf(next, faction);
+      const representative = representativeNameOf(next, faction);
+
+      if (offer.kind === 'loan') {
+        const girl = action.girlId ? findGirl(next, action.girlId) : undefined;
+        if (!girl) return { state, ok: false, message: '借调要先挑一位空闲的契约者。' };
+        if (girl.status !== 'idle' || girl.loan) return { state, ok: false, message: `${girl.name}现在不在事务所里。` };
+        const balance = loadBalance();
+        const maxHours = Math.max(1, Math.round(balance.envoyLoanMaxHours));
+        const hours = Math.max(1, Math.min(maxHours, Math.round(action.hours ?? offer.hours ?? 1)));
+        const rate = offer.rate ?? expeditionGoldPerHour(next);
+        const pay = rate * hours;
+        const until = absoluteMinutes(next.day, next.minutes) + hours * 60;
+        girl.status = 'expedition'; girl.remaining = hours * 60; girl.loan = { faction, until, rate };
+        next.gold += pay; book(next, next.day, pay);
+        info.standing = Math.min(100, info.standing + balance.envoyLoanStandingGain);
+        info.envoyTaskId = `loan-${faction}-${next.day}`;
+        next.logs.unshift({ id: `log-envoy-loan-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `把${girl.name}借给${factionInfo[faction].name}${hours} 小时，按星象台口径结算 ${pay} 星砂（不增加疲劳）。`, delta: pay });
+        return { state: next, ok: true, message: `${girl.name}被${representative}借走 ${hours} 小时，先付了 ${pay} 星砂。` };
+      }
+
+      const mission = offer.mission;
+      if (!mission) return { state, ok: false, message: '这份委托没有生成出来，换个势力试试。' };
       next.missions.unshift(mission);
       info.envoyTaskId = mission.id;
-      next.logs.unshift({ id: `log-envoy-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `接下${factionInfo[faction].name}代表${representativeNameOf(next, faction)}的委托「${mission.title}」。` });
-      return { state: next, ok: true, message: `${representativeNameOf(next, faction)}把任务书推了过来。` };
+      next.logs.unshift({ id: `log-envoy-${faction}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'council', text: `接下${factionInfo[faction].name}代表${representative}的${offer.kind === 'raid' ? '破坏行动' : '委托'}「${mission.title}」。` });
+      return { state: next, ok: true, message: `${representative}把任务书推了过来。` };
 }
 
 /** upgradeMarket 的动作处理器（v35 从 act 拆出）。 */

@@ -731,3 +731,12 @@
 .girl-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .girl-card-actions .av-btn { flex: 1; justify-content: center; white-space: nowrap; }
 .room-card-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+/* v84：势力任务卡左侧改成首领头像；借调多一排可选的人 */
+.av-envoy-rich .av-envoy-leader { width: 46px; height: 46px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: color-mix(in srgb, var(--faction, #f3aec9) 16%, #0d0b12); border: 1px solid color-mix(in srgb, var(--faction, #f3aec9) 45%, transparent); flex: 0 0 auto; }
+.av-envoy-rich .av-envoy-leader img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 12%; }
+.av-envoy-rich .av-envoy-leader i { font-style: normal; font-family: var(--font-display); font-size: 18px; color: color-mix(in srgb, var(--faction, #f3aec9) 70%, #e7dbe4); }
+.av-envoy-loan { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.av-envoy-loan small { font-size: 10px; color: #8b8090; }
+.av-envoy-loan-pick { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; border: 1px solid #ffffff14; border-radius: 999px; background: #16121c; color: #d7cbd6; font-size: 10px; }
+.av-envoy-loan-pick:hover { border-color: color-mix(in srgb, var(--faction, #f3aec9) 55%, transparent); color: #fff0f6; }
+.av-envoy-loan-pick .girl-thumb, .av-envoy-loan-pick img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }

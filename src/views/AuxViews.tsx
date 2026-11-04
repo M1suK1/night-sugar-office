@@ -3,7 +3,8 @@ import { useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
-import { buildCost, drugDaysLeft, inWithdrawal, previewFactionTask } from '../game';
+import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
+import { envoyOfferOf } from '../rules/envoy';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf, representativeNameOf, representativeTitleOf } from '../factions';
 import { pensionFor } from '../contracts';
@@ -25,7 +26,7 @@ type BaseViewProps = {
   onStartExpedition: (ids: string[]) => void;
   onRecallExpedition: (id: string) => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
-  onAcceptTask: (faction: FactionId) => void;
+  onAcceptTask: (faction: FactionId, girlId?: string, hours?: number) => void;
   onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
   onCare?: (girlId: string, mode: 'resting') => void;
   onAssistant?: (girlId?: string) => void;
@@ -304,7 +305,9 @@ export function BaseView({
                     const standing = state.factions[fid].standing;
                     const att = factionAttitude(standing);
                     const done = Boolean(state.factions[fid].envoyTaskId);
-                    const task = previewFactionTask(state, fid);
+                    const offer = envoyOfferOf(state, fid);
+                    const task = offer.mission;
+                    const loanGirls = state.girls.filter(girl => !girl.dead && !girl.retired && !girl.left && girl.status === 'idle' && !girl.loan).slice(0, 6);
                     const rivals = Object.entries(state.hostility ?? {})
                       .filter(([pair]) => pair.split('-').includes(fid))
                       .sort((left, right) => right[1].value - left[1].value)
@@ -312,26 +315,62 @@ export function BaseView({
                     const rival = rivals[0];
                     return (
                       <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
-                        <span className="av-envoy-seal">{info.short}</span>
+                        <span className="av-envoy-seal av-envoy-leader" title={`${info.name} · ${representative.name}`}>
+                          {representative.portrait
+                            ? <img src={representative.portrait} alt="" />
+                            : <i>{representative.name.slice(0, 1)}</i>}
+                        </span>
                         <div className="av-envoy-copy">
                           <strong>{representative.name} <small>{representative.title} · {info.name}</small></strong>
                           <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
                           <div className="av-envoy-task">
-                            <b id={`av-envoy-title-${fid}`}>{task.title}</b>
-                            <span>{task.work === 'combat' ? '战斗' : '调查'} · {task.difficulty} · {districts[task.district as keyof typeof districts]?.name ?? '未知辖区'} · {task.duration} 分钟</span>
-                            <span>推荐 Lv.{task.recommendedLevel} · 目标 {task.requirement} {task.target} · 报酬 {task.reward.toLocaleString('zh-CN')} 星砂</span>
-                            <span className="av-envoy-reward">完成后：{factionEffects[fid]}</span>
+                            {offer.kind === 'loan' ? (
+                              <>
+                                <b id={`av-envoy-title-${fid}`}>借调人手 · {offer.hours} 小时</b>
+                                <span>按星象台同期结算：每小时 {offer.rate} 星砂，共 {((offer.hours ?? 1) * (offer.rate ?? 0)).toLocaleString('zh-CN')} 星砂</span>
+                                <span>借调期间不能派遣，回来不加疲劳；好感 +1</span>
+                                <span className="av-envoy-reward">{offer.note}</span>
+                              </>
+                            ) : task ? (
+                              <>
+                                <b id={`av-envoy-title-${fid}`}>{offer.kind === 'raid' ? '破坏行动 · ' : ''}{task.title}</b>
+                                <span>{task.work === 'combat' ? '战斗' : '调查'} · {task.difficulty} · {districts[task.district as keyof typeof districts]?.name ?? '未知辖区'} · {task.duration} 分钟</span>
+                                <span>推荐 Lv.{task.recommendedLevel} · 目标 {task.requirement} {task.target} · 报酬 {task.reward.toLocaleString('zh-CN')} 星砂</span>
+                                <span className="av-envoy-reward">{offer.kind === 'raid' ? `破坏 @ ${offer.target ? factionInfo[offer.target as FactionId].short : '对方'} · 火气 +${offer.hostility} · 对方好感 −3` : '完成后：势力好感 +1'}</span>
+                              </>
+                            ) : (
+                              <b id={`av-envoy-title-${fid}`}>今天没有可派的活</b>
+                            )}
                           </div>
+                          {offer.kind === 'loan' && !done && (
+                            <div className="av-envoy-loan" role="group" aria-label="选择借调的契约者">
+                              {loanGirls.length ? loanGirls.map(girl => (
+                                <button
+                                  key={girl.id}
+                                  id={`av-envoy-loan-${fid}-${girl.id}`}
+                                  type="button"
+                                  className="av-envoy-loan-pick"
+                                  onClick={() => onAcceptTask(fid, girl.id, offer.hours)}
+                                >
+                                  <GirlThumb girl={girl} /><span>{girl.name}</span>
+                                </button>
+                              )) : <small>现在没有空闲的契约者可借。</small>}
+                            </div>
+                          )}
                         </div>
-                        <button
-                          id={`av-envoy-accept-${fid}`}
-                          type="button"
-                          className={`av-btn av-btn-small ${done ? '' : 'av-btn-primary'}`}
-                          disabled={done}
-                          onClick={() => onAcceptTask(fid)}
-                        >
-                          {done ? <><Check size={12} />今日已领</> : <>接受委托<ArrowUpRight size={12} /></>}
-                        </button>
+                        {offer.kind === 'loan' ? (
+                          <span className={`av-btn av-btn-small ${done ? '' : 'ghost'}`} aria-hidden="true">{done ? '今日已领' : '选人借出'}</span>
+                        ) : (
+                          <button
+                            id={`av-envoy-accept-${fid}`}
+                            type="button"
+                            className={`av-btn av-btn-small ${done ? '' : 'av-btn-primary'}`}
+                            disabled={done || !task}
+                            onClick={() => onAcceptTask(fid)}
+                          >
+                            {done ? <><Check size={12} />今日已领</> : <>接受委托<ArrowUpRight size={12} /></>}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
