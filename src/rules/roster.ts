@@ -50,9 +50,17 @@ export function chance(girl: Girl, mission: Mission): number {
   return Math.max(35, Math.min(99, Math.round(70 + (stats[mission.requirement] - mission.target) * 0.65 - girl.fatigue * 0.15)));
 }
 
+/**
+ * 这次委托最多能派几个人。
+ *
+ * v85：战斗委托不再固定 3 人——魔物 ≤3 只时仍是 3 人，超过 3 只按魔物数量放开
+ * （4 只 → 4 人，5 只 → 5 人）。调查委托维持 ≤2。
+ */
 export function squadLimit(mission: Mission): number {
   const cap = loadBalance().squadLimit;
-  return mission.work === 'combat' ? cap : Math.max(1, Math.min(cap, 2));
+  if (mission.work !== 'combat') return Math.max(1, Math.min(cap, 2));
+  const monsters = mission.enemyIds?.length ?? 0;
+  return Math.max(cap, monsters);
 }
 
 export function squadChance(girls: Girl[], mission: Mission): number {

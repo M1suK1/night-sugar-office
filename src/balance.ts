@@ -34,6 +34,13 @@ export interface BalanceRules {
   envoyRaidRewardPct: number;
   envoyRaidHostility: number;
   envoyRaidFailureHostility: number;
+  /** 污染对魔物的增幅（每 100 点污染对应的百分比）。 */
+  pollutionHpPct: number;
+  pollutionPowerPct: number;
+  pollutionTargetPct: number;
+  pollutionRewardPct: number;
+  /** 战斗委托：每多一只魔物，奖励额外提高的百分点。 */
+  rewardPerExtraMonster: number;
   /** 借调：好感与最长小时数。 */
   envoyLoanStandingGain: number;
   envoyLoanMaxHours: number;
@@ -91,6 +98,11 @@ export const DEFAULT_BALANCE: BalanceRules = {
   envoyRaidRewardPct: 50,
   envoyRaidHostility: 8,
   envoyRaidFailureHostility: 4,
+  pollutionHpPct: 55,
+  pollutionPowerPct: 38,
+  pollutionTargetPct: 16,
+  pollutionRewardPct: 22,
+  rewardPerExtraMonster: 15,
   envoyLoanStandingGain: 1,
   envoyLoanMaxHours: 6,
   dormFatiguePerHour: 8,
@@ -146,6 +158,11 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'envoyRaidRewardPct', label: '破坏额外星砂', hint: '破坏行动的星砂加成百分比。', min: 0, max: 300, step: 10, unit: '%', group: '势力代表' },
   { key: 'envoyRaidHostility', label: '破坏基础火气', hint: '破坏行动给两势力加多少火气（再按对方辖区污染与安定加权）。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyRaidFailureHostility', label: '破坏失败火气', hint: '破坏失败时仍然加多少火气。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },
+  { key: 'pollutionHpPct', label: '污染·魔物血量', hint: '每 100 点污染让魔物血量加成多少百分比。', min: 0, max: 150, step: 5, unit: '%', group: '污染与难度' },
+  { key: 'pollutionPowerPct', label: '污染·魔物伤害', hint: '每 100 点污染让魔物伤害加成多少百分比。', min: 0, max: 120, step: 5, unit: '%', group: '污染与难度' },
+  { key: 'pollutionTargetPct', label: '污染·判定难度', hint: '每 100 点污染让委托目标值加成多少百分比。', min: 0, max: 60, step: 2, unit: '%', group: '污染与难度' },
+  { key: 'pollutionRewardPct', label: '污染·报酬加成', hint: '每 100 点污染让委托报酬加成多少百分比。', min: 0, max: 80, step: 2, unit: '%', group: '污染与难度' },
+  { key: 'rewardPerExtraMonster', label: '多怪奖励加成', hint: '战斗委托每多一只魔物，奖励额外提高多少百分比。', min: 0, max: 60, step: 5, unit: '%', group: '污染与难度' },
   { key: 'envoyLoanStandingGain', label: '借调好感', hint: '把少女借给势力，涨多少好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyLoanMaxHours', label: '借调最长小时', hint: '一次最多借几个小时。', min: 1, max: 12, step: 1, unit: '小时', group: '势力代表' },
   { key: 'dormFatiguePerHour', label: '宿舍恢复', hint: '宿舍每小时恢复的疲劳；影响挂机节奏。', min: 1, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },

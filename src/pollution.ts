@@ -8,6 +8,7 @@
  * 委托生成时会把当时的环境、污染度与当主一起冻结进 `Mission`，
  * 这样派遣之后辖区易主或被人净化，都不会回头改掉已经放出去的这一单。
  */
+import { loadBalance } from './balance.ts';
 import { districts, type DistrictId } from './districts.ts';
 import { FACTION_ORDER } from './territories.ts';
 import type { DistrictEffect } from './districts.ts';
@@ -100,11 +101,13 @@ export function pollutionTierLabel(level: number): string {
 /** 污染带来的全部数值后果；四舍五入后使用，避免面板与结算出现小数分叉。 */
 export function pollutionEffect(level: number): PollutionEffect {
   const value = clampPollution(level);
+  // v85：污染对魔物的增幅以前太软（100 污染只 +32% 血），现在按数值规则算，默认 +55% / +38%。
+  const rules = loadBalance();
   return {
-    enemyHpPct: Math.round(value * 0.32),
-    enemyPowerPct: Math.round(value * 0.18),
-    targetPct: Math.round(value * 0.10),
-    rewardPct: Math.round(value * 0.16),
+    enemyHpPct: Math.round(value * rules.pollutionHpPct / 100),
+    enemyPowerPct: Math.round(value * rules.pollutionPowerPct / 100),
+    targetPct: Math.round(value * rules.pollutionTargetPct / 100),
+    rewardPct: Math.round(value * rules.pollutionRewardPct / 100),
     fatigueFlat: Math.floor(value / 20),
     corruptionFlat: value >= 80 ? 2 : value >= 50 ? 1 : 0,
   };

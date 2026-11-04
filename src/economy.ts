@@ -88,10 +88,12 @@ export function marketSize(level: number): number {
   return 1 + Math.max(1, Math.min(4, level));
 }
 export function marketUpgradeCost(level: number): number | null {
-  return ([0, 6000, 12000, 24000] as const)[Math.min(3, Math.max(0, level))] ?? null;
+  // v85：扩建价整体减半（原来 6000 / 12000 / 24000）。
+  return ([0, 3000, 6000, 12000] as const)[Math.min(3, Math.max(0, level))] ?? null;
 }
+/** 高级招聘：星砂按 v85 减半（600/级），安定度消耗保留——那是安定度少数几个正经去处之一。 */
 export function advancedCost(level: number): { gold: number; stability: number } {
-  return { gold: 1200 * level, stability: [0, 1, 2, 4, 6, 9, 12][Math.max(1, Math.min(6, level))] ?? 12 };
+  return { gold: 600 * level, stability: [0, 1, 2, 4, 6, 9, 12][Math.max(1, Math.min(6, level))] ?? 12 };
 }
 /** 装备整体降价：一本账，市场、契约卡、工坊都从这里读。 */
 export const EQUIPMENT_PRICE_SCALE = 0.75;

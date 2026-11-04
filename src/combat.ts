@@ -1,3 +1,4 @@
+import { loadBalance } from './balance.ts';
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, getSkill } from './content/skills.ts';
 import { findAnySkill } from './skills.ts';
@@ -311,6 +312,12 @@ function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: n
     insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
   };
 }
+/** 战斗委托的「多怪奖励倍率」：每多一只魔物，报酬再抬一档（默认 +15%/只）。 */
+export function monsterRewardMultiplier(monsters: number, perMonsterPct = loadBalance().rewardPerExtraMonster): number {
+  const extra = Math.max(0, Math.round(monsters) - 1);
+  return 1 + extra * Math.max(0, perMonsterPct) / 100;
+}
+
 export function simulateBattle(setup: BattleSetup): BattleState {
   const { mission, girls, day, minutes } = setup;
   const seed = battleSeed(mission, girls, day, minutes);
@@ -603,7 +610,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   const goldRate = outcome === 'victory' ? 1 : outcome === 'repelled' ? 0.8 : outcome === 'draw' ? 0.6 : 0;
   const exp = outcome === 'victory' ? 24 + rounds * 3 : outcome === 'repelled' ? 10 : outcome === 'draw' ? 6 : 0;
   // 拦截战没有委托报酬：打赢也只是把那张单子打作废，所以金币恒为 0，只发战斗经验。
-  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * goldRate), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
+  const monsterBonus = monsterRewardMultiplier(mission.enemyIds?.length ?? 0);
+  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * goldRate * monsterBonus), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
   if (outcome === 'defeat') {
     const at = `${day} 日 ${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     state.scars = [];

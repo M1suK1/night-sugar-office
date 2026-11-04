@@ -11,7 +11,7 @@ import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLab
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
 import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PRESET_SCHEMA, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
-import { effectiveStats } from '../src/economy.ts';
+import { advancedCost, effectiveStats } from '../src/economy.ts';
 import { mulberry32, rollStats, statsForArchetype } from '../src/content/archetypes.ts';
 import { customGirlOf, customLeaderOf, defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers, subjectOfLeader } from '../src/factions.ts';
 import { rosterPool } from '../src/roster.ts';
@@ -28,7 +28,7 @@ import { effectText, skills, getSkill, findSkill } from '../src/content/skills.t
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
-import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, makeScar, simulateBattle, skillAccuracy } from '../src/combat.ts';
+import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, makeScar, monsterRewardMultiplier, simulateBattle, skillAccuracy } from '../src/combat.ts';
 import { bossSkillPool, filterSkills, findAnySkill, girlSkillPool, isBossSkill, isPoolSkill, monsterSkillPool, skillsOfSchool } from '../src/skills.ts';
 import { monsterById } from '../src/content/monsters.ts';
 import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
@@ -249,7 +249,8 @@ test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
   const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
-  const expected = Math.round(mission.reward * 0.8);
+  // v85：报酬还要乘「多怪奖励倍率」。
+  const expected = Math.round(mission.reward * 0.8 * monsterRewardMultiplier(mission.enemyIds?.length ?? 0));
   assert.equal(battle.outcome, 'repelled');
   assert.equal(result.gold, goldBefore + expected);
   assert.equal(mission.status, 'open');
@@ -574,12 +575,12 @@ test('市场升级与高级招募消耗资金和安定度，并扩充候选', ()
   const up = act(s, { type: 'upgradeMarket' });
   assert.equal(up.ok, true);
   assert.equal(up.state.marketLevel, 2);
-  assert.equal(up.state.gold, 44000);
+  assert.equal(up.state.gold, 47000, 'v85：市场扩建价减半（1 级 3000）');
   const before = up.state.candidates.length;
   const adv = act(up.state, { type: 'advancedRecruit', level: 3 });
   assert.equal(adv.ok, true);
   assert.equal(adv.state.candidates.length, before + 1);
-  assert.ok(adv.state.gold < up.state.gold);
+  assert.equal(up.state.gold - adv.state.gold, advancedCost(3).gold, '高级招聘星砂按 600/级');
   assert.ok(adv.state.reputation < up.state.reputation);
   assert.equal(act(adv.state, { type: 'advancedRecruit', level: 3 }).ok, false);
 });
@@ -1250,16 +1251,17 @@ test('辖区环境影响委托目标、报酬与截止时间', () => {
   const short = annotateMission(state, base);
   assert.equal(short.district, 'cathedral');
   assert.equal(short.window, 'urgent');
-  assert.equal(short.environment?.targetPct, 16);
-  assert.equal(short.target, 116);
-  assert.equal(short.reward, 1180);
+  // v85 抬高了污染系数，这一层的期望值也跟着变（地形 + 当主 + 污染三层叠加）。
+  assert.equal(short.environment?.targetPct, 18);
+  assert.equal(short.target, 118);
+  assert.equal(short.reward, 1200);
   assert.equal(short.pollutionAtSpawn, 38);
   assert.equal(short.deadlineAt, state.day * 1440 + state.minutes + 120);
   const long = annotateMission(state, { ...base, duration: 120, x: 24, y: 27 });
   assert.equal(long.district, 'candy');
   assert.equal(long.window, 'long');
   assert.equal(long.target, 101);
-  assert.equal(long.reward, 1210);
+  assert.equal(long.reward, 1210, '污染是负贡献的辖区不吃抬价');
   assert.equal(long.deadlineAt, deadlineFor('long', state.day, state.minutes));
 });
 
@@ -1883,7 +1885,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 34, 'v44 六个私语字段 + v50 城市新闻开关 + v141 五个基地设施字段 + v84 十二个势力代表字段');
+  assert.equal(BALANCE_FIELDS.length, 39, '在 34 项之上再加 v85 的污染四项与多怪奖励');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);
@@ -3106,10 +3108,10 @@ test('v19 污染分五档，边界值落在 20/40/60/80', () => {
 
 test('v19 污染数值后果按四舍五入给出，面板与结算不会分叉', () => {
   assert.deepEqual(pollutionEffect(0), { enemyHpPct: 0, enemyPowerPct: 0, targetPct: 0, rewardPct: 0, fatigueFlat: 0, corruptionFlat: 0 });
-  assert.deepEqual(pollutionEffect(50), { enemyHpPct: 16, enemyPowerPct: 9, targetPct: 5, rewardPct: 8, fatigueFlat: 2, corruptionFlat: 1 });
-  assert.deepEqual(pollutionEffect(90), { enemyHpPct: 29, enemyPowerPct: 16, targetPct: 9, rewardPct: 14, fatigueFlat: 4, corruptionFlat: 2 });
-  assert.deepEqual(pollutionEffect(100), { enemyHpPct: 32, enemyPowerPct: 18, targetPct: 10, rewardPct: 16, fatigueFlat: 5, corruptionFlat: 2 });
-  assert.equal(pollutionEffect(150).enemyHpPct, 32, '先夹到 100 再算');
+  assert.deepEqual(pollutionEffect(50), { enemyHpPct: 28, enemyPowerPct: 19, targetPct: 8, rewardPct: 11, fatigueFlat: 2, corruptionFlat: 1 });
+  assert.deepEqual(pollutionEffect(90), { enemyHpPct: 50, enemyPowerPct: 34, targetPct: 14, rewardPct: 20, fatigueFlat: 4, corruptionFlat: 2 });
+  assert.deepEqual(pollutionEffect(100), { enemyHpPct: 55, enemyPowerPct: 38, targetPct: 16, rewardPct: 22, fatigueFlat: 5, corruptionFlat: 2 });
+  assert.equal(pollutionEffect(150).enemyHpPct, 55, '先夹到 100 再算');
 });
 
 test('v19 污染每天只按等级自然上升，三方当主涨幅相同，跨档才写日志', () => {

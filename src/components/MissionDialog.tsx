@@ -202,7 +202,7 @@ export function AssignmentPicker({ state, girlId, onSelect }: { state: GameState
     <div className="standard-modal">
       <div className="modal-eyebrow"><Radio size={14} />出勤安排</div>
       <h2>为{girl?.name ?? '她'}选择一个调查委托</h2>
-      <p className="muted">战斗委托需要在地图上编成 1–3 人小队；调查可单独前往，也可再带一位同伴。</p>
+      <p className="muted">战斗委托的编队上限 = max(3, 魔物数量)：普通委托 3 人，魔物超过 3 只时能带更多；调查可单独前往，也可再带一位同伴。</p>
       <div className="picker-missions">
         {missions.map(m => (
           <button id={`picker-${m.id}`} key={m.id} onClick={() => onSelect(m.id)}>
