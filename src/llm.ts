@@ -166,7 +166,7 @@ const EMPTY_RUNTIME: PresetRuntime = {
  * 固定拼装顺序：共用词条 → 任务词条 → 场景/性格/世界书 → 代码输出契约。
  * 代码契约永远在最后，预设词条不能覆盖 JSON 字段与枚举。
  */
-function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptScope, extra: Record<string, string | undefined> = {}, context?: string, ctx: MacroContext = {}) {
+function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptScope, extra: Record<string, string | undefined> = {}, context?: string, ctx: MacroContext = {}, appendix = '') {
   const world = resolvePresetWorld(runtime, scope, extra);
   const vars = promptVars({ ...extra, world, context });
   if (vars.scenario) vars.scenario = applyFormat(runtime.scenarioFormat, vars.scenario);
@@ -175,9 +175,12 @@ function composePrompt(contract: string, runtime: PresetRuntime, scope: PromptSc
     vars.scenario ? `【场景】\n${vars.scenario}` : '',
     vars.personality ? `【角色性格】\n${vars.personality}` : '',
     vars.worldbook ? `【世界书】\n${applyFormat(runtime.wiFormat, vars.worldbook)}` : '',
+    // 这一场的动态内容（在场的人、此前对话、玩家这一句）：它不属于契约，
+    // 所以放在契约前面——玩家改契约词条时不会把这段一起替换掉。
+    appendix.trim(),
   ].filter(Boolean);
-  const fullContract = [...contextParts, contract.trim()].filter(Boolean).join('\n\n');
-  const composed = composeTaskSystem(fullContract, runtime, scope, vars, ctx, typeof extra?.contractId === 'string' ? extra.contractId : undefined);
+  // 契约与上下文分开传：预设里覆盖契约时只替换契约那一段，不动这一场的正文。
+  const composed = composeTaskSystem(contract.trim(), runtime, scope, vars, ctx, typeof extra?.contractId === 'string' ? extra.contractId : undefined, contextParts.join('\n\n'));
   return { system: composed.system, vars, world, composed };
 }
 
@@ -1147,7 +1150,7 @@ const RETRY_TOKEN_CEILING = 32768;
 const LONG_FORM_TOKEN_FLOOR = 32000;
 
 async function chatJson(
-  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0, ctx: MacroContext = {},
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: ChatMessage['content'], labels: string[], meta: LlmCallMeta | undefined, extra?: Record<string, string>, tokenFloor = 0, ctx: MacroContext = {}, appendix = '',
 ): Promise<JsonCallOutcome> {
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = applyPresetApi(runtime, config);
@@ -1159,7 +1162,7 @@ async function chatJson(
   if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: Math.max(runtime.maxTokens, tokenFloor) };
   else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
   else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
-  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入', ctx);
+  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入', ctx, appendix);
   let messages: ChatMessage[] = applyRegexToMessages([
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -1376,9 +1379,9 @@ function parseIncidentEffect(raw: unknown): IncidentEffect {
 }
 
 async function callJson(
-  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>, ctx: MacroContext = {}, tokenFloor = 0,
+  config: LlmConfig, preset: PresetRuntime | undefined, scope: PromptScope, body: string, user: string, labels: string[], meta: LlmCallMeta, extra?: Record<string, string>, ctx: MacroContext = {}, tokenFloor = 0, appendix = '',
 ): Promise<{ ok: true; raw: Record<string, unknown> } | { ok: false; message: string }> {
-  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra, tokenFloor, ctx);
+  const outcome = await chatJson(config, preset, scope, body, user, labels, meta, extra, tokenFloor, ctx, appendix);
   if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
   if (!outcome.raw) return { ok: false, message: jsonFailureMessage('', outcome) };
   return { ok: true, raw: outcome.raw };
@@ -1387,16 +1390,16 @@ async function callJson(
 export async function generateStoryline(config: LlmConfig, girl: Girl, direction?: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedStoryline } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const body = `先读她的档案：${girlBrief(girl)}
-${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","premise":"","tone":"","beats":[{"title":"","summary":"","scene":"","hook":"","mission":{"title":"","goal":"","difficulty":"简单|常规|棘手|危险","duration":90,"district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","requirement":"magic|insight|agility|empathy"},"choices":[{"label":"","intent":"","effect":{"gold":0,"reputation":0,"bond":0,"corruption":0,"trait":"","trigger":{"kind":"dialogue|event|mission|opinion|incident"}}}]}]}
-要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清"她要在这场委托里做到什么"，不能是空泛的情绪；duration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。`;
+  // 结构契约走预设词条（storyline:start），正文只留档案与方向。
+  const context = `先读她的档案：${girlBrief(girl)}
+${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}`;
+  const body = storylineStartContract();
   const result = await callJson(config, preset, 'storyline', body, `请为${girl.name}写这条故事线。`, ['共用词条 + 故事线词条 + 结构契约', `档案：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
     scenario: direction?.trim() ?? '',
-  }, { focus: girl });
+    contractId: 'storyline:start',
+  }, { focus: girl }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色故事线', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1527,14 +1530,12 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
   // v49：结构、端口、节点写法与自检都在预设的 storyline 分区里；这里只留玩家方向与锁定契约。
-  const body = [
-    direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '',
-    storylineContract(),
-  ].filter(Boolean).join('\n');
+  const body = storylineContract();
+  const context = direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '';
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
-  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '' };
+  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '', contractId: 'storyline:contract' };
   const macroCtx: MacroContext = { state, focus: girl };
-  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx);
+  const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx, context);
   if (!first.result.ok) {
     const message = `生成蓝图失败：${first.result.message}`;
     recordLlmLog({ kind: '角色蓝图', ok: false, model: config.model.trim(), status: statusOf(first.result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -1863,19 +1864,21 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
     return girl ? storyCastBrief(girl) : person.name;
   }).join('\n');
-  const body = [
+  // 契约单独给一份，正文另给 appendix：这样预设里改「蓝图开场 · 结构契约」才会生效，
+  // 而且改契约不会顺手删掉在场的人和这一场的场面。
+  const context = [
     `【这一段剧情】${event.title}`,
     event.hook ? `引子：${event.hook}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【你】所长（player），用「你」称呼，可以是说话人。',
     '【这一次】写这一幕的开场白，把话头留给所长。',
-    arcOpeningContract(),
   ].filter(Boolean).join('\n');
+  const body = arcOpeningContract();
   const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
-    char: briefs, personality: '', scenario: event.hook, story: event.title,
-    }, { state, focus: focusGirl });
+    char: briefs, personality: '', scenario: event.hook, story: event.title, contractId: 'arc:opening',
+    }, { state, focus: focusGirl }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1912,7 +1915,7 @@ export async function generateStoryTurn(
   const turns = event.turns ?? [];
   const history = storyHistory(turns);
   const playerLine = action.trim().slice(0, 300);
-  const body = [
+  const context = [
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : '',
     '【在场的人】',
@@ -1923,11 +1926,11 @@ export async function generateStoryTurn(
     playerLine,
     options.rewrite ? '【要求】把上一轮的旁白与台词换一种写法重写：同样的局面、同样的结果，但换动作、换角度、换她说话的方式。不要复述原文句式。' : '',
     '【这一次】接着写下一轮，不要重写开场。',
-    arcTurnContract(),
   ].filter(Boolean).join('\n');
+  const body = arcTurnContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
-    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title,
-  }, { state, focus: focusGirlOf(state, event) });
+    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:turn',
+  }, { state, focus: focusGirlOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2189,7 +2192,7 @@ import { girlSkillPool } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
-import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, whisperUserHint } from './promptSections.ts';
+import { arcContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
 import { sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

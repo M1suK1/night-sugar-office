@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
  */
 const FILES = ['src/llm.ts', 'src/llm-night.ts', 'src/nightSpec.ts'];
 const PATTERNS = [/只输出一个 JSON 对象/, /请写下/, /请接着写/, /写她此刻发给所长/, /【回复格式】/, /不要 Markdown 代码块/];
-const BUDGET = 7;
+const BUDGET = 6;
 
 function hits(): string[] {
   const found: string[] = [];

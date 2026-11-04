@@ -1092,7 +1092,7 @@ export interface ComposedPrompt {
  * 固定的系统提示顺序：共用词条 → 本任务词条 → 代码输出契约。
  * 旧预设的 main / jailbreak 只在没有可渲染词条时兜底。
  */
-export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}, ctx: MacroContext = {}, contractId?: string): ComposedPrompt {
+export function composeTaskSystem(contract: string, runtime: PresetRuntime, scope: PromptScope, vars: Record<string, string | undefined> = {}, ctx: MacroContext = {}, contractId?: string, contextText = ""): ComposedPrompt {
   const scopeEntries = scopedEntries(runtime, scope);
   // 预设里一条该用途的分区都没有时（旧预设、空 runtime、测试），补上默认分区：
   // 但只要还剩任意一条，就按玩家的增删来，不再插手。
@@ -1109,6 +1109,8 @@ export function composeTaskSystem(contract: string, runtime: PresetRuntime, scop
     if (main) parts.push(`【预设·主提示】\n${main}`);
     if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
   }
+  // 这一场的动态正文（在场的人、此前对话、玩家的行动）不算契约：玩家改契约时它必须原样留着。
+  if (contextText.trim()) parts.push(contextText.trim());
   // 契约里的枚举与阈值也是宏，跟着同一个上下文展开；它永远排在最后。
   // 预设里有同名契约词条就以它为准（可在界面上逐条审核、修改），否则用代码默认值。
   const id = contractId ?? `${scope}:contract`;

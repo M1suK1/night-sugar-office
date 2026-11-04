@@ -12,7 +12,7 @@
 import type { PromptEntry, PromptScope } from './presets.ts';
 import {
   arcContract, arcOpeningContract, arcTurnContract, battleContract,
-  dialogueContract, incidentBatchContract, newsContract, profileVoiceRule, storylineContract,
+  dialogueContract, incidentBatchContract, newsContract, profileVoiceRule, storylineContract, storylineStartContract,
 } from './promptSections.ts';
 
 const registry = new Map<string, () => string>();
@@ -35,7 +35,8 @@ const SPECS: ContractSpec[] = [
   { id: 'news:contract', scope: 'news', name: '城市新闻 · 结构契约', make: newsContract },
   { id: 'incident:contract', scope: 'incident', name: '突发事件 · 结构契约', make: incidentBatchContract },
   { id: 'battle:contract', scope: 'battle', name: '战斗札记 · 结构契约', make: battleContract },
-  { id: 'storyline:contract', scope: 'storyline', name: '故事线起点 · 结构契约', make: storylineContract },
+  { id: 'storyline:contract', scope: 'storyline', name: '故事线蓝图 · 结构契约', make: storylineContract },
+  { id: 'storyline:start', scope: 'storyline', name: '故事线起点 · 结构契约', make: storylineStartContract },
   { id: 'arc:contract', scope: 'arc', name: '故事线蓝图 · 结构契约', make: () => arcContract('demo-node') },
   { id: 'arc:opening', scope: 'arc', name: '蓝图开场 · 结构契约', make: arcOpeningContract },
   { id: 'arc:turn', scope: 'arc', name: '蓝图续写 · 结构契约', make: arcTurnContract },

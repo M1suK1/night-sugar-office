@@ -393,6 +393,22 @@ export function incidentBatchContract(): string {
   ].join('\n');
 }
 
+/**
+ * 故事线起点的锁定契约：4 幕结构，每幕带真实委托。
+ *
+ * 以前这段直接写死在 generateStoryline 的正文里，预设里改「故事线起点」的契约词条
+ * 改不到它，而且会和蓝图契约（storyline:contract）撞同一个 id。
+ */
+export function storylineStartContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    '{"title":"","premise":"","tone":"","beats":[{"title":"","summary":"","scene":"","hook":"","mission":{"title":"","goal":"","difficulty":"简单|常规|棘手|危险","duration":90,"district":"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks","requirement":"magic|insight|agility|empathy"},"choices":[{"label":"","intent":"","effect":{"gold":0,"reputation":0,"bond":0,"corruption":0,"trait":"","trigger":{"kind":"dialogue|event|mission|opinion|incident"}}}]}]}',
+    '要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清「她要在这场委托里做到什么」，不能是空泛的情绪。',
+    'duration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。',
+    '每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。',
+  ].join('\n');
+}
+
 /** 蓝图的锁定契约：JSON 骨架、kind 取值与 id 字符集——解析器真正需要的那几条。 */
 export function storylineContract(): string {
   return [

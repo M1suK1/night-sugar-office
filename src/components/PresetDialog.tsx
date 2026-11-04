@@ -6,8 +6,7 @@ import {
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
 import { MACRO_GROUPS, type MacroGroup } from '../promptMacros';
-import { storylineContract } from '../promptSections';
-import { dailyContract } from '../llm-night';
+import { contractPrompts } from '../promptContracts';
 
 interface Props {
   presets: ChatPreset[];
@@ -55,7 +54,13 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const [macroGroup, setMacroGroup] = useState(MACRO_GROUPS[0]?.id ?? 'heroine');
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [showContract, setShowContract] = useState(false);
-  const contract = view === 'daily' ? dailyContract() : view === 'storyline' ? storylineContract() : '';
+  // 每个用途的锁定契约都是预设里的一条词条（带「结构契约 · 最后注入」标记），
+  // 这里把出厂文本摊开对照；改词条就会覆盖这一段。
+  const contractDefaults = useMemo(
+    () => (view === 'all' ? [] : contractPrompts().filter(entry => entry.scope === view)),
+    [view],
+  );
+  const contract = contractDefaults.map(entry => `【${entry.name}】\n${entry.content}`).join('\n\n');
   const insertMacro = (key: string) => {
     const target = entries.find(entry => entry.id === activeEntryId) ?? entries.find(entry => entry.enabled && !entry.marker);
     if (!target) return;
@@ -340,7 +345,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
             <div className="preset-macro-head">
               <span>宏（随存档实时展开）</span>
               {MACRO_GROUPS.map((group: MacroGroup) => <button key={group.id} type="button" id={`preset-macro-group-${group.id}`} className={`preset-macro-tab ${macroGroup === group.id ? 'active' : ''}`} title={group.hint} onClick={() => setMacroGroup(group.id)}>{group.label}</button>)}
-              {(view === 'daily' || view === 'storyline') && <button type="button" id="preset-contract-toggle" className="preset-macro-tab" onClick={() => setShowContract(value => !value)}>{showContract ? '收起契约' : '代码追加的契约'}</button>}
+              {contract && <button type="button" id="preset-contract-toggle" className="preset-macro-tab" onClick={() => setShowContract(value => !value)}>{showContract ? '收起契约' : '代码追加的契约'}</button>}
             </div>
             <div className="preset-macro-list">
               {MACRO_GROUPS.find(group => group.id === macroGroup)?.items.map(item => <button
@@ -353,7 +358,10 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                 onClick={() => insertMacro(item.key)}
               ><b>{`{{${item.key}}}`}</b><small>{item.label}</small></button>)}
             </div>
-            {showContract && contract && <pre id="preset-contract-preview" className="preset-contract-preview">{contract}</pre>}
+            {showContract && contract && <div className="preset-contract-preview" id="preset-contract-preview">
+              <p className="small-note">下面这些就是本用途的锁定契约，和词条列表里标着「结构契约 · 最后注入」的条目是同一份文本；改词条即可覆盖，代码只提供默认值。</p>
+              <pre>{contract}</pre>
+            </div>}
           </div>
 
           {visibleEntries.length === 0 && <p className="small-note">这个用途还没有词条。添加一条，或恢复本用途默认。</p>}
