@@ -71,7 +71,7 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
-import { OPENING_CARDS } from './opening';
+import { OPENING_CARDS, OPENING_IMPORT_CARDS } from './opening';
 import { cardFileGuard, saveFileGuard } from './fileLimits';
 import { marketCardGap, marketNeedsCards, unusedCards } from './cardMarket';
 import { planCardBatches } from './cardImport';
@@ -873,7 +873,7 @@ export default function App() {
     return working;
   };
 
-  /** 开始新游戏：标准开局 → 卡库摆出最多 OPENING_CARDS 张选人池 → 进编成。 */
+  /** 开始新游戏：标准开局 → 卡库先摆 OPENING_IMPORT_CARDS 张（其余在编成界面按需导入）→ 进编成。 */
   const startNewGame = async (mode: 'standard' | 'blank' = 'standard') => {
     let next = act(state, { type: 'reset', mode }).state;
     try {
@@ -882,7 +882,7 @@ export default function App() {
       // 只按张数取满：以前还按「卡面总量」砍一刀，48MB 预算下 3MB 一张的卡只装得下十几位，
       // 界面上就永远凑不满选人池。改成读进来之后统一降维（长边 640），30 张也压得住，
       // 落盘时还会被搬进资产库（v92），存档不会跟着变胖。
-      const picks = unusedCards(box, next, OPENING_CARDS);
+      const picks = unusedCards(box, next, OPENING_IMPORT_CARDS);
       if (picks.length) {
         setStarterLoad({ done: 0, total: picks.length, note: `正在读 ${picks.length} 张契约卡…` });
         // 卡库开局不摆内置候选：这些位置都留给玩家的卡。
