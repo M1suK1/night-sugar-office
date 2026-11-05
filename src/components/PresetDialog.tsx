@@ -7,7 +7,7 @@ import {
 } from '../presets';
 import { MACRO_GROUPS, type MacroGroup } from '../promptMacros';
 import { contractPrompts } from '../promptContracts';
-import { describeVertexCredential } from '../vertex';
+import { describeVertexCredential, normalizeServiceAccountText } from '../vertex';
 import { maskAccount, maskSecret } from '../masking';
 
 interface Props {
@@ -120,10 +120,11 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const importPresetCredential = async (file: File | undefined) => {
     if (!file || !editable) return;
     try {
-      const text = await file.text();
+      // 先规范化：去掉 BOM、拆掉多包一层字符串、压掉多余空白，避免「看起来是 JSON 其实不是」。
+      const text = normalizeServiceAccountText(await file.text());
       const info = describeVertexCredential(text);
       if (info.kind === 'invalid') { onNotify(info.message, false); return; }
-      patchApi({ apiKey: text.trim() });
+      patchApi({ apiKey: text });
       setApiDraft(null);
       onNotify(info.kind === 'service-account'
         ? `服务账号已绑到「${preset?.name ?? '这个预设'}」，私钥不会显示在界面上。`

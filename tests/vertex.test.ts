@@ -5,6 +5,7 @@ import {
   clearVertexToken,
   describeVertexCredential,
   isVertexServiceAccount,
+  normalizeServiceAccountText,
   normalizeVertexModel,
   parseVertexServiceAccount,
   readVertexCredential,
@@ -33,6 +34,33 @@ function serviceAccountJson(overrides: Record<string, unknown> = {}) {
 function decodeSegment(segment: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(segment.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) as Record<string, unknown>;
 }
+
+test('v105 服务账号文本先规范化：BOM、多包一层字符串、前后空白都能认', () => {
+  const { text } = serviceAccountJson();
+
+  // Windows 编辑器留下的 BOM
+  assert.equal(readVertexCredential(`\uFEFF${text}`)?.kind, 'service-account');
+  // 被当成普通字符串再包一层（外部工具常见）
+  const doubleEncoded = JSON.stringify(text);
+  assert.equal(readVertexCredential(doubleEncoded)?.kind, 'service-account');
+  assert.equal(normalizeServiceAccountText(doubleEncoded).startsWith('{'), true);
+  // 前后空白与换行
+  assert.equal(readVertexCredential(`\n\n  ${text}  \r\n`)?.kind, 'service-account');
+
+  // 规范化不改变内容（parse 后重新序列化，字段一个不少）
+  const normalized = JSON.parse(normalizeServiceAccountText(`\uFEFF${text}`)) as Record<string, unknown>;
+  assert.equal(normalized.project_id, 'night-sugar-test');
+  assert.equal(typeof normalized.private_key, 'string');
+
+  // 普通 Express 密钥不会被误伤
+  assert.equal(normalizeServiceAccountText('AIzaSy-test'), 'AIzaSy-test');
+  assert.equal(readVertexCredential('AIzaSy-test')?.kind, 'express-key');
+
+  // 真的被截断的 JSON 仍然是 null，并且报错信息能自证原因
+  const broken = `${text.slice(0, 120)}`;
+  assert.equal(readVertexCredential(broken), null);
+  assert.equal(normalizeServiceAccountText('').length, 0);
+});
 
 test('服务账号 JSON：认字段，缺字段就拒绝', () => {
   const { text } = serviceAccountJson();

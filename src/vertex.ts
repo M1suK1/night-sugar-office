@@ -47,9 +47,38 @@ export interface VertexCredential {
   serviceAccount?: VertexServiceAccount;
 }
 
+/**
+ * 把「从文件里读出来的一坨文本」整理成可以 parse 的 JSON（v105）。
+ *
+ * 现实里这串东西经常不干净：
+ *  - Windows 记事本/编辑器会在开头留一个 BOM（\uFEFF），`startsWith('{')` 直接判否；
+ *  - 有人把 JSON 又包了一层字符串（`"{\"project_id\":…}"`），parse 出来是 string 不是对象；
+ *  - 复制粘贴带进前后空白与 CRLF。
+ * 这三种都不该被当成「不是有效的服务账号」。
+ */
+export function normalizeServiceAccountText(text: string): string {
+  let raw = text.replace(/^\uFEFF/, '').trim();
+  if (!raw) return '';
+  // 被当成普通字符串再包一层：先解出来再继续。
+  if (raw.startsWith('"') && raw.endsWith('"')) {
+    try {
+      const inner = JSON.parse(raw);
+      if (typeof inner === 'string') raw = inner.replace(/^\uFEFF/, '').trim();
+    } catch {
+      /* 解不开就按原样往下走 */
+    }
+  }
+  if (!raw.startsWith('{')) return raw;
+  try {
+    return JSON.stringify(JSON.parse(raw));
+  } catch {
+    return raw;
+  }
+}
+
 /** 只认 JSON 里的三个关键字，缺一个就不当成服务账号。 */
 export function parseVertexServiceAccount(text: string): VertexServiceAccount | null {
-  const raw = text.trim();
+  const raw = normalizeServiceAccountText(text);
   if (!raw.startsWith('{')) return null;
   let data: unknown;
   try {
@@ -73,7 +102,7 @@ export function isVertexServiceAccount(text: string): boolean {
 
 /** 判断这串密钥该怎么用；看不懂就当普通密钥交给调用方报错。 */
 export function readVertexCredential(secret: string): VertexCredential | null {
-  const text = secret.trim();
+  const text = normalizeServiceAccountText(secret);
   if (!text) return null;
   const serviceAccount = parseVertexServiceAccount(text);
   if (serviceAccount) return { kind: 'service-account', serviceAccount };
@@ -293,7 +322,14 @@ export async function vertexChat(
   params: VertexParams = {},
 ): Promise<VertexCallResult> {
   const credential = readVertexCredential(input.secret);
-  if (!credential) return { ok: false, message: '密钥为空或不是有效的服务账号 JSON。' };
+  if (!credential) {
+    const raw = normalizeServiceAccountText(input.secret);
+    // 报错要能自证原因：空 / 被截断 / 根本不是服务账号，三种情况给三种话。
+    const message = !raw
+      ? '这个接口没有可用的 Vertex 凭证：请导入服务账号 JSON，或填一份 Express 密钥。'
+      : `服务账号 JSON 解析失败（${raw.length} 字符，开头「${raw.slice(0, 20)}」）。多半是复制或保存时被截断了，请重新导入一次 JSON 文件。`;
+    return { ok: false, message };
+  }
   if (!input.model.trim()) return { ok: false, message: '请先填写模型名称，例如 gemini-2.5-pro。' };
 
   const serviceAccount = credential.serviceAccount;
