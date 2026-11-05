@@ -75,7 +75,7 @@ import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
 import { TitleDialog } from './components/TitleDialog';
 import { PrologueDialog } from './components/PrologueDialog';
 import { prologueFor } from './prologue';
-import { OPENING_CARDS } from './opening';
+import { OPENING_CARDS, openingGaps } from './opening';
 import { cardFileGuard, saveFileGuard } from './fileLimits';
 import { marketCardGap, marketNeedsCards, unusedCards, usedCardIds } from './cardMarket';
 import { planCardBatches } from './cardImport';
@@ -1174,6 +1174,9 @@ export default function App() {
           '  end                               打开打烊与交接确认',
           '  page <dispatch|base|market|records>  切换页面',
           '  generate                          让叙事者补充今晚的内容',
+          '  proposal                          每日提案立即补充（先补待用事件，再补议题）',
+          '  witch <名字>                      让指定少女立刻魔女化（调试）',
+          '  reset <名字>                      把指定少女重置回初始状态（调试，不可撤销）',
           '  preset [list]                     查看对话补全预设',
           '  preset use <名称>                 绑定生成用预设',
           '  preset chat <名称>                绑定对话用预设',
@@ -1209,6 +1212,31 @@ export default function App() {
       case 'generate': case '生成': {
         const result = await generateContent();
         return result.message || (result.ok ? '叙事者写完了新的内容。' : '生成失败。');
+      }
+      case 'proposal': case '提案': case '补充': {
+        // 先把本地能补的补齐（待用事件），再看议题缺不缺；缺就当场请叙事者写一轮。
+        const filled = act(state, { type: 'openingFill' });
+        if (filled.ok) setState(filled.state);
+        const gaps = openingGaps(filled.ok ? filled.state : state);
+        if (gaps.opinions <= 0) return `${filled.message} 议题已经满了（还缺 ${gaps.opinions} 条）。`;
+        const result = await generateContent();
+        return `${filled.message} 议题还缺 ${gaps.opinions} 条 → ${result.message || (result.ok ? '叙事者补充完成。' : '生成失败。')}`;
+      }
+      case 'witch': case '魔女化': {
+        const target = [...state.girls, ...state.candidates].find(girl => girl.id === arg || girl.name === arg || girl.codename === arg || (girl.name.includes(arg) && arg));
+        if (!target) return `找不到契约者「${arg}」。`;
+        const result = act(state, { type: 'debugGirl', girlId: target.id, mode: 'witch' });
+        if (!result.ok) return result.message;
+        setState(result.state);
+        return result.message;
+      }
+      case 'reset': case '重置': {
+        const target = [...state.girls, ...state.candidates].find(girl => girl.id === arg || girl.name === arg || girl.codename === arg || (girl.name.includes(arg) && arg));
+        if (!target) return `找不到契约者「${arg}」。`;
+        const result = act(state, { type: 'debugGirl', girlId: target.id, mode: 'reset' });
+        if (!result.ok) return result.message;
+        setState(result.state);
+        return result.message;
       }
       case 'preset': case '预设': {
         const sub = (rest[0] ?? '').toLowerCase();

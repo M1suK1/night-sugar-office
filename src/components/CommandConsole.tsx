@@ -8,7 +8,7 @@ const banner: Line[] = [
   { kind: 'out', text: '输入 help 查看命令；↑↓ 翻历史，Esc 关闭。' },
 ];
 
-const quick = ['help', 'status', 'advance 30', 'end', 'generate', 'page base', 'district candy'];
+const quick = ['help', 'status', 'advance 30', 'end', 'generate', 'proposal', 'page base'];
 
 export function CommandConsole({ onRun, onClose }: { onRun: (line: string) => Promise<string>; onClose: () => void }) {
   const [lines, setLines] = useState<Line[]>(banner);

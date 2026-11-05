@@ -1232,6 +1232,8 @@ export type GameAction =
   | { type: 'borrowStability'; faction: FactionId; points: number }
   /** v85 批三：开局三方名册整体从卡库随机取。 */
   | { type: 'assignFactionRoster'; roster: Record<FactionId, FactionRoster>; leaders: FactionLeader[]; girls: FactionGirl[] }
+  /** v94：终端命令专用（让某人魔女化 / 重置回初始状态）。 */
+  | { type: 'debugGirl'; girlId: string; mode: 'witch' | 'reset' }
   | { type: 'upgradeMarket' }
   | { type: 'advancedRecruit'; level: number; /** 卡库挑来的那张卡：有就从卡库进入候选，没有就现场合成。 */ cards?: GirlCard[] }
   | { type: 'createGirl'; draft: GirlDraft }
