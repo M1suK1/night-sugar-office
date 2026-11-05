@@ -143,14 +143,17 @@ export interface StarterAssignment {
  */
 export function randomStarterAssignment(
   pool: RosterSubject[],
-  options: { count?: number; random?: () => number } = {},
+  options: { count?: number; random?: () => number; pickable?: Set<string> } = {},
 ): StarterAssignment | null {
   const random = options.random ?? Math.random;
   const count = Math.max(1, options.count ?? STARTER_COUNT);
   const ids = shuffleWith([...new Set(pool.map(subject => subject.id))], random);
   if (ids.length < 6) return null;
-  const picked = ids.slice(0, Math.min(count, 6));
-  const rest = ids.slice(picked.length);
+  // v85：事务所名额只能给真实存在的人（名册/候选）。卡库里还没导入的条目只有
+  // `card-<hash>` 这种临时 id，坐进事务所会让 setStarters 校验不过。
+  const eligible = options.pickable ? ids.filter(id => options.pickable!.has(id)) : ids;
+  const picked = eligible.slice(0, Math.min(count, 6));
+  const rest = ids.filter(id => !picked.includes(id));
   const byId = new Map(pool.map(subject => [subject.id, subject]));
 
   const roster = {} as Record<FactionId, FactionRoster>;

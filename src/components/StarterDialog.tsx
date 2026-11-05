@@ -67,6 +67,8 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   const [library, setLibrary] = useState<CardBoxEntry[]>([]);
   useEffect(() => { void loadCardBox().then(setLibrary).catch(() => setLibrary([])); }, []);
   const pool = useMemo<RosterSubject[]>(() => rosterPool(state, library, { cardsOnly, limit: OPENING_CARDS }), [state, library, cardsOnly]);
+  // 事务所名额只认真实存在的人：卡库里还没导入的条目不能当契约少女。
+  const pickable = useMemo(() => new Set([...state.girls, ...state.candidates].map(girl => girl.id)), [state.girls, state.candidates]);
 
   const [assistantPick, setAssistantPick] = useState<string | undefined>(state.assistantId);
   const [picked, setPicked] = useState<string[]>(() => {
@@ -76,7 +78,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   const randomized = useRef(false);
   /** 重新掷一次：名册 2 位 + 三方首领与随从全换一组。 */
   const reroll = () => {
-    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT });
+    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT, pickable });
     if (!assignment) return;
     randomized.current = true;
     setPicked(assignment.picked);
@@ -85,7 +87,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   // 开局编成：等卡库读进来、池子成形后随机分一次；之后玩家自己改，不再覆盖。
   useEffect(() => {
     if (!randomize || randomized.current) return;
-    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT });
+    const assignment = randomStarterAssignment(pool, { count: STARTER_COUNT, pickable });
     if (!assignment) return;
     randomized.current = true;
     setPicked(assignment.picked);
@@ -133,6 +135,8 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
 
   const toggle = (id: string) => {
     const adding = !picked.includes(id);
+    // 卡库里还没导入的条目没有真实的少女档案，不能占事务所名额（要先进卡库导入）。
+    if (adding && !pickable.has(id)) return;
     if (adding) {
       const seat = seatOf(id);
       if (seat) {
@@ -203,6 +207,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   const issues: string[] = [];
   if (picked.length < 2) issues.push(`名册还差 ${2 - picked.length} 人`);
   if (picked.length > 6) issues.push('名册最多 6 人');
+    if (picked.some(id => !pickable.has(id))) issues.push('名册里有人还没导入，先去卡库导入');
   const seated = new Set<string>();
   for (const faction of FACTION_ORDER) {
     const label = factionInfo[faction].name;

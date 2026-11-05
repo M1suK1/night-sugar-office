@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
-import { factionSnapshotFromCards, subjectFromCard } from '../src/roster.ts';
+import { factionSnapshotFromCards, randomStarterAssignment, subjectFromCard } from '../src/roster.ts';
+import { subjectOfCustom } from '../src/factions.ts';
 import { witchAwarePortrait } from '../src/factions.ts';
 import { FACTION_ORDER } from '../src/territories.ts';
 import type { GirlCard } from '../src/types.ts';
@@ -81,4 +82,19 @@ test('v146 事务所名册里的人不能被排进势力位', () => {
   snapshot.roster[snapshot.leaders[0]!.faction] = { ...snapshot.roster[snapshot.leaders[0]!.faction], leaderId: own.id };
   const result = act(s, { type: 'assignFactionRoster', ...snapshot });
   assert.equal(result.ok, false);
+});
+
+test('v146 随机开局不会把「卡库里还没导入的人」塞进事务所名额', () => {
+  const own = ['g1', 'g2', 'g3'].map(id => subjectOfCustom({
+    id, name: id, factionTag: 'association', level: 3, color: '#f1a7c6', portrait: '',
+    stats: { magic: 30, insight: 30, agility: 30, empathy: 30 }, skillIds: ['moon-slash'],
+  }));
+  const box = ['card-h1', 'card-h2', 'card-h3', 'card-h4'].map(id => subjectOfCustom({
+    id, name: id, factionTag: 'witch', level: 3, color: '#b98ad9', portrait: '',
+    stats: { magic: 30, insight: 30, agility: 30, empathy: 30 }, skillIds: ['moon-slash'],
+  }));
+  const assignment = randomStarterAssignment([...own, ...box], { count: 2, pickable: new Set(own.map(item => item.id)) });
+  assert.ok(assignment, '七个人足够排');
+  assert.equal(assignment!.picked.length, 2);
+  for (const id of assignment!.picked) assert.ok(!id.startsWith('card-'), `${id} 不是真名册里的人`);
 });
