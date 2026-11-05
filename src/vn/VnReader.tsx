@@ -3,7 +3,7 @@ import { ArrowRight, ChevronsRight, FastForward, SkipForward, Square, UserRound 
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
 import { speakersBySegment, stageAfter } from './stage';
-import { vnAwaitingChoice, vnInitial, vnRebase, vnReducer } from './reducer';
+import { vnAwaitingChoice, vnInitial, vnLastSayIndex, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
 
@@ -41,7 +41,7 @@ export interface VnSideOptions {
  *  - 选项置于界面右侧，且在读到结尾时浮现
  *  - 玩家发言输入栏并入界面底端（位于对话框下方贴底，同样半透明盖在立绘上）
  */
-export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey, sideOptions, composer }: {
+export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey, sideOptions, composer, startAtEnd = false }: {
   beats: VnBeat[];
   cast: VnCastMember[];
   onChoose?: (choiceId: string) => void;
@@ -55,8 +55,10 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   sideOptions?: VnSideOptions;
   /** 并入界面最底部的输入框操作栏（半透明贴底盖在立绘上） */
   composer?: React.ReactNode;
+  /** 已经演完的剧情：一进来就停在最后一句话上，直接看结局正文。 */
+  startAtEnd?: boolean;
 }) {
-  const [state, setState] = useState(() => vnInitial(beats));
+  const [state, setState] = useState(() => vnInitial(beats, startAtEnd));
   const [auto, setAuto] = useState(false);
   const [fast, setFast] = useState(false);
   // 舞台站位：这一段的在场者、刚入场的、正在淡出的（换一段剧情时整场清空）。
@@ -74,8 +76,17 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     const reset = prevKey !== resetKey || beats.length < prevLen;
     // 换一段演出：舞台先清空，新的这一段再按说话人依次登场。
     if (reset) setStage({ ids: [], entering: [], leaving: [] });
-    setState(current => (reset ? vnInitial(beats) : vnRebase(current, beats, prevLen)));
-  }, [beats, resetKey]);
+    setState(current => (reset ? vnInitial(beats, startAtEnd) : vnRebase(current, beats, prevLen)));
+  }, [beats, resetKey, startAtEnd]);
+
+  // 刚收尾（或回看已结束的剧情）：直接停在结局那一句，不用从头再点一遍。
+  const endedRef = useRef(startAtEnd);
+  useEffect(() => {
+    if (startAtEnd === endedRef.current) return;
+    endedRef.current = startAtEnd;
+    if (!startAtEnd) return;
+    setState(current => ({ ...current, beats, index: vnLastSayIndex(beats), typing: false, chosenId: undefined, done: false }));
+  }, [startAtEnd, beats]);
 
   const beat = state.beats[state.index];
   const typedText = beat?.kind === 'say' ? beat.text : '';

@@ -280,6 +280,21 @@ test('v104 跳至结尾：直接落到最后一拍', () => {
   assert.equal(state.typing, false);
 });
 
+test('v112 已结束的剧情一进舞台就停在结局那句', () => {
+  const beats: VnBeat[] = [
+    { kind: 'bg', backdrop: { id: 'night' } },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '开场。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '中午的话。', segment: 1 },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '结尾。', segment: 2 },
+    { kind: 'end' },
+  ];
+  const ended = vnInitial(beats, true);
+  assert.equal(ended.index, 3, '停在最后一句话上');
+  assert.equal((ended.beats[ended.index] as Extract<VnBeat, { kind: 'say' }>).text, '结尾。');
+  assert.equal(ended.typing, false, '不再逐字打，直接看得到全文');
+  assert.equal(vnInitial(beats).index, 0, '正常开头仍然从第一拍开始');
+});
+
 test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {
   const lounge = resolveBackdrop('room:lounge');
   assert.match(lounge.gradient, /gradient/);

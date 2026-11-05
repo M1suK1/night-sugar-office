@@ -42,9 +42,11 @@ export interface EventDialogProps {
 export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
   // 舞台里点「原文」只切当前弹窗，不改全局开关。
   const [textMode, setTextMode] = useState(false);
-  const stage = Boolean(vnStory) && !textMode && !readOnly;
-  // 切回演出只在「已经切到原文」时才有意义（舞台里再放一个「演出」按钮是多余的）。
-  const shared = { stage, onText: () => setTextMode(true), onStage: vnStory && textMode && !readOnly ? () => setTextMode(false) : undefined } as const;
+  // v112：剧情演完之后仍然留在演出模式——玩家要在舞台上把结局读完，
+  // 之后也能从角色详情里用「演出」重新回看（只读不等于只能看原文）。
+  const stage = Boolean(vnStory) && !textMode;
+  const canStage = Boolean(vnStory) && textMode;
+  const shared = { stage, onText: () => setTextMode(true), onStage: canStage ? () => setTextMode(false) : undefined } as const;
   if (event.mode === 'session') {
     return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
@@ -198,6 +200,8 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
   };
 
   const vnSideOptions = useMemo(() => {
+    // 已经结束的剧情只看不写：右侧不要再摆「行动建议」。
+    if (readOnly) return undefined;
     if (event.pendingChoice && pending?.options?.length) {
       return {
         lead: '她停在门口，等你拿主意：',
@@ -222,7 +226,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
       };
     }
     return undefined;
-  }, [event.pendingChoice, pending, options, loading]);
+  }, [event.pendingChoice, pending, options, loading, readOnly]);
 
   // 舞台上的「重写」：对准最近一轮叙事者的回复（开场白与第一轮不重写）。
   const rewriteTarget = useMemo(() => {
@@ -378,6 +382,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
               cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
               sideOptions={vnSideOptions}
               composer={vnComposerSlot}
+              startAtEnd={readOnly}
               onText={onText}
               onClose={onClose}
             />

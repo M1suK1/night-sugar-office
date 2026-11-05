@@ -29,10 +29,16 @@ export type VnAction =
   | { type: 'nextSegment' }
   | { type: 'finish' };
 
-export const vnInitial = (beats: VnBeat[]): VnState => ({
+/** 最后一拍「台词」的下标：收尾时停在这里，玩家直接看到结局正文。 */
+export const vnLastSayIndex = (beats: readonly VnBeat[]): number => {
+  for (let at = beats.length - 1; at >= 0; at -= 1) if (beats[at]?.kind === 'say') return at;
+  return Math.max(0, beats.length - 1);
+};
+
+export const vnInitial = (beats: VnBeat[], atEnd = false): VnState => ({
   beats,
-  index: 0,
-  typing: beats[0]?.kind === 'say' && Boolean(beats[0].text),
+  index: atEnd ? vnLastSayIndex(beats) : 0,
+  typing: !atEnd && beats[0]?.kind === 'say' && Boolean(beats[0].text),
   done: beats.length === 0,
 });
 
