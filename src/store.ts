@@ -200,7 +200,7 @@ async function openServerKv(): Promise<ServerKv | null> {
   }
 }
 
-/** 首次接上本地文件时，把浏览器里的旧存档搬过去（只在文件还空着的时候做一次）。 */
+/** 首次接上本地文件时，把浏览器里的旧存档搬过去（逐条容错，单条失败不影响其余）。 */
 async function migrateKvToServer(server: ServerKv): Promise<void> {
   if (!storeAvailable()) return;
   const existing = await kvKeysFrom(idbBackend);
@@ -208,10 +208,14 @@ async function migrateKvToServer(server: ServerKv): Promise<void> {
   let moved = 0;
   for (const key of existing) {
     if (server.get(key) !== undefined) continue;
-    const row = await idbBackend.get(KV_STORE, key);
-    if (!row) continue;
-    await server.set(key, row.value);
-    moved += 1;
+    try {
+      const row = await idbBackend.get(KV_STORE, key);
+      if (!row) continue;
+      await server.set(key, row.value);
+      moved += 1;
+    } catch {
+      // 单条太大或写失败：跳过，读的时候还会再从浏览器兜一次。
+    }
   }
   if (moved) console.info(`[存档] 已把浏览器里的 ${moved} 项旧数据迁移到本地文件。`);
 }
@@ -242,9 +246,24 @@ export function __resetServerKvForTests(): void {
 
 /* -------------------------------- kv -------------------------------- */
 
+/**
+ * 读档（v118）：本地文件优先，但**文件里没有就回浏览器兜一次**。
+ *
+ * 只写文件不读浏览器时，一旦文件没写成（超过 24MB、进程被杀、迁移半途失败），
+ * 重新打开就是「读不到存档」。现在读穿：文件缺 key 就把浏览器里那份捞出来并补写回文件。
+ */
 export async function kvGet<T>(key: string): Promise<T | undefined> {
   const server = await serverKv();
-  if (server) return server.get(key) as T | undefined;
+  if (server) {
+    const cached = server.get(key);
+    if (cached !== undefined) return cached as T;
+    const row = await backend().get(KV_STORE, key).catch(() => undefined);
+    if (row) {
+      await server.set(key, row.value).catch(() => undefined);
+      return row.value as T;
+    }
+    return undefined;
+  }
   const row = await backend().get(KV_STORE, key);
   return row ? (row.value as T) : undefined;
 }
@@ -266,19 +285,30 @@ export function __resetKvForTests(): void {
 export async function kvSet(key: string, value: unknown): Promise<void> {
   if (kvWriteFault) throw new Error('QuotaExceededError');
   const server = await serverKv();
-  if (server) { await server.set(key, value); return; }
+  if (server) {
+    await server.set(key, value);
+    // 顺手在浏览器里留一份热备份：文件那边万一没写成，下次读还能从这儿捞回来。
+    await backend().put(KV_STORE, key, { key, value }).catch(() => undefined);
+    return;
+  }
   await backend().put(KV_STORE, key, { key, value });
 }
 
 export async function kvDelete(key: string): Promise<boolean> {
   const server = await serverKv();
-  if (server) { await server.remove(key); return true; }
+  if (server) {
+    await server.remove(key);
+    await backend().delete(KV_STORE, key).catch(() => false);
+    return true;
+  }
   return backend().delete(KV_STORE, key);
 }
 
 export async function kvKeys(prefix = ''): Promise<string[]> {
   const server = await serverKv();
-  const keys = server ? server.keys() : await backend().keys(KV_STORE);
+  const keys = server
+    ? [...new Set([...server.keys(), ...(await kvKeysFrom(backend()))])]
+    : await backend().keys(KV_STORE);
   return prefix ? keys.filter(key => key.startsWith(prefix)) : keys;
 }
 
