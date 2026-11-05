@@ -286,6 +286,9 @@ function sanitizeEntry(raw: unknown, index: number): PromptEntry | null {
     scope: isPromptScope(value.scope) ? value.scope : 'shared',
     marker,
     builtin: Boolean(value.builtin),
+    // 契约词条的两个标记不能在存盘/读盘之间丢掉，否则它会退化成正文字段。
+    ...(value.contract === true ? { contract: true as const } : {}),
+    ...(typeof value.defaultContent === 'string' ? { defaultContent: value.defaultContent } : {}),
   };
 }
 
@@ -305,7 +308,34 @@ function migratePrompts(settings: Record<string, unknown>): PromptEntry[] {
   return legacy;
 }
 
-export function presetPrompts(preset: ChatPreset | undefined): PromptEntry[] {
+/**
+ * 契约词条永远在预设里露出来（v105）。
+ *
+ * 旧预设、SillyTavern 导入的预设、以及被「恢复默认」洗过的预设里都没有契约那几条，
+ * 结果就是：契约照样拼进提示词，玩家却在界面上找不到、也改不了。
+ * 这里按 id 补齐——已有的补回 contract / defaultContent 标记，没有的直接追加出厂文本。
+ */
+function withContractDefaults(entries: PromptEntry[]): PromptEntry[] {
+  const builtin = new Map(contractPrompts().map(entry => [entry.id, entry]));
+  const out = entries.map(entry => {
+    const spec = builtin.get(entry.id);
+    if (!spec) return entry;
+    return {
+      ...entry,
+      contract: true,
+      builtin: true,
+      name: entry.name || spec.name,
+      scope: spec.scope,
+      defaultContent: entry.defaultContent ?? spec.content,
+    };
+  });
+  const ids = new Set(out.map(entry => entry.id));
+  for (const spec of builtin.values()) if (!ids.has(spec.id)) out.push({ ...spec });
+  return out;
+}
+
+/** 预设里真正存着的词条（不含自动补齐的契约）：导出走这一份，避免把补出来的条目写进文件。 */
+function storedPrompts(preset: ChatPreset | undefined): PromptEntry[] {
   if (!preset) return [];
   if (Array.isArray(preset.prompts) && preset.prompts.length) return preset.prompts;
   const fromSettings = Array.isArray(preset.settings.prompts)
@@ -313,6 +343,12 @@ export function presetPrompts(preset: ChatPreset | undefined): PromptEntry[] {
     : [];
   if (fromSettings.length) return fromSettings;
   return migratePrompts(preset.settings);
+}
+
+export function presetPrompts(preset: ChatPreset | undefined): PromptEntry[] {
+  if (!preset) return [];
+  // 界面与运行时永远带着契约：缺了就补出厂文本，玩家才看得见、改得动。
+  return withContractDefaults(storedPrompts(preset));
 }
 
 /** 实际参与拼装的词条：按 prompt_order 的顺序与启停；不在 order 里的词条不注入。 */
@@ -416,7 +452,7 @@ export function defaultPromptContent(id: string): string | undefined {
 export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   const schema = preset.schema ?? 2;
   if (schema >= PRESET_SCHEMA) return preset;
-  const prompts = presetPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
+  const prompts = storedPrompts(preset).map(entry => ({ ...entry, scope: promptScope(entry) }));
   const ids = new Set(prompts.map(entry => entry.id));
   // 4 以后只补「结构分区」：v50 的新闻分区、v53 的札记分区都是这样补进来的。
   const wanted = schema <= 2
@@ -878,7 +914,7 @@ export function importPresetObject(data: unknown): PresetImportResult {
 
 export function exportPresetJson(preset: ChatPreset): string {
   // 与 SillyTavern 的 importPreset 兼容：settings 平铺 + name/description + prompts[] + prompt_order。
-  const prompts = presetPrompts(preset).map(entry => ({
+  const prompts = storedPrompts(preset).map(entry => ({
     identifier: entry.id,
     name: entry.name,
     content: entry.content,

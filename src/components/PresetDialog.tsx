@@ -397,7 +397,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
             <span className="preset-order-changed" title="与出厂文本不同的词条数，方便你逐条复核">已改 {entries.filter(changed).length} 条</span>
             <span className="preset-token-total">约 {totalTokens} tokens</span>
           </div>
-          {view !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === view)?.hint}。代码里的 JSON 输出契约会自动追加在本页词条之后，不需要写进词条。</p>}
+          {view !== 'all' && <p className="small-note">{PROMPT_SCOPES.find(scope => scope.id === view)?.hint}。本用途的 JSON 输出契约就在下面的词条里（标着「结构契约 · 最后注入」），改它就等于改这一段提示词。</p>}
 
           <div className="preset-entry-vars">
             <span>可用变量</span>

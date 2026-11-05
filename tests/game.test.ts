@@ -1722,7 +1722,8 @@ test('预设词条：导出再导入保持顺序、角色、禁用与分隔标�
   };
   const round = importPresetJson(exportPresetJson(preset));
   assert.equal(round.ok, true);
-  const entries = presetPrompts(round.preset);
+  // v105：契约词条总会补进列表，这里只看玩家自己写的那些。
+  const entries = presetPrompts(round.preset).filter(entry => !entry.contract);
   assert.deepEqual(entries.map(entry => entry.id), ['a', 'm', 'b']);
   assert.equal(entries[1].marker, true);
   assert.equal(entries[2].enabled, false);

@@ -111,6 +111,29 @@ test('v104 预设专用凭证不会被 400 字截断（服务账号 JSON 有两�
   }
 });
 
+test('v105 旧预设缺契约词条时自动补上，玩家才改得动那一段提示词', async () => {
+  const { presetPrompts } = await import('../src/presets.ts');
+  // 一份没有契约词条的旧预设：只有一条普通词条
+  const sparse: ChatPreset = {
+    id: 'sparse', name: '旧预设', builtin: false, settings: {}, regex: [],
+    prompts: [{ id: 'main', name: '主提示', content: '你是叙事者。', role: 'system', enabled: true, scope: 'shared' }],
+  } as unknown as ChatPreset;
+
+  const entries = presetPrompts(sparse);
+  const turn = entries.find(entry => entry.id === 'arc:turn');
+  assert.ok(turn, '续写契约必须出现在预设词条列表里');
+  assert.equal(turn?.contract, true, '要带契约标记，才不会被当成正文重复注入');
+  assert.equal(turn?.scope, 'arc', '归到「完整剧情」那一页');
+  assert.equal(turn?.defaultContent, arcTurnContract(), '出厂文本要留着，才能判断有没有改过');
+  assert.ok(entries.some(entry => entry.id === 'arc:ending'));
+
+  // 改过这一条就以玩家写的为准（覆盖代码默认值）
+  const runtime = presetRuntime({ ...sparse, prompts: entries.map(entry => entry.id === 'arc:turn' ? { ...entry, content: '【我自己的续写契约】\n只输出 JSON。' } : entry) } as ChatPreset);
+  const composed = composeTaskSystem(arcTurnContract(), runtime, 'arc', {}, {}, 'arc:turn');
+  assert.ok(composed.system.includes('【我自己的续写契约】'));
+  assert.equal(composed.system.split('【JSON 形状】').length - 1, 0, '默认契约被替换，不再重复');
+});
+
 test('v103 stripContractBlocks 只删契约段，正文原样留着', () => {
   const text = ['【世界观】夜之街。', '【JSON 形状】只输出一个 JSON 对象\n{"a":1}\nnarration 900–3000 字。', '她站在门口。'].join('\n\n');
   const stripped = stripContractBlocks(text);
