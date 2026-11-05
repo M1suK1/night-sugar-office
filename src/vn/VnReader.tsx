@@ -10,10 +10,13 @@ const CHAR_MS = 28;
 const PAUSE_MS = 900;
 
 /**
- * 视觉小说阅读器（v93）。
+ * 视觉小说阅读器（v97）。
  *
- * 只负责「一句一句演」：背景 → 立绘 → 对话框 → 选项。默认关闭，
- * 由设置里的全局开关决定要不要用它（`StoryPlayerDialog` 里挂载）。
+ * 布局：
+ *  - 舞台背景（有图出图，无图出优雅渐变）
+ *  - 人物立绘无背景并贴底站立，放大至撑满舞台大部分高度
+ *  - 对话框底部与界面底部齐平，半透明磨砂质感，盖在立绘上能隐约看到立绘下半身
+ *  - 发言人专属头像框 + 台词文字跟随角色代表色
  */
 export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey }: {
   beats: VnBeat[];
@@ -34,7 +37,6 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const lengthRef = useRef(beats.length);
 
   // 换演出（resetKey 变了）→ 从头演；只是追加了新台词 → 保留当前进度。
-  // 交互剧情每生成一轮都会追加，如果每次都重置，玩家永远停在第一句。
   useEffect(() => {
     const reset = keyRef.current !== resetKey || beats.length < lengthRef.current;
     keyRef.current = resetKey;
@@ -110,8 +112,11 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     return resolveBackdrop('night');
   }, [state.index, state.beats]);
 
-  const speaker = beat?.kind === 'say' ? cast.find(member => member.id === beat.speakerId) : undefined;
+  const isSay = beat?.kind === 'say';
+  const isNarrator = isSay && (beat.speakerId === 'narrator' || !beat.speakerId);
+  const speaker = isSay && !isNarrator ? cast.find(member => member.id === beat.speakerId) : undefined;
   const focus = speaker ?? cast[0];
+  const speakerColor = speaker?.girl.color || focus?.girl.color || '#f3aec9';
 
   return (
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
@@ -119,8 +124,15 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       <div className="vn-vignette" aria-hidden="true" />
       <div className="vn-cast" aria-hidden="true">
         {focus && (
-          <div className="vn-actor">
-            <GirlPortrait girl={{ ...focus.girl, expression: beat?.kind === 'say' ? beat.expression ?? focus.girl.expression ?? 'calm' : focus.girl.expression ?? 'calm' }} variant="full" />
+          <div className={`vn-actor ${isNarrator ? 'dimmed' : 'active'}`}>
+            <GirlPortrait
+              girl={{
+                ...focus.girl,
+                expression: isSay && beat.expression ? beat.expression : focus.girl.expression ?? 'calm',
+              }}
+              variant="full"
+              bare
+            />
           </div>
         )}
       </div>
@@ -153,9 +165,40 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
           </div>
         ) : (
           <button className="vn-box" type="button" onClick={advance} aria-live="polite">
-            <span className="vn-name">{beat?.kind === 'say' && beat.speakerId !== 'narrator' ? beat.name : '旁白'}</span>
-            <span className={`vn-text ${beat?.kind === 'say' && beat.thought ? 'thought' : ''}`}>{state.typing ? shown : typedText || '……'}</span>
-            {beat?.kind === 'say' && beat.action && <span className="vn-action">{beat.action}</span>}
+            <div className="vn-box-inner">
+              {speaker && (
+                <div className="vn-box-avatar" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
+                  <GirlPortrait
+                    girl={{
+                      ...speaker.girl,
+                      expression: isSay && beat.expression ? beat.expression : speaker.girl.expression ?? 'calm',
+                    }}
+                    variant="avatar"
+                    bare
+                  />
+                </div>
+              )}
+              <div className="vn-box-content">
+                <div className="vn-box-meta">
+                  <span
+                    className="vn-name"
+                    style={{
+                      color: isNarrator ? '#f3aec9' : speakerColor,
+                      borderColor: `${isNarrator ? '#f3aec9' : speakerColor}55`,
+                    }}
+                  >
+                    {isNarrator ? '旁白' : isSay ? beat.name : ''}
+                  </span>
+                </div>
+                <span
+                  className={`vn-text ${isNarrator ? 'thought' : ''}`}
+                  style={!isNarrator && speakerColor ? { color: speakerColor } : undefined}
+                >
+                  {state.typing ? shown : typedText || '……'}
+                </span>
+                {beat?.kind === 'say' && beat.action && <span className="vn-action">{beat.action}</span>}
+              </div>
+            </div>
             <span className={`vn-next ${state.typing ? '' : 'ready'}`} aria-hidden="true">▼</span>
           </button>
         )}
