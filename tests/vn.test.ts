@@ -192,6 +192,12 @@ test('v101 换人：开场空场、新人物从右侧入场、不再开口的人
 
   // 同一批人再说一遍：不算换人
   assert.equal(stageAfter(third!.ids, ['b']), null);
+
+  // v104：人数没变（还是那两个人），只是开口顺序换了 → 站位不许重排
+  assert.equal(stageAfter(['a', 'b'], ['b', 'a']), null, '同一批人不重新均分');
+
+  // 有人走、有人来（人数相同但成员变了）→ 老人在原位，新人补到最右
+  assert.deepEqual(stageAfter(['a', 'b'], ['b', 'c']), { ids: ['b', 'c'], entering: ['c'], leaving: ['a'] });
 });
 
 test('v101 段号：交互剧情按轮、战斗札记按场打标记', () => {

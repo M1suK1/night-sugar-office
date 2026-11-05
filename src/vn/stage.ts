@@ -35,13 +35,20 @@ export function speakersBySegment(beats: readonly VnBeat[]): Map<number, string[
   return map;
 }
 
-/** 从「上一段在场的人」推到「这一段该在场的人」；没变化就返回 null（不惊动渲染）。 */
+/**
+ * 从「上一段在场的人」推到「这一段该在场的人」。
+ *
+ * 站位尽量稳定：在场的人保持原有顺序，新人一律追加到最右。
+ * 同一批人（人数与成员都没变）时直接返回 null —— 不重排、不重播动画，
+ * 免得换一段剧情就把所有人的位置洗一遍。
+ */
 export function stageAfter(current: readonly string[], wanted: readonly string[]): StageTransition | null {
-  const same = current.length === wanted.length && wanted.every((id, at) => id === current[at]);
-  if (same) return null;
+  const survivors = current.filter(id => wanted.includes(id));
+  const newcomers = wanted.filter(id => !current.includes(id));
+  if (survivors.length === current.length && newcomers.length === 0) return null;
   return {
-    ids: [...wanted],
-    entering: wanted.filter(id => !current.includes(id)),
+    ids: [...survivors, ...newcomers],
+    entering: newcomers,
     leaving: current.filter(id => !wanted.includes(id)),
   };
 }
