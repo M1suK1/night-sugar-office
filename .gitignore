@@ -17,8 +17,8 @@ tools/.tsc.txt
 
 # 叙事引擎日志：本机调试用，不进版本库
 data/llm-logs/
-# 存档镜像（v116）：本地文件通道把 kv 表写在 data/kv/store.json，属于玩家数据
-data/kv/*.json
+# 存档镜像（v116）：本地文件通道把 kv 表写在 data/kv/（分片 + 索引），属于玩家数据
+data/kv/
 
 # 构建失败日志（start.bat 生成）
 build-error.log

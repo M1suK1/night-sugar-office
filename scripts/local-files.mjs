@@ -10,6 +10,7 @@
  *
  * 约束：只写 JSON、只写这两个目录、单文件 ≤ 24MB、文件名只保留最后一段。
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dirname, join } from 'node:path';
@@ -23,34 +24,104 @@ export const CARDS_DIR = join(DATA_DIR, 'cards');
 /** 叙事引擎的请求/响应日志：按天一个 jsonl，方便直接 grep。 */
 export const LOGS_DIR = join(DATA_DIR, 'llm-logs');
 /**
- * 存档本体（v116）：浏览器 IndexedDB 里的 kv 表整份镜像到这个文件。
- * 有本地服务时前端的读写都走这里，网页刷新、清缓存、换浏览器都不会丢档。
+ * 存档本体（v119）：每个 key 一个文件，index.json 只记 key → 文件名。
+ *
+ * 以前整张 kv 表写进一个 store.json：卡库里 30 多张带立绘的卡就有 250MB，
+ * 每次读写都要把 250MB 全量过一遍 JSON——浏览器那边直接读不动，表现就是「重开读不到存档」。
+ * 现在按 key 分片：读哪条取哪条，写哪条只动那一个文件。
  */
 export const KV_DIR = join(DATA_DIR, 'kv');
-export const KV_FILE = join(KV_DIR, 'store.json');
+export const KV_OBJECTS = join(KV_DIR, 'objects');
+export const KV_INDEX = join(KV_DIR, 'index.json');
+/** 旧版单文件存档：启动时自动拆成分片并改名备份。 */
+export const KV_LEGACY = join(KV_DIR, 'store.json');
 
 const MAX_BYTES = 24 * 1024 * 1024;
 const KINDS = new Map([['save', SAVES_DIR], ['card', CARDS_DIR]]);
 
-/* ---------------------------- 存档镜像 ---------------------------- */
-let kvCache = null;
-async function readKv() {
-  if (kvCache) return kvCache;
-  try {
-    const parsed = JSON.parse(await fs.readFile(KV_FILE, 'utf8'));
-    kvCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    kvCache = {};
-  }
-  return kvCache;
+/* --------------------------- 存档分片存储 --------------------------- */
+let kvIndexCache = null;
+
+function kvFileName(key) {
+  return `${crypto.createHash('sha1').update(key).digest('hex')}.json`;
 }
-async function writeKv(data) {
-  kvCache = data;
+
+async function readKvIndex() {
+  if (kvIndexCache) return kvIndexCache;
+  try {
+    const parsed = JSON.parse(await fs.readFile(KV_INDEX, 'utf8'));
+    kvIndexCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    kvIndexCache = {};
+  }
+  await migrateLegacyKv();
+  return kvIndexCache;
+}
+
+async function writeKvIndex() {
   await ensure(KV_DIR);
-  // 先写临时文件再改名：写到一半崩了也不会留下半份存档。
-  const tmp = `${KV_FILE}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data), 'utf8');
-  await fs.rename(tmp, KV_FILE);
+  const tmp = `${KV_INDEX}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(kvIndexCache), 'utf8');
+  await fs.rename(tmp, KV_INDEX);
+}
+
+/** 旧版 store.json → 每条一个文件；拆完改名成 .bak 留着以备万一。 */
+async function migrateLegacyKv() {
+  if (!kvIndexCache || Object.keys(kvIndexCache).length) return;
+  let legacy = null;
+  try {
+    legacy = JSON.parse(await fs.readFile(KV_LEGACY, 'utf8'));
+  } catch {
+    return;
+  }
+  if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return;
+  const keys = Object.keys(legacy);
+  if (!keys.length) return;
+  await ensure(KV_OBJECTS);
+  for (const key of keys) {
+    const file = kvFileName(key);
+    try {
+      await fs.writeFile(join(KV_OBJECTS, file), JSON.stringify(legacy[key]), 'utf8');
+      kvIndexCache[key] = { file, bytes: Buffer.byteLength(JSON.stringify(legacy[key])), savedAt: Date.now() };
+    } catch { /* 单条写不进去就跳过 */ }
+  }
+  await writeKvIndex();
+  await fs.rename(KV_LEGACY, `${KV_LEGACY}.bak`).catch(() => undefined);
+  console.log(`[存档] 旧单文件已拆成 ${Object.keys(kvIndexCache).length} 个分片。`);
+}
+
+async function readKvValue(key) {
+  const index = await readKvIndex();
+  const entry = index[key];
+  if (!entry) return undefined;
+  try {
+    return JSON.parse(await fs.readFile(join(KV_OBJECTS, entry.file), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeKvValue(key, value) {
+  const index = await readKvIndex();
+  await ensure(KV_OBJECTS);
+  const file = kvFileName(key);
+  const text = JSON.stringify(value);
+  const tmp = join(KV_OBJECTS, `${file}.tmp`);
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, join(KV_OBJECTS, file));
+  index[key] = { file, bytes: Buffer.byteLength(text), savedAt: Date.now() };
+  await writeKvIndex();
+  return index[key].bytes;
+}
+
+async function removeKvValue(key) {
+  const index = await readKvIndex();
+  const entry = index[key];
+  if (!entry) return false;
+  delete index[key];
+  await fs.rm(join(KV_OBJECTS, entry.file), { force: true }).catch(() => undefined);
+  await writeKvIndex();
+  return true;
 }
 
 function json(res, status, body) {
@@ -130,13 +201,22 @@ export async function handleLocalApi(req, res) {
       await ensure(CARDS_DIR);
       await ensure(LOGS_DIR);
       await ensure(KV_DIR);
-      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR, logs: LOGS_DIR, kv: KV_FILE });
+      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR, logs: LOGS_DIR, kv: KV_DIR });
       return;
     }
     if (route === '/kv') {
       if (req.method === 'GET') {
-        const data = await readKv();
-        json(res, 200, { ok: true, data, file: KV_FILE });
+        const key = url.searchParams.get('key');
+        // 不带 key 只回一份 key 清单；带 key 才取那一条的值。
+        if (!key) {
+          const index = await readKvIndex();
+          const keys = Object.keys(index);
+          json(res, 200, { ok: true, keys, bytes: keys.reduce((sum, name) => sum + (index[name]?.bytes ?? 0), 0), dir: KV_DIR });
+          return;
+        }
+        const value = await readKvValue(key);
+        if (value === undefined) { json(res, 200, { ok: true, found: false }); return; }
+        json(res, 200, { ok: true, found: true, value });
         return;
       }
       if (req.method === 'POST' || req.method === 'PUT') {
@@ -149,11 +229,14 @@ export async function handleLocalApi(req, res) {
         }
         const key = typeof body?.key === 'string' ? body.key : '';
         if (!key) { json(res, 400, { ok: false, message: '缺少 key。' }); return; }
-        const data = { ...(await readKv()) };
-        if (body?.remove === true) delete data[key];
-        else data[key] = body?.value;
-        await writeKv(data);
-        json(res, 200, { ok: true, file: KV_FILE, keys: Object.keys(data).length });
+        try {
+          if (body?.remove === true) await removeKvValue(key);
+          else await writeKvValue(key, body?.value);
+        } catch (error) {
+          json(res, 500, { ok: false, message: error instanceof Error ? error.message : '写入失败。' });
+          return;
+        }
+        json(res, 200, { ok: true, dir: KV_DIR });
         return;
       }
       json(res, 405, { ok: false, message: '只支持 GET / POST。' });
