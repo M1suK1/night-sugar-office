@@ -1,3 +1,4 @@
+import { outfitBrief } from './outfitBrief.ts';
 import type { Girl, GameState, MissionRun, Storyline } from './types.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 import { relationshipStage, stageLabels, statLabels, statusLabels, workLabels } from './rules/labels.ts';
@@ -89,7 +90,7 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
 
   const lines = [
     identity,
-    `外形：${girl.appearance?.trim() || '不详'}；当前服装：${girl.outfitDescription?.trim() || '值夜制服'}（${girl.wardrobe.find(outfit => outfit.id === girl.outfitId)?.name ?? '常服'}）`,
+    `外形：${girl.appearance?.trim() || '不详'}；${girl.witch ? '魔女形态' : '当前服装'}：${outfitBrief(girl) || (girl.witch ? '侵蚀之后的样子没有写下来' : '值夜制服')}（${girl.witch ? '第五格 · 魔女化' : girl.wardrobe.find(outfit => outfit.id === girl.outfitId)?.name ?? '常服'}）`,
     nature,
     `能力：${girl.element}·${girl.archetype ?? '未定职阶'} · Lv.${girl.level} · 四维 ${Object.entries(girl.stats).map(([key, value]) => `${statLabels[key as keyof typeof statLabels] ?? key} ${value}`).join(' / ')}`,
     `技能：${skillLine(girl)}`,

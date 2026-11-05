@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { DEFAULT_BALANCE } from '../src/balance.ts';
 import { currentExpressionOutfitId } from '../src/expressions.ts';
+import { outfitBrief, outfitLine } from '../src/outfitBrief.ts';
+import { buildNightPrompt } from '../src/llm-night.ts';
 
 test('v94 终端：witch 让指定少女立刻魔女化（补侵蚀、补立绘、写日志）', () => {
   const s = createInitialState();
@@ -84,4 +86,23 @@ test('v94 换装后服装描述跟着当前礼装，魔女形态写的是形态�
   });
   assert.equal(withDescription.ok, true, withDescription.message);
   assert.equal(withDescription.state.girls.find(item => item.id === girl.id)!.witchForm!.description, '影子长出了第二种颜色。');
+});
+
+test('v95 服装/魔女形态描述进提示词', () => {
+  const plain = { outfitDescription: '深紫色短外套，袖口磨白了。' };
+  assert.equal(outfitBrief(plain as never), '深紫色短外套，袖口磨白了。');
+  assert.equal(outfitLine(plain as never), '装扮：深紫色短外套，袖口磨白了。');
+
+  const witch = { witch: true, outfitDescription: '深紫色短外套。', witchForm: { description: '影子长出了第二种颜色。' } };
+  assert.equal(outfitBrief(witch as never), '影子长出了第二种颜色。', '魔女形态优先用形态描述');
+  assert.equal(outfitLine(witch as never), '魔女形态：影子长出了第二种颜色。');
+  // 只有普通服装描述时也要有话说
+  assert.equal(outfitBrief({ witch: true, outfitDescription: '深紫色短外套。' } as never), '深紫色短外套。');
+
+  const state = createInitialState();
+  const girl = state.girls[0]!;
+  girl.witch = true;
+  girl.witchForm = { id: 'witchform', form: 'witch', name: '夜之形', description: '影子长出了第二种颜色。', palette: ['#2a1524'], layerKey: 'witch' };
+  const prompt = buildNightPrompt(state);
+  assert.ok(prompt.includes('影子长出了第二种颜色'), '每日提案的提示词里要看得到形态描述');
 });

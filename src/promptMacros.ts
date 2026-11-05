@@ -1,3 +1,4 @@
+import { outfitLine } from './outfitBrief.ts';
 import type { GameState, Girl } from './types.ts';
 import { opinionHistoryText } from './opinionHistory.ts';
 import type { DistrictId } from './districts.ts';
@@ -62,6 +63,8 @@ function girlsText(state: GameState | undefined, arg?: string): string {
     ` · 羁绊 ${girl.bond} · 疲劳 ${girl.fatigue} · 侵蚀 ${girl.corruption ?? 0} · 出身 ${girl.factionTag}`,
     girl.personality ? `\n  性格：${girl.personality.trim().slice(0, 80)}` : '',
     girl.appearance ? `\n  外貌：${girl.appearance.trim().slice(0, 80)}` : '',
+    // v95：她现在穿着什么；魔女化之后这一行写的是形态描述。
+    outfitLine(girl) ? `\n  ${outfitLine(girl).slice(0, 90)}` : '',
     girl.quote ? `\n  语气参考：「${girl.quote.trim().slice(0, 40)}」` : '',
   ].join(''));
   const rest = list.length - lines.length;

@@ -1,3 +1,4 @@
+import { outfitLine } from './outfitBrief.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
@@ -1342,9 +1343,11 @@ export interface GeneratedEvent { title: string; hook: string; scenes: { title: 
 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
+  // v95：衣服（魔女形态时是形态描述）也进简报，模型才写得出她此刻的样子。
+  const outfit = outfitLine(girl);
   // 出身与雇主必须分开写：出身只交代她来自哪一方，雇主永远是把她们收进名册的夜糖事务所。
   const voice = voiceLine(girl);
-  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}${voice ? `；${voice}` : ''}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；特性：${traitText}；目标：${girl.goal}`;
+  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}${voice ? `；${voice}` : ''}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；${outfit ? `${outfit}；` : ''}特性：${traitText}；目标：${girl.goal}`;
 }
 
 function parseEffect(raw: unknown): StoryEffect {
@@ -1863,7 +1866,7 @@ function storyHistory(turns: StoryTurn[], limit = 8): string {
 }
 
 function storyCastBrief(girl: Girl): string {
-  return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。`;
+  return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
 }
 
 /** 交互剧情的开场白：250–350 字，把在场的人与此刻的场面交代清楚，然后停住。 */

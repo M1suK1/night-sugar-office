@@ -1,3 +1,4 @@
+import { outfitBrief } from './outfitBrief.ts';
 import { loadProposalCheck, repairRejectOptions } from './proposalCheck.ts';
 import type {
   Archetype, Element, Equipment, FactionId, GameState, Girl,
@@ -853,6 +854,8 @@ export function buildNightCatalog(state: GameState): NightCatalog {
       origin: factionTagLabel(girl.factionTag),
       // 契约卡带回来的性格与外貌也要给模型：不然它只能照着旧内置角色编。
       personality: clipLine(girl.personality, 120), appearance: clipLine(girl.appearance, 120), quote: clipLine(girl.quote, 60),
+      // v95：她现在穿着什么（魔女形态时是形态描述），提案与事件才写得出画面。
+      outfit: clipLine(outfitBrief(girl), 120), witch: girl.witch === true,
     })),
     itemTiers: [1, 2, 3, 4, 5].map(tier => {
       const bag = [...listItems(), ...state.generatedItems].filter(item => tierOf(item) === tier && item.slot !== 'consumable');
