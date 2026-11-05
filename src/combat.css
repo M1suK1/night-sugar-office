@@ -997,6 +997,8 @@
 .story-memories button{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:8px 10px;border:1px solid #ffffff14;border-radius:6px;background:#0d0a14;color:#e6d9e4;font-size:10px;letter-spacing:.02em;cursor:pointer;transition:border-color .2s,background .2s}
 .story-memories button:hover{border-color:#d996ad66;background:#f3aec90d}
 .story-memories button small{font-family:var(--font-data);font-size:8px;color:#7d6a89}
+/* v109：收尾摘要显示在回忆条目里，点开仍是完整原文 */
+.story-memories .story-memory-summary{font-style:normal;font-size:8.5px;line-height:1.7;color:#a490af;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .session-readonly{margin-top:4px;padding:10px 12px;border:1px solid #ffffff14;border-radius:7px;background:#0d0a14;font-size:9px;letter-spacing:.04em;color:#b78c9f;text-align:center}
 
 /* v85 属性点头部里的「不再提醒」 */

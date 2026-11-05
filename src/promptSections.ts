@@ -299,10 +299,11 @@ export function arcContract(targets: string): string {
 export function arcEndingContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}]}',
+    '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":""}',
     '这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。',
     'narration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。',
     'lines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。',
+    'summary 150–300 字：把**这一整段**（不只是结尾）压成一段前情提要——发生了什么、关系推进到哪、留下什么未解的事。以后只引用这段摘要，不再回看原文。',
     '不要写数值、伤害、技能名，也不要写「第几轮」。',
   ].join('\n');
 }

@@ -48,8 +48,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   onWitchDescription?: (text: string) => void;
   /** 普通形态下，服装描述编辑的是「当前穿着的那套礼装」。 */
   onOutfitDescription?: (outfitId: string, text: string) => void;
-  /** 这位少女演完的交互剧情：点开只读回看。 */
-  memories?: { id: string; title: string; day: number; rounds: number }[];
+  /** 这位少女演完的交互剧情：列表显示收尾摘要，点开只读回看原文。 */
+  memories?: { id: string; title: string; day: number; rounds: number; summary?: string }[];
   onMemory?: (eventId: string) => void;
   /** 立绘缺失时手动补一张：读成 data URL 后由 setPortrait 落地。 */
   onPortraitFile?: (file: File) => void;
@@ -291,7 +291,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                       <li key={memory.id}>
                         <button id={`dossier-memory-${memory.id}`} type="button" onClick={() => onMemory?.(memory.id)}>
                           <span>{memory.title}</span>
-                          <small>第 {memory.day} 夜 · {memory.rounds} 轮对话</small>
+                          <small>第 {memory.day} 夜 · {memory.rounds} 轮对话{memory.summary ? '' : ' · 点开回看原文'}</small>
+                          {memory.summary && <em className="story-memory-summary">{memory.summary}</em>}
                         </button>
                       </li>
                     ))}

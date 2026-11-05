@@ -1704,7 +1704,9 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
 export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
+  const pastEvents = state ? recentEventSummaries(state, girl.id) : '';
   const body = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
+${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\n${pastEvents}` : ''}
 只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
 要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
@@ -1888,6 +1890,31 @@ function storyHistory(turns: StoryTurn[], limit = 8): string {
     : `${turn.text}${turn.lines?.length ? `\n${turn.lines.map(line => `${line.speakerName}：「${line.text}」`).join('\n')}` : ''}`).join('\n\n');
 }
 
+/** 模型没写摘要时的兜底：用标题、最后一次行动与结局开头拼一小段，够当「前情提要」用。 */
+export function localSessionSummary(event: CharacterEvent, narration: string): string {
+  const lastPlayer = [...(event.turns ?? [])].reverse().find(turn => turn.role === 'player')?.text ?? '';
+  const parts = [
+    `「${event.title}」`,
+    lastPlayer ? `所长最后说：${lastPlayer.slice(0, 60)}` : '',
+    narration ? `收束：${narration.slice(0, 180)}` : '',
+  ].filter(Boolean);
+  return parts.join('　').slice(0, 400);
+}
+
+/**
+ * 她与所长最近发生过的剧情（v109）。
+ *
+ * 只引用收尾时写下的一段摘要，不回看原文——原文留在存档里给玩家翻，
+ * 而提示词只需要「发生过什么」。
+ */
+function recentEventSummaries(state: GameState, girlId: string, limit = 4): string {
+  return (state.events ?? [])
+    .filter(event => event.girlId === girlId && event.status === 'done' && (event.summary ?? '').trim())
+    .slice(0, limit)
+    .map(event => `· ${event.title}：${(event.summary ?? '').trim()}`)
+    .join('\n');
+}
+
 function storyCastBrief(girl: Girl): string {
   return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
 }
@@ -1907,6 +1934,8 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const context = [
     `【这一段剧情】${event.title}`,
     event.hook ? `引子：${event.hook}` : '',
+    // v109：以前的剧情只以摘要形式出现，不回放原文。
+    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【你】所长（player），用「你」称呼，可以是说话人。',
@@ -1945,7 +1974,7 @@ export async function generateStoryEnding(
   state: GameState,
   event: CharacterEvent,
   preset?: PresetRuntime,
-): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] } } | { ok: false; message: string }> {
+): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] }; summary: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -1957,6 +1986,7 @@ export async function generateStoryEnding(
   const context = [
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
+    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
@@ -1981,7 +2011,11 @@ export async function generateStoryEnding(
     return { ok: false, message };
   }
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `收尾：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
-  return { ok: true, turn: { narration, lines } };
+  // v109：收尾时顺手把整段压成摘要——之后的历史只引用它，原文留给人翻。
+  const summary = typeof result.raw.summary === 'string' && result.raw.summary.trim()
+    ? result.raw.summary.trim().slice(0, 800)
+    : localSessionSummary(event, narration);
+  return { ok: true, turn: { narration, lines }, summary };
 }
 
 /**
@@ -2010,6 +2044,7 @@ export async function generateStoryTurn(
   const context = [
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
+    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',

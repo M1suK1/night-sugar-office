@@ -1221,7 +1221,7 @@ export type GameAction =
   | { type: 'editStoryTurn'; eventId: string; turnId: string; text: string }
   /** 删掉自己说的那一轮（只能删 player 轮）。 */
   | { type: 'deleteStoryTurn'; eventId: string; turnId: string }
-  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] } }
+  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] }; summary?: string }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }

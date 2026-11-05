@@ -36,20 +36,30 @@ test('v34 交互剧情从开场白开始，写入第一轮旁白并标记已读'
   assert.equal(result.state.girls.find(girl => girl.id === girlId)?.eventBadge, '!');
 });
 
-test('v34 追加回合记录玩家与旁白，超过 12 轮就要求先结束', () => {
-  const { state, id } = session(createInitialState(), { turns: [narratorTurn('t0', '开场')] });
-  const first = act(state, { type: 'appendStoryTurn', eventId: id, turn: playerTurn('t1', '我在。') });
-  assert.equal(first.ok, true);
-  const second = act(first.state, { type: 'appendStoryTurn', eventId: id, turn: narratorTurn('t2', '她抬眼。') });
-  assert.equal(second.ok, true);
-  assert.deepEqual(eventOf(second.state, id).turns?.map(turn => turn.id), ['t0', 't1', 't2']);
+test('v109 不设轮次上限：写到第 30 轮也照常追加，收尾时把整段压成摘要', () => {
+  const turns: StoryTurn[] = [narratorTurn('n0', '开场')];
+  for (let index = 0; index < 30; index += 1) turns.push(playerTurn(`p${index}`, `第 ${index} 轮`));
+  const { state, id } = session(createInitialState(), { turns });
 
-  const full: StoryTurn[] = [narratorTurn('n0', '开场')];
-  for (let index = 0; index < STORY_SESSION_TURNS; index += 1) full.push(playerTurn(`p${index}`, `第 ${index} 轮`));
-  const { state: crowded, id: crowdedId } = session(createInitialState(), { turns: full });
-  const blocked = act(crowded, { type: 'appendStoryTurn', eventId: crowdedId, turn: playerTurn('extra', '再来一轮') });
-  assert.equal(blocked.ok, false);
-  assert.match(blocked.message ?? '', /12 轮/);
+  // 曾经的上限已经不拦任何一句
+  const more = act(state, { type: 'appendStoryTurn', eventId: id, turn: playerTurn('extra', '再来一轮') });
+  assert.equal(more.ok, true);
+  const reply = act(more.state, { type: 'appendStoryTurn', eventId: id, turn: narratorTurn('n-extra', '她抬眼看你。') });
+  assert.equal(reply.ok, true);
+
+  // 收尾：原文全部留着，同时写入一段摘要
+  const ended = act(reply.state, {
+    type: 'finishStorySession',
+    eventId: id,
+    ending: { narration: '她把灯关了。', lines: [] },
+    summary: '她把伞留在门口，两个人第一次把话说完。',
+  });
+  assert.equal(ended.ok, true);
+  const event = eventOf(ended.state, id);
+  assert.equal(event.status, 'done');
+  assert.equal(event.summary, '她把伞留在门口，两个人第一次把话说完。');
+  assert.ok((event.turns?.length ?? 0) >= 33, '原文一条都不能少，玩家还要从角色详情里回看');
+  assert.equal(event.turns?.at(-1)?.id, event.turns?.at(-1)?.id);
 });
 
 test('v104 手动改文本：只动文本、不动轮次；玩家那一轮的台词一起改', () => {
@@ -89,20 +99,13 @@ test('v104 删掉自己说的话：只能删 player 轮，旁白不能删', () =
   assert.match(rejected.message ?? '', /自己/);
 });
 
-test('v108 轮次上限只拦新的一句，叙事者对最后一句的回应不会被丢掉', () => {
+test('v108 叙事者对最后一句的回应永远能写进剧情（曾经的静默丢弃）', () => {
   const full: StoryTurn[] = [narratorTurn('n0', '开场')];
-  for (let index = 0; index < STORY_SESSION_TURNS; index += 1) full.push(playerTurn(`p${index}`, `第 ${index} 轮`));
+  for (let index = 0; index < 20; index += 1) full.push(playerTurn(`p${index}`, `第 ${index} 轮`));
   const { state, id } = session(createInitialState(), { turns: full });
 
-  // 已经满 12 轮：新的玩家回合仍然被挡住
-  const blocked = act(state, { type: 'appendStoryTurn', eventId: id, turn: playerTurn('extra', '再来一轮') });
-  assert.equal(blocked.ok, false);
-  assert.match(blocked.message ?? '', /12 轮/);
-
-  // 但叙事者对已有那些回合的回应必须能写进去（以前这里被同一条守卫吞掉，
-  // 表现就是引擎显示生成成功、界面里却什么都不出现）
   const reply = act(state, { type: 'appendStoryTurn', eventId: id, turn: narratorTurn('n-last', '她抬眼看你。') });
-  assert.equal(reply.ok, true, '旁白不受轮次上限限制');
+  assert.equal(reply.ok, true);
   assert.equal(eventOf(reply.state, id).turns?.at(-1)?.id, 'n-last');
 });
 

@@ -1,6 +1,6 @@
 import { pendingChoiceOf } from './storyChoice.ts';
 import { applyStoryEffect } from '../rules/storyCore.ts';
-import { STORY_SESSION_TURNS, buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
+import { buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
 import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } from '../rules/storyRun.ts';
 import { ensureGraph, validateGraph } from '../storygraph.ts';
 import { STORY_SLOT_MAX, planForSlot, playableStoryPlan, sanitizeStoryPlan, setPlanForSlot } from '../storyplan.ts';
@@ -186,11 +186,8 @@ export function applyAppendStoryTurn(state: GameState, action: Extract<GameActio
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event || event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
       if (event.mode !== 'session') return { state, ok: false, message: '这段剧情不是交互模式。' };
-      // v108：轮次上限只拦「再写一句」这个动作，不拦模型对这一句的回应。
-      // 否则玩家第 12 轮写完 → 叙事者的回复被这条守卫丢掉，界面上就是「生成了但什么都不显示」。
-      const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
-      const opensRound = action.turn.role === 'player' && !event.turns?.some(turn => turn.id === action.turn.id);
-      if (opensRound && rounds >= STORY_SESSION_TURNS) return { state, ok: false, message: `这段剧情已经走了 ${STORY_SESSION_TURNS} 轮，先结束事件吧。` };
+      // v109：不再限轮次。一段能聊多长由玩家决定；收尾时会把整段压成摘要，
+      // 之后只引用那份摘要，所以不需要靠数字上限兜底。
       event.turns = [...(event.turns ?? []), action.turn];
       return { state: next, ok: true, message: '' };
 }
@@ -270,6 +267,10 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
         }];
       }
       event.status = 'done'; event.badge = false; event.sessionDone = true;
+      // v109：整段剧情压成一段摘要存下来。原文（event.turns）照旧留在本地存档里，
+      // 之后的提示词只引用这条摘要，正文留给玩家从角色详情里回看。
+      const summary = action.summary?.trim();
+      if (summary) event.summary = summary.slice(0, 800);
       const girl = findGirl(next, event.girlId);
       const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
       const gain = Math.min(4, Math.max(0, Math.round(rounds * 0.8)));
