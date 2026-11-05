@@ -414,6 +414,26 @@
 }
 .av-envoy-task b { font-size: 12.5px; color: #f4eef8; }
 .av-envoy-task span { display: block; }
+.av-envoy-leader-face {
+  flex: none;
+  position: relative;
+  display: block;
+  width: 76px;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border: 1px solid #f3aec933;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #241a2c, #120e18);
+}
+.av-envoy-leader-face .girl-portrait,
+.av-envoy-leader-face .girl-portrait img,
+.av-envoy-leader-face svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.av-envoy-leader-face .girl-portrait img { object-fit: cover; object-position: 50% 12%; }
 .av-envoy-reward { color: #f3aec9; }
 /* v85：月蚀庭的首领开局就是魔女形态，卡片上给一枚小标记。 */
 .av-envoy-witch {

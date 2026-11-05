@@ -4,7 +4,6 @@ import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain,
 import type { FactionId, GameState, Girl, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
-import { witchAwarePortrait } from '../factions';
 import { envoyOfferOf } from '../rules/envoy';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf, representativeNameOf, representativeTitleOf } from '../factions';
@@ -320,10 +319,15 @@ export function BaseView({
                     const rival = rivals[0];
                     return (
                       <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
-                        <span className="av-envoy-seal av-envoy-leader" title={`${info.name} · ${representative.name}`}>
-                          {witchAwarePortrait(representative)
-                            ? <img src={witchAwarePortrait(representative)} alt="" />
-                            : <i>{representative.name.slice(0, 1)}</i>}
+                        <span className="av-envoy-leader-face" title={`${info.name} · ${representative.name}`}>
+                          <GirlPortrait
+                            girl={{
+                              id: representative.id, name: representative.name, color: representative.color,
+                              portrait: representative.portrait ?? '', portraitSpec: representative.portraitSpec,
+                              witch: representative.witch, witchForm: representative.witchForm,
+                            }}
+                            variant="avatar"
+                          />
                         </span>
                         <div className="av-envoy-copy">
                           <strong>{representative.name} <small>{representative.title} · {info.name}</small>{representative.witch && <em className="av-envoy-witch">魔女形态</em>}</strong>
