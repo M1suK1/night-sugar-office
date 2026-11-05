@@ -54,9 +54,11 @@ export interface BalanceRules {
   envoyLoanStandingGain: number;
   envoyLoanMaxHours: number;
   /** 宿舍每小时恢复的疲劳。 */
+  /** 休息时每小时恢复多少疲劳。 */
   dormFatiguePerHour: number;
-  /** 一次 90 分钟休息恢复的疲劳 / 平复的侵蚀（界面文案写的就是这两个数）。 */
-  dormRestFatigue: number;
+  /** 休息到疲劳不高于这个值就自动结束。 */
+  dormRestExitFatigue: number;
+  /** 一次休息平复多少侵蚀。 */
   dormRestCorruption: number;
   /** 侵蚀达到多少可以显形魔女化礼装。 */
   corruptionThreshold: number;
@@ -124,8 +126,8 @@ export const DEFAULT_BALANCE: BalanceRules = {
   factionLoanStandingCost: 2,
   envoyLoanStandingGain: 1,
   envoyLoanMaxHours: 6,
-  dormFatiguePerHour: 8,
-  dormRestFatigue: 60,
+  dormFatiguePerHour: 20,
+  dormRestExitFatigue: 20,
   dormRestCorruption: 5,
   corruptionThreshold: 40,
   squadLimit: 3,
@@ -193,9 +195,9 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'factionLoanStandingCost', label: '借星砂好感代价', hint: '每次借星砂扣该势力多少好感。', min: 0, max: 10, step: 1, unit: '好感', group: '势力代表' },
   { key: 'envoyLoanStandingGain', label: '借调好感', hint: '把少女借给势力，涨多少好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyLoanMaxHours', label: '借调最长小时', hint: '一次最多借几个小时。', min: 1, max: 12, step: 1, unit: '小时', group: '势力代表' },
-  { key: 'dormRestFatigue', label: '休息恢复疲劳', hint: '一次 90 分钟休息恢复多少疲劳。', min: 10, max: 100, step: 5, unit: '疲劳', group: '运营与诊所' },
-  { key: 'dormRestCorruption', label: '休息平复侵蚀', hint: '一次 90 分钟休息平复多少侵蚀。', min: 0, max: 30, step: 1, unit: '点', group: '运营与诊所' },
-  { key: 'dormFatiguePerHour', label: '宿舍恢复', hint: '宿舍每小时恢复的疲劳；影响挂机节奏。', min: 1, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },
+  { key: 'dormFatiguePerHour', label: '休息恢复速度', hint: '休息时每小时恢复多少疲劳。', min: 5, max: 40, step: 1, unit: '疲劳/小时', group: '运营与诊所' },
+  { key: 'dormRestExitFatigue', label: '休息结束阈值', hint: '疲劳降到这个值以下就自动结束休息。', min: 0, max: 60, step: 1, unit: '疲劳', group: '运营与诊所' },
+  { key: 'dormRestCorruption', label: '休息平复侵蚀', hint: '一次休息平复多少侵蚀。', min: 0, max: 30, step: 1, unit: '点', group: '运营与诊所' },
   { key: 'corruptionThreshold', label: '魔女化阈值', hint: '侵蚀达到该值后解锁魔女化礼装。', min: 10, max: 100, step: 5, unit: '侵蚀', group: '运营与诊所' },
   { key: 'squadLimit', label: '派遣上限', hint: '单个委托最多派几人。', min: 1, max: 5, step: 1, unit: '人', group: '运营与诊所' },
   { key: 'territoryLimit', label: '势力辖区上限', hint: '单一势力最多能占几块辖区。', min: 1, max: 9, step: 1, unit: '块', group: '运营与诊所' },

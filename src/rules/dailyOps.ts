@@ -18,22 +18,42 @@ export function careRecovery(girl: Girl, mode: 'resting'): void {
       girl.fatigue = target.toFatigue;
       girl.corruption = target.toCorruption;
     } else {
-      const recovered = restRecoveryOf(girl);
-      girl.fatigue = Math.max(0, girl.fatigue - recovered.fatigue);
-      girl.corruption = Math.max(0, (girl.corruption ?? 0) - recovered.corruption);
+      const plan = restPlanOf(girl);
+      girl.fatigue = plan.fatigueTo;
+      girl.corruption = plan.corruptionTo;
     }
   }
   girl.restProgress = undefined;
   girl.status = 'idle'; girl.remaining = 0;
 }
 
-/** 一次完整休息能恢复多少：基础值 + 疤痕（负向）修正。 */
-export function restRecoveryOf(girl: Pick<Girl, 'scars'>): { fatigue: number; corruption: number } {
+/**
+ * 这次休息要睡多久、睡到哪儿（v90）。
+ *
+ * 规则改成「每小时回 20 点，一直回到疲劳 ≤ 20 才算完」，所以时长不再固定 90 分钟，
+ * 而是按她当前有多累算出来。疤痕里的「恢复变慢」按每小时恢复量打折。
+ */
+export function restPlanOf(girl: Pick<Girl, 'fatigue' | 'corruption' | 'scars'>): {
+  perHour: number;
+  threshold: number;
+  minutes: number;
+  fatigueTo: number;
+  corruptionTo: number;
+  exhausted: boolean;
+} {
   const rules = loadBalance();
   const penalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'fatigueRecovery' ? s.effect.amount : 0), 0);
+  const perHour = Math.max(1, Math.round(rules.dormFatiguePerHour + penalty));
+  const threshold = Math.max(0, Math.round(rules.dormRestExitFatigue));
+  const fatigueTo = Math.min(girl.fatigue, threshold);
+  const need = Math.max(0, girl.fatigue - threshold);
   return {
-    fatigue: Math.max(10, Math.round(rules.dormRestFatigue + penalty)),
-    corruption: Math.max(0, Math.round(rules.dormRestCorruption)),
+    perHour,
+    threshold,
+    minutes: Math.max(1, Math.ceil(need / perHour * 60)),
+    fatigueTo,
+    corruptionTo: Math.max(0, (girl.corruption ?? 0) - Math.max(0, Math.round(rules.dormRestCorruption))),
+    exhausted: need <= 0,
   };
 }
 
@@ -75,18 +95,20 @@ export function care(state: GameState, girlId: string, mode: 'resting'): ActionR
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
   if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}正在${statusLabels[girl.status]}，无法安排照顾。` };
   if (mode === 'resting') {
-    if (girl.fatigue === 0 && (girl.corruption ?? 0) === 0) return { state, ok: false, message: `${girl.name}现在并不疲惫。` };
-    const recovered = restRecoveryOf(girl);
-    girl.status = 'resting'; girl.remaining = 90;
+    const plan = restPlanOf(girl);
+    if (plan.exhausted && (girl.corruption ?? 0) <= plan.corruptionTo) {
+      return { state, ok: false, message: `${girl.name}的疲劳已经低于 ${plan.threshold}，不用再休息了。` };
+    }
+    girl.status = 'resting'; girl.remaining = plan.minutes;
     girl.restProgress = {
       fromFatigue: girl.fatigue,
-      toFatigue: Math.max(0, girl.fatigue - recovered.fatigue),
+      toFatigue: plan.fatigueTo,
       fromCorruption: girl.corruption ?? 0,
-      toCorruption: Math.max(0, (girl.corruption ?? 0) - recovered.corruption),
-      minutes: 90,
+      toCorruption: plan.corruptionTo,
+      minutes: plan.minutes,
     };
-    next.logs.unshift({ id: `log-rest-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}回到晚安宿舍休息（90 分钟）。${girl.corruption ? '宿舍的安静让侵蚀暂时退了一点。' : ''}` });
-    return { state: next, ok: true, message: `${girl.name}开始休息，90 分钟后恢复。` };
+    next.logs.unshift({ id: `log-rest-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}回到晚安宿舍休息（约 ${plan.minutes} 分钟，每小时恢复 ${plan.perHour} 点疲劳，降到 ${plan.threshold} 就醒）。` });
+    return { state: next, ok: true, message: `${girl.name}开始休息，约 ${plan.minutes} 分钟后（疲劳 ≤ ${plan.threshold}）自动结束。` };
   }
   return { state, ok: false, message: '宿舍只负责休息。受伤请去诊所。' };
 }
@@ -223,3 +245,20 @@ export function applyDropWhisper(state: GameState, action: Extract<GameAction, {
       next.logs.unshift({ id: `log-whisper-drop-${action.jobId}`, time: dateLabel(next.day, next.minutes), kind: 'relationship', text: `一条灯下私语没能写出来：${action.reason ? action.reason.slice(0, 80) : '模型没有返回内容'}。` });
       return { state: next, ok: true, message: '' };
 }
+
+export function finalizeRests(state: GameState): number {
+  let done = 0;
+  for (const girl of state.girls) {
+    if (girl.status !== 'resting' || girl.remaining > 0) continue;
+    careRecovery(girl, 'resting');
+    done += 1;
+    state.logs.unshift({
+      id: `log-rest-done-${girl.id}-${state.day}-${state.minutes}`,
+      time: dateLabel(state.day, state.minutes), kind: 'care',
+      text: `${girl.name}睡够了，疲劳回到 ${girl.fatigue}，醒来时天还没亮。`,
+    });
+  }
+  return done;
+}
+
+

@@ -581,7 +581,7 @@ export function BaseView({
 
             {dormTab === 'rest' && (
               <div className="av-module-panel">
-                <p className="av-module-hint">在晚安宿舍休息 90 分钟会按比例恢复疲劳（一次共 60 点）并平复 5 点灵魂侵蚀度（免费），卡片上的数字会一路往下走。</p>
+                <p className="av-module-hint">在晚安宿舍休息每小时恢复 20 点疲劳，疲劳降到 20 以下会自动结束；一次休息平复 5 点灵魂侵蚀度（免费）。休息期间卡片上的数字会一路往下走。</p>
                 <div className="girl-card-grid">
                   {active.map(g => (
                     <article key={g.id} className="girl-card">

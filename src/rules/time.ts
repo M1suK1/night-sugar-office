@@ -15,7 +15,7 @@ import { interceptionFor, settleCombat } from './battle.ts';
 import { maybeSummon } from './summon.ts';
 import { accruePension, addCorruption, drugTick, gainTrait, tickConditions } from './conditions.ts';
 import { book, clone, dateLabel, findGirl, grantExpWithNotice, hashText } from './core.ts';
-import { careRecovery } from './dailyOps.ts';
+import { careRecovery, finalizeRests } from './dailyOps.ts';
 import { applyIncidentEffect, rollPoolIncident } from './incidentOps.ts';
 import { settleInvestigation } from './investigation.ts';
 import { makeFactionStock, refreshMarket } from './market.ts';
@@ -358,6 +358,7 @@ export function advance(state: GameState, minutes: number): ActionResult {
     }
   }
   advanceClock(next, end);
+  finalizeRests(next);
   syncShift(next);
   releaseDueLoans(next);
   for (const girl of next.girls) {
@@ -413,6 +414,7 @@ export function endNight(state: GameState): ActionResult {
   // advanceClock 静默 return，day 原地不动——看起来像「午夜重开」。
   const closedDay = next.minutes >= SHIFT_START ? next.day + 1 : next.day;
   advanceClock(next, absoluteMinutes(closedDay, SHIFT_START));
+  finalizeRests(next);
   next.shift = { day: next.day, wave: 0 };
   syncShift(next);
   ensureMissionPools(next);

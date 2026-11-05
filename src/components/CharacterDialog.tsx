@@ -6,7 +6,8 @@ import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVari
 import { planForSlot } from '../storyplan';
 import { activePersonality } from '../personality';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
-import { drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
+import { clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
+import { restPlanOf } from '../rules/dailyOps';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
 import { skillAccuracy } from '../combat';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
@@ -589,7 +590,35 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>{girl.cost > 0 ? `缔结契约 · ${girl.cost.toLocaleString()} 星砂` : '免费缔结契约'}<ArrowUpRight size={16} /></button> : <>
           <div className="dossier-footer">
           <div className="care-actions">
-            <button id="girl-rest" className="btn" disabled={girl.status !== 'idle' || girl.fatigue === 0} onClick={() => onCare('resting')}><Moon size={15} /><span>安排休息<small>免费 · 90 分钟</small></span></button>
+            {(() => {
+              const rest = restPlanOf(girl);
+              const quote = clinicQuote(girl);
+              const canHeal = girl.status === 'idle' && quote.missing > 0;
+              return (
+                <>
+                  <button
+                    id="girl-rest"
+                    className="btn"
+                    disabled={girl.status !== 'idle' || rest.exhausted}
+                    title={`每小时恢复 ${rest.perHour} 点疲劳，降到 ${rest.threshold} 自动结束`}
+                    onClick={() => onCare('resting')}
+                  >
+                    <Moon size={15} />
+                    <span>安排休息<small>免费 · 约 {rest.minutes} 分钟{rest.exhausted ? '（现在不累）' : ''}</small></span>
+                  </button>
+                  <button
+                    id="girl-heal"
+                    className="btn"
+                    disabled={!canHeal || state.gold < quote.cost}
+                    title={quote.missing > 0 ? `缺 ${quote.missing} 点血量；每小时恢复 ${quote.perHour ?? 0} 点` : '她现在是满血'}
+                    onClick={() => onClinic('treat')}
+                  >
+                    <Heart size={15} />
+                    <span>送去治疗<small>{quote.missing > 0 ? `${quote.cost.toLocaleString()} 星砂 · 约 ${quote.minutes} 分钟` : '血量已满'}</small></span>
+                  </button>
+                </>
+              );
+            })()}
           </div>
           <div className="dossier-primary-actions">
             <button id="girl-talk" className="btn" disabled={girl.status === 'mission'} onClick={onTalk}><MessageCircle size={16} />和她聊聊</button>
