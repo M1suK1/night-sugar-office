@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
+import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
 import { vnInitial, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import type { VnBeat } from '../src/vn/types.ts';
@@ -121,4 +121,38 @@ test('v93 交互剧情适配器：旁白/玩家/台词都折成 say，路上先�
   assert.equal(says[2]!.expression, 'sad');
   assert.equal(says[3]!.name, '所长');
   assert.equal(beats.at(-1)!.kind, 'end');
+});
+
+test('v95 战斗札记适配器：先标题卡、再旁白、再台词；找不到说话人时按旁白', () => {
+  const beats = beatsFromBattleNote([
+    { id: 's1', title: '第一场', narration: '雨打在铁皮上。\n\n她先动了。', lines: [
+      { speakerSide: 'ally', speakerId: 'yue', expression: 'angry', text: '别挡路。' },
+      { speakerSide: 'enemy', speakerId: 'ghost', text: '……' },
+    ] },
+  ], [{ key: 'ally:yue', id: 'yue', name: '月见桃' }]);
+  assert.equal(beats[0]!.kind, 'bg');
+  assert.equal(beats[1]!.kind, 'scene');
+  const says = beats.filter(beat => beat.kind === 'say') as Extract<typeof beats[number], { kind: 'say' }>[];
+  assert.equal(says.length, 4, '两段旁白 + 一句台词 + 一句无名台词');
+  assert.equal(says[2]!.name, '月见桃');
+  assert.equal(says[2]!.expression, 'angry');
+  assert.equal(says[3]!.speakerId, NARRATOR_ID, '找不到的说话人退成旁白');
+});
+
+test('v95 视觉小说开关会同步两条内置词条', async () => {
+  const { syncVnPrompts, VN_PROMPT_ENTRIES, presetPrompts } = await import('../src/presets.ts');
+  const preset = { id: 'p', name: '测试', settings: {}, createdAt: '', updatedAt: '' } as never;
+  const on = syncVnPrompts([preset], true)[0]!;
+  const entries = presetPrompts(on);
+  for (const spec of VN_PROMPT_ENTRIES) {
+    const entry = entries.find(item => item.id === spec.id);
+    assert.ok(entry, `开着时应该有 ${spec.id}`);
+    assert.equal(entry!.enabled, true);
+    assert.equal(entry!.scope, spec.scope);
+  }
+  assert.ok(on.promptOrder?.some(item => item.identifier === 'vn-battle' && item.enabled), '顺序表也要带上');
+  const off = syncVnPrompts([on], false)[0]!;
+  for (const spec of VN_PROMPT_ENTRIES) {
+    assert.equal(presetPrompts(off).find(item => item.id === spec.id)!.enabled, false, '关掉只停用不删');
+  }
 });

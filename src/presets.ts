@@ -1173,3 +1173,61 @@ export function withPresetPrompts(system: string, runtime: PresetRuntime, vars: 
 }
 
 export { now as presetNow, presetId as newPresetId, entryId as newEntryId };
+
+
+/**
+ * 视觉小说模式的提示词条目（v95）。
+ *
+ * 开着视觉小说时，模型只写旁白就没得看了，所以给这两个任务各塞一条内置词条，
+ * 要求「多写对白、少写旁白、每句短、情绪写进动作」。开关切换时同步启停；
+ * 玩家改过的内容不会被覆盖（只切 enabled）。
+ */
+export const VN_PROMPT_ENTRIES: { id: string; scope: PromptScope; name: string; content: string }[] = [
+  {
+    id: 'vn-battle', scope: 'battle', name: '视觉小说演出 · 战斗札记',
+    content: [
+      '■ 演出格式（视觉小说）',
+      '· 旁白只写必要的动作与环境，一到两句就停；不要把台词的内容写成旁白。',
+      '· 每一场至少 4 句对白，最多 8 句；一句一个说话人，单句 ≤ 40 字。',
+      '· 对白要能独立读懂：情绪写进动作与神态，不靠旁白解释。',
+      '· 双方都要说话；同一场里说话人交替，不要一个人念完。',
+      '· 战斗结果、伤害与技能名照旧不写。',
+    ].join('\n'),
+  },
+  {
+    id: 'vn-arc', scope: 'arc', name: '视觉小说演出 · 完整剧情',
+    content: [
+      '■ 演出格式（视觉小说）',
+      '· 旁白只写必要的一两句，用来交代时间、地点与动作；对话内容不要写成旁白。',
+      '· 每段 passage 的 lines 至少 4 句、最多 8 句，每句 ≤ 40 字，一句一个说话人。',
+      '· 对白要能独立读懂：情绪写进 action（动作 / 神态），不要靠旁白解释。',
+      '· 每个人说话有自己的口癖与节奏；同一段里说话人要交替。',
+      '· 结尾用一句留白收束，给玩家留下「继续」的期待。',
+    ].join('\n'),
+  },
+];
+
+/** 按开关同步这两条内置词条：没有就补上，有就只改 enabled（不动玩家改过的文案）。 */
+export function syncVnPrompts(presets: ChatPreset[], on: boolean): ChatPreset[] {
+  return presets.map(preset => {
+    const entries = presetPrompts(preset).map(entry => ({ ...entry }));
+    let changed = false;
+    for (const spec of VN_PROMPT_ENTRIES) {
+      const index = entries.findIndex(entry => entry.id === spec.id);
+      if (index >= 0) {
+        if (entries[index]!.enabled !== on) { entries[index] = { ...entries[index]!, enabled: on }; changed = true; }
+        continue;
+      }
+      entries.push({ id: spec.id, name: spec.name, role: 'system', enabled: on, scope: spec.scope, builtin: true, content: spec.content });
+      changed = true;
+    }
+    if (!changed) return preset;
+    const order = (preset.promptOrder ?? []).map(item => ({ ...item }));
+    for (const spec of VN_PROMPT_ENTRIES) {
+      const at = order.findIndex(item => item.identifier === spec.id);
+      if (at >= 0) { if (order[at]!.enabled !== on) order[at] = { ...order[at]!, enabled: on }; }
+      else order.push({ identifier: spec.id, enabled: on });
+    }
+    return { ...preset, prompts: entries, promptOrder: order, updatedAt: now() };
+  });
+}

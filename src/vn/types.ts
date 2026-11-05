@@ -21,6 +21,8 @@ export type VnBeat =
   | { kind: 'say'; speakerId: string; name: string; text: string; expression?: Expression; action?: string; thought?: boolean }
   | { kind: 'choice'; prompt?: string; options: { id: string; label: string; hint?: string }[] }
   | { kind: 'bg'; backdrop: VnBackdrop; fadeMs?: number }
+  /** 换场标题卡：战斗札记的分场、剧情换幕。 */
+  | { kind: 'scene'; title: string }
   | { kind: 'end' };
 
 /** 舞台上要画谁：说话人 → 立绘（直接交给 `GirlPortrait`）。 */

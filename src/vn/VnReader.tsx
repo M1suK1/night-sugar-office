@@ -134,7 +134,13 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       </div>
 
       <div className="vn-bottom">
-        {beat?.kind === 'choice' ? (
+        {beat?.kind === 'scene' ? (
+          <button className="vn-box vn-scene-card" type="button" onClick={advance}>
+            <span className="vn-name">换场</span>
+            <span className="vn-text">{beat.title}</span>
+            <span className="vn-next ready" aria-hidden="true">▼</span>
+          </button>
+        ) : beat?.kind === 'choice' ? (
           <div className="vn-choices" role="group" aria-label="选择">
             {beat.prompt && <p className="vn-choice-prompt">{beat.prompt}</p>}
             {beat.options.map((option, at) => (

@@ -233,3 +233,6 @@
   .event-stage-wrap { padding: 8px 10px 2px; }
   .event-stage-wrap .vn-stage, .event-modal-stage .vn-stage { min-height: 300px; }
 }
+
+.vn-scene-card .vn-text { font-size: 18px; letter-spacing: .12em; text-align: center; min-height: 0; }
+.vn-scene-card { text-align: center; }

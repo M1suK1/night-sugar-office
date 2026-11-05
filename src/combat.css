@@ -1056,3 +1056,18 @@
 .proposal-retry>span{flex:1;min-width:0;font-size:10px;line-height:1.8;letter-spacing:.02em}
 .proposal-retry .btn.small{padding:4px 10px;font-size:9px;white-space:nowrap}
 .proposal-retry .llm-reset{flex:0 0 auto;font-size:13px;line-height:1;color:#a992a6}
+
+
+/* v95：视觉小说模式下的战斗札记——舞台占满中间一栏 */
+.battle-note-stage-body {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+.battle-note-stage-body .vn-stage {
+  flex: 1;
+  min-height: 420px;
+}
+@media (max-width: 900px) {
+  .battle-note-stage-body .vn-stage { min-height: 320px; }
+}

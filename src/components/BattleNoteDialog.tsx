@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Spar
 import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
 import { battleActors, battleCast, battleOutcomeLabel, totalBattleRounds } from '../battleNote';
 import { GirlPortrait } from './GirlPortrait';
+import { VnReader } from '../vn/VnReader';
+import { beatsFromBattleNote } from '../vn/beats';
 
 const expressionLabel: Record<Expression, string> = {
   calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
@@ -32,7 +34,7 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
   };
 }
 
-export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate, onRegenerate, onClose }: {
+export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate, onRegenerate, onClose, vnStory = false }: {
   battle: BattleState;
   note: BattleNote | null;
   girls: Girl[];
@@ -41,6 +43,8 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
   onGenerate: () => void;
   onRegenerate: () => void;
   onClose: () => void;
+  /** 视觉小说模式（v95 全局开关）：有札记时改用逐句舞台。 */
+  vnStory?: boolean;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const sceneRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -121,6 +125,26 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
     setSceneIndex(previous => previous === current ? previous : current);
   };
 
+  // v95：视觉小说模式——有札记时把阅读区换成逐句舞台，「原文」可临时切回。
+  const [textMode, setTextMode] = useState(false);
+  const stage = Boolean(vnStory) && !textMode && Boolean(note) && !busy;
+  const stageBeats = useMemo(
+    () => (note ? beatsFromBattleNote(
+      note.scenes,
+      battleActors(battle).map(actor => ({ key: `${actor.side}:${actor.girlId ?? actor.uid}`, id: actor.girlId ?? actor.uid, name: actor.name })),
+      { scene: { id: 'night' } },
+    ) : []),
+    [note, battle],
+  );
+  const stageCast = useMemo(
+    () => battleActors(battle).flatMap(actor => {
+      const girl = girlsById.get(actor.girlId ?? '');
+      if (!girl) return [];
+      return [{ id: actor.girlId ?? actor.uid, name: actor.name, girl }];
+    }),
+    [battle, girlsById],
+  );
+
   const speakerFor = (line: BattleNoteLine) => actorByKey.get(`${line.speakerSide}:${line.speakerId}`);
   const lineOnRight = (line: BattleNoteLine) => rightKeys.has(`${line.speakerSide}:${line.speakerId}`);
   const activeExpression = (actor: ReturnType<typeof battleActors>[number]): Expression => {
@@ -188,6 +212,18 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
           {renderSide(leftCast, 'left')}
           <main className="battle-note-center">
             {error && note && <div className="battle-note-warning" role="status">{error}</div>}
+            {stage ? (
+              <div className="battle-note-stage-body">
+                <VnReader
+                  beats={stageBeats}
+                  resetKey={note?.battleId}
+                  title={note?.title}
+                  cast={stageCast}
+                  onText={() => setTextMode(true)}
+                  onClose={onClose}
+                />
+              </div>
+            ) : (
             <div ref={bodyRef} className="battle-note-body" onScroll={handleScroll}>
               {busy ? (
                 <div className="battle-note-loading" role="status">
@@ -256,6 +292,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
                 </div>
               )}
             </div>
+            )}
 
             <footer className="battle-note-controls">
               {note?.format === 'continuous' ? <div className="battle-note-scene-nav"><span>一次写完 · {note.charCount} 字</span></div> : <div className="battle-note-scene-nav">

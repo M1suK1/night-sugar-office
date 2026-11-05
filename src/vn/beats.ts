@@ -126,3 +126,59 @@ export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName
   beats.push({ kind: 'end' });
   return beats;
 }
+
+/** 战斗札记里的一位说话人（由外层按 actor 表折好）。 */
+export interface NoteSpeaker {
+  key: string;
+  id: string;
+  name: string;
+}
+
+export interface NoteLineLike {
+  speakerSide: 'ally' | 'enemy';
+  speakerId: string;
+  expression?: Expression;
+  text: string;
+  mode?: 'speech' | 'thought';
+}
+
+export interface NoteSceneLike {
+  id: string;
+  title: string;
+  narration: string;
+  lines: NoteLineLike[];
+}
+
+/**
+ * 战斗札记折成舞台节拍（v95）。
+ *
+ * 每一场先给一张标题卡，再把旁白按行拆成旁白 say，最后按顺序放台词。
+ * 说话人解析失败（旧札记里没有这个人）时按旁白处理，不会出现空立绘。
+ */
+export function beatsFromBattleNote(scenes: readonly NoteSceneLike[], speakers: readonly NoteSpeaker[], options: { scene?: VnBackdrop } = {}): VnBeat[] {
+  const byKey = new Map(speakers.map(speaker => [speaker.key, speaker]));
+  const beats: VnBeat[] = [{ kind: 'bg', backdrop: options.scene ?? { id: 'night' } }];
+  for (const scene of scenes) {
+    if (scene.title?.trim()) beats.push({ kind: 'scene', title: scene.title.trim() });
+    for (const paragraph of (scene.narration ?? '').split(/\n+/)) {
+      const text = tidy(paragraph).replace(/\n/g, ' ');
+      if (!text) continue;
+      beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text, thought: true });
+    }
+    for (const line of scene.lines ?? []) {
+      const text = tidy(line.text ?? '');
+      if (!text) continue;
+      const speaker = byKey.get(`${line.speakerSide}:${line.speakerId}`);
+      if (!speaker) {
+        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text, thought: true });
+        continue;
+      }
+      beats.push({
+        kind: 'say', speakerId: speaker.id, name: speaker.name, text,
+        expression: line.expression, thought: line.mode === 'thought',
+      });
+    }
+  }
+  beats.push({ kind: 'end' });
+  return beats;
+}

@@ -51,7 +51,7 @@ import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresets, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
+import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresets, syncVnPrompts, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -233,6 +233,8 @@ export default function App() {
   const newsEnabled = loadBalance().cityNewsEnabled === 1;
 
   useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } }, [presets]);
+  // 视觉小说开关：同步两条内置词条（战斗札记 / 完整剧情），让模型多写对白少写旁白。
+  useEffect(() => { setPresets(current => syncVnPrompts(current, vnStory === 'on')); }, [vnStory]);
   useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } }, [binding]);
 
   const taskPresetsReady = useRef(false);
@@ -1642,7 +1644,7 @@ export default function App() {
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
-      {modal?.type === 'battle-note' && selectedBattle && <BattleNoteDialog battle={selectedBattle} note={selectedNote ?? null} girls={state.girls} busy={noteBusy} error={noteError} onGenerate={() => void writeBattleNote(selectedBattle)} onRegenerate={() => void writeBattleNote(selectedBattle)} onClose={() => { setModal({ type: 'battle', id: selectedBattle.id }); setNoteError(undefined); }} />}
+      {modal?.type === 'battle-note' && selectedBattle && <BattleNoteDialog vnStory={vnStory === 'on'} battle={selectedBattle} note={selectedNote ?? null} girls={state.girls} busy={noteBusy} error={noteError} onGenerate={() => void writeBattleNote(selectedBattle)} onRegenerate={() => void writeBattleNote(selectedBattle)} onClose={() => { setModal({ type: 'battle', id: selectedBattle.id }); setNoteError(undefined); }} />}
       {modal?.type === 'story-graph' && selectedGirl && (
         <StoryGraphDialog
           girl={selectedGirl}
