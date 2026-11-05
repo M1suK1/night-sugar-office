@@ -3,6 +3,7 @@ import { slimStateForSave } from './saveSlim.ts';
 import { describeStateSize } from './saveSize.ts';
 import { loadState } from './game.ts';
 import { kvDelete, kvGet, kvSet } from './store.ts';
+import { extractStatePortraits, hydrateStatePortraits, type PortraitStore } from './portraitAssets.ts';
 
 /**
  * 手动存档位。自动存档是 `save/current`（当前进度），这里只放玩家自己按下的三个槽。
@@ -84,28 +85,36 @@ export async function slotSummaries(): Promise<(SaveSlotSummary | null)[]> {
   return Promise.all(SAVE_SLOT_IDS.map(id => slotSummary(id)));
 }
 
-/** 写入槽位：先量体积再落盘，失败时把原因说明白。 */
-export async function writeSlot(id: SaveSlotId, state: GameState): Promise<{ ok: boolean; message: string; summary?: SaveSlotSummary }> {
-  let payload: SlotPayload = { schema: 1, savedAt: Date.now(), state };
+/**
+ * 写入槽位：先量体积再落盘，失败时把原因说明白。
+ *
+ * v120：落盘前先把立绘搬进资产库（与自动存档同一条管线）。
+ * 以前槽位直接存内联 data URL，一个人几套表情差分就上兆，三个槽位加起来能到几十上百 MB；
+ * 现在槽位里只留 `portraitAsset` 引用，读档时再取回来。
+ */
+export async function writeSlot(id: SaveSlotId, state: GameState, store?: PortraitStore): Promise<{ ok: boolean; message: string; summary?: SaveSlotSummary }> {
+  const extracted = await extractStatePortraits(state, store).catch(() => ({ state, extracted: 0 }));
+  const flatState = extracted.state;
+  let slimNote = extracted.extracted > 0 ? `立绘已转成资产引用（${extracted.extracted} 张）。` : '';
+  let payload: SlotPayload = { schema: 1, savedAt: Date.now(), state: flatState };
   let bytes = 0;
   try {
     bytes = JSON.stringify(payload).length;
   } catch {
     return { ok: false, message: '这一局的状态没法序列化，存档位没有写入。' };
   }
-  // 接近上限时先瘦身一次（表情差分的 data URL 是主要负担），省下的字节写进提示里。
-  let slimNote = '';
+  // 仍然偏大时再瘦身一次（表情差分的 data URL 是主要负担），省下的字节写进提示里。
   if (bytes > SLOT_BYTES_LIMIT * 0.8) {
-    const slim = await slimStateForSave(state);
+    const slim = await slimStateForSave(flatState);
     if (slim.saved > 0) {
       payload = { schema: 1, savedAt: Date.now(), state: slim.state };
       bytes = JSON.stringify(payload).length;
-      slimNote = `保存前把表情差分压小，省下 ${Math.round(slim.saved / 1000)}KB。`;
+      slimNote += `保存前把表情差分压小，省下 ${Math.round(slim.saved / 1000)}KB。`;
     }
   }
   if (bytes > SLOT_BYTES_LIMIT) {
     // 说清楚是什么撑爆的：多半是表情差分（内联 data URL），不是剧情文字。
-    const detail = describeStateSize(state);
+    const detail = describeStateSize(flatState);
     return { ok: false, message: `这一局有 ${Math.round(bytes / 1000)}KB，超过单个存档位的上限 ${Math.round(SLOT_BYTES_LIMIT / 1000)}KB。最大的几块：${detail}。可以先导出存档，再删掉几套表情差分或衣柜，或者先清掉旧战报与旧日志。` };
   }
   try {
@@ -116,9 +125,12 @@ export async function writeSlot(id: SaveSlotId, state: GameState): Promise<{ ok:
   return { ok: true, message: `已存入存档位 ${id}。${slimNote}`, summary: (await slotSummary(id)) ?? undefined };
 }
 
-export async function readSlot(id: SaveSlotId): Promise<GameState | null> {
+export async function readSlot(id: SaveSlotId, store?: PortraitStore): Promise<GameState | null> {
   try {
-    return decode(await kvGet<unknown>(slotKey(id)))?.state ?? null;
+    const decoded = decode(await kvGet<unknown>(slotKey(id)));
+    if (!decoded) return null;
+    // 槽位里只留了资产引用，这里把图取回来；资产丢了也只是少一张立绘，不影响进度。
+    return await hydrateStatePortraits(decoded.state, store).catch(() => decoded.state);
   } catch {
     return null;
   }
