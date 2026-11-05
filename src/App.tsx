@@ -566,6 +566,27 @@ export default function App() {
     }
   };
 
+  /**
+   * 手动改一句（v104）：只改文本，不重新请求模型。
+   * 玩家那一轮的台词跟正文是同一句，一起改掉。
+   */
+  const editStoryTurn = (eventId: string, turnId: string, text: string) => {
+    setState(prev => {
+      const applied = act(prev, { type: 'editStoryTurn', eventId, turnId, text });
+      if (!applied.ok) { notify(applied.message, false); return prev; }
+      return applied.state;
+    });
+  };
+
+  /** 删掉自己说的那一轮：模型写的那一段会保留，读起来像两个人之间的空白被剪掉。 */
+  const deleteStoryTurn = (eventId: string, turnId: string) => {
+    setState(prev => {
+      const applied = act(prev, { type: 'deleteStoryTurn', eventId, turnId });
+      if (!applied.ok) { notify(applied.message, false); return prev; }
+      return applied.state;
+    });
+  };
+
   /** 重写单独一段旁白：同样的局面，换一种写法。 */
   const rewriteStoryTurn = async (eventId: string, turnId: string): Promise<boolean> => {
     const event = state.events.find(item => item.id === eventId);
@@ -1757,7 +1778,7 @@ export default function App() {
       if (!target) return null;
       const subject = state.girls.find(item => item.id === target.girlId);
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog vnStory={vnStory === 'on'} event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
-      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
+      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}
     {modal?.type === 'end-night' && <Dialog label="打烊与交接" onClose={() => setModal(null)}>

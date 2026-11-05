@@ -249,6 +249,20 @@ test('v100 落点：模型老老实实写全了 after 就照它插', () => {
   assert.deepEqual(placeLines([0, 1, 2, 3], 4, 5), [0, 1, 3, 4]);
 });
 
+test('v104 跳至结尾：直接落到最后一拍', () => {
+  const beats: VnBeat[] = [
+    { kind: 'bg', backdrop: { id: 'night' } },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '一。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '二。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '三。', segment: 1 },
+    { kind: 'end' },
+  ];
+  const state = vnReducer(vnInitial(beats), { type: 'finish' });
+  assert.equal(state.index, beats.length - 1);
+  assert.equal(state.done, true);
+  assert.equal(state.typing, false);
+});
+
 test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {
   const lounge = resolveBackdrop('room:lounge');
   assert.match(lounge.gradient, /gradient/);

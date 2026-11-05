@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ArrowRight, ChevronRight, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
@@ -25,6 +25,10 @@ export interface EventDialogProps {
   onChoose: (eventId: string, choiceId: string) => void;
   onTurn: (eventId: string, action: string) => Promise<boolean>;
   onRewrite: (eventId: string, turnId: string) => Promise<boolean>;
+  /** 手动改写某一轮的文本（v104）。 */
+  onEditTurn: (eventId: string, turnId: string, text: string) => void;
+  /** 删掉自己说的那一轮。 */
+  onDeleteTurn: (eventId: string, turnId: string) => void;
   onEnd: (eventId: string) => void;
   /** 蓝图正卡在选项上时，这一段能走的分支（文案只来自蓝图，不由模型编）。 */
   branch?: { storylineId: string; options: { id: string; label: string }[] };
@@ -36,14 +40,14 @@ export interface EventDialogProps {
   vnStory?: boolean;
 }
 
-export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
+export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
   // 舞台里点「原文」只切当前弹窗，不改全局开关。
   const [textMode, setTextMode] = useState(false);
   const stage = Boolean(vnStory) && !textMode && !readOnly;
   // 切回演出只在「已经切到原文」时才有意义（舞台里再放一个「演出」按钮是多余的）。
   const shared = { stage, onText: () => setTextMode(true), onStage: vnStory && textMode && !readOnly ? () => setTextMode(false) : undefined } as const;
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
+    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} {...shared} />;
 }
@@ -120,10 +124,12 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
+function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? NO_TURNS;
   const [draft, setDraft] = useState('');
+  // v104：正在手改的那一轮（id + 草稿），一次只改一条。
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [preview, setPreview] = useState<{ id: string; expression: Expression } | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [sending, setSending] = useState(false);
@@ -405,11 +411,48 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
                 {turns.map((turn, turnIndex) => turn.role === 'player' ? (
                   <div key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="battle-note-line right player-turn">
                     <span className="battle-note-speaker">所长</span>
-                    <span className="battle-note-bubble">{turn.text}</span>
+                    {editing?.id === turn.id ? (
+                      <div className="story-turn-editor">
+                        <textarea
+                          id={`story-edit-input-${turn.id}`}
+                          rows={3}
+                          maxLength={3000}
+                          value={editing.text}
+                          onChange={input => setEditing({ id: turn.id, text: input.target.value })}
+                        />
+                        <div className="story-turn-tools">
+                          <button id={`story-edit-save-${turn.id}`} type="button" className="story-rewrite" onClick={() => { onEditTurn(event.id, turn.id, editing.text); setEditing(null); }}><Check size={12} />保存</button>
+                          <button id={`story-edit-cancel-${turn.id}`} type="button" className="story-rewrite" onClick={() => setEditing(null)}>取消</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="battle-note-bubble">{turn.text}</span>
+                        <div className="story-turn-tools">
+                          <button id={`story-edit-${turn.id}`} type="button" className="story-rewrite" onClick={() => setEditing({ id: turn.id, text: turn.text })}><Pencil size={12} />改这句</button>
+                          <button id={`story-delete-${turn.id}`} type="button" className="story-rewrite danger" onClick={() => onDeleteTurn(event.id, turn.id)}><Trash2 size={12} />删掉这一句</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <section key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="story-narrator-turn">
-                    {(() => {
+                    {editing?.id === turn.id ? (
+                      <div className="story-turn-editor">
+                        <textarea
+                          id={`story-edit-input-${turn.id}`}
+                          rows={8}
+                          maxLength={6000}
+                          value={editing.text}
+                          onChange={input => setEditing({ id: turn.id, text: input.target.value })}
+                        />
+                        <p className="story-turn-hint">这一段是旁白正文；台词由模型单独写，想大改可以点「重写这一段」。</p>
+                        <div className="story-turn-tools">
+                          <button id={`story-edit-save-${turn.id}`} type="button" className="story-rewrite" onClick={() => { onEditTurn(event.id, turn.id, editing.text); setEditing(null); }}><Check size={12} />保存</button>
+                          <button id={`story-edit-cancel-${turn.id}`} type="button" className="story-rewrite" onClick={() => setEditing(null)}>取消</button>
+                        </div>
+                      </div>
+                    ) : (() => {
                       // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
                       const paragraphs = turn.text.split(/\n+/).filter(Boolean);
                       const turnLines = turn.lines ?? [];
@@ -430,7 +473,10 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
                         ? <p key={`p-${segment.index}`} className="battle-note-narration">{paragraphs[segment.index]}</p>
                         : renderLine(turnLines[segment.index]!, segment.index));
                     })()}
-                    {turnIndex > 0 && <button type="button" className="story-rewrite" id={`story-rewrite-${turn.id}`} disabled={loading} onClick={() => void onRewrite(event.id, turn.id)}><RefreshCw size={12} />重写这一段</button>}
+                    {editing?.id !== turn.id && <div className="story-turn-tools">
+                      <button type="button" className="story-rewrite" id={`story-edit-${turn.id}`} onClick={() => setEditing({ id: turn.id, text: turn.text })}><Pencil size={12} />改旁白</button>
+                      {turnIndex > 0 && <button type="button" className="story-rewrite" id={`story-rewrite-${turn.id}`} disabled={loading} onClick={() => void onRewrite(event.id, turn.id)}><RefreshCw size={12} />重写这一段</button>}
+                    </div>}
                   </section>
                 ))}
                 {loading && turns.length > 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={18} className="spin" /><b>她在等你说完</b></div>}

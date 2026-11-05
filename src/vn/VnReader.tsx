@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, FastForward, SkipForward, Square, UserRound } from 'lucide-react';
+import { ArrowRight, ChevronsRight, FastForward, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
 import { speakersBySegment, stageAfter } from './stage';
@@ -233,6 +233,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
         <button id="vn-auto" type="button" className={`vn-chip ${auto ? 'on' : ''}`} aria-pressed={auto} onClick={() => setAuto(value => !value)}>{auto ? <Square size={11} /> : <ArrowRight size={11} />}自动</button>
         <button id="vn-fast" type="button" className={`vn-chip ${fast ? 'on' : ''}`} aria-pressed={fast} onClick={() => setFast(value => !value)}><FastForward size={11} />快进</button>
         <button id="vn-skip" type="button" className="vn-chip" title="跳到下一段剧情的第一句" onClick={() => setState(current => vnReducer(current, { type: 'nextSegment' }))}><SkipForward size={11} />下一段</button>
+        <button id="vn-finish" type="button" className="vn-chip" title="直接跳到这一段演出的结尾" onClick={() => setState(current => vnReducer(current, { type: 'finish' }))}><ChevronsRight size={11} />跳至结尾</button>
         {onText && <button id="vn-text" type="button" className="vn-chip" onClick={onText}>原文</button>}
         {onClose && <button id="vn-close" type="button" className="vn-chip" onClick={onClose}>关闭</button>}
       </div>

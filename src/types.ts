@@ -647,6 +647,8 @@ export interface StoryTurn {
   options?: string[];
   /** 这一轮被重写过几次。 */
   rewrites?: number;
+  /** 这一轮被玩家手动改过几次（v104）。 */
+  edited?: number;
   at?: number;
 }
 export interface CharacterEvent {
@@ -1215,6 +1217,10 @@ export type GameAction =
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
+  /** 手动改一句：玩家自己修台词/旁白文本（不动 id 与轮次）。 */
+  | { type: 'editStoryTurn'; eventId: string; turnId: string; text: string }
+  /** 删掉自己说的那一轮（只能删 player 轮）。 */
+  | { type: 'deleteStoryTurn'; eventId: string; turnId: string }
   | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] } }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }

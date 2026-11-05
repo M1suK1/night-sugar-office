@@ -3,7 +3,7 @@ import { applyDebugContractCard, applyDebugGirl, applyDebugRemoveGirl } from './
 import {
   applyAddCharacterEvent, applyAddStoryline, applyAdvanceEvent, applyAdvanceStoryline,
   applyAppendStoryTurn, applyBeginStoryEvent, applyChooseStoryPassage, applyChooseStoryPort,
-  applyDecideStoryChoice, applyChooseStoryOption, applyFinishStorySession, applyReplaceStoryTurn, applyResolveEvent,
+  applyDecideStoryChoice, applyChooseStoryOption, applyDeleteStoryTurn, applyEditStoryTurn, applyFinishStorySession, applyReplaceStoryTurn, applyResolveEvent,
   applySetStoryPlan, applyStartCharacterEvent, applyStartStorySession, applyStartStoryline,
 } from './storyOps.ts';
 import {
@@ -122,6 +122,8 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'startStorySession': return applyStartStorySession(state, action);
     case 'appendStoryTurn': return applyAppendStoryTurn(state, action);
     case 'replaceStoryTurn': return applyReplaceStoryTurn(state, action);
+    case 'editStoryTurn': return applyEditStoryTurn(state, action);
+    case 'deleteStoryTurn': return applyDeleteStoryTurn(state, action);
     case 'finishStorySession': return applyFinishStorySession(state, action);
     case 'chooseStoryOption': return applyChooseStoryOption(state, action);
     case 'chooseStoryPort': return applyChooseStoryPort(state, action);

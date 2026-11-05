@@ -904,6 +904,14 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .story-player-turn p { margin: 0; font-size: 11px; line-height: 1.8; color: #d9d5e0; }
 .story-rewrite { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 4px 8px; border: 1px solid #ffffff14; border-radius: 4px; background: none; color: #9487a0; font-size: 8.5px; }
 .story-rewrite:hover:not(:disabled) { color: #e6c9dc; border-color: #f3aec955; }
+.story-rewrite.danger { color: #c58b98; }
+.story-rewrite.danger:hover:not(:disabled) { color: #e8a3b1; border-color: #e8a3b155; }
+/* v104：手改剧情文本 */
+.story-turn-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.story-turn-editor { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 4px; }
+.story-turn-editor textarea { width: 100%; padding: 9px 11px; border: 1px solid #f3aec93d; border-radius: 6px; background: #0c0a10; color: var(--text); font: 400 12px/1.85 var(--font-display); resize: vertical; }
+.story-turn-editor textarea:focus { outline: none; border-color: #f3aec999; box-shadow: 0 0 10px #f3aec926; }
+.story-turn-hint { margin: 0; font-size: 8.5px; line-height: 1.6; color: #6f6579; }
 .session-loading { display: flex; align-items: center; gap: 8px; padding: 10px 2px; font-size: 10px; color: #9b8ba6; }
 .session-options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .session-options > button { padding: 6px 10px; border: 1px solid #f3aec933; border-radius: 999px; background: #f3aec908; color: #d9b8cd; font-size: 9.5px; }

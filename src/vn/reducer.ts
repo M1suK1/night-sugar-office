@@ -26,7 +26,8 @@ export type VnAction =
   | { type: 'advance' }
   | { type: 'typed' }
   | { type: 'choose'; id: string }
-  | { type: 'nextSegment' };
+  | { type: 'nextSegment' }
+  | { type: 'finish' };
 
 export const vnInitial = (beats: VnBeat[]): VnState => ({
   beats,
@@ -77,14 +78,13 @@ export function vnReducer(state: VnState, action: VnAction): VnState {
         if (beat?.kind !== 'say' || beat.segment === undefined) continue;
         if (here === undefined || beat.segment !== here) { target = at; break; }
       }
-      if (target < 0) {
-        // 已经是最后一段：直接收到结尾。
-        const last = Math.max(0, state.beats.length - 1);
-        return { ...state, index: last, typing: false, chosenId: undefined, done: state.beats[last]?.kind === 'end' };
-      }
+      if (target < 0) return toEnd(state);
       const next = state.beats[target]!;
       return { ...state, index: target, typing: next.kind === 'say' && Boolean(next.text), chosenId: undefined, done: false };
     }
+    case 'finish':
+      // 「跳至结尾」：直接落到这一段的最后一拍，结束就是结束，不再逐句点。
+      return toEnd(state);
     default:
       return state;
   }
@@ -92,6 +92,12 @@ export function vnReducer(state: VnState, action: VnAction): VnState {
 
 /** 当前这一拍是不是「等玩家选」。 */
 export const vnAwaitingChoice = (state: VnState): boolean => state.beats[state.index]?.kind === 'choice';
+
+/** 直接收到最后一拍（不逐句推进）。 */
+function toEnd(state: VnState): VnState {
+  const last = Math.max(0, state.beats.length - 1);
+  return { ...state, index: last, typing: false, chosenId: undefined, done: state.beats[last]?.kind === 'end' };
+}
 
 /**
  * 节拍表被重建（交互剧情每回一轮都会整张重算）后，把状态接回正确的一拍。

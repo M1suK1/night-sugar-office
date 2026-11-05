@@ -52,6 +52,43 @@ test('v34 追加回合记录玩家与旁白，超过 12 轮就要求先结束', 
   assert.match(blocked.message ?? '', /12 轮/);
 });
 
+test('v104 手动改文本：只动文本、不动轮次；玩家那一轮的台词一起改', () => {
+  const turns: StoryTurn[] = [
+    narratorTurn('t0', '开场'),
+    { id: 't1', role: 'player', text: '我在。', lines: [{ speakerId: 'player', speakerName: '所长', expression: 'calm', text: '我在。' }] },
+    narratorTurn('t2', '她抬眼。'),
+  ];
+  const { state, id } = session(createInitialState(), { turns });
+
+  const editedPlayer = act(state, { type: 'editStoryTurn', eventId: id, turnId: 't1', text: '我把伞靠在门边。' });
+  assert.equal(editedPlayer.ok, true);
+  const player = eventOf(editedPlayer.state, id).turns?.find(item => item.id === 't1');
+  assert.equal(player?.text, '我把伞靠在门边。');
+  assert.equal(player?.lines?.[0]?.text, '我把伞靠在门边。', '台词与正文是同一句，一起改掉');
+  assert.equal(player?.edited, 1);
+  assert.equal(eventOf(editedPlayer.state, id).turns?.length, 3, '改文本不会新增回合');
+
+  const editedNarration = act(editedPlayer.state, { type: 'editStoryTurn', eventId: id, turnId: 't2', text: '她抬眼，先看伞柄。' });
+  assert.equal(editedNarration.ok, true);
+  assert.equal(eventOf(editedNarration.state, id).turns?.find(item => item.id === 't2')?.text, '她抬眼，先看伞柄。');
+
+  const empty = act(state, { type: 'editStoryTurn', eventId: id, turnId: 't1', text: '   ' });
+  assert.equal(empty.ok, false, '空文本要被挡住，删就用删的');
+  assert.match(empty.message ?? '', /空/);
+});
+
+test('v104 删掉自己说的话：只能删 player 轮，旁白不能删', () => {
+  const turns: StoryTurn[] = [narratorTurn('t0', '开场'), playerTurn('t1', '我在。'), narratorTurn('t2', '她抬眼。')];
+  const { state, id } = session(createInitialState(), { turns });
+  const deleted = act(state, { type: 'deleteStoryTurn', eventId: id, turnId: 't1' });
+  assert.equal(deleted.ok, true);
+  assert.deepEqual(eventOf(deleted.state, id).turns?.map(turn => turn.id), ['t0', 't2']);
+
+  const rejected = act(state, { type: 'deleteStoryTurn', eventId: id, turnId: 't2' });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message ?? '', /自己/);
+});
+
 test('v34 单段重写只换旁白，并累加重写次数', () => {
   const turns: StoryTurn[] = [narratorTurn('t0', '开场'), playerTurn('t1', '我在。'), narratorTurn('t2', '她抬眼。')];
   const { state, id } = session(createInitialState(), { turns });
