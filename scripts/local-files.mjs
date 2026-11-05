@@ -22,9 +22,36 @@ export const SAVES_DIR = join(DATA_DIR, 'saves');
 export const CARDS_DIR = join(DATA_DIR, 'cards');
 /** 叙事引擎的请求/响应日志：按天一个 jsonl，方便直接 grep。 */
 export const LOGS_DIR = join(DATA_DIR, 'llm-logs');
+/**
+ * 存档本体（v116）：浏览器 IndexedDB 里的 kv 表整份镜像到这个文件。
+ * 有本地服务时前端的读写都走这里，网页刷新、清缓存、换浏览器都不会丢档。
+ */
+export const KV_DIR = join(DATA_DIR, 'kv');
+export const KV_FILE = join(KV_DIR, 'store.json');
 
 const MAX_BYTES = 24 * 1024 * 1024;
 const KINDS = new Map([['save', SAVES_DIR], ['card', CARDS_DIR]]);
+
+/* ---------------------------- 存档镜像 ---------------------------- */
+let kvCache = null;
+async function readKv() {
+  if (kvCache) return kvCache;
+  try {
+    const parsed = JSON.parse(await fs.readFile(KV_FILE, 'utf8'));
+    kvCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    kvCache = {};
+  }
+  return kvCache;
+}
+async function writeKv(data) {
+  kvCache = data;
+  await ensure(KV_DIR);
+  // 先写临时文件再改名：写到一半崩了也不会留下半份存档。
+  const tmp = `${KV_FILE}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(data), 'utf8');
+  await fs.rename(tmp, KV_FILE);
+}
 
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -102,7 +129,34 @@ export async function handleLocalApi(req, res) {
       await ensure(SAVES_DIR);
       await ensure(CARDS_DIR);
       await ensure(LOGS_DIR);
-      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR, logs: LOGS_DIR });
+      await ensure(KV_DIR);
+      json(res, 200, { ok: true, root: ROOT, saves: SAVES_DIR, cards: CARDS_DIR, logs: LOGS_DIR, kv: KV_FILE });
+      return;
+    }
+    if (route === '/kv') {
+      if (req.method === 'GET') {
+        const data = await readKv();
+        json(res, 200, { ok: true, data, file: KV_FILE });
+        return;
+      }
+      if (req.method === 'POST' || req.method === 'PUT') {
+        let body;
+        try {
+          body = JSON.parse(await readBody(req));
+        } catch (error) {
+          json(res, 400, { ok: false, message: error instanceof Error ? error.message : '请求体不是 JSON。' });
+          return;
+        }
+        const key = typeof body?.key === 'string' ? body.key : '';
+        if (!key) { json(res, 400, { ok: false, message: '缺少 key。' }); return; }
+        const data = { ...(await readKv()) };
+        if (body?.remove === true) delete data[key];
+        else data[key] = body?.value;
+        await writeKv(data);
+        json(res, 200, { ok: true, file: KV_FILE, keys: Object.keys(data).length });
+        return;
+      }
+      json(res, 405, { ok: false, message: '只支持 GET / POST。' });
       return;
     }
     if (route === '/cards' && req.method === 'GET') {

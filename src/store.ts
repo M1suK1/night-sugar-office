@@ -143,9 +143,108 @@ function backend(): Backend {
   return storeAvailable() ? idbBackend : memoryBackend;
 }
 
+/* --------------------------- 本地文件后端 --------------------------- */
+/*
+ * v116：有本地服务（npm run dev / serve.mjs）时，kv 表整份存在 <项目>/data/kv/store.json。
+ * 这样刷新页面、清浏览器缓存、换浏览器都不会丢档；纯静态部署（CF 试玩页）没有 /api/kv，
+ * 会自动退回 IndexedDB，行为不变。
+ */
+const SERVER_KV = '/api/kv';
+
+interface ServerKv {
+  kind: 'server';
+  get(key: string): unknown;
+  keys(): string[];
+  set(key: string, value: unknown): Promise<void>;
+  remove(key: string): Promise<void>;
+}
+
+let serverKvPromise: Promise<ServerKv | null> | undefined;
+
+async function openServerKv(): Promise<ServerKv | null> {
+  // 只在浏览器里探测：node 测试与纯静态部署都没有 /api/kv，别让每次 kvGet 都打一次网络。
+  if (typeof window === 'undefined' || typeof location === 'undefined') return null;
+  if (location.protocol === 'file:') return null;
+  if (typeof fetch !== 'function') return null;
+  try {
+    const response = await fetch(SERVER_KV, { method: 'GET', cache: 'no-store' });
+    if (!response.ok) return null;
+    const body = await response.json() as { ok?: boolean; data?: Record<string, unknown> };
+    if (!body?.ok) return null;
+    const rows: Record<string, unknown> = body.data && typeof body.data === 'object' ? { ...body.data } : {};
+    return {
+      kind: 'server',
+      get: key => rows[key],
+      keys: () => Object.keys(rows),
+      async set(key, value) {
+        const response = await fetch(SERVER_KV, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key, value }),
+        });
+        if (!response.ok) throw new Error('本地存档写入失败');
+        rows[key] = value;
+      },
+      async remove(key) {
+        const response = await fetch(SERVER_KV, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key, remove: true }),
+        });
+        if (!response.ok) throw new Error('本地存档删除失败');
+        delete rows[key];
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 首次接上本地文件时，把浏览器里的旧存档搬过去（只在文件还空着的时候做一次）。 */
+async function migrateKvToServer(server: ServerKv): Promise<void> {
+  if (!storeAvailable()) return;
+  const existing = await kvKeysFrom(idbBackend);
+  if (!existing.length) return;
+  let moved = 0;
+  for (const key of existing) {
+    if (server.get(key) !== undefined) continue;
+    const row = await idbBackend.get(KV_STORE, key);
+    if (!row) continue;
+    await server.set(key, row.value);
+    moved += 1;
+  }
+  if (moved) console.info(`[存档] 已把浏览器里的 ${moved} 项旧数据迁移到本地文件。`);
+}
+
+async function kvKeysFrom(source: Backend): Promise<string[]> {
+  try {
+    return await source.keys(KV_STORE);
+  } catch {
+    return [];
+  }
+}
+
+function serverKv(): Promise<ServerKv | null> {
+  if (!serverKvPromise) {
+    serverKvPromise = (async () => {
+      const server = await openServerKv();
+      if (server) await migrateKvToServer(server).catch(() => undefined);
+      return server;
+    })();
+  }
+  return serverKvPromise;
+}
+
+/** 测试用：丢掉「有没有本地服务」的探测结果。 */
+export function __resetServerKvForTests(): void {
+  serverKvPromise = undefined;
+}
+
 /* -------------------------------- kv -------------------------------- */
 
 export async function kvGet<T>(key: string): Promise<T | undefined> {
+  const server = await serverKv();
+  if (server) return server.get(key) as T | undefined;
   const row = await backend().get(KV_STORE, key);
   return row ? (row.value as T) : undefined;
 }
@@ -161,19 +260,25 @@ export function __setKvWriteFaultForTests(fault: boolean): void {
 export function __resetKvForTests(): void {
   memory.clear();
   kvWriteFault = false;
+  serverKvPromise = undefined;
 }
 
 export async function kvSet(key: string, value: unknown): Promise<void> {
   if (kvWriteFault) throw new Error('QuotaExceededError');
+  const server = await serverKv();
+  if (server) { await server.set(key, value); return; }
   await backend().put(KV_STORE, key, { key, value });
 }
 
 export async function kvDelete(key: string): Promise<boolean> {
+  const server = await serverKv();
+  if (server) { await server.remove(key); return true; }
   return backend().delete(KV_STORE, key);
 }
 
 export async function kvKeys(prefix = ''): Promise<string[]> {
-  const keys = await backend().keys(KV_STORE);
+  const server = await serverKv();
+  const keys = server ? server.keys() : await backend().keys(KV_STORE);
   return prefix ? keys.filter(key => key.startsWith(prefix)) : keys;
 }
 
