@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
-import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
+import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import { speakersBySegment, stageAfter } from '../src/vn/stage.ts';
 import { placeLines } from '../src/storyLines.ts';
@@ -92,16 +92,31 @@ test('v93 状态机：同一个选项只会被算一次', () => {
   assert.equal(twice.chosenId, 'a', '第二次选择被忽略');
 });
 
-test('v93 跳过已读：没看过的句子会停住', () => {
+test('v102 下一段：直接跳到下一段的第一句，最后一段收到结尾', () => {
   const beats: VnBeat[] = [
-    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '旧的。' },
-    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '新的。' },
+    { kind: 'bg', backdrop: { id: 'night' } },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '第一段之一。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '第一段之二。', segment: 0 },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '第二段之一。', segment: 1 },
+    { kind: 'say', speakerId: 'b', name: 'B', text: '第二段之二。', segment: 1 },
     { kind: 'end' },
   ];
-  const seen = [vnBeatKey(beats[0]!, 0)];
-  const state = vnReducer(vnInitial(beats), { type: 'skipSeen', seen });
-  assert.equal(state.index, 1, '跳到第一条没看过的');
+  let state = vnInitial(beats);
+  // 停在换场前的背景上 → 跳到第一段的第一句
+  state = vnReducer(state, { type: 'nextSegment' });
+  assert.equal(state.index, 1, '还没进段时跳到第一段开头');
   assert.equal(state.typing, true);
+
+  // 在第一段里 → 跳到第二段的第一句
+  state = vnReducer(state, { type: 'nextSegment' });
+  assert.equal(state.index, 3);
+  assert.equal((state.beats[state.index] as Extract<VnBeat, { kind: 'say' }>).text, '第二段之一。');
+
+  // 已经在最后一段 → 收到结尾
+  state = vnReducer(state, { type: 'nextSegment' });
+  assert.equal(state.index, beats.length - 1);
+  assert.equal(state.done, true);
+  assert.equal(state.typing, false);
 });
 
 test('v98 追加新台词后从收束那拍接回：新旁白一定会演，不会一直卡在 end', () => {

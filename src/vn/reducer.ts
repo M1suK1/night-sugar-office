@@ -6,7 +6,8 @@
  *    遇到 `choice` 就停在那一拍，等 `choose`。
  *  - `choose`：同一拍只接受一次（`chosenId` 锁死），之后继续前进，
  *    这样「点击」与「继续」不会把同一幕剧情结算两遍。
- *  - `skipSeen`：只跳过已经看过的 say；没看过的停住。
+ *  - `nextSegment`（v102）：「下一段」按钮 —— 直接跳到下一段剧情的第一句，
+ *    不一句句点过去；已经是最后一段就收到结尾。
  */
 import type { VnBeat } from './types.ts';
 
@@ -25,7 +26,7 @@ export type VnAction =
   | { type: 'advance' }
   | { type: 'typed' }
   | { type: 'choose'; id: string }
-  | { type: 'skipSeen'; seen: readonly string[] };
+  | { type: 'nextSegment' };
 
 export const vnInitial = (beats: VnBeat[]): VnState => ({
   beats,
@@ -34,12 +35,10 @@ export const vnInitial = (beats: VnBeat[]): VnState => ({
   done: beats.length === 0,
 });
 
-export const vnBeatKey = (beat: VnBeat, index: number): string => {
-  if (beat.kind === 'say') return `${index}:say:${beat.speakerId}:${beat.text.slice(0, 24)}`;
-  if (beat.kind === 'choice') return `${index}:choice`;
-  if (beat.kind === 'bg') return `${index}:bg:${beat.backdrop.id}`;
-  return `${index}:end`;
-};
+/** 当前这一句属于哪一段（没有段号的节拍返回 undefined）。 */
+function segmentOf(beat: VnBeat | undefined): number | undefined {
+  return beat && beat.kind === 'say' ? beat.segment : undefined;
+}
 
 function step(state: VnState, from: number): VnState {
   const nextIndex = from + 1;
@@ -69,16 +68,22 @@ export function vnReducer(state: VnState, action: VnAction): VnState {
       const next = step(state, state.index);
       return { ...next, chosenId: action.id };
     }
-    case 'skipSeen': {
-      let current = state;
-      for (let guard = 0; guard < state.beats.length; guard += 1) {
-        const beat = current.beats[current.index];
-        if (!beat || beat.kind === 'choice' || beat.kind === 'end') break;
-        if (beat.kind === 'say' && !action.seen.includes(vnBeatKey(beat, current.index))) break;
-        if (beat.kind === 'bg') { current = step(current, current.index); continue; }
-        current = step(current, current.index);
+    case 'nextSegment': {
+      const here = segmentOf(state.beats[state.index]);
+      // 往后找「第一句属于另一段的台词」；还没进段就找第一句有段号的。
+      let target = -1;
+      for (let at = state.index + 1; at < state.beats.length; at += 1) {
+        const beat = state.beats[at];
+        if (beat?.kind !== 'say' || beat.segment === undefined) continue;
+        if (here === undefined || beat.segment !== here) { target = at; break; }
       }
-      return current;
+      if (target < 0) {
+        // 已经是最后一段：直接收到结尾。
+        const last = Math.max(0, state.beats.length - 1);
+        return { ...state, index: last, typing: false, chosenId: undefined, done: state.beats[last]?.kind === 'end' };
+      }
+      const next = state.beats[target]!;
+      return { ...state, index: target, typing: next.kind === 'say' && Boolean(next.text), chosenId: undefined, done: false };
     }
     default:
       return state;

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, FastForward, Square, UserRound } from 'lucide-react';
+import { ArrowRight, FastForward, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
 import { speakersBySegment, stageAfter } from './stage';
-import { vnAwaitingChoice, vnBeatKey, vnInitial, vnRebase, vnReducer } from './reducer';
+import { vnAwaitingChoice, vnInitial, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
 
@@ -76,9 +76,6 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     if (reset) setStage({ ids: [], entering: [], leaving: [] });
     setState(current => (reset ? vnInitial(beats) : vnRebase(current, beats, prevLen)));
   }, [beats, resetKey]);
-
-  // 离开时把这次播过的句子记进 sessionStorage（不进存档）。
-  useEffect(() => () => rememberBeats(beats), [beats]);
 
   const beat = state.beats[state.index];
   const typedText = beat?.kind === 'say' ? beat.text : '';
@@ -235,7 +232,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       <div className="vn-toolbar">
         <button id="vn-auto" type="button" className={`vn-chip ${auto ? 'on' : ''}`} aria-pressed={auto} onClick={() => setAuto(value => !value)}>{auto ? <Square size={11} /> : <ArrowRight size={11} />}自动</button>
         <button id="vn-fast" type="button" className={`vn-chip ${fast ? 'on' : ''}`} aria-pressed={fast} onClick={() => setFast(value => !value)}><FastForward size={11} />快进</button>
-        <button id="vn-skip" type="button" className="vn-chip" title="只在本次会话里记住看过的句子" onClick={() => setState(current => vnReducer(current, { type: 'skipSeen', seen: loadSeenBeats() }))}>跳过已读</button>
+        <button id="vn-skip" type="button" className="vn-chip" title="跳到下一段剧情的第一句" onClick={() => setState(current => vnReducer(current, { type: 'nextSegment' }))}><SkipForward size={11} />下一段</button>
         {onText && <button id="vn-text" type="button" className="vn-chip" onClick={onText}>原文</button>}
         {onClose && <button id="vn-close" type="button" className="vn-chip" onClick={onClose}>关闭</button>}
       </div>
@@ -337,25 +334,4 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   );
 }
 
-/** 已读集合（只在本次会话里记，不进存档）。 */
-const SEEN_KEY = 'night-sugar:vn-seen';
 
-export function loadSeenBeats(): string[] {
-  try {
-    const raw = sessionStorage.getItem(SEEN_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string').slice(-400) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function rememberBeats(beats: readonly VnBeat[]): void {
-  try {
-    const keys = beats.map((beat, index) => vnBeatKey(beat, index));
-    const merged = [...new Set([...loadSeenBeats(), ...keys])].slice(-400);
-    sessionStorage.setItem(SEEN_KEY, JSON.stringify(merged));
-  } catch {
-    /* 存不进去就算了 */
-  }
-}
