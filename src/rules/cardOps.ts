@@ -174,7 +174,8 @@ function storyFingerprint(stories: Storyline[] | undefined): string {
   return stories.map(story => `${story.slot ?? 0}/${story.status}/${story.stage}/${story.title}`).join('|');
 }
 
-function importCardInto(next: GameState, card: GirlCard): { ok: true; name: string; message: string } | { ok: false; message: string } {
+/** 把一张契约卡登记进候选名册（v96 起也对控制台的「直接契约」开放）。 */
+export function importCardInto(next: GameState, card: GirlCard): { ok: true; name: string; message: string } | { ok: false; message: string } {
   const key = girlCardHash(card);
   const g = card.girl;
   const signature = (value: typeof g | Girl, stories?: Storyline[]) => JSON.stringify([

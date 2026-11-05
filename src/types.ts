@@ -1234,6 +1234,9 @@ export type GameAction =
   | { type: 'assignFactionRoster'; roster: Record<FactionId, FactionRoster>; leaders: FactionLeader[]; girls: FactionGirl[] }
   /** v94：终端命令专用（让某人魔女化 / 重置回初始状态）。 */
   | { type: 'debugGirl'; girlId: string; mode: 'witch' | 'reset' }
+  /** v96：控制台——从卡库直接契约一张卡 / 移除一位已契约的少女。 */
+  | { type: 'debugContractCard'; card: import('./types.ts').GirlCard }
+  | { type: 'debugRemoveGirl'; girlId: string }
   | { type: 'upgradeMarket' }
   | { type: 'advancedRecruit'; level: number; /** 卡库挑来的那张卡：有就从卡库进入候选，没有就现场合成。 */ cards?: GirlCard[] }
   | { type: 'createGirl'; draft: GirlDraft }

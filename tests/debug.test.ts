@@ -106,3 +106,42 @@ test('v95 服装/魔女形态描述进提示词', () => {
   const prompt = buildNightPrompt(state);
   assert.ok(prompt.includes('影子长出了第二种颜色'), '每日提案的提示词里要看得到形态描述');
 });
+
+test('v96 控制台：从卡库直接契约一位少女（免费、跳过市场）', () => {
+  const state = createInitialState();
+  const gold = state.gold;
+  const card = {
+    girl: {
+      name: '图书馆的夜灯', codename: 'lamp', title: '不睡的人', element: '', color: '#b98ad9', archetype: '输出',
+      level: 4, stats: { magic: 50, insight: 40, agility: 40, empathy: 40 },
+      skillIds: ['moon-slash', 'moon-guard', 'moon-ult'], traitIds: [], appearance: '', personality: '',
+      voice: {}, quote: '', goal: '', factionTag: 'witch',
+    },
+  } as never;
+  const before = state.candidates.length;
+  const result = act(state, { type: 'debugContractCard', card });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.state.candidates.length, before, '不在候选里等着');
+  const girl = result.state.girls.find(item => item.name === '图书馆的夜灯');
+  assert.ok(girl, '直接进了事务所名册');
+  assert.equal(girl!.status, 'idle');
+  assert.equal(result.state.gold, gold, '不收费');
+  assert.match(result.state.logs[0]!.text, /调试/);
+});
+
+test('v96 控制台：移除一位已契约的少女会连带清理派遣与助手位', () => {
+  const state = createInitialState();
+  const target = state.girls[0]!;
+  state.assistantId = target.id;
+  const mission = state.missions.find(item => item.status === 'open')!;
+  mission.status = 'active';
+  mission.squad = [target.id];
+  mission.girlId = target.id;
+  const result = act(state, { type: 'debugRemoveGirl', girlId: target.id });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.state.girls.some(item => item.id === target.id), false);
+  assert.notEqual(result.state.assistantId, target.id, '助手位改给别人');
+  const after = result.state.missions.find(item => item.id === mission.id)!;
+  assert.deepEqual(after.squad, []);
+  assert.equal(after.status, 'open', '派遣被撤回');
+});

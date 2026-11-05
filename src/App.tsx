@@ -1179,6 +1179,8 @@ export default function App() {
           '  proposal                          每日提案立即补充（先补待用事件，再补议题）',
           '  witch <名字>                      让指定少女立刻魔女化（调试）',
           '  reset <名字>                      把指定少女重置回初始状态（调试，不可撤销）',
+          '  contract <卡名>                   从卡库直接契约一位少女（调试，免费、不看席位）',
+          '  remove <名字>                     移除一位已契约的少女（调试，连带清理派遣/关系/故事线）',
           '  preset [list]                     查看对话补全预设',
           '  preset use <名称>                 绑定生成用预设',
           '  preset chat <名称>                绑定对话用预设',
@@ -1223,6 +1225,29 @@ export default function App() {
         if (gaps.opinions <= 0) return `${filled.message} 议题已经满了（还缺 ${gaps.opinions} 条）。`;
         const result = await generateContent();
         return `${filled.message} 议题还缺 ${gaps.opinions} 条 → ${result.message || (result.ok ? '叙事者补充完成。' : '生成失败。')}`;
+      }
+      case 'contract': case '契约': case '招收': {
+        // 从卡库按名字/代号找一张卡，读原文后直接契约（不收费、不看席位）。
+        if (!arg) return '用法：contract <卡面名字或代号的一部分>';
+        const box = await loadCardBox().catch(() => []);
+        if (!box.length) return '卡库读不出来，或者里面没有卡。';
+        const hit = box.find(entry => entry.name.includes(arg) || (entry.codename ?? '').includes(arg));
+        if (!hit) return `卡库里没有匹配「${arg}」的卡。`;
+        const cards = await cardboxCards([hit.hash]).catch(() => []);
+        const card = cards[0];
+        if (!card) return `「${hit.name}」这张卡读不出来（原文可能已损坏）。`;
+        const result = act(state, { type: 'debugContractCard', card });
+        if (!result.ok) return result.message;
+        setState(result.state);
+        return `${result.message} 卡库来源：${hit.name}`;
+      }
+      case 'remove': case '移除': case '剔除': {
+        const target = state.girls.find(girl => girl.id === arg || girl.name === arg || girl.codename === arg || (arg && girl.name.includes(arg)));
+        if (!target) return `名册里没有「${arg}」（这条命令只移除已契约的少女）。`;
+        const result = act(state, { type: 'debugRemoveGirl', girlId: target.id });
+        if (!result.ok) return result.message;
+        setState(result.state);
+        return result.message;
       }
       case 'witch': case '魔女化': {
         const target = [...state.girls, ...state.candidates].find(girl => girl.id === arg || girl.name === arg || girl.codename === arg || (girl.name.includes(arg) && arg));
