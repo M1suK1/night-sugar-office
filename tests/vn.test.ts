@@ -4,7 +4,7 @@ import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } fr
 import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import { speakersBySegment, stageAfter } from '../src/vn/stage.ts';
-import { placeLines } from '../src/storyLines.ts';
+import { placeLines, spreadAfter } from '../src/storyLines.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
 const passage = {
@@ -240,9 +240,26 @@ test('v100 落点：只有第一句写了 after 时，其余不能全被挤到�
   assert.equal(positions[0], 1, '写了 after 的那句照它插');
 });
 
-test('v100 落点：after 超出段数（一对一整段旁白）时退回均匀铺开', () => {
-  const positions = placeLines([0, 1, 2], 1, 4);
-  assert.deepEqual(positions, [1, 2, 3], '一段旁白没有区分度，按均匀位置铺开');
+test('v110 落点：after=0 留在开头，越界的只夹自己，不把整批拽到中间', () => {
+  // 3 段旁白，三句台词写了 0 / 3 / 5：0 就该在最前面，3 与 5 越界 → 夹到末尾
+  assert.deepEqual(placeLines([0, 3, 5], 3, 3), [0, 3, 3]);
+  // 两句都写 after=0：必须挨在一起待在开头
+  assert.deepEqual(placeLines([0, 0], 2, 2), [0, 0]);
+  // 只有一段旁白时，after=0 仍留在开头，其余越界的夹到末尾
+  assert.deepEqual(placeLines([0, 1, 2], 1, 4), [0, 4, 4]);
+  // 全都声称自己在最后 → 视为偷懒，均匀铺开
+  assert.deepEqual(placeLines([9, 9, 9], 3, 4), spreadAfter(3, 4));
+});
+
+test('v110 原文顺序：after=0 的台词出现在第一段旁白之前', () => {
+  const narration = '第一段。\n\n第二段。\n\n第三段。';
+  const lines = [
+    { speaker: 'A', text: '开场白', after: 0 },
+    { speaker: 'A', text: '接第二段', after: 2 },
+  ];
+  const beats = beatsFromPassage({ id: 'p110', narration, lines, choices: [] });
+  const says = beats.filter(beat => beat.kind === 'say') as Extract<VnBeat, { kind: 'say' }>[];
+  assert.deepEqual(says.map(say => say.text), ['开场白', '第一段。', '第二段。', '接第二段', '第三段。']);
 });
 
 test('v100 落点：模型老老实实写全了 after 就照它插', () => {

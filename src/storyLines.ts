@@ -23,31 +23,34 @@ export interface Placeable {
 }
 
 /**
- * 把「模型写的 after」变成真正能用的落点（v100）。
+ * 把「模型写的 after」变成真正能用的落点（v100 / v110 修正）。
  *
- * 实测模型经常只给第一句写 after（或者干脆写了个超出段数的值），
- * 照搬就会：第一句插对了，其余全被夹到末尾。所以这里做三件事：
- *  1. 按原始段数把 after 换算到当前块数，并保证不倒退；
+ * 规则：
+ *  1. 写了 after 就照它放，换算到当前块数，越界的夹到两端；
  *  2. 没写 after 的那几句用均匀位置补齐；
- *  3. 若一半以上被挤到结尾（或全挤在最前面），说明这批 after 没有区分度，整批退回均匀铺开。
+ *  3. 只有当**每一句都声称自己在最末尾**（而旁白不止一段）时才整批退回均匀铺开——
+ *     那是「模型偷懒全写 after=99」的情况。
+ *
+ * v110 修正：以前只要一半以上落在末尾就整批退回均匀铺开，
+ * 结果 after=0 的台词被从开头拽到中间、after=1/2 的也失去了本来该在的位置。
  */
 export function placeLines(rawAfter: readonly (number | undefined)[], rawParagraphs: number, chunks: number): number[] {
   const count = rawAfter.length;
   if (count <= 0) return [];
   const spread = spreadAfter(count, chunks);
-  const stated = rawAfter.filter(value => typeof value === 'number' && Number.isFinite(value)).length;
-  if (stated === 0 || chunks <= 1) return spread;
-
   const span = Math.max(1, rawParagraphs);
+  const stated = rawAfter.filter(value => typeof value === 'number' && Number.isFinite(value));
+  if (!stated.length) return spread;
+
   const placed = rawAfter.map((value, at) => {
     if (typeof value !== 'number' || !Number.isFinite(value)) return spread[at]!;
     const clamped = Math.max(0, Math.min(span, value));
     return Math.min(chunks, Math.round((clamped / span) * chunks));
   });
 
-  const stuckAtEnd = placed.filter(position => position >= chunks).length;
-  const stuckAtStart = placed.filter(position => position <= 0).length;
-  if (count > 1 && (stuckAtEnd > count / 2 || stuckAtStart > count / 2)) return spread;
+  // 所有台词都说自己要在最后（多半是随手写了很大的数）：均匀铺开更好读。
+  const allClaimEnd = stated.length === count && stated.every(value => Math.max(0, Math.min(span, Number(value))) >= span);
+  if (allClaimEnd && count > 1 && chunks > 1) return spread;
   return placed;
 }
 
