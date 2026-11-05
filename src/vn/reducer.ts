@@ -27,7 +27,14 @@ export type VnAction =
   | { type: 'typed' }
   | { type: 'choose'; id: string }
   | { type: 'nextSegment' }
-  | { type: 'finish' };
+  | { type: 'finish' }
+  | { type: 'restart' };
+
+/** 第一拍「台词」的下标：回到开头时直接停在第一句话上，不用先点一次空背景。 */
+export const vnFirstSayIndex = (beats: readonly VnBeat[]): number => {
+  for (let at = 0; at < beats.length; at += 1) if (beats[at]?.kind === 'say') return at;
+  return 0;
+};
 
 /** 最后一拍「台词」的下标：收尾时停在这里，玩家直接看到结局正文。 */
 export const vnLastSayIndex = (beats: readonly VnBeat[]): number => {
@@ -91,6 +98,11 @@ export function vnReducer(state: VnState, action: VnAction): VnState {
     case 'finish':
       // 「跳至结尾」：直接落到这一段的最后一拍，结束就是结束，不再逐句点。
       return toEnd(state);
+    case 'restart': {
+      // 「回到开头」：从头再读一遍（回看已结束的剧情时最常用）。
+      const index = vnFirstSayIndex(state.beats);
+      return { ...state, index, typing: Boolean(state.beats[index] && state.beats[index]!.kind === 'say'), chosenId: undefined, done: false };
+    }
     default:
       return state;
   }

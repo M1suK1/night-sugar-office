@@ -280,7 +280,25 @@ test('v104 跳至结尾：直接落到最后一拍', () => {
   assert.equal(state.typing, false);
 });
 
-test('v112 已结束的剧情一进舞台就停在结局那句', () => {
+test('v113 回到开头：停在第一句话上，可以重读整段', () => {
+  const beats: VnBeat[] = [
+    { kind: 'bg', backdrop: { id: 'night' } },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '开场。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '中间。', segment: 1 },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '结尾。', segment: 2 },
+    { kind: 'end' },
+  ];
+  const ended = vnReducer(vnInitial(beats, true), { type: 'restart' });
+  assert.equal(ended.index, 1, '跳过空的背景拍，落在第一句话');
+  assert.equal(ended.typing, true, '重新逐字打出第一句');
+  assert.equal(ended.done, false);
+  assert.equal((ended.beats[ended.index] as Extract<VnBeat, { kind: 'say' }>).text, '开场。');
+
+  // 已结束的剧情重新打开时从第一拍开始（不再一进来就停在结局）
+  assert.equal(vnInitial(beats).index, 0);
+});
+
+test('v112 vnInitial(atEnd) 仍能把状态直接放到结局那句', () => {
   const beats: VnBeat[] = [
     { kind: 'bg', backdrop: { id: 'night' } },
     { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '开场。', segment: 0 },

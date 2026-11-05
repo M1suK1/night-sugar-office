@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ChevronsRight, FastForward, SkipForward, Square, UserRound } from 'lucide-react';
+import { ArrowRight, ChevronsRight, FastForward, Rewind, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
 import { speakersBySegment, stageAfter } from './stage';
@@ -55,10 +55,12 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   sideOptions?: VnSideOptions;
   /** 并入界面最底部的输入框操作栏（半透明贴底盖在立绘上） */
   composer?: React.ReactNode;
-  /** 已经演完的剧情：一进来就停在最后一句话上，直接看结局正文。 */
+  /** 已经演完的剧情：刚收尾那一刻跳到最后一句（重新打开时仍从开头读）。 */
   startAtEnd?: boolean;
 }) {
-  const [state, setState] = useState(() => vnInitial(beats, startAtEnd));
+  // v113：初值永远从开头开始——重新进入已结束的剧情时，玩家要能从头读。
+  // 「刚收尾跳结局」只发生在 startAtEnd 由假变真那一刻（见下面的 effect）。
+  const [state, setState] = useState(() => vnInitial(beats));
   const [auto, setAuto] = useState(false);
   const [fast, setFast] = useState(false);
   // 舞台站位：这一段的在场者、刚入场的、正在淡出的（换一段剧情时整场清空）。
@@ -76,8 +78,8 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     const reset = prevKey !== resetKey || beats.length < prevLen;
     // 换一段演出：舞台先清空，新的这一段再按说话人依次登场。
     if (reset) setStage({ ids: [], entering: [], leaving: [] });
-    setState(current => (reset ? vnInitial(beats, startAtEnd) : vnRebase(current, beats, prevLen)));
-  }, [beats, resetKey, startAtEnd]);
+    setState(current => (reset ? vnInitial(beats) : vnRebase(current, beats, prevLen)));
+  }, [beats, resetKey]);
 
   // 刚收尾（或回看已结束的剧情）：直接停在结局那一句，不用从头再点一遍。
   const endedRef = useRef(startAtEnd);
@@ -243,6 +245,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       <div className="vn-toolbar">
         <button id="vn-auto" type="button" className={`vn-chip ${auto ? 'on' : ''}`} aria-pressed={auto} onClick={() => setAuto(value => !value)}>{auto ? <Square size={11} /> : <ArrowRight size={11} />}自动</button>
         <button id="vn-fast" type="button" className={`vn-chip ${fast ? 'on' : ''}`} aria-pressed={fast} onClick={() => setFast(value => !value)}><FastForward size={11} />快进</button>
+        <button id="vn-restart" type="button" className="vn-chip" title="回到这段剧情的开头重新读" onClick={() => setState(current => vnReducer(current, { type: 'restart' }))}><Rewind size={11} />回到开头</button>
         <button id="vn-skip" type="button" className="vn-chip" title="跳到下一段剧情的第一句" onClick={() => setState(current => vnReducer(current, { type: 'nextSegment' }))}><SkipForward size={11} />下一段</button>
         <button id="vn-finish" type="button" className="vn-chip" title="直接跳到这一段演出的结尾" onClick={() => setState(current => vnReducer(current, { type: 'finish' }))}><ChevronsRight size={11} />跳至结尾</button>
         {onText && <button id="vn-text" type="button" className="vn-chip" onClick={onText}>原文</button>}
