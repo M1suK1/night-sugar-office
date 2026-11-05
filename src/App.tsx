@@ -158,6 +158,8 @@ export default function App() {
   const [auto, setAuto] = useState(false);
   const [saved, setSaved] = useState(true);
   const [pendingSave, setPendingSave] = useState<GameState | null>(null);
+  /** 当前真正生效的状态引用：异步任务（比如读档后的图片降维）回来时用它做冲突判断。 */
+  const stateRef = useRef(state);
   const [reduced, setReduced] = useState(readReduced);
   const [chime, setChime] = useState(loadChimeEnabled);
   const [autoGenerate, setAutoGenerate] = useState(readAutoGenerate);
@@ -194,6 +196,8 @@ export default function App() {
   const [vnStory, setVnStory] = useState<VnStoryMode>(() => loadVnStory());
   const enterPlay = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setPhase('play'); };
   /** 载入存档后的分流：没编成过的老档先补编成，空白档直接进正片。 */
+  useEffect(() => { stateRef.current = state; }, [state]);
+
   const afterLoad = (next: GameState) => { if (!next.startersPicked && !next.blank) setPhase('roster'); else enterPlay(); };
   /**
    * 读档后的后台降维：老存档里可能躺着几百 MB 的原图差分，
@@ -201,7 +205,12 @@ export default function App() {
    */
   const slimLoadedImages = (next: GameState) => {
     void slimStateImages(next)
-      .then(({ state: slim }) => { if (slim !== next) setState(slim); })
+      .then(({ state: slim }) => {
+        // 降维是异步的：如果这期间又读了一次档、或重开了一局，这份结果已经过期。
+        // 以前这里无条件 setState，会把刚读进来的进度悄悄换回上一局（存档因此显示成旧的）。
+        if (stateRef.current !== next) return;
+        if (slim !== next) setState(slim);
+      })
       .catch(() => { /* 降维失败不影响正常游玩，图保持原样。 */ });
   };
   const [generating, setGenerating] = useState(false);
@@ -905,12 +914,13 @@ export default function App() {
     const next = importState(text);
     if (!next) { notify('导入失败：这不是可识别的夜糖事务所存档，或文件已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档（${next.startersPicked ? '已编成' : '未编成'}）。`); return; }
     setHadSave(true);
     setPendingSave(next);
   };
 
   const saveToSlot = async (id: SaveSlotId) => {
+    if (pendingSave) { notify('还有一个读档在等你确认：先确认或取消，再存这一局。', false); return; }
     const stamp = `第 ${state.day} 日 · ${state.startersPicked ? '已编成' : '未编成'}`;
     const result = await writeSlot(id, state);
     notify(result.ok ? `${result.message}（${stamp}）` : result.message, result.ok);
@@ -919,7 +929,7 @@ export default function App() {
     const next = await readSlot(id).then(async slotState => (slotState ? hydrateStatePortraits(slotState) : null));
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }
     setModal(null);
-    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); return; }
+    if (phase !== 'play') { setState(next); setHadSave(true); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档（${next.startersPicked ? '已编成' : '未编成'}）。`); return; }
     setHadSave(true);
     setPendingSave(next);
   };
@@ -1726,7 +1736,7 @@ export default function App() {
         </div>
         <div className="settings-data-actions">
           <button id="import-save-confirm" className="btn primary" onClick={() => { const next = pendingSave; setState(next); setPendingSave(null); afterLoad(next); slimLoadedImages(next); notify(`已载入第 ${next.day} 日的存档。`); }}>确认覆盖并继续</button>
-          <button id="import-save-cancel" className="btn" onClick={() => setPendingSave(null)}>取消</button>
+          <button id="import-save-cancel" className="btn" onClick={() => { setPendingSave(null); notify('已取消读取：当前进度没有变化，接下来存档会存这一局。', false); }}>取消读取（保留当前进度）</button>
         </div>
       </div>
     </Dialog>}
