@@ -471,8 +471,9 @@ export default function App() {
     if (incidentPoolNeed(state) <= 0) return;
     void generateIncidentBatch(loadLlmConfig(), state, taskRuntime(boundPreset('incident', presets, binding), 'incident')).then(result => {
       if (!result.ok) return;
-      const applied = act(state, { type: 'mergeIncidentPool', entries: result.data.entries });
-      if (applied.ok) setState(applied.state);
+      // v107：这批突发是几十秒后才回来的，必须落在**当时最新的 state**上。
+      // 以前这里用的是发起请求时那一刻的 state，回来时会把期间写进去的剧情回合整段覆盖掉。
+      setState(prev => { const applied = act(prev, { type: 'mergeIncidentPool', entries: result.data.entries }); return applied.ok ? applied.state : prev; });
     });
   }, [state.day]);
   useEffect(() => {
@@ -758,15 +759,20 @@ export default function App() {
         setPendingProposal({ data: result.data, warnings: result.warnings });
         return { ok: true, message: '提案已生成，确认后才会写入事务所。' };
       }
-      const content = materializeNightProposal(result.data, state);
-      const applied = act(state, { type: 'addGeneratedContent', ...content });
-      if (!applied.ok) {
-        notify(`夜间自动补充没有写入：${applied.message}`, false);
-        return { ok: false, message: applied.message };
+      // 请求期间玩家可能又写了剧情：合并到最新状态上，别把这段覆盖掉。
+      let failure = '';
+      setState(prev => {
+        const next = materializeNightProposal(result.data, prev);
+        const applied = act(prev, { type: 'addGeneratedContent', ...next });
+        if (!applied.ok) { failure = applied.message; return prev; }
+        return applied.state;
+      });
+      if (failure) {
+        notify(`夜间自动补充没有写入：${failure}`, false);
+        return { ok: false, message: failure };
       }
-      setState(applied.state);
       notify(result.warnings.length ? `夜间自动补充完成，本地裁剪了 ${result.warnings.length} 处越界数值。` : '夜间自动补充完成，新的委托与议题已经入场；候选者改由契约卡库补货。');
-      return { ok: true, message: applied.message };
+      return { ok: true, message: '夜间补充完成。' };
     } finally {
       generatingRef.current = false;
       setGenerating(false);
@@ -1074,12 +1080,17 @@ export default function App() {
       notify(`卡库里没有可补的卡（${library.reason ?? '都已在名册里'}）。`, false);
       return false;
     }
-    const applied = act(state, { type: 'importCards', cards: library.cards });
-    if (!applied.ok) {
-      notify(applied.message, false);
+    // 读卡库是异步的：写回时以最新状态为准，避免覆盖期间的剧情与结算。
+    let failure = '';
+    setState(prev => {
+      const next = act(prev, { type: 'importCards', cards: library.cards });
+      if (!next.ok) { failure = next.message; return prev; }
+      return next.state;
+    });
+    if (failure) {
+      notify(failure, false);
       return false;
     }
-    setState(applied.state);
     notify(`从卡库补了 ${library.cards.length} 位候选：${library.cards.map(card => card.girl.name).join('、')}。`);
     return true;
   };
@@ -1159,8 +1170,9 @@ export default function App() {
       if (gap > 0) {
         const picks = unusedCards(box, state, gap);
         if (picks.length) {
-          const applied = act(state, { type: 'refillMarket', cards: await cardboxCards(picks.map(entry => entry.hash)) });
-          if (applied.ok) setState(applied.state);
+          // 异步取卡回来同样合并到最新状态上。
+          const cards = await cardboxCards(picks.map(entry => entry.hash));
+          setState(prev => { const applied = act(prev, { type: 'refillMarket', cards }); return applied.ok ? applied.state : prev; });
         }
       }
       if (marketNeedsCards(state, box) && marketEmptyDay.current !== state.day) {
@@ -1404,9 +1416,17 @@ export default function App() {
       sessionDone: false,
       stage: 0, status: 'active', day: state.day, source: data ? 'llm' : 'template', badge: true,
     };
-    const applied = act(state, { type: 'addCharacterEvent', event });
-    if (applied.ok) { setState(applied.state); setModal({ type: 'event', id: event.id }); }
-    else notify(applied.message, false);
+    // 生成事件时可能已经过去几十秒：写回时以最新状态为准，别把期间的剧情回合覆盖掉。
+    let added = false;
+    let rejected = '';
+    setState(prev => {
+      const applied = act(prev, { type: 'addCharacterEvent', event });
+      if (!applied.ok) { rejected = applied.message; return prev; }
+      added = true;
+      return applied.state;
+    });
+    if (added) setModal({ type: 'event', id: event.id });
+    else notify(rejected, false);
   };  const selectedGirl = modal && 'id' in modal ? [...state.girls, ...state.candidates].find(g => g.id === modal.id) : undefined;
   const selectedMission = modal?.type === 'mission' ? state.missions.find(m => m.id === modal.id) : undefined;
   const selectedBattle = modal?.type === 'battle' || modal?.type === 'battle-note' ? state.battles.find(b => b.id === modal.id) : undefined;
