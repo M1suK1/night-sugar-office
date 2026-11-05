@@ -768,7 +768,9 @@ export interface Girl {
   id: string; name: string; codename: string; title: string; element: Element; color: string; portrait: string;
   level: number; hp: number; maxHp: number; baseMaxHp: number; spirit: number; maxSpirit: number;
   fatigue: number; bond: number; exp: number;
-  stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string; /** 被借调给某个势力：到点自动回岗，借调期间不能派遣。 */ loan?: { faction: FactionId; until: number; rate: number };
+  stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string;
+  /** v89：休息进度。休息期间按比例回落到目标值，而不是等到结束才扣一次。 */
+  restProgress?: { fromFatigue: number; toFatigue: number; fromCorruption: number; toCorruption: number; minutes: number }; /** 被借调给某个势力：到点自动回岗，借调期间不能派遣。 */ loan?: { faction: FactionId; until: number; rate: number };
   skill: string; skills: string[]; description: string; cost: number;
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   /** 立绘的 assets 键；有它就不必再背 dataURL。 */

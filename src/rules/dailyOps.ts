@@ -12,12 +12,29 @@ import { failStoryMission } from './storyRun.ts';
 
 export function careRecovery(girl: Girl, mode: 'resting'): void {
   if (mode === 'resting') {
-    const penalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'fatigueRecovery' ? s.effect.amount : 0), 0);
-    const perHour = loadBalance().dormFatiguePerHour;
-    girl.fatigue = Math.max(0, girl.fatigue - Math.max(10, Math.round(perHour * 1.5) + penalty));
-    girl.corruption = Math.max(0, (girl.corruption ?? 0) - 5);
+    // 到点了：直接落到目标值（中途已经按比例回落过）。
+    const target = girl.restProgress;
+    if (target) {
+      girl.fatigue = target.toFatigue;
+      girl.corruption = target.toCorruption;
+    } else {
+      const recovered = restRecoveryOf(girl);
+      girl.fatigue = Math.max(0, girl.fatigue - recovered.fatigue);
+      girl.corruption = Math.max(0, (girl.corruption ?? 0) - recovered.corruption);
+    }
   }
+  girl.restProgress = undefined;
   girl.status = 'idle'; girl.remaining = 0;
+}
+
+/** 一次完整休息能恢复多少：基础值 + 疤痕（负向）修正。 */
+export function restRecoveryOf(girl: Pick<Girl, 'scars'>): { fatigue: number; corruption: number } {
+  const rules = loadBalance();
+  const penalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'fatigueRecovery' ? s.effect.amount : 0), 0);
+  return {
+    fatigue: Math.max(10, Math.round(rules.dormRestFatigue + penalty)),
+    corruption: Math.max(0, Math.round(rules.dormRestCorruption)),
+  };
 }
 
 export function dispatch(state: GameState, girlIds: string[], missionId: string): ActionResult {
@@ -58,8 +75,16 @@ export function care(state: GameState, girlId: string, mode: 'resting'): ActionR
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
   if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}正在${statusLabels[girl.status]}，无法安排照顾。` };
   if (mode === 'resting') {
-    if (girl.fatigue === 0) return { state, ok: false, message: `${girl.name}现在并不疲惫。` };
+    if (girl.fatigue === 0 && (girl.corruption ?? 0) === 0) return { state, ok: false, message: `${girl.name}现在并不疲惫。` };
+    const recovered = restRecoveryOf(girl);
     girl.status = 'resting'; girl.remaining = 90;
+    girl.restProgress = {
+      fromFatigue: girl.fatigue,
+      toFatigue: Math.max(0, girl.fatigue - recovered.fatigue),
+      fromCorruption: girl.corruption ?? 0,
+      toCorruption: Math.max(0, (girl.corruption ?? 0) - recovered.corruption),
+      minutes: 90,
+    };
     next.logs.unshift({ id: `log-rest-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}回到晚安宿舍休息（90 分钟）。${girl.corruption ? '宿舍的安静让侵蚀暂时退了一点。' : ''}` });
     return { state: next, ok: true, message: `${girl.name}开始休息，90 分钟后恢复。` };
   }

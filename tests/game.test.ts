@@ -351,8 +351,11 @@ test('休息只恢复疲劳并降低侵蚀', () => {
   const s = createInitialState(); s.girls[0].fatigue = 75; s.girls[0].corruption = 20; s.girls[0].hp = 50;
   const rest = act(s, { type: 'care', girlId: 'yue', mode: 'resting' });
   assert.equal(rest.ok, true);
+  // v89：一次 90 分钟休息按界面文案恢复 60 点疲劳、平复 5 点侵蚀。
+  const halfway = act(rest.state, { type: 'advance', minutes: 45 }).state.girls[0];
+  assert.ok(halfway.fatigue < 75 && halfway.fatigue > 15, `中途应该已经在回落，实际 ${halfway.fatigue}`);
   const rested = act(rest.state, { type: 'advance', minutes: 90 }).state.girls[0];
-  assert.equal(rested.fatigue, 63);
+  assert.equal(rested.fatigue, 15);
   assert.equal(rested.corruption, 15);
   assert.equal(rested.hp, 50);
 });
@@ -1904,7 +1907,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 46, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项与借星砂三项');
+  assert.equal(BALANCE_FIELDS.length, 48, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项与 v89 的休息两项');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);

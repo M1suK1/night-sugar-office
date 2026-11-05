@@ -200,6 +200,13 @@ export function advanceClock(state: GameState, to: number): void {
   bossTick(state, elapsed);
   for (const girl of state.girls) {
     if (girl.status === 'mission' || girl.status === 'healing' || girl.status === 'resting') girl.remaining = Math.max(0, girl.remaining - elapsed);
+    // v89：休息不是「到点一次性扣」，而是按已休息的比例慢慢回落，卡片上的数字会动。
+    const rest = girl.restProgress;
+    if (girl.status === 'resting' && rest) {
+      const progress = Math.min(1, Math.max(0, 1 - girl.remaining / Math.max(1, rest.minutes)));
+      girl.fatigue = Math.round(rest.fromFatigue - (rest.fromFatigue - rest.toFatigue) * progress);
+      girl.corruption = Math.round(rest.fromCorruption - (rest.fromCorruption - rest.toCorruption) * progress);
+    }
   }
   for (const story of [...state.storylines]) {
     if (story.status !== 'active' || story.run?.waiting?.kind !== 'wait') continue;
