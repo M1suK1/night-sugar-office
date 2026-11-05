@@ -450,7 +450,8 @@ function sanitizePreset(raw: unknown): ChatPreset | null {
     ? {
       provider: apiRaw.provider === 'vertex' ? 'vertex' : apiRaw.provider === 'openai' ? 'openai' : undefined,
       endpoint: typeof apiRaw.endpoint === 'string' ? apiRaw.endpoint.slice(0, 200) : undefined,
-      apiKey: typeof apiRaw.apiKey === 'string' ? apiRaw.apiKey.slice(0, 400) : undefined,
+      // v104：服务账号 JSON 光私钥就两千多字，按 400 字截会把 JSON 截断成「缺 project_id」的废字符串。
+      apiKey: typeof apiRaw.apiKey === 'string' ? apiRaw.apiKey.slice(0, 8000) : undefined,
       model: typeof apiRaw.model === 'string' ? apiRaw.model.slice(0, 120) : undefined,
       location: typeof apiRaw.location === 'string' ? apiRaw.location.slice(0, 40) : undefined,
     }

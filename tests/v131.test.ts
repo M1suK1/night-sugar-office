@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { composeTaskSystem, presetRuntime, type ChatPreset } from '../src/presets.ts';
+import { composeTaskSystem, loadPresets, presetRuntime, savePresets, type ChatPreset } from '../src/presets.ts';
 import { contractPrompts } from '../src/promptContracts.ts';
+import { describeVertexCredential } from '../src/vertex.ts';
 import { arcEndingContract, arcOpeningContract, arcTurnContract, stripContractBlocks, storylineStartContract } from '../src/promptSections.ts';
 
 /** 契约词条就住在预设的 prompts 里（带 contract: true），这里按同一形状造一个。 */
@@ -78,6 +79,36 @@ test('v103 一次请求只留一份【JSON 形状】：续写只用续写要求�
   assert.equal(ending.system.split('【JSON 形状】').length - 1, 1);
   assert.ok(ending.system.includes('narration 400–900 字'));
   assert.ok(ending.system.trim().endsWith(arcEndingContract().trim()));
+});
+
+test('v104 预设专用凭证不会被 400 字截断（服务账号 JSON 有两千多字）', () => {
+  const privateKey = '-----BEGIN PRIVATE KEY-----' + 'A'.repeat(1800) + '-----END PRIVATE KEY-----';
+  const serviceAccount = JSON.stringify({
+    type: 'service_account',
+    project_id: 'gen-lang-client-0452877835',
+    client_email: 've-123@gen-lang-client-0452877835.iam.gserviceaccount.com',
+    private_key: privateKey,
+  });
+  assert.ok(serviceAccount.length > 2000, '服务账号 JSON 本来就很长');
+
+  const store = new Map<string, string>();
+  const globals = globalThis as { localStorage?: unknown };
+  const previous = globals.localStorage;
+  globals.localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, String(value)); },
+    removeItem: (key: string) => { store.delete(key); },
+  };
+  try {
+    const longPreset: ChatPreset = { ...preset([]), id: 'p-long', api: { provider: 'vertex', apiKey: serviceAccount } };
+    savePresets([longPreset]);
+    const loaded = loadPresets().find(item => item.id === 'p-long');
+    assert.ok(loaded, '预设要能读回来');
+    assert.equal(loaded?.api?.apiKey, serviceAccount, '读回来必须逐字等于导入的那份 JSON');
+    assert.equal(describeVertexCredential(loaded?.api?.apiKey ?? '').kind, 'service-account');
+  } finally {
+    globals.localStorage = previous;
+  }
 });
 
 test('v103 stripContractBlocks 只删契约段，正文原样留着', () => {
