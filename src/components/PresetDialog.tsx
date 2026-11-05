@@ -282,7 +282,7 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                 <label className="preset-field"><span>区域</span>
                   <input id="preset-api-location" className="preset-text" value={preset.api?.location ?? ''} readOnly={!editable} placeholder="跟随默认（例如 asia-east1）" onChange={event => patchApi({ location: event.target.value })} />
                 </label>
-                <label className="preset-field"><span>模型</span>
+                <label className="preset-field"><span>模型（填了就覆盖默认）</span>
                   <input id="preset-api-model" className="preset-text" value={preset.api?.model ?? ''} readOnly={!editable} placeholder="跟随默认（例如 gemini-2.5-pro）" onChange={event => patchApi({ model: event.target.value })} />
                 </label>
               </> : <>
