@@ -15,8 +15,9 @@ const MAX_CONTINUOUS_CHARS = 12000;
 
 export type BattleOutcome = NonNullable<BattleState['outcome']>;
 
-export function battleOutcomeLabel(outcome: BattleState['outcome']): string {
-  return outcome === 'victory' ? '胜利' : outcome === 'defeat' ? '失败' : outcome === 'repelled' ? '击退' : outcome === 'draw' ? '平局' : '未结算';
+export function battleOutcomeLabel(outcome: BattleState['outcome'], partial = false): string {
+  if (outcome === 'victory') return partial ? '不完全胜利' : '胜利';
+  return outcome === 'defeat' ? '失败' : outcome === 'repelled' ? '击退' : outcome === 'draw' ? '平局' : '未结算';
 }
 
 export interface BattleActor {
@@ -121,7 +122,7 @@ export function battleDigest(battle: BattleState): string {
   const total = totalBattleRounds(battle);
   const parts = [
     `战斗：${battle.missionTitle}`,
-    `结果：${battleOutcomeLabel(battle.outcome)}；共 ${total} 回合`,
+    `结果：${battleOutcomeLabel(battle.outcome, battle.partial === true)}；共 ${total} 回合`,
     ...(battle.pollution === undefined ? [] : [`辖区污染 ${battle.pollution} · ${pollutionTierLabel(battle.pollution)}`]),
     `参战：${actors.map(actorSummary).join('；') || '没有留下参战记录'}`,
     '逐回合记录：',
@@ -207,7 +208,7 @@ export function battleStoryDigest(battle: BattleState): string {
   const actors = battleActors(battle);
   const byUid = new Map(actors.map(actor => [actor.uid, actor]));
   const name = (uid: string) => byUid.get(uid)?.name ?? uid;
-  const outcome = battleOutcomeLabel(battle.outcome);
+  const outcome = battleOutcomeLabel(battle.outcome, battle.partial === true);
   const parts = [
     `战斗：${battle.missionTitle}。结果：${outcome}。`,
     `参战：${actors.map(actor => `${actor.side === 'ally' ? '我方' : '敌方'}${actor.name}${actor.down ? '（倒下了）' : ''}`).join('、') || '没有留下参战记录'}。`,
@@ -476,7 +477,7 @@ export function buildBattleBrief(battle: BattleState, createdAt = new Date().toI
   }
   const title = `战斗简报：${battle.missionTitle}`;
   const hook = '完整的战斗札记还没有写。以下只把记录里已经发生的事按回合整理出来，不补写没有出现过的对白。';
-  const summary = `结果是${battleOutcomeLabel(battle.outcome)}。这场战斗持续 ${total} 回合，记录里留下了 ${events.length} 条出手事件。${battle.scars?.length ? `战斗结束后新增疤痕：${battle.scars.map(scar => scar.name).join('、')}。` : '没有新的疤痕记录。'}`;
+  const summary = `结果是${battleOutcomeLabel(battle.outcome, battle.partial === true)}。这场战斗持续 ${total} 回合，记录里留下了 ${events.length} 条出手事件。${battle.scars?.length ? `战斗结束后新增疤痕：${battle.scars.map(scar => scar.name).join('、')}。` : '没有新的疤痕记录。'}`;
   const note: BattleNote = {
     battleId: battle.id, title, hook, summary, scenes,
     source: 'template', charCount: 0, createdAt,

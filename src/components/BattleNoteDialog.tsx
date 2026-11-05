@@ -188,7 +188,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
             <p>{note?.hook ?? '战斗已经结束。记录还在，但还没有人把它写成可读的札记。'}</p>
           </div>
           <div className="battle-note-head-meta">
-            <span className="battle-note-outcome">{battleOutcomeLabel(battle.outcome)}</span>
+            <span className="battle-note-outcome">{battleOutcomeLabel(battle.outcome, battle.partial === true)}</span>
             {note?.format !== 'continuous' && <span>{totalBattleRounds(battle)} 回合</span>}
             {note && <span className={`battle-note-source ${note.source}`}>{note.source === 'llm' ? '叙事版' : '简报版'}</span>}
             {vnStory && textMode && note && !busy && <VnModeToggle id="battle-note-vn-enter" onSwitch={() => setTextMode(false)} />}

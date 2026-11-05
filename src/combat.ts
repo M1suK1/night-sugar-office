@@ -607,12 +607,28 @@ export function simulateBattle(setup: BattleSetup): BattleState {
     if (state.outcome) break;
     for (const unit of units) for (const id of Object.keys(unit.cooldown)) unit.cooldown[id] = Math.max(0, unit.cooldown[id] - 1);
   }
-  state.outcome ??= 'repelled';  const outcome = state.outcome;
-  const goldRate = outcome === 'victory' ? 1 : outcome === 'repelled' ? 0.8 : outcome === 'draw' ? 0.6 : 0;
-  const exp = outcome === 'victory' ? 24 + rounds * 3 : outcome === 'repelled' ? 10 : outcome === 'draw' ? 6 : 0;
+  // v115：没打出「全部歼灭」时按击杀比例判定结局。
+  // 击败超过一半 → 不完全胜利（按胜利结算：事件移出委托池，奖励 ×0.9）；
+  // 不足一半 → 击退（留在委托池、魔物带伤，奖励 ×0.5）。
+  if (!state.outcome) {
+    const enemies = units.filter(unit => unit.side === 'enemy');
+    const defeated = enemies.filter(unit => unit.down || unit.hp <= 0).length;
+    const ratio = enemies.length ? defeated / enemies.length : 0;
+    if (ratio > 0.5) {
+      state.outcome = 'victory';
+      state.partial = defeated < enemies.length;
+    } else {
+      state.outcome = 'repelled';
+      state.partial = false;
+    }
+  }
+  const outcome = state.outcome;
+  const rate = rewardRate(outcome, state.partial === true);
+  const baseExp = outcome === 'victory' ? 24 + rounds * 3 : outcome === 'repelled' ? 10 : outcome === 'draw' ? 6 : 0;
+  const exp = Math.round(baseExp * rate);
   // 拦截战没有委托报酬：打赢也只是把那张单子打作废，所以金币恒为 0，只发战斗经验。
   const monsterBonus = monsterRewardMultiplier(mission.enemyIds?.length ?? 0);
-  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * goldRate * monsterBonus), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
+  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * rate * monsterBonus), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
   if (outcome === 'defeat') {
     const at = `${day} 日 ${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     state.scars = [];
@@ -625,8 +641,21 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   }
   return state;
 }
-export function outcomeLabel(outcome?: BattleState['outcome']): string {
-  return outcome === 'victory' ? '战斗胜利' : outcome === 'repelled' ? '暂时击退' : outcome === 'defeat' ? '战斗失败' : outcome === 'draw' ? '僵持收场' : '进行中';
+/**
+ * 结局对应的收益系数（v115）。
+ *
+ * 胜利 1.0；「不完全胜利」（击败超过一半但没全歼）0.9；击退 0.5；僵持 0.6；失败 0。
+ * 星砂与经验共用同一个系数，避免两处各算一套。
+ */
+export function rewardRate(outcome: BattleState['outcome'] | undefined, partial = false): number {
+  if (outcome === 'victory') return partial ? 0.9 : 1;
+  if (outcome === 'repelled') return 0.5;
+  if (outcome === 'draw') return 0.6;
+  return 0;
+}
+
+export function outcomeLabel(outcome?: BattleState['outcome'], partial = false): string {
+  return outcome === 'victory' ? (partial ? '不完全胜利' : '战斗胜利') : outcome === 'repelled' ? '暂时击退' : outcome === 'defeat' ? '战斗失败' : outcome === 'draw' ? '僵持收场' : '进行中';
 }
 export function battleSummary(state: BattleState): string {
   const enemies = state.units.filter(u => u.side === 'enemy');

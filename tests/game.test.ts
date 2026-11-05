@@ -28,10 +28,10 @@ import { effectText, skills, getSkill, findSkill } from '../src/content/skills.t
 import { EFFECT_CATEGORIES, skillEffectPresets } from '../src/content/effectPresets.ts';
 import { getItem, findItem } from '../src/content/items.ts';
 import { getMonster, findMonster } from '../src/content/monsters.ts';
-import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, makeScar, monsterRewardMultiplier, simulateBattle, skillAccuracy } from '../src/combat.ts';
+import { MAX_ENEMIES, MAX_SKILL_TARGETS, defaultSkillAccuracy, initiativeOf, makeScar, monsterRewardMultiplier, outcomeLabel, rewardRate, simulateBattle, skillAccuracy } from '../src/combat.ts';
 import { bossSkillPool, filterSkills, findAnySkill, girlSkillPool, isBossSkill, isPoolSkill, monsterSkillPool, skillsOfSchool } from '../src/skills.ts';
 import { monsterById } from '../src/content/monsters.ts';
-import { battleActors, battleCast, battleDigest, battleNoteChars, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
+import { battleActors, battleCast, battleDigest, battleNoteChars, battleOutcomeLabel, buildBattleBrief, totalBattleRounds, validateBattleNoteDraft } from '../src/battleNote.ts';
 import { applyLibrary, contentUsage, customMissionTemplates, emptyCombatMission, emptyInvestigationMission, emptyLibrary, emptyMission, exportContentPack, mergeContentPack, readContentPack, ruleText, sanitizeIncidentCard, sanitizeItem, sanitizeLibrary, sanitizeMission, sanitizeMonster, sanitizeSkill, withCustomStock, CONTENT_PACK_FORMAT, LIBRARY_SCHEMA } from '../src/content/library.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, previewOpinionOption, resolveOpinionDialogue } from '../src/opinions.ts';
 import { blueprintIssues, buildGraphFromDraft, compileBeatsToGraph, layoutStoryGraph, makeNode, validateGraph, type StoryGraphDraft } from '../src/storygraph.ts';
@@ -239,7 +239,7 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
   assert.equal(yue.scars.length, 0);
   assert.equal(result.logs.find(l => l.kind === 'battle')?.delta, 1240);
 });
-test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
+test('v115 战斗击退只发放五成收益，魔物带伤回到事件池', () => {
   const s = createInitialState();
   // 双方都不会被打倒：我方打不动（魔力极低）、也不会倒（血量拉满），结局必然是「暂时击退」。
   for (const girl of s.girls) { girl.maxHp = 9999; girl.hp = 9999; girl.stats.magic = 1; girl.stats.insight = 1; }
@@ -250,9 +250,10 @@ test('战斗击退只发放八成收益，魔物带伤回到事件池', () => {
   const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
-  // v85：报酬还要乘「多怪奖励倍率」。
-  const expected = Math.round(mission.reward * 0.8 * monsterRewardMultiplier(mission.enemyIds?.length ?? 0));
+  // v85：报酬还要乘「多怪奖励倍率」；v115：击退改为按 50% 结算。
+  const expected = Math.round(mission.reward * 0.5 * monsterRewardMultiplier(mission.enemyIds?.length ?? 0));
   assert.equal(battle.outcome, 'repelled');
+  assert.equal(battle.partial, false);
   assert.equal(result.gold, goldBefore + expected);
   assert.equal(mission.status, 'open');
   assert.equal(mission.worsened, true);
@@ -2674,6 +2675,29 @@ test('MonsterRule 的伤害减免会真的作用在战斗结算里', () => {
   assert.ok(hurt && guarded);
   assert.ok(hurt.taken > 0);
   assert.ok(guarded.taken < hurt.taken);
+});
+
+test('v115 击杀过半才算胜利：不完全胜利 ×0.9、不足半数按击退 ×0.5', () => {
+  const initial = createInitialState();
+  const girl = initial.girls.find(entry => !entry.retired) ?? initial.girls[0];
+  const base = getMonster('mirror-nun');
+  // 一只打不穿的靶子：rounds 只有 1，必定打不完 → 击退线
+  const tough = { ...base, id: 'custom-monster-tough01', name: '铁皮靶', maxHp: 99999, stats: { magic: 1, insight: 1, agility: 1, empathy: 1 }, rules: [] };
+  const mission: Mission = { ...initial.missions[0], id: 'kill-ratio', title: '击杀比例', enemyIds: [tough.id], rounds: 1, duration: 120, work: 'combat', reward: 1000, recommendedLevel: 1 };
+  const repelled = simulateBattle({ mission, girls: [girl], day: 1, minutes: 1200, monsters: [tough] });
+  assert.equal(repelled.outcome, 'repelled', '一只都没打死 → 击退');
+  assert.equal(repelled.partial, false);
+  assert.equal(rewardRate(repelled.outcome, repelled.partial === true), 0.5, '击退奖励系数 0.5');
+  assert.equal(repelled.rewards?.gold, Math.round(1000 * 0.5 * monsterRewardMultiplier(1)), '星砂按 50% 结算');
+
+  // 系数表本身
+  assert.equal(rewardRate('victory', false), 1);
+  assert.equal(rewardRate('victory', true), 0.9);
+  assert.equal(rewardRate('repelled', false), 0.5);
+  assert.equal(rewardRate('defeat', false), 0);
+  assert.equal(outcomeLabel('victory', true), '不完全胜利');
+  assert.equal(battleOutcomeLabel('victory', true), '不完全胜利');
+  assert.equal(battleOutcomeLabel('repelled'), '击退');
 });
 
 test('战斗札记：按回合覆盖、说话阵营与倒下校验，简报可保存替换', () => {

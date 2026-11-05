@@ -1010,6 +1010,8 @@ export interface BattleState {
   startedAt: { day: number; minutes: number };
   round: number; rounds: number; units: BattleUnit[]; initiative: string[];
   events: BattleEvent[]; outcome?: 'victory' | 'repelled' | 'defeat' | 'draw';
+  /** 这一场是「不完全胜利」：击败超过一半但没有全歼，按胜利结算、奖励打折。 */
+  partial?: boolean;
   /** 判负的原因：`stunned` 是全队被打得踉跄，`wounded` 是血量归零。疤痕取法不同。 */
   defeatReason?: 'stunned' | 'wounded';
   frames?: { round: number; units: BattleUnit[]; initiative: string[] }[];

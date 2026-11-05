@@ -1,4 +1,4 @@
-import { outcomeLabel, simulateBattle } from '../combat.ts';
+import { outcomeLabel, rewardRate, simulateBattle } from '../combat.ts';
 import { currentBoss, pickBoss } from '../content/bosses.ts';
 import { items } from '../content/items.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
@@ -180,8 +180,8 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
       if (mission.faction === 'witch') applyWitchBounty(state);
     }
     if (mission.boss && state.boss) defeatBoss(state, at.day);
-    state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗胜利：${mission.title}。魔物已被清除，事件移出委托池。${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
-    pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `委托完成 · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}打赢了这一场，报酬 ${rewards.gold} 星砂。` });
+    state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome, battle.partial === true)}：${mission.title}。${battle.partial ? '大部分魔物被清除，剩下的逃散了；事件同样移出委托池，报酬按 90% 结算。' : '魔物已被清除，事件移出委托池。'}${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
+      pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `${battle.partial ? '委托达成' : '委托完成'} · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}${battle.partial ? '把大部分魔物清了出去' : '打赢了这一场'}，报酬 ${rewards.gold} 星砂${battle.partial ? '（不完全胜利 · 90%）' : ''}。` });
   } else if (battle.outcome === 'defeat') {
     state.reputation = Math.max(0, state.reputation - 3);
     const envoyBalance = loadBalance();
@@ -213,7 +213,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     mission.worsened = true;
     mission.squad = [];
     mission.girlId = undefined;
-    state.logs.unshift({ id: `log-repel-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome)}：${mission.title}。获得 ${rewards.gold} 星砂，魔物带伤退去（下次血量 -20%）。`, delta: rewards.gold });
+    state.logs.unshift({ id: `log-repel-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome)}：${mission.title}。击败不足半数，获得 ${rewards.gold} 星砂（按 50% 结算），魔物带伤退去（下次血量 -20%）。`, delta: rewards.gold });
   }
   // 打完了就把 Boss 剩下的血记下来：下一场从这儿开打，失败也不白跑。
   if (mission.boss && state.boss) {
@@ -226,7 +226,8 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     girl.hp = Math.max(1, unit.hp);
     girl.spirit = effectiveGuard(girl);
     if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
-      grantExpWithNotice(state, girl, missionExp(girl, mission.recommendedLevel, 'battle'));
+      // v115：经验与星砂共用一个收益系数——不完全胜利 ×0.9、击退 ×0.5。
+      grantExpWithNotice(state, girl, Math.max(1, Math.round(missionExp(girl, mission.recommendedLevel, 'battle') * rewardRate(battle.outcome, battle.partial === true))));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
     }
     girl.bond = Math.max(0, Math.min(100, girl.bond + rewards.bond));

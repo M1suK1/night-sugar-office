@@ -369,7 +369,7 @@ export function advance(state: GameState, minutes: number): ActionResult {
     }
   }
   const closed = next.minutes >= SHIFT_END;
-  return { state: next, ok: true, message: closed ? '打烊时间到了。接下今晚的账，明晚再开张。' : lastBattle ? `${outcomeLabel(lastBattle.outcome)}：${lastBattle.missionTitle}` : `时间推进 ${step} 分钟。`, battle: lastBattle };
+  return { state: next, ok: true, message: closed ? '打烊时间到了。接下今晚的账，明晚再开张。' : lastBattle ? `${outcomeLabel(lastBattle.outcome, lastBattle.partial === true)}：${lastBattle.missionTitle}` : `时间推进 ${step} 分钟。`, battle: lastBattle };
 }
 
 /** 结算今晚：把剩余时间走完、撤回未接委托、休整，然后开门进入下一天 20:00。 */
