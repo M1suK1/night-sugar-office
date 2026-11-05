@@ -9,16 +9,31 @@ import './vn.css';
 const CHAR_MS = 28;
 const PAUSE_MS = 900;
 
+export interface VnSideOptionItem {
+  id: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  isBranch?: boolean;
+}
+
+export interface VnSideOptions {
+  lead?: string;
+  items: VnSideOptionItem[];
+}
+
 /**
- * 视觉小说阅读器（v97）。
+ * 视觉小说阅读器（v98）。
  *
- * 布局：
+ * 布局特性：
  *  - 舞台背景（有图出图，无图出优雅渐变）
  *  - 人物立绘无背景并贴底站立，放大至撑满舞台大部分高度
  *  - 对话框底部与界面底部齐平，半透明磨砂质感，盖在立绘上能隐约看到立绘下半身
  *  - 发言人专属头像框 + 台词文字跟随角色代表色
+ *  - 选项置于界面右侧，且在读到结尾时浮现
+ *  - 玩家发言输入栏并入界面底端（位于对话框下方贴底，同样半透明盖在立绘上）
  */
-export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey }: {
+export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey, sideOptions, composer }: {
   beats: VnBeat[];
   cast: VnCastMember[];
   onChoose?: (choiceId: string) => void;
@@ -28,6 +43,10 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   title?: string;
   /** 换一段演出（不同 event / passage）时用它重置；只追加台词不会打断进度。 */
   resetKey?: string;
+  /** 界面右侧选项列（交互剧情的行动建议或分支），在读到结尾时浮现 */
+  sideOptions?: VnSideOptions;
+  /** 并入界面最底部的输入框操作栏（半透明贴底盖在立绘上） */
+  composer?: React.ReactNode;
 }) {
   const [state, setState] = useState(() => vnInitial(beats));
   const [auto, setAuto] = useState(false);
@@ -86,7 +105,14 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); advance(); return; }
+      if (event.key === ' ' || event.key === 'Enter') {
+        // 如果输入框有焦点，不要拦截 Enter
+        const active = document.activeElement;
+        if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
+        event.preventDefault();
+        advance();
+        return;
+      }
       if (event.key === 'Escape') { onClose?.(); return; }
       if (/^[1-9]$/.test(event.key) && beat?.kind === 'choice') {
         const option = beat.options[Number(event.key) - 1];
@@ -118,6 +144,9 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const focus = speaker ?? cast[0];
   const speakerColor = speaker?.girl.color || focus?.girl.color || '#f3aec9';
 
+  // 是否读到结尾（用于控制右侧建议选项浮现）
+  const isAtEnd = state.done || state.index >= state.beats.length - 1;
+
   return (
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
       {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
@@ -146,62 +175,92 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       </div>
 
       <div className="vn-bottom">
-        {beat?.kind === 'scene' ? (
-          <button className="vn-box vn-scene-card" type="button" onClick={advance}>
-            <span className="vn-name">换场</span>
-            <span className="vn-text">{beat.title}</span>
-            <span className="vn-next ready" aria-hidden="true">▼</span>
-          </button>
-        ) : beat?.kind === 'choice' ? (
-          <div className="vn-choices" role="group" aria-label="选择">
-            {beat.prompt && <p className="vn-choice-prompt">{beat.prompt}</p>}
-            {beat.options.map((option, at) => (
-              <button key={option.id} id={`vn-choice-${option.id}`} type="button" className="vn-choice" onClick={() => choose(option.id)}>
-                <em>{at + 1}</em>
-                <span>{option.label}</span>
-                {option.hint && <small>{option.hint}</small>}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <button className="vn-box" type="button" onClick={advance} aria-live="polite">
-            <div className="vn-box-inner">
-              {speaker && (
-                <div className="vn-box-avatar" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
-                  <GirlPortrait
-                    girl={{
-                      ...speaker.girl,
-                      expression: isSay && beat.expression ? beat.expression : speaker.girl.expression ?? 'calm',
-                    }}
-                    variant="avatar"
-                    bare
-                  />
-                </div>
-              )}
-              <div className="vn-box-content">
-                <div className="vn-box-meta">
-                  <span
-                    className="vn-name"
-                    style={{
-                      color: isNarrator ? '#f3aec9' : speakerColor,
-                      borderColor: `${isNarrator ? '#f3aec9' : speakerColor}55`,
-                    }}
-                  >
-                    {isNarrator ? '旁白' : isSay ? beat.name : ''}
-                  </span>
-                </div>
-                <span
-                  className={`vn-text ${isNarrator ? 'thought' : ''}`}
-                  style={!isNarrator && speakerColor ? { color: speakerColor } : undefined}
+        {/* 1. 建议选项：放在界面右侧，读到结尾再显示 */}
+        {isAtEnd && sideOptions && sideOptions.items.length > 0 && (
+          <aside className="vn-side-options" role="group" aria-label="行动与分支选项">
+            {sideOptions.lead && <p className="vn-side-lead">{sideOptions.lead}</p>}
+            <div className="vn-side-list">
+              {sideOptions.items.map((opt, i) => (
+                <button
+                  key={opt.id || i}
+                  type="button"
+                  className={`vn-side-item ${opt.isBranch ? 'branch' : ''}`}
+                  disabled={opt.disabled}
+                  onClick={opt.onClick}
                 >
-                  {state.typing ? shown : typedText || '……'}
-                </span>
-                {beat?.kind === 'say' && beat.action && <span className="vn-action">{beat.action}</span>}
-              </div>
+                  <span className="vn-side-num">{i + 1}</span>
+                  <span className="vn-side-label">{opt.label}</span>
+                </button>
+              ))}
             </div>
-            <span className={`vn-next ${state.typing ? '' : 'ready'}`} aria-hidden="true">▼</span>
-          </button>
+          </aside>
         )}
+
+        <div className="vn-bottom-dock">
+          {beat?.kind === 'scene' ? (
+            <button className="vn-box vn-scene-card" type="button" onClick={advance}>
+              <span className="vn-name">换场</span>
+              <span className="vn-text">{beat.title}</span>
+              <span className="vn-next ready" aria-hidden="true">▼</span>
+            </button>
+          ) : beat?.kind === 'choice' ? (
+            <div className="vn-choices" role="group" aria-label="选择">
+              {beat.prompt && <p className="vn-choice-prompt">{beat.prompt}</p>}
+              {beat.options.map((option, at) => (
+                <button key={option.id} id={`vn-choice-${option.id}`} type="button" className="vn-choice" onClick={() => choose(option.id)}>
+                  <em>{at + 1}</em>
+                  <span>{option.label}</span>
+                  {option.hint && <small>{option.hint}</small>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button className={`vn-box ${composer ? 'has-composer' : ''}`} type="button" onClick={advance} aria-live="polite">
+              <div className="vn-box-inner">
+                {speaker && (
+                  <div className="vn-box-avatar" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
+                    <GirlPortrait
+                      girl={{
+                        ...speaker.girl,
+                        expression: isSay && beat.expression ? beat.expression : speaker.girl.expression ?? 'calm',
+                      }}
+                      variant="avatar"
+                      bare
+                    />
+                  </div>
+                )}
+                <div className="vn-box-content">
+                  <div className="vn-box-meta">
+                    <span
+                      className="vn-name"
+                      style={{
+                        color: isNarrator ? '#f3aec9' : speakerColor,
+                        borderColor: `${isNarrator ? '#f3aec9' : speakerColor}55`,
+                      }}
+                    >
+                      {isNarrator ? '旁白' : isSay ? beat.name : ''}
+                    </span>
+                  </div>
+                  <span
+                    className={`vn-text ${isNarrator ? 'thought' : ''}`}
+                    style={!isNarrator && speakerColor ? { color: speakerColor } : undefined}
+                  >
+                    {state.typing ? shown : typedText || '……'}
+                  </span>
+                  {beat?.kind === 'say' && beat.action && <span className="vn-action">{beat.action}</span>}
+                </div>
+              </div>
+              <span className={`vn-next ${state.typing ? '' : 'ready'}`} aria-hidden="true">▼</span>
+            </button>
+          )}
+
+          {/* 2. 玩家发言输入框并入界面，紧贴对话框下方，底部齐平，半透明盖在立绘上 */}
+          {composer && (
+            <div className="vn-composer-bar">
+              {composer}
+            </div>
+          )}
+        </div>
       </div>
       <span className="vn-progress" aria-hidden="true">{state.done ? '收束' : `${Math.min(state.index + 1, state.beats.length)} / ${state.beats.length}`}</span>
       {(auto || fast) && <span className="vn-mode-note">{fast ? '快进中' : '自动播放'}</span>}

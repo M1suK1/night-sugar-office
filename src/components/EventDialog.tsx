@@ -184,6 +184,76 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
     setSending(false);
   };
 
+  const vnSideOptions = useMemo(() => {
+    if (event.pendingChoice && pending?.options?.length) {
+      return {
+        lead: '她停在门口，等你拿主意：',
+        items: pending.options.map(option => ({
+          id: option.id,
+          label: option.label,
+          onClick: () => onBranch?.(option.id),
+          disabled: loading,
+          isBranch: true,
+        })),
+      };
+    }
+    if (options.length > 0 && !event.pendingChoice) {
+      return {
+        lead: '行动建议：',
+        items: options.map((option, index) => ({
+          id: `opt-${index}`,
+          label: option,
+          onClick: () => void submit(option),
+          disabled: loading,
+        })),
+      };
+    }
+    return undefined;
+  }, [event.pendingChoice, pending, options, loading]);
+
+  const vnComposerSlot = !readOnly && !event.pendingChoice ? (
+    <div className="vn-session-input">
+      <label className="sr-only" htmlFor="story-action-vn">写下你的行动</label>
+      <textarea
+        id="story-action-vn"
+        rows={1}
+        maxLength={300}
+        value={draft}
+        disabled={loading}
+        placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话…… (Ctrl+Enter 发送)'}
+        onChange={input => setDraft(input.target.value)}
+        onKeyDown={input => {
+          if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') {
+            input.preventDefault();
+            void submit(draft);
+          }
+        }}
+      />
+      <button id="story-submit-vn" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>
+        行动
+      </button>
+      {confirmEnd ? (
+        <span className="session-end-confirm">
+          <button id="story-end-confirm-vn" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>
+            {busy ? '正在收尾…' : '确认结束'}
+          </button>
+          <button id="story-end-cancel-vn" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>
+            再聊一会
+          </button>
+        </span>
+      ) : (
+        <button id="story-end-vn" type="button" className="btn" onClick={() => setConfirmEnd(true)}>
+          {branch && !event.pendingChoice ? '导向结局' : '结束事件'}
+        </button>
+      )}
+    </div>
+  ) : readOnly ? (
+    <div className="vn-session-readonly">
+      <span>这段剧情已经结束。{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '结局在最后一段。' : ''}</span>
+      <button id="story-close-vn" type="button" className="btn primary" onClick={onClose}>把这一段收进记忆</button>
+    </div>
+  ) : null;
+
   const composerContent = (
     <>
       {readOnly && (
@@ -272,19 +342,18 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
         </header>
 
         {stage ? (
-          <>
-            <div className="event-stage-wrap">
-              <VnReader
-                beats={stageBeats}
-                resetKey={event.id}
-                title={event.title}
-                cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
-                onText={onText}
-                onClose={onClose}
-              />
-            </div>
-            {composerContent}
-          </>
+          <div className="event-stage-wrap">
+            <VnReader
+              beats={stageBeats}
+              resetKey={event.id}
+              title={event.title}
+              cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
+              sideOptions={vnSideOptions}
+              composer={vnComposerSlot}
+              onText={onText}
+              onClose={onClose}
+            />
+          </div>
         ) : (
           <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`}>
             <aside className={`battle-note-side left ${cast.length ? '' : 'empty'} ${cast.length >= 3 ? 'dense' : ''}`} aria-label="在场角色">
