@@ -36,16 +36,18 @@ function seedTwoSlots() {
   store.set(CONFIG_KEY, JSON.stringify(loadLlmSettings()));
 }
 
-test('默认预算：统一 2048，重 JSON 任务各有更宽的默认口子', () => {
+test('默认预算：统一 8000，只有三处长文任务单给 24000', () => {
   const budget = defaultLlmBudget();
   assert.equal(budget.unified, BUDGET_UNIFIED_DEFAULT);
-  assert.equal(budget.unified, 2048);
-  assert.equal(budget.tasks.daily, 6000);
-  assert.equal(budget.tasks.arc, 4000);
+  assert.equal(budget.unified, 8000);
+  assert.equal(budget.tasks.battle, 24000);
+  assert.equal(budget.tasks.arc, 24000);
+  assert.equal(budget.tasks.event, 24000);
+  assert.equal(budget.tasks.daily, undefined, '其余任务跟随统一值');
   assert.equal(budget.tasks.chat, undefined);
   assert.equal(DEFAULT_TASK_BUDGETS.chat, undefined);
   assert.equal(LLM_BUDGET_TASKS.length, 11);
-  assert.equal(budget.tasks.whisper, 2400);
+  assert.equal(budget.tasks.whisper, undefined);
 });
 
 test('未单独指定的任务跟随统一值，指定了就用自己的', () => {
@@ -59,7 +61,7 @@ test('没有预算记录时回落到默认值', () => {
   store.clear();
   const budget = loadLlmBudget();
   assert.equal(budget.unified, BUDGET_UNIFIED_DEFAULT);
-  assert.equal(budget.tasks.daily, 6000);
+  assert.equal(budget.tasks.arc, 24000);
 });
 
 test('存盘会夹到合法区间，非法单项直接丢掉', () => {

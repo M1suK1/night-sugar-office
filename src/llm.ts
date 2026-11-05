@@ -540,7 +540,7 @@ export interface LlmCredential extends LlmProxyOptions {
 /** 输出预算：统一值之下，重 JSON 任务默认给更宽的口子，其余跟随统一值。 */
 export const BUDGET_MIN = 256;
 export const BUDGET_MAX = 32768;
-export const BUDGET_UNIFIED_DEFAULT = 2048;
+export const BUDGET_UNIFIED_DEFAULT = 8000;
 export const LLM_BUDGET_TASKS = [
   { key: 'chat', label: '角色对话' },
   { key: 'daily', label: '每日提案' },
@@ -561,8 +561,13 @@ export interface LlmBudget {
   tasks: Partial<Record<LlmTaskKey, number>>;
 }
 const BUDGET_KEY = 'night-sugar:llm-budget';
-/** 一次性输出整份 JSON 的任务，默认给更宽的额度。 */
-export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { daily: 6000, news: 1200, arc: 4000, battle: 16000, event: 3000, incident: 3000, storyline: 3000, whisper: 2400 };
+/**
+ * 一次性输出整份长文的任务，单独给更宽的额度。
+ *
+ * v94：统一值抬到 8000；只有这三项（战斗札记 / 故事线蓝图 / 故事事件）单独给 24000，
+ * 其余任务都跟随统一值，不再各自写一个比统一值还小的数。
+ */
+export const DEFAULT_TASK_BUDGETS: Partial<Record<LlmTaskKey, number>> = { battle: 24000, arc: 24000, event: 24000 };
 
 function clampBudget(value: unknown, fallback: number): number {
   const num = Math.round(Number(value));
@@ -1131,8 +1136,8 @@ const DEFAULT_TOKEN_BUDGET = 8000;
 export const SCOPE_TOKEN_FLOOR: Record<string, number> = {
   storyline: 32000,
   arc: 24000,
-  event: 16000,
-  battle: 16000,
+  event: 24000,
+  battle: 24000,
   profile: 16000,
   incident: 12000,
   news: 12000,
