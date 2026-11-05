@@ -39,6 +39,8 @@ export interface PassageBeatOptions {
   expression?: Expression;
   element?: string;
   scene?: string;
+  /** 这一场在整段故事里的序号：舞台按它判断谁该进场、谁该退场。 */
+  segment?: number;
 }
 
 const tidy = (text: string): string => text.replace(/\r\n/g, '\n').trim();
@@ -102,6 +104,7 @@ function interleave<T extends { after?: number }>(paragraphs: string[], lines: r
 }
 
 export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptions = {}): VnBeat[] {
+  const segmentIndex = options.segment ?? 0;
   const beats: VnBeat[] = [];
   const backdrop: VnBackdrop = passage.scene
     ? { id: passage.scene }
@@ -117,7 +120,7 @@ export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptio
 
   for (const segment of segments) {
     if (segment.kind === 'narration') {
-      beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: paragraphs[segment.index]!, thought: true });
+      beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: paragraphs[segment.index]!, thought: true, segment: segmentIndex });
       continue;
     }
     const line = lines[segment.index]!;
@@ -129,6 +132,7 @@ export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptio
       text: tidy(line.text),
       expression: fromNarrator ? undefined : options.expression,
       thought: fromNarrator,
+      segment: segmentIndex,
     });
   }
 
@@ -161,7 +165,7 @@ export interface TurnLike {
  */
 export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName?: string; scene?: VnBackdrop } = {}): VnBeat[] {
   const beats: VnBeat[] = [{ kind: 'bg', backdrop: options.scene ?? { id: 'night' } }];
-  for (const turn of turns) {
+  turns.forEach((turn, turnIndex) => {
     const paragraphs = paragraphsOf(turn.text ?? '');
     const lines = (turn.lines ?? []).filter(line => tidy(line.text ?? ''));
     const isPlayer = turn.role === 'player';
@@ -175,15 +179,16 @@ export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName
           name: isPlayer ? options.playerName ?? '所长' : '旁白',
           text: paragraph,
           thought: !isPlayer,
+          segment: turnIndex,
         });
       }
-      continue;
+      return;
     }
 
     const inter = interleave(paragraphs, lines);
     for (const segment of inter.segments) {
       if (segment.kind === 'narration') {
-        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: inter.chunks[segment.index]!, thought: true });
+        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: inter.chunks[segment.index]!, thought: true, segment: turnIndex });
         continue;
       }
       const line = inter.lines[segment.index]!;
@@ -197,9 +202,10 @@ export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName
         text: body,
         expression: fromNarrator ? undefined : line.expression,
         thought: fromNarrator,
+        segment: turnIndex,
       });
     }
-  }
+  });
   beats.push({ kind: 'end' });
   return beats;
 }
@@ -238,12 +244,12 @@ export interface NoteSceneLike {
 export function beatsFromBattleNote(scenes: readonly NoteSceneLike[], speakers: readonly NoteSpeaker[], options: { scene?: VnBackdrop } = {}): VnBeat[] {
   const byKey = new Map(speakers.map(speaker => [speaker.key, speaker]));
   const beats: VnBeat[] = [{ kind: 'bg', backdrop: options.scene ?? { id: 'night' } }];
-  for (const scene of scenes) {
+  scenes.forEach((scene, sceneIndex) => {
     if (scene.title?.trim()) beats.push({ kind: 'scene', title: scene.title.trim() });
     const inter = interleave(paragraphsOf(scene.narration ?? ''), (scene.lines ?? []).filter(line => tidy(line.text ?? '')));
     for (const segment of inter.segments) {
       if (segment.kind === 'narration') {
-        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: inter.chunks[segment.index]!, thought: true });
+        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: inter.chunks[segment.index]!, thought: true, segment: sceneIndex });
         continue;
       }
       const line = inter.lines[segment.index]!;
@@ -251,15 +257,15 @@ export function beatsFromBattleNote(scenes: readonly NoteSceneLike[], speakers: 
       if (!text) continue;
       const speaker = byKey.get(`${line.speakerSide}:${line.speakerId}`);
       if (!speaker) {
-        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text, thought: true });
+        beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text, thought: true, segment: sceneIndex });
         continue;
       }
       beats.push({
         kind: 'say', speakerId: speaker.id, name: speaker.name, text,
-        expression: line.expression, thought: line.mode === 'thought',
+        expression: line.expression, thought: line.mode === 'thought', segment: sceneIndex,
       });
     }
-  }
+  });
   beats.push({ kind: 'end' });
   return beats;
 }

@@ -2,13 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, FastForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { mergeCastOrder } from './cast';
+import { speakersBySegment, stageAfter } from './stage';
 import { vnAwaitingChoice, vnBeatKey, vnInitial, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
 
 const CHAR_MS = 28;
 const PAUSE_MS = 900;
+
+/** 舞台上的站位状态：这一段的在场者、刚入场的、正在淡出的。 */
+interface StageState {
+  ids: string[];
+  entering: string[];
+  leaving: string[];
+}
 
 export interface VnSideOptionItem {
   id: string;
@@ -52,6 +59,8 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const [state, setState] = useState(() => vnInitial(beats));
   const [auto, setAuto] = useState(false);
   const [fast, setFast] = useState(false);
+  // 舞台站位：这一段的在场者、刚入场的、正在淡出的（换一段剧情时整场清空）。
+  const [stage, setStage] = useState<StageState>({ ids: [], entering: [], leaving: [] });
   const timer = useRef<number | undefined>(undefined);
   const keyRef = useRef(resetKey);
   const lengthRef = useRef(beats.length);
@@ -63,6 +72,8 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     keyRef.current = resetKey;
     lengthRef.current = beats.length;
     const reset = prevKey !== resetKey || beats.length < prevLen;
+    // 换一段演出：舞台先清空，新的这一段再按说话人依次登场。
+    if (reset) setStage({ ids: [], entering: [], leaving: [] });
     setState(current => (reset ? vnInitial(beats) : vnRebase(current, beats, prevLen)));
   }, [beats, resetKey]);
 
@@ -162,17 +173,39 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const focus = speaker ?? cast[0];
   const speakerColor = isPlayer ? '#f3aec9' : speaker?.girl.color || focus?.girl.color || '#f3aec9';
 
-  // 出场顺序：先到的人站左边，后来的人从右侧进场（已存在的自然往左挤）。
   const castIds = useMemo(() => cast.map(member => member.id), [cast]);
-  const [order, setOrder] = useState<readonly string[]>(castIds);
-  const speakingId = isSay && !isNarrator && !isPlayer ? say!.speakerId : '';
-  useEffect(() => {
-    setOrder(current => mergeCastOrder(current, castIds, speakingId));
-  }, [castIds, speakingId]);
+  // 每一段（一幕剧情 / 一轮交互 / 一场战斗）里有谁开过口 —— 舞台只留这一段在场的人。
+  const segmentSpeakers = useMemo(() => speakersBySegment(state.beats), [state.beats]);
 
-  const shownCast = order
-    .map(id => cast.find(member => member.id === id))
-    .filter((member): member is VnCastMember => Boolean(member));
+  const segment = say?.segment;
+  // 只有这一段真的有人开口时才换人：纯旁白、所长发言的段落不该把人赶下台。
+  const desired = useMemo(() => {
+    if (segment === undefined) return '';
+    const list = (segmentSpeakers.get(segment) ?? []).filter(id => castIds.includes(id));
+    return list.length ? list.join('|') : '';
+  }, [segment, segmentSpeakers, castIds]);
+
+  useEffect(() => {
+    if (!desired) return;
+    setStage(current => {
+      const next = stageAfter(current.ids, desired.split('|'));
+      return next ? { ...current, ...next } : current;
+    });
+  }, [desired]);
+  // 进出场动画播完就收尾：退场的人让出格子，剩下的人重新均分舞台。
+  useEffect(() => {
+    if (!stage.entering.length && !stage.leaving.length) return;
+    const timer = window.setTimeout(() => setStage(current => ({ ids: current.ids, entering: [], leaving: [] })), 480);
+    return () => window.clearTimeout(timer);
+  }, [stage.entering, stage.leaving]);
+
+  const shownCast = useMemo(() => {
+    const ids = [...stage.ids];
+    for (const id of stage.leaving) if (!ids.includes(id)) ids.push(id);
+    return ids
+      .map(id => ({ id, member: cast.find(entry => entry.id === id) }))
+      .filter((entry): entry is { id: string; member: VnCastMember } => Boolean(entry.member));
+  }, [stage, cast]);
 
   // 是否读到结尾（用于控制右侧建议选项浮现）
   const isAtEnd = state.done || state.index >= state.beats.length - 1;
@@ -182,13 +215,15 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
       <div className="vn-vignette" aria-hidden="true" />
       <div className="vn-cast" data-count={Math.min(shownCast.length, 5)} aria-hidden="true">
-        {shownCast.map((member, at) => {
-          const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === member.id;
+        {shownCast.map(({ id, member }, at) => {
+          const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === id;
           const expression = (speaking ? say?.expression : undefined) ?? member.girl.expression ?? 'calm';
+          const leaving = stage.leaving.includes(id);
+          const entering = stage.entering.includes(id);
           return (
             <div
-              key={member.id}
-              className={`vn-actor ${speaking ? 'active' : 'dimmed'}`}
+              key={id}
+              className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${speaking ? 'active' : 'dimmed'}`}
               style={{ zIndex: speaking ? 40 : 10 + at }}
             >
               <GirlPortrait girl={{ ...member.girl, expression }} variant="full" bare />

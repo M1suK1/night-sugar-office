@@ -18,7 +18,7 @@ export interface VnBackdrop {
 }
 
 export type VnBeat =
-  | { kind: 'say'; speakerId: string; name: string; text: string; expression?: Expression; action?: string; thought?: boolean }
+  | { kind: 'say'; speakerId: string; name: string; text: string; expression?: Expression; action?: string; thought?: boolean; segment?: number }
   | { kind: 'choice'; prompt?: string; options: { id: string; label: string; hint?: string }[] }
   | { kind: 'bg'; backdrop: VnBackdrop; fadeMs?: number }
   /** 换场标题卡：战斗札记的分场、剧情换幕。 */

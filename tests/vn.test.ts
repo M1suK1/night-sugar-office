@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
 import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
-import { mergeCastOrder } from '../src/vn/cast.ts';
+import { speakersBySegment, stageAfter } from '../src/vn/stage.ts';
 import { placeLines } from '../src/storyLines.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
@@ -149,21 +149,51 @@ test('v98 只是变短或原地不变时不乱跳', () => {
   assert.equal(same.done, false);
 });
 
-test('v99 站位顺序：新人从右侧进场、老人不因开口换位、离场的人被移走', () => {
-  const start = mergeCastOrder([], ['a', 'b']);
-  assert.deepEqual(start, ['a', 'b'], '开场按名单站好');
+test('v101 换人：开场空场、新人物从右侧入场、不再开口的人淡出', () => {
+  // 第 0 段只有旁白 → 舞台空着
+  const speakers = speakersBySegment([
+    { kind: 'bg', backdrop: { id: 'night' } },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '夜很深。', segment: 0 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '……', segment: 1 },
+    { kind: 'say', speakerId: 'b', name: 'B', text: '……', segment: 2 },
+    { kind: 'say', speakerId: 'a', name: 'A', text: '……', segment: 2 },
+    { kind: 'end' },
+  ] as VnBeat[]);
+  assert.equal(speakers.has(0), false, '只有旁白的段落不该有人上台');
+  assert.deepEqual(speakers.get(1), ['a']);
+  assert.deepEqual(speakers.get(2), ['b', 'a'], '按第一次开口的顺序');
 
-  // b 开口：不重排，站位不动
-  assert.equal(mergeCastOrder(start, ['a', 'b'], 'b'), start, '同一批人开口不换位（连引用都不变）');
+  // 开场：从空场到 A 登场
+  const first = stageAfter([], ['a']);
+  assert.deepEqual(first, { ids: ['a'], entering: ['a'], leaving: [] });
 
-  // 新人 c 进场：追加到最右
-  assert.deepEqual(mergeCastOrder(start, ['a', 'b', 'c'], 'c'), ['a', 'b', 'c']);
+  // 第二段 B 加入：只有 B 是新人，A 不动
+  const second = stageAfter(first!.ids, ['a', 'b']);
+  assert.deepEqual(second, { ids: ['a', 'b'], entering: ['b'], leaving: [] });
 
-  // 名单外的说话人也要有站位（例如临时登场）
-  assert.deepEqual(mergeCastOrder(['a'], ['a'], 'ghost'), ['a', 'ghost']);
+  // 第三段 A 不开口：A 淡出，只剩 B
+  const third = stageAfter(second!.ids, ['b']);
+  assert.deepEqual(third, { ids: ['b'], entering: [], leaving: ['a'] });
 
-  // a 离场：只去掉 a，其余相对顺序不变
-  assert.deepEqual(mergeCastOrder(['a', 'b', 'c'], ['b', 'c']), ['b', 'c']);
+  // 同一批人再说一遍：不算换人
+  assert.equal(stageAfter(third!.ids, ['b']), null);
+});
+
+test('v101 段号：交互剧情按轮、战斗札记按场打标记', () => {
+  const turns = beatsFromTurns([
+    { id: 't1', role: 'narrator', text: '雨下着。', lines: [{ speakerId: 'a', speakerName: 'A', text: '你来了。' }] },
+    { id: 't2', role: 'player', text: '我点了灯。' },
+    { id: 't3', role: 'narrator', text: '灯亮了。', lines: [{ speakerId: 'b', speakerName: 'B', text: '好久不见。' }] },
+  ]);
+  const segments = turns.filter(beat => beat.kind === 'say').map(beat => (beat as Extract<VnBeat, { kind: 'say' }>).segment);
+  assert.deepEqual(segments, [0, 0, 1, 2, 2], '三轮各自一段');
+
+  const note = beatsFromBattleNote([
+    { id: 's1', title: '第一场', narration: '铁皮在响。', lines: [{ speakerSide: 'ally', speakerId: 'a', text: '别挡路。' }] },
+    { id: 's2', title: '第二场', narration: '她退了半步。', lines: [] },
+  ], [{ key: 'ally:a', id: 'a', name: 'A' }]);
+  const noteSegments = note.filter(beat => beat.kind === 'say').map(beat => (beat as Extract<VnBeat, { kind: 'say' }>).segment);
+  assert.deepEqual(noteSegments, [0, 0, 1], '按场号打标记');
 });
 
 test('v99 一整段旁白 + 末尾台词：按句子摊开后把台词插进去，不会全堆在最后', () => {

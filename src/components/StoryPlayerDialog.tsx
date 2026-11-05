@@ -25,8 +25,8 @@ export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose
   const [textMode, setTextMode] = useState(false);
   const stage = Boolean(vnStory) && !textMode;
   const beats = useMemo(
-    () => (current ? beatsFromPassage(current, { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element }) : []),
-    [current, girl?.id, girl?.name, girl?.expression, girl?.element],
+    () => (current ? beatsFromPassage(current, { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element, segment: index }) : []),
+    [current, index, girl?.id, girl?.name, girl?.expression, girl?.element],
   );
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +71,7 @@ export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose
         {stage && current && !busy && (
           <VnReader
             beats={beats}
+            resetKey={`${event.id}-${index}`}
             title={`${event.title} · ${current.title ?? ''}`}
             cast={girl ? [{ id: girl.id, name: girl.name, girl }] : []}
             onChoose={choiceId => onChoose(event.id, choiceId)}

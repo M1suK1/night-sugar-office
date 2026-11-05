@@ -56,7 +56,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
   const stageBeats = useMemo(
       () => beatsFromPassage(
         { id: `${event.id}-${event.stage}`, title: scene?.title ?? '', narration: scene?.narration ?? '', lines: (scene?.lines ?? []).map(line => ({ speaker: line.speaker, text: line.text })), choices: scene?.choices ?? [], scene: 'room:lounge' },
-    { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element },
+    { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element, segment: event.stage },
   ), [event.id, event.stage, scene, girl?.id, girl?.name, girl?.expression, girl?.element]);
   if (!scene) return null;
   if (stage) {
