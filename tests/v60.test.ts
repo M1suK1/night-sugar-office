@@ -17,14 +17,17 @@ function girlWithPoints(points: number) {
 }
 
 test('v60 预设的上限也生效：与输出预算取较大者', () => {
-  assert.equal(taskRuntime(presetWith(6000), 'whisper').maxTokens, 6000, '预设更高时听预设');
-  assert.equal(taskRuntime(presetWith(800), 'daily').maxTokens, DEFAULT_TASK_BUDGETS.daily, '预设更低时听预算');
+  // 统一额度 8000：预设比它高才听预设。
+  assert.equal(taskRuntime(presetWith(12000), 'whisper').maxTokens, 12000, '预设更高时听预设');
+  assert.equal(taskRuntime(presetWith(800), 'daily').maxTokens, 8000, '预设更低时听预算');
+  assert.equal(taskRuntime(presetWith(6000), 'battle').maxTokens, DEFAULT_TASK_BUDGETS.battle, '长文任务听自己的 24000');
   assert.equal(taskRuntime(presetWith(99000), 'battle').maxTokens, BUDGET_MAX, '再高也要夹在 BUDGET_MAX');
 });
 
-test('v60 没绑预设时不借用内置预设的 8000', () => {
-  assert.equal(taskRuntime(undefined, 'whisper').maxTokens, DEFAULT_TASK_BUDGETS.whisper);
-  assert.equal(taskRuntime(undefined, 'news').maxTokens, DEFAULT_TASK_BUDGETS.news);
+test('v60 没绑预设时不借用内置预设的额度', () => {
+  assert.equal(taskRuntime(undefined, 'whisper').maxTokens, 8000);
+  assert.equal(taskRuntime(undefined, 'news').maxTokens, 8000);
+  assert.equal(taskRuntime(undefined, 'battle').maxTokens, DEFAULT_TASK_BUDGETS.battle);
 });
 
 test('v60 滑条一次提交四项：属性与剩余点数都正确', () => {

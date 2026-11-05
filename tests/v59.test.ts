@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_TASK_BUDGETS, isTruncatedFinish, parseDialogueReply, truncatedRetryBudget } from '../src/llm.ts';
+import { DEFAULT_TASK_BUDGETS, budgetForTask, defaultLlmBudget, isTruncatedFinish, parseDialogueReply, truncatedRetryBudget } from '../src/llm.ts';
 import { SAMPLING_FIELDS } from '../src/presets.ts';
 
 test('v59 截断判定覆盖两家接口的写法', () => {
@@ -19,9 +19,10 @@ test('v59 截断后的重试额度：至少翻倍、不低于 2400、封顶 3276
   assert.equal(truncatedRetryBudget(undefined), 2400);
 });
 
-test('v59 灯下私语的默认额度抬到 2400', () => {
-  assert.equal(DEFAULT_TASK_BUDGETS.whisper, 2400);
-  assert.equal(DEFAULT_TASK_BUDGETS.news, 1200, '别的档位不动');
+test('v94 灯下私语跟随统一额度（8000）', () => {
+  assert.equal(DEFAULT_TASK_BUDGETS.whisper, undefined);
+  assert.equal(DEFAULT_TASK_BUDGETS.news, undefined);
+  assert.equal(budgetForTask(defaultLlmBudget(), 'whisper'), 8000);
 });
 
 test('v59 被截断的 JSON 只会解析出半条（这就是"已生成 1 条"却断在动作上的原因）', () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_TASK_BUDGETS, extractJsonObject, incidentEntriesFrom } from '../src/llm.ts';
+import { DEFAULT_TASK_BUDGETS, budgetForTask, defaultLlmBudget, extractJsonObject, incidentEntriesFrom } from '../src/llm.ts';
 
 const entry = (title: string, category = 'decision') => ({ category, title, body: '桥头的冷藏货卡封印开裂，市役所限四十分钟内处理。', options: [] });
 
@@ -30,6 +30,9 @@ test('v55 批量事件容忍换壳子：entries / incidents / data.entries / 单
 });
 
 test('v55 突发事件有独立额度，不再共用 2048 把三条事件写断', () => {
-  assert.equal(DEFAULT_TASK_BUDGETS.incident, 3000);
-  assert.equal(DEFAULT_TASK_BUDGETS.news, 1200, '其它档位不受影响');
+  // v94：统一值抬到 8000 之后，突发事件与新闻不再单独占额度，跟随统一值。
+  assert.equal(DEFAULT_TASK_BUDGETS.incident, undefined);
+  assert.equal(DEFAULT_TASK_BUDGETS.news, undefined);
+  assert.equal(budgetForTask(defaultLlmBudget(), 'incident'), 8000);
+  assert.equal(budgetForTask(defaultLlmBudget(), 'news'), 8000);
 });
