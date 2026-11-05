@@ -13,6 +13,9 @@ const expressionLabel: Record<Expression, string> = {
   calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
 };
 
+/** 空数组也要稳定引用：否则每次渲染都会重建节拍表。 */
+const NO_TURNS: NonNullable<CharacterEvent['turns']> = [];
+
 export interface EventDialogProps {
   event: CharacterEvent;
   girl?: Girl;
@@ -119,7 +122,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
 function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
-  const turns = event.turns ?? [];
+  const turns = event.turns ?? NO_TURNS;
   const [draft, setDraft] = useState('');
   const [preview, setPreview] = useState<{ id: string; expression: Expression } | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);

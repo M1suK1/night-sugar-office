@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
-import { vnInitial, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
+import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
@@ -96,6 +96,51 @@ test('v93 跳过已读：没看过的句子会停住', () => {
   const state = vnReducer(vnInitial(beats), { type: 'skipSeen', seen });
   assert.equal(state.index, 1, '跳到第一条没看过的');
   assert.equal(state.typing, true);
+});
+
+test('v98 追加新台词后从收束那拍接回：新旁白一定会演，不会一直卡在 end', () => {
+  const before: VnBeat[] = [
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '她把窗关上。' },
+    { kind: 'end' },
+  ];
+  // 演到底：done 被置成 true
+  let state = vnInitial(before);
+  state = vnReducer(state, { type: 'typed' });
+  state = vnReducer(state, { type: 'advance' });
+  assert.equal(state.done, true, '先演到收束');
+
+  // 交互剧情回了一轮：整张表重建，末尾多了新旁白与新台词
+  const after: VnBeat[] = [
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '她把窗关上。' },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '雨声忽然近了。' },
+    { kind: 'say', speakerId: 'yue', name: '月见桃', text: '你听见了吗。' },
+    { kind: 'end' },
+  ];
+  state = vnRebase(state, after, before.length);
+  assert.equal(state.index, 1, '指针退回旧表的收束位，也就是第一条新旁白');
+  assert.equal(state.done, false, 'done 必须放开，否则 advance 永远早退');
+  assert.equal(state.typing, true);
+  assert.equal((state.beats[state.index] as Extract<VnBeat, { kind: 'say' }>).text, '雨声忽然近了。');
+
+  // 继续推得动
+  state = vnReducer(state, { type: 'typed' });
+  state = vnReducer(state, { type: 'advance' });
+  assert.equal((state.beats[state.index] as Extract<VnBeat, { kind: 'say' }>).name, '月见桃');
+});
+
+test('v98 只是变短或原地不变时不乱跳', () => {
+  const beats: VnBeat[] = [
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '一。' },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '二。' },
+    { kind: 'end' },
+  ];
+  let state = vnInitial(beats);
+  state = vnReducer(state, { type: 'typed' });
+  state = vnReducer(state, { type: 'advance' });
+  assert.equal(state.index, 1);
+  const same = vnRebase(state, beats, beats.length);
+  assert.equal(same.index, 1, '表没变就停在原处');
+  assert.equal(same.done, false);
 });
 
 test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {

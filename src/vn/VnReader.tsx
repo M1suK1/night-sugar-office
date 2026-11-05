@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, FastForward, Square } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { vnAwaitingChoice, vnBeatKey, vnInitial, vnReducer } from './reducer';
+import { vnAwaitingChoice, vnBeatKey, vnInitial, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
 
@@ -55,12 +55,14 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const keyRef = useRef(resetKey);
   const lengthRef = useRef(beats.length);
 
-  // 换演出（resetKey 变了）→ 从头演；只是追加了新台词 → 保留当前进度。
+  // 换演出（resetKey 变了）→ 从头演；只是追加了新台词 → 接着演，并从「收束」那拍退回新的一句。
   useEffect(() => {
-    const reset = keyRef.current !== resetKey || beats.length < lengthRef.current;
+    const prevKey = keyRef.current;
+    const prevLen = lengthRef.current;
     keyRef.current = resetKey;
     lengthRef.current = beats.length;
-    setState(current => (reset ? vnInitial(beats) : { ...current, beats, index: Math.min(current.index, Math.max(0, beats.length - 1)) }));
+    const reset = prevKey !== resetKey || beats.length < prevLen;
+    setState(current => (reset ? vnInitial(beats) : vnRebase(current, beats, prevLen)));
   }, [beats, resetKey]);
 
   // 离开时把这次播过的句子记进 sessionStorage（不进存档）。
@@ -81,8 +83,10 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     let cursor = 0;
     setShown('');
     window.clearInterval(timer.current);
+    // 长旁白按长度等比加速：整段最多约 5 秒打完，不让一整段旁白看得人发困。
+    const stride = Math.max(1, Math.ceil(typedText.length / 180));
     timer.current = window.setInterval(() => {
-      cursor += 1;
+      cursor = Math.min(typedText.length, cursor + stride);
       setShown(typedText.slice(0, cursor));
       if (cursor >= typedText.length) {
         window.clearInterval(timer.current);
@@ -102,6 +106,17 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const advance = useCallback(() => {
     setState(current => vnReducer(current, { type: 'advance' }));
   }, []);
+
+  // 长旁白超出框高时，点一下先在框里往下滚，滚到底才前进 —— 否则读不完就被跳走了。
+  const boxRef = useRef<HTMLButtonElement | null>(null);
+  const advanceOrScroll = useCallback(() => {
+    const node = boxRef.current?.querySelector('.vn-box-content') as HTMLElement | null;
+    if (node && node.scrollHeight > node.clientHeight + 4 && node.scrollTop + node.clientHeight < node.scrollHeight - 4) {
+      node.scrollBy({ top: Math.max(48, node.clientHeight * 0.8), behavior: 'smooth' });
+      return;
+    }
+    advance();
+  }, [advance]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -215,7 +230,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
               ))}
             </div>
           ) : (
-            <button className={`vn-box ${composer ? 'has-composer' : ''}`} type="button" onClick={advance} aria-live="polite">
+            <button ref={boxRef} className={`vn-box ${isNarrator ? 'narration' : ''} ${composer ? 'has-composer' : ''}`} type="button" onClick={advanceOrScroll} aria-live="polite">
               <div className="vn-box-inner">
                 {speaker && (
                   <div className="vn-box-avatar" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
@@ -230,17 +245,17 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
                   </div>
                 )}
                 <div className="vn-box-content">
-                  <div className="vn-box-meta">
-                    <span
-                      className="vn-name"
-                      style={{
-                        color: isNarrator ? '#f3aec9' : speakerColor,
-                        borderColor: `${isNarrator ? '#f3aec9' : speakerColor}55`,
-                      }}
-                    >
-                      {isNarrator ? '旁白' : isSay ? beat.name : ''}
-                    </span>
-                  </div>
+                  {/* 旁白不挂名牌：左上角只留给真正开口的人。 */}
+                  {!isNarrator && (
+                    <div className="vn-box-meta">
+                      <span
+                        className="vn-name"
+                        style={{ color: speakerColor, borderColor: `${speakerColor}55` }}
+                      >
+                        {isSay ? beat.name : ''}
+                      </span>
+                    </div>
+                  )}
                   <span
                     className={`vn-text ${isNarrator ? 'thought' : ''}`}
                     style={!isNarrator && speakerColor ? { color: speakerColor } : undefined}

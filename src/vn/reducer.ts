@@ -87,3 +87,32 @@ export function vnReducer(state: VnState, action: VnAction): VnState {
 
 /** 当前这一拍是不是「等玩家选」。 */
 export const vnAwaitingChoice = (state: VnState): boolean => state.beats[state.index]?.kind === 'choice';
+
+/**
+ * 节拍表被重建（交互剧情每回一轮都会整张重算）后，把状态接回正确的一拍。
+ *
+ * 关键：旧表最后是 `end`，`done` 会被置成 true；新台词追加进新表后，
+ * 如果还带着 `done`，`advance` 就会一直早退 —— 新来的旁白与台词一句都演不出来。
+ * 所以「原来停在收束那一拍」时要把指针退回旧表的收束位（新表里正好是第一条新节拍）。
+ */
+export function vnRebase(state: VnState, beats: VnBeat[], prevLen: number): VnState {
+  // 同一张表就不用动，免得每次渲染都换一个状态对象把 React 转成死循环。
+  if (state.beats === beats) return state;
+  let index = Math.min(state.index, Math.max(0, beats.length - 1));
+  const grew = beats.length > prevLen;
+  const restart = grew && (state.done || beats[index]?.kind === 'end');
+  if (restart) {
+    index = Math.max(0, Math.min(prevLen - 1, beats.length - 1));
+  }
+  // 「接回新的一句」即使位置没动也要重新打字，不能把一整段新旁白一次糊出来。
+  const moved = restart || index !== state.index;
+  const beat = beats[index];
+  return {
+    ...state,
+    beats,
+    index,
+    typing: moved ? beat?.kind === 'say' && Boolean(beat.text) : state.typing,
+    chosenId: moved ? undefined : state.chosenId,
+    done: beat?.kind === 'end',
+  };
+}
