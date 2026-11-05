@@ -7,6 +7,7 @@ import { buildCost, capacity, seatsTaken, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
 import { BUDGET_MAX, BUDGET_MIN, LLM_BUDGET_TASKS, budgetForTask, defaultLlmBudget, loadLlmBudget, loadLlmConfig, loadLlmSettings, resolveLlm, saveLlmBudget, setLlmProvider, testLlmConnection, updateLlmSlot, type LlmBudget, type LlmConfig, type LlmSettings, type LlmTaskKey } from '../llm';
 import { describeVertexCredential, vertexLocation, vertexTarget } from '../vertex';
+import { maskAccount, maskSecret } from '../masking';
 import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
 import { EXPRESSIONS, EXPRESSION_META } from '../expressions';
@@ -26,18 +27,6 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:MapPin,title:'九块辖区，各有脾气',text:'点击地图上的辖区可以查看背景与「环境影响」：有的委托目标更低、报酬更高，有的更容易受伤。委托所属辖区决定这些修正。'},{Icon:Hourglass,title:'一夜只有六个小时',text:'事务所 20:00 开门、次日 02:00 打烊，午夜之后仍算同一夜。委托分三个时段（20:00 / 22:00 / 00:00）放出，紧急委托两小时内不接就会撤销；忙完后点「前往下一天」跳过白天。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。衣柜有四个格子，换装会同步立绘与头像。'},{Icon:Terminal,title:'终端与叙事者',text:'顶栏的 CMD 按钮或 Ctrl+K 可以打开事务所终端：help 查看命令，status 查看夜班状态，advance 推进时间，district 查询辖区，generate 呼叫叙事者。终端不会跳过打烊确认。'},{Icon:Moon,title:'叙事者只负责提案',text:'在设置里连接任意 OpenAI 兼容接口，并可从 SillyTavern 导入对话补全预设控制采样参数与主提示词。数值与结算仍由本地规则决定；屏幕右下角的面板能看到每次请求读了什么、思维链与成败。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
 type SettingsTab = 'general' | 'llm' | 'pools';
-/** 服务账号邮箱只留组织尾部和头两个字符，避免整串明文躺在界面上。 */
-function maskAccount(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!domain) return email ? `${email.slice(0, 2)}••••` : '';
-  return `${local.slice(0, 2)}••••@${domain}`;
-}
-/** Express 密钥同理：露头尾各一点，中间一律遮住。 */
-function maskSecret(secret: string): string {
-  const text = secret.trim();
-  if (!text) return '';
-  return text.length <= 6 ? '••••••' : `${text.slice(0, 4)}••••••${text.slice(-2)}`;
-}
 
 import type { VnStoryMode } from '../vnPrefs';
 

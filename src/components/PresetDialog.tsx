@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
   DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, defaultPromptContent, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
@@ -7,6 +7,8 @@ import {
 } from '../presets';
 import { MACRO_GROUPS, type MacroGroup } from '../promptMacros';
 import { contractPrompts } from '../promptContracts';
+import { describeVertexCredential } from '../vertex';
+import { maskAccount, maskSecret } from '../masking';
 
 interface Props {
   presets: ChatPreset[];
@@ -106,6 +108,29 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
   const patchApi = (patch: Partial<PresetApi>) => {
     if (!preset || !editable) return;
     replace({ ...preset, api: { ...preset.api, ...patch } });
+  };
+
+  // v102：预设专用的 Vertex 凭证——和设置里的默认接口一样，导入后收起，只留遮住私钥的摘要。
+  const [apiDraft, setApiDraft] = useState<string | null>(null);
+  useEffect(() => { setApiDraft(null); }, [selectedId]);
+  const presetVertexKey = preset?.api?.apiKey ?? '';
+  const presetCredential = describeVertexCredential(presetVertexKey);
+  const presetLooksExpress = presetCredential.kind === 'express-key' && presetVertexKey.trim().startsWith('AIza');
+  const enteringPresetCredential = apiDraft !== null || (presetCredential.kind !== 'service-account' && !presetLooksExpress);
+  const importPresetCredential = async (file: File | undefined) => {
+    if (!file || !editable) return;
+    try {
+      const text = await file.text();
+      const info = describeVertexCredential(text);
+      if (info.kind === 'invalid') { onNotify(info.message, false); return; }
+      patchApi({ apiKey: text.trim() });
+      setApiDraft(null);
+      onNotify(info.kind === 'service-account'
+        ? `服务账号已绑到「${preset?.name ?? '这个预设'}」，私钥不会显示在界面上。`
+        : '已保存这份 Express 密钥。');
+    } catch {
+      onNotify('读取文件失败，可以重新导出一次 JSON 再试。', false);
+    }
   };
   const patchRegex = (id: string, patch: Partial<RegexScript>) => {
     if (!preset || !editable) return;
@@ -259,9 +284,6 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                 <label className="preset-field"><span>模型</span>
                   <input id="preset-api-model" className="preset-text" value={preset.api?.model ?? ''} readOnly={!editable} placeholder="跟随默认（例如 gemini-2.5-pro）" onChange={event => patchApi({ model: event.target.value })} />
                 </label>
-                <label className="preset-field"><span>Express 密钥（可选）</span>
-                  <input id="preset-api-key" className="preset-text" type="password" value={preset.api?.apiKey ?? ''} readOnly={!editable} placeholder="留空则用设置里 Vertex 那份凭证" onChange={event => patchApi({ apiKey: event.target.value })} />
-                </label>
               </> : <>
                 <label className="preset-field"><span>Endpoint</span>
                   <input id="preset-api-endpoint" className="preset-text" value={preset.api?.endpoint ?? ''} readOnly={!editable} placeholder="https://api.example.com/v1" onChange={event => patchApi({ endpoint: event.target.value })} />
@@ -274,8 +296,48 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                 </label>
               </>}
             </div>
+            {preset.api?.provider === 'vertex' && <>
+              {/* v102：预设专用的 Vertex 凭证也能导入 JSON；导入后收起，只留遮住私钥的摘要 */}
+              {enteringPresetCredential ? (
+                <div className="preset-field preset-field-wide">
+                  <span>服务账号 JSON（也可以直接填 Express 密钥）</span>
+                  <textarea
+                    id="preset-api-key"
+                    className="preset-text"
+                    rows={4}
+                    readOnly={!editable}
+                    spellCheck={false}
+                    autoComplete="off"
+                    value={apiDraft ?? presetVertexKey}
+                    placeholder={'{\n  "type": "service_account",\n  "project_id": "my-project",\n  "client_email": "svc@my-project.iam.gserviceaccount.com",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n..."\n}'}
+                    onChange={event => { if (apiDraft === null) patchApi({ apiKey: event.target.value }); else setApiDraft(event.target.value); }}
+                  />
+                  <small>填好会自动保存；导入文件或点「使用这份」之后这里会收起来，只在界面上留一份遮住私钥的摘要。</small>
+                  {apiDraft !== null && <span className="preset-cred-row">
+                    <button id="preset-api-use" type="button" className="btn primary" disabled={!editable} onClick={() => { patchApi({ apiKey: apiDraft.trim() }); setApiDraft(null); onNotify('这份凭证已经绑到这个预设上。'); }}>使用这份密钥</button>
+                    <button id="preset-api-cancel" type="button" className="btn" onClick={() => setApiDraft(null)}>取消</button>
+                  </span>}
+                </div>
+              ) : (
+                <div id="preset-api-credential" className="llm-credential">
+                  <div className="llm-credential-head"><ShieldCheck size={15}/><b>{presetCredential.kind === 'service-account' ? '服务账号已导入' : 'Express 密钥已保存'}</b><span>私钥已隐藏</span></div>
+                  <dl className="llm-credential-facts">
+                    {presetCredential.kind === 'service-account' && <div><dt>项目</dt><dd id="preset-api-project">{presetCredential.projectId}</dd></div>}
+                    <div><dt>{presetCredential.kind === 'service-account' ? '服务账号' : '密钥'}</dt><dd id="preset-api-account">{presetCredential.kind === 'service-account' ? maskAccount(presetCredential.clientEmail ?? '') : maskSecret(presetVertexKey)}</dd></div>
+                  </dl>
+                  <div className="llm-credential-actions">
+                    <button id="preset-api-replace" type="button" className="llm-reset" disabled={!editable} onClick={() => setApiDraft('')}><RotateCcw size={13}/>更换密钥</button>
+                    <button id="preset-api-clear" type="button" className="llm-reset danger" disabled={!editable} onClick={() => { patchApi({ apiKey: '' }); onNotify('已清除这个预设的专用凭证，改为跟随默认。'); }}><Trash2 size={13}/>清除</button>
+                  </div>
+                </div>
+              )}
+              <div className="llm-vertex-row">
+                <label className="btn llm-file"><Upload size={14}/>导入 JSON 文件<input id="preset-api-import" type="file" accept=".json,application/json" disabled={!editable} onChange={event => { void importPresetCredential(event.target.files?.[0]); event.target.value = ''; }} /></label>
+                {presetVertexKey.trim() && <span id="preset-api-vertex-info" className={`llm-vertex-info ${presetCredential.kind === 'invalid' ? 'error' : ''}`}>{presetCredential.kind === 'service-account' ? `服务账号 · ${presetCredential.projectId}` : presetCredential.kind === 'express-key' ? maskSecret(presetVertexKey) : presetCredential.message}</span>}
+              </div>
+            </>}
             <p className="small-note">{preset.api?.provider === 'vertex'
-              ? '走 Vertex 时用设置里那份 Vertex 凭证；这里填的模型、区域或 Express 密钥会覆盖它。导出预设时不带密钥。'
+              ? '走 Vertex 时用设置里那份 Vertex 凭证；这里导入或填的凭证、区域、模型会覆盖它。导出预设时不带密钥。'
               : '远程接口必须同时填密钥；`localhost` / `127.0.0.1` 可以不填。选「跟随默认」则不使用本段设置。导出预设时不会带上密钥。'}</p>
           </section>
 
