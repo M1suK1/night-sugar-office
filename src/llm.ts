@@ -1901,8 +1901,13 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, 600) : '';
-  if (narration.length < 40) return { ok: false, message: '开场白太短，没能写出来。' };
   const lines = parseStoryLines(result.raw.lines, cast, 5);
+  // v102：不再按字数判死。短就短，先让人看到画面与对话，要不要重来由玩家自己点。
+  if (!narration && lines.length === 0) {
+    const message = '叙事者什么都没写出来，可以再试一次。';
+    recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 24)).filter(Boolean).slice(0, 3);
   recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
@@ -1947,12 +1952,13 @@ export async function generateStoryEnding(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
-  if (narration.length < 80) {
-    const message = `收尾只写了 ${narration.length} 字，太短了。可以再试一次。`;
+  const lines = parseStoryLines(result.raw.lines, cast, 5);
+  // v102：收尾也不按字数卡；空到手上一句话都没有才算失败。
+  if (!narration && lines.length === 0) {
+    const message = '收尾什么都没写出来，可以再试一次。';
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
-  const lines = parseStoryLines(result.raw.lines, cast, 5);
   recordLlmLog({ kind: '角色剧情', ok: true, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `收尾：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
   return { ok: true, turn: { narration, lines } };
 }
@@ -2001,12 +2007,13 @@ export async function generateStoryTurn(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
-  if (narration.length < 200) {
-    const message = `叙事者只写了 ${narration.length} 字，太短了，可以再试一次。`;
+  const lines = parseStoryLines(result.raw.lines, cast, 8);
+  // v102：不再因为「太短」把这一轮丢掉——先让玩家看到旁白与台词，觉得不够可以自己重写。
+  if (!narration && lines.length === 0) {
+    const message = '叙事者这一轮什么都没写出来，可以再试一次。';
     recordLlmLog({ kind: '角色剧情', ok: false, model: config.model.trim(), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
-  const lines = parseStoryLines(result.raw.lines, cast, 8);
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const optionList = rawOptions
     .filter((item): item is string => typeof item === 'string')

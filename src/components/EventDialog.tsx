@@ -219,6 +219,14 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
     return undefined;
   }, [event.pendingChoice, pending, options, loading]);
 
+  // 舞台上的「重写」：对准最近一轮叙事者的回复（开场白与第一轮不重写）。
+  const rewriteTarget = useMemo(() => {
+    for (let at = turns.length - 1; at > 0; at -= 1) {
+      if (turns[at]?.role === 'narrator') return turns[at];
+    }
+    return undefined;
+  }, [turns]);
+
   const vnComposerSlot = !readOnly && !event.pendingChoice ? (
     <div className="vn-session-input">
       <label className="sr-only" htmlFor="story-action-vn">写下你的行动</label>
@@ -240,6 +248,12 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
       <button id="story-submit-vn" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>
         行动
       </button>
+      {/* 这一轮写得短/不满意时，玩家自己决定要不要重来（不再由字数判死） */}
+      {rewriteTarget && (
+        <button id="story-rewrite-vn" type="button" className="btn" disabled={loading} title="让叙事者把这一轮重写一遍" onClick={() => void onRewrite(event.id, rewriteTarget.id)}>
+          <RefreshCw size={12} />重写
+        </button>
+      )}
       {confirmEnd ? (
         <span className="session-end-confirm">
           <button id="story-end-confirm-vn" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>
