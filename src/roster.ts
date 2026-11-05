@@ -96,7 +96,11 @@ export function rosterPool(state: GameState, library: CardBoxEntry[] = [], optio
   }
   for (const subject of customRosterOf(state)) push(subject);
   if (!options.cardsOnly) {
-    for (const faction of FACTION_ORDER) push(subjectOfLeader(factionLeaders[faction]));
+    // v85：静态名册废掉之后这里只剩空缺占位，不该出现在池子里。
+    for (const faction of FACTION_ORDER) {
+      const leader = factionLeaders[faction];
+      if (!leader.vacant) push(subjectOfLeader(leader));
+    }
     for (const girl of factionGirls) push(subjectOfGirl(girl));
   }
   return list;

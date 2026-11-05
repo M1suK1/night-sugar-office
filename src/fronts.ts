@@ -1,6 +1,6 @@
 import type { FactionFront, FactionId, FactionPair, GameState } from './types.ts';
 import type { DistrictId } from './districts.ts';
-import { factionGirlsOf } from './factions.ts';
+import { rosterMembers } from './factions.ts';
 import { factionName, ownedDistricts, territoryOwner } from './territories.ts';
 import { districts } from './districts.ts';
 const pollutionAt = (state: Pick<GameState, 'pollution'>, district: DistrictId): number => state.pollution?.[district] ?? 0;
@@ -24,7 +24,8 @@ export function attackerOf(state: Pick<GameState, 'factions'>, pair: FactionPair
 
 /** 势力在这一带能压上多少力量：声望、污染、麾下少女都算。 */
 export function frontPower(state: GameState, faction: FactionId, district: DistrictId): number {
-  const girls = factionGirlsOf(faction).length;
+  // v85：麾下人数按本局名册算（静态名册已废除）。
+  const girls = rosterMembers(state, faction).length;
   const raw = 30 + state.factions[faction].standing * 0.3 + pollutionAt(state, district) / 2 + girls * 6;
   return Math.max(10, Math.min(95, Math.round(raw)));
 }

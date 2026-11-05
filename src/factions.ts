@@ -129,16 +129,31 @@ export function leaderById(id: string): FactionLeader | undefined {
   return allFactionLeaders.find(leader => leader.id === id);
 }
 
-/** 默认阵容：首领回原属，随从沿用静态名册的 3 / 3 / 3。 */
+/**
+ * 默认阵容（v85）：全是空席。
+ *
+ * 静态名册废掉之后，三方位置只能靠开局编成从卡库填。空席会让界面提示
+ * 「契约卡不足，需要导入」，而不是悄悄塞进内置人物。
+ */
 export function defaultFactionRoster(): Record<FactionId, FactionRoster> {
   const roster = {} as Record<FactionId, FactionRoster>;
-  for (const faction of FACTION_ORDER) {
-    roster[faction] = {
-      leaderId: factionLeaders[faction].id,
-      memberIds: girlsOfFaction(faction).map(girl => girl.id),
-    };
-  }
+  for (const faction of FACTION_ORDER) roster[faction] = { leaderId: '', memberIds: [] };
   return roster;
+}
+
+/** 某一方是否还空着（没有首领或没有随从）。 */
+export function factionSeatEmpty(state: RosterState, faction: FactionId): boolean {
+  const roster = state.factionRoster?.[faction];
+  if (!roster?.leaderId) return true;
+  return roster.memberIds.length === 0;
+}
+
+/** 三方一共还缺几个席位；>0 时界面要提示去导卡。 */
+export function factionSeatsMissing(state: RosterState): number {
+  return FACTION_ORDER.reduce((sum, faction) => {
+    if (!state.factionRoster?.[faction]?.leaderId) return sum + 1;
+    return sum;
+  }, 0);
 }
 
 type RosterState = Pick<GameState, 'factionRoster'>
@@ -280,6 +295,8 @@ export interface FactionRepresentative {
   /** v85：这位首领默认以魔女形态出场（目前只有月蚀庭）。 */
   witch?: boolean;
   witchForm?: Outfit;
+  /** v85：这个席位还空着——界面要提示「契约卡不足，需要导入」。 */
+  vacant?: boolean;
   kind: 'leader' | 'envoy';
 }
 
@@ -301,6 +318,7 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     // v85：月蚀庭的首领开局就是魔女形态；玩家自己的月蚀庭角色不沾这条。
     witch: leader.witch || undefined,
     witchForm: leader.witchForm,
+    vacant: leader.vacant,
     kind: 'leader',
   };
 }
@@ -337,8 +355,11 @@ export function factionBrief(faction: FactionId, standing: number, leader?: { id
   // 静态首领自带一句台词；换成本局指派的卡面首领时，档案里那句就作废，不要张冠李戴。
   const quote = leader && leader.id !== base.id ? leader.quote ?? '' : base.quote;
   const attitude = factionAttitude(standing).label;
+  const seat = base.vacant && (!leader || leader.id === base.id)
+    ? '首领席位空缺（契约卡不足，需要导入）'
+    : `首领 ${current.name}（${current.title}）`;
   return [
-    `${info.name}（${dossier.epithet}）· 首领 ${current.name}（${current.title}）· 当前态度 ${attitude}`,
+    `${info.name}（${dossier.epithet}）· ${seat} · 当前态度 ${attitude}`,
     quote,
     dossier.doctrine,
   ].filter(Boolean).join('\n');

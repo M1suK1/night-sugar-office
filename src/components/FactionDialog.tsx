@@ -70,6 +70,7 @@ export function FactionDialog({ state, faction, onBase, onHire, onClose }: Facti
       <div className="modal-eyebrow"><BookOpen size={14} />势力档案 / {info.name}</div>
 
       <header id="faction-leader" className="faction-leader">
+        {leader.vacant && <p className="faction-vacant-note" role="status">席位空缺：契约卡不足，需要导入。三方名册的人只能来自契约卡库。</p>}
         <div id="faction-leader-portrait" className="faction-leader-art">
           <GirlPortrait
             girl={{ id: leader.id, name: leader.name, color: leader.color, portrait: leader.portrait, portraitSpec: leader.portraitSpec, witch: Boolean(leader.witch), witchForm: leader.witchForm }}

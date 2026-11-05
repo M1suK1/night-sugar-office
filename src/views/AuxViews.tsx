@@ -327,7 +327,12 @@ export function BaseView({
                           <strong>{representative.name} <small>{representative.title} · {info.name}</small>{representative.witch && <em className="av-envoy-witch">魔女形态</em>}</strong>
                           <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
                           <div className="av-envoy-task">
-                            {offer.kind === 'tribute' ? (
+                            {representative.vacant ? (
+                              <>
+                                <b id={`av-envoy-title-${fid}`}>席位空缺 · 需要导入契约卡</b>
+                                <span>这一方还没有派人来。契约卡不足时三方名册只能空着：到契约卡库导入卡片，或在开局编成里把人安排到对应位置。</span>
+                              </>
+                            ) : offer.kind === 'tribute' ? (
                               <>
                                 <b id={`av-envoy-title-${fid}`}>协调费 · {offer.amount?.toLocaleString('zh-CN')} 星砂</b>
                                 <span>每 {200} 星砂换 1 点好感；给多少都行，多给不封顶到 {(offer.amount ?? 0) + 800} 为止</span>
@@ -369,7 +374,9 @@ export function BaseView({
                               })}
                             </div>
                           )}
-                          {offer.kind === 'tribute' ? (
+                          {representative.vacant ? (
+                          <span className="av-btn av-btn-small ghost" aria-hidden="true">等待派人</span>
+                        ) : offer.kind === 'tribute' ? (
                             <span className={`av-btn av-btn-small ${done ? '' : 'ghost'}`} aria-hidden="true">{done ? '今日已领' : '选金额'}</span>
                           ) : offer.kind === 'loan' && !done && (
                             <div className="av-envoy-loan" role="group" aria-label="选择借调的契约者">

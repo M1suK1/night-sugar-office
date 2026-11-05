@@ -1,62 +1,37 @@
 /**
  * 三方势力的首领。
  *
- * 只作档案顶部的固定卡：不进玩家契约池，也不参与日常拦截战。
- * 立绘走 `GirlPortrait` 的程序化绘制（`portrait` 留空），所以不需要新的图片资源。
+ * v85：静态首领已废弃。三方名册的首领必须来自契约卡库（`cardLibrary` → 编成 →
+ * `customFactionLeaders`）；没有编成时这里给出的是「空缺」占位，界面据此提示
+ * 「契约卡不足，需要导入」，而不是退回某个内置人物。
  */
-import type { FactionLeader } from '../types.ts';
+import type { FactionId, FactionLeader } from '../types.ts';
+import { factionInfo } from './items.ts';
+
+/** 占位首领的 id 前缀：任何以它开头的 id 都表示这个位置还空着。 */
+export const VACANT_LEADER_PREFIX = 'vacant-';
+
+const vacantLeader = (faction: FactionId): FactionLeader => ({
+  id: `${VACANT_LEADER_PREFIX}${faction}`,
+  faction,
+  name: '席位空缺',
+  title: '尚未派人',
+  portrait: '',
+  color: factionInfo[faction].color,
+  quote: '这里还没有人签字。',
+  note: '这一类位置要靠契约卡补齐：开局编成时从卡库选人，或者先去卡库导入。',
+  level: 1,
+  stats: { magic: 0, insight: 0, agility: 0, empathy: 0 },
+  skillIds: [],
+  archetype: '输出',
+  origin: faction,
+  titles: { association: '', government: '', witch: '' },
+  duty: { faction, note: '席位空缺。' },
+  vacant: true,
+});
 
 export const factionLeaders: Record<'association' | 'government' | 'witch', FactionLeader> = {
-  association: {
-    id: 'leader-association',
-    faction: 'association',
-    name: '白鹭千秋',
-    title: '协会会长 / 监察官',
-    portrait: '',
-    color: '#F1A7C6',
-    level: 10,
-    stats: { magic: 74, insight: 86, agility: 58, empathy: 72 },
-    skillIds: ['glimmer-spear', 'star-tax', 'peach-ward'],
-    archetype: '控制',
-    origin: 'association',
-    titles: { association: '协会会长 · 监察官', government: '监察顾问 · 借调', witch: '名录执笔 · 客卿' },
-    duty: { faction: 'association', note: '她出勤时，协会会把这当成一次“官方观察”。' },
-    quote: '名录之外，没有灯。',
-    note: '主持《正统契约法》听证，拒绝为量产少女登记；私下把改革派调去了最远的辖区。',
-  },
-  government: {
-    id: 'leader-government',
-    faction: 'government',
-    name: '雨宫澄',
-    title: '夜间特别勤务课长',
-    portrait: '',
-    color: '#9CC9D2',
-    level: 10,
-    stats: { magic: 68, insight: 80, agility: 64, empathy: 60 },
-    skillIds: ['frequency-prick', 'silent-band', 'moon-phase'],
-    archetype: '侦查',
-    origin: 'government',
-    titles: { association: '频段顾问 · 借调', government: '夜间特别勤务课长', witch: '编号簿客卿' },
-    duty: { faction: 'government', note: '她出勤会走市役所的勤务记录，账目上藏不住。' },
-    quote: '编号不会哭，城市才睡得着。',
-    note: '把量产损耗写进预算，也记得每一个编号的忌日——两件事她都不打算改。',
-  },
-  witch: {
-    witch: true,
-    id: 'leader-witch',
-    faction: 'witch',
-    name: '蚀医·夜鸮',
-    title: '净血派领袖',
-    portrait: '',
-    color: '#B98AD9',
-    level: 10,
-    stats: { magic: 88, insight: 70, agility: 66, empathy: 50 },
-    skillIds: ['moon-echo', 'deep-dream-fall', 'candy-oath'],
-    archetype: '输出',
-    origin: 'witch',
-    titles: { association: '净血讲师 · 客卿', government: '配方顾问', witch: '净血派领袖' },
-    duty: { faction: 'witch', note: '她的出勤会被净血派当成“示范”。' },
-    quote: '城市不把魔女当人，我们就自己写人的定义。',
-    note: '政变后控制抑制剂配方与旧教堂地窖；对未受洗的普通魔法少女不再提供救治。',
-  },
+  association: vacantLeader('association'),
+  government: vacantLeader('government'),
+  witch: vacantLeader('witch'),
 };

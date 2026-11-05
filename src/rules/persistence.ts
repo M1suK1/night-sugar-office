@@ -106,8 +106,20 @@ export function loadState(raw: string | null): GameState {
         return faction && id ? sanitizeCustomGirl(raw, faction, id) : null;
       })
       .filter((girl): girl is FactionGirl => Boolean(girl));
+    const savedSeats = FACTION_ORDER.filter(faction => Boolean(state.factionRoster?.[faction]?.leaderId)).length;
     const loadedRoster = sanitizeFactionRoster(state.factionRoster, state.customFactionLeaders, state.customFactionGirls);
     state.factionRoster = loadedRoster?.roster ?? defaultFactionRoster();
+    // v85：静态名册废掉之后，老存档里那些内置 id 解析不出来——三方会变成空席，要提示去导卡。
+    if (!loadedRoster && savedSeats > 0) {
+      state.notices = [{
+        id: `notice-witch-vacant-${state.day}-${state.minutes}`,
+        kind: 'mission' as const,
+        day: state.day,
+        minutes: state.minutes,
+        title: '三方名册已清空',
+        text: '旧存档里的内置首领名册已经不再使用：三方席位现在只能来自契约卡库。请到卡库导入卡片，再在编成里排人。',
+      }, ...(state.notices ?? [])].slice(0, 20);
+    }
     state.customFactionLeaders = loadedRoster?.leaders ?? [];
     state.customFactionGirls = loadedRoster?.girls ?? [];
     state.startersPicked = previousVersion >= 16 ? value.startersPicked === true : true;

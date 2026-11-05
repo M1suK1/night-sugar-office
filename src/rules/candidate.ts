@@ -63,7 +63,8 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     stats: sanitizeSubjectStats(src.stats),
     skillIds: Array.isArray(src.skillIds) ? src.skillIds.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
     archetype: src.archetype ?? '输出',
-    origin: faction,
+    // v85：原属势力是卡面带进来的信息，读档不要把它抹成现属席位。
+    origin: src.origin === 'association' || src.origin === 'government' || src.origin === 'witch' ? src.origin : faction,
     titles: { association: '', government: '', witch: '', ...(src.titles ?? {}) },
     duty: src.duty ?? { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
     cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,

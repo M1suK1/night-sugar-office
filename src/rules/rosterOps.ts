@@ -171,8 +171,10 @@ export function applyAssignFactionRoster(state: GameState, action: Extract<GameA
 
 /** hireLeader 的动作处理器（v35 从 act 拆出）。 */
 export function applyHireLeader(state: GameState, action: Extract<GameAction, { type: 'hireLeader' }>): ActionResult {
-      const leader = leaderById(action.leaderId);
-      if (!leader) return { state, ok: false, message: '没有这位首领。' };
+      // v85：静态名册废掉后，能雇的首领是「开局编成从卡库排进来的人」。
+      const leader = (state.customFactionLeaders ?? []).find(item => item.id === action.leaderId && !item.vacant)
+        ?? leaderById(action.leaderId);
+      if (!leader || leader.vacant) return { state, ok: false, message: leader?.vacant ? '这个席位还空着，没有人可以雇。' : '没有这位首领。' };
       const owner = FACTION_ORDER.find(faction => rosterLeader(state, faction).id === leader.id);
       if (!owner) return { state, ok: false, message: '她现在已经不在任何一方了。' };
       if (!factionCollapsed(state, owner)) return { state, ok: false, message: '她还有辖区要守。' };

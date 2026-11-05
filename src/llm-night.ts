@@ -794,7 +794,8 @@ function validateNightProposalCore(raw: unknown, state: GameState): NightValidat
     errors: [],
     warnings: [],
     activeGirls: state.girls.filter(girl => !girl.retired && !girl.dead),
-    representatives: FACTION_ORDER.map(faction => factionRepresentativeOf(state, faction)),
+    // v85：席位空缺的代表不参与提案与对白，免得模型把人写成「席位空缺」。
+    representatives: FACTION_ORDER.map(faction => factionRepresentativeOf(state, faction)).filter(rep => !rep.vacant),
     itemIds: new Set([
       ...state.generatedItems.map(item => item.id),
       ...listItems().map(item => item.id),

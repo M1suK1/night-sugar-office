@@ -121,6 +121,8 @@ export interface FactionLeader {
   witch?: boolean;
   /** 魔女化立绘（同 FactionGirl）。 */
   witchForm?: Outfit;
+  /** v85：这个位置还空着（没有从卡库编成进来的人）。 */
+  vacant?: boolean;
 }
 
 /** 某一方现存的首领与随从（可在开局编成里重新分配）。 */

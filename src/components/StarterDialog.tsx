@@ -68,6 +68,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   useEffect(() => { void loadCardBox().then(setLibrary).catch(() => setLibrary([])); }, []);
   const pool = useMemo<RosterSubject[]>(() => rosterPool(state, library, { cardsOnly, limit: OPENING_CARDS }), [state, library, cardsOnly]);
   // 事务所名额只认真实存在的人：卡库里还没导入的条目不能当契约少女。
+  const cardPeople = useMemo(() => [...state.girls, ...state.candidates].filter(girl => Boolean(girl.cardId)).length, [state.girls, state.candidates]);
   const pickable = useMemo(() => new Set([...state.girls, ...state.candidates].map(girl => girl.id)), [state.girls, state.candidates]);
 
   const [assistantPick, setAssistantPick] = useState<string | undefined>(state.assistantId);
@@ -319,6 +320,11 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
   return (
     <div className="starter-dialog" id="starter-dialog" role="dialog" aria-label="开局编成">
       <div className="starter-sheet">
+      {cardPeople < 6 && (
+        <p className="starter-card-note" role="status">
+          契约卡不足：三方名册需要至少 6 位已导入的人（各 1 位首领 + 1 位随从），现在只有 {cardPeople} 位。请先到契约卡库导入更多卡片。
+        </p>
+      )}
       <header className="starter-head">
         <div>
           <span className="starter-kicker">开局编成</span>

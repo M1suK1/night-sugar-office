@@ -87,6 +87,7 @@ import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
 import { LIBRARY_START_ROSTER, normalizeToLevel, readLibraryCards } from './cardLibrary';
 import { STARTER_COUNT, factionSnapshotFromCards } from './roster';
+import { factionSeatsMissing } from './factions';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
 import { ContentWorkshopDialog } from './components/workshop/ContentWorkshopDialog';
@@ -983,9 +984,11 @@ export default function App() {
           const final = assigned?.ok ? assigned : working;
           setState(final.state);
           setPhase(mode === 'blank' && !final.state.girls.length ? 'prologue' : 'roster');
+          // 三方名册不再回退内置人物：卡不够就空着，并在提示里说清楚要导入。
+          const missing = factionSeatsMissing(final.state);
           const factionNote = assigned?.ok
             ? `三方名册也从卡库排定：${snapshot!.leaders.map(leader => leader.name).join('、')}`
-            : '三方名册沿用内置的一套';
+            : `三方还有 ${Math.max(missing, 3)} 个席位空着：契约卡不足，需要导入（三方各 1 位首领 + 1 位随从）`;
           notify(`名册来自本地卡库：${rosterCards.map(card => card.girl.name).join('、')}（统一 1 级）。${factionNote}。`);
           return;
         }
