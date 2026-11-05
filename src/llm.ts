@@ -1164,6 +1164,14 @@ export function tokenFloorFor(scope: string): number {
 }
 /** 截断重试的上限：低于这个额度都值得再试一次，再高就是上下文不够而不是额度不够。 */
 const RETRY_TOKEN_CEILING = 32768;
+/**
+ * 正文的长度上限（v106）：这些只是「防止存档被撑爆」的保险，不是内容裁剪。
+ * 以前交互剧情卡在 3000 字、开场 600 字、蓝图每段 900 字——预设要求写 1500–3000 字时，
+ * 超出的部分被静默切掉，看起来就像「新写的剧情没显示」。
+ */
+const NARRATION_LIMIT = 12000;
+const OPENING_LIMIT = 4000;
+const PASSAGE_LIMIT = 6000;
 /** 蓝图这类几千字的结构化输出：下限直接给 32000，别让思维链把正文挤掉。 */
 const LONG_FORM_TOKEN_FLOOR = 32000;
 
@@ -1791,7 +1799,7 @@ export async function generateStoryArc(config: LlmConfig, girl: Girl, input: Sto
     const choices = Array.isArray(passage.choices) ? passage.choices.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 3) : [];
     return {
       title: typeof passage.title === 'string' && passage.title.trim() ? passage.title.trim().slice(0, 18) : `第 ${index + 1} 段`,
-      narration: typeof passage.narration === 'string' ? passage.narration.trim().slice(0, 900) : '',
+      narration: typeof passage.narration === 'string' ? passage.narration.trim().slice(0, PASSAGE_LIMIT) : '',
       lines: lines.map(line => ({
         speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim().slice(0, 12) : girl.name,
         tone: typeof line.tone === 'string' ? line.tone.trim().slice(0, 10) : '',
@@ -1913,7 +1921,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
-  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, 600) : '';
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
   const lines = parseStoryLines(result.raw.lines, cast, 5);
   // v102：不再按字数判死。短就短，先让人看到画面与对话，要不要重来由玩家自己点。
   if (!narration && lines.length === 0) {
@@ -1948,7 +1956,7 @@ export async function generateStoryEnding(
   const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : '',
+    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
@@ -2001,7 +2009,7 @@ export async function generateStoryTurn(
   const playerLine = action.trim().slice(0, 300);
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 600)}` : event.hook ? `引子：${event.hook}` : '',
+    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
@@ -2035,7 +2043,7 @@ export async function generateStoryTurn(
     .slice(0, 3);
   const bondRaw = Number(result.raw.bond);
   const bond = Number.isFinite(bondRaw) ? Math.max(-2, Math.min(2, Math.round(bondRaw))) : 0;
-  const turn: StoryTurnDraft = { narration: narration.slice(0, 3000), lines, options: optionList, bond };
+  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), lines, options: optionList, bond };
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${lines.length} 句）`, request: meta.request, response: meta.response });
   return { ok: true, turn };
 }

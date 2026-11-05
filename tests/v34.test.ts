@@ -187,7 +187,8 @@ test('v34 续写只让在场的人说话，旁白截到 3000 字，选项最多 
     const result = await generateStoryTurn({ endpoint: 'https://mock.test/v1/chat/completions', apiKey: 'k', model: 'mock' }, withEvent, event, '我推门进去。');
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.turn.narration.length, 3000);
+    // v106：正文上限只是防存档爆掉（12000 字），3200 字的旁白不再被切。
+    assert.equal(result.turn.narration.length, 3200);
     assert.deepEqual(result.turn.lines.map(line => line.speakerId), [girl.id], 'player 的台词会被丢掉，避免与行动气泡重复');
     assert.equal(result.turn.lines[0]?.expression, 'shy');
     assert.equal(result.turn.options.length, 3);
