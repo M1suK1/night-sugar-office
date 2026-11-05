@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react';
 import { ArrowRight, ChevronRight, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { VnReader } from '../vn/VnReader';
+import { beatsFromPassage, beatsFromTurns } from '../vn/beats';
 import { interleaveTurn } from '../storyLines';
 import { scrollTopForNewTurn } from '../storyScroll';
 
@@ -26,21 +28,45 @@ export interface EventDialogProps {
   onClose: () => void;
   /** 已经结束的剧情：只回看，不接任何输入。 */
   readOnly?: boolean;
+  /** 视觉小说模式（v93 全局开关）。 */
+  vnStory?: boolean;
 }
 
-export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false }: EventDialogProps) {
+export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
+  // 舞台里点「原文」只切当前弹窗，不改全局开关。
+  const [textMode, setTextMode] = useState(false);
+  const stage = Boolean(vnStory) && !textMode && !readOnly;
+  const shared = { stage, onText: () => setTextMode(true) } as const;
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} />;
+    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
-  return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} />;
+  return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} {...shared} />;
 }
 
-function SceneEvent({ event, girl, onAdvance, onChoose, onClose }: Pick<EventDialogProps, 'event' | 'girl' | 'onAdvance' | 'onChoose' | 'onClose'>) {
+function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText }: Pick<EventDialogProps, 'event' | 'girl' | 'onAdvance' | 'onChoose' | 'onClose'> & { stage?: boolean; onText?: () => void }) {
   const scene = event.scenes[Math.min(event.stage, event.scenes.length - 1)];
   const [revealed, setRevealed] = useState(1);
   useEffect(() => { setRevealed(1); }, [event.id, event.stage]);
 
   if (!scene) return null;
+  if (stage) {
+    const beats = beatsFromPassage(
+      { id: `${event.id}-${event.stage}`, title: scene.title, narration: scene.narration, lines: scene.lines.map(line => ({ speaker: line.speaker, text: line.text })), choices: scene.choices ?? [], scene: 'room:lounge' },
+      { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element },
+    );
+    return (
+      <div className="event-modal event-modal-stage">
+        <VnReader
+          beats={beats}
+          title={scene.title}
+          cast={girl ? [{ id: girl.id, name: girl.name, girl }] : []}
+          onText={onText}
+          onClose={onClose}
+          onChoose={choiceId => onChoose(event.id, choiceId)}
+        />
+      </div>
+    );
+  }
   const allShown = revealed >= scene.lines.length;
   const last = event.stage >= event.scenes.length - 1;
 
@@ -84,7 +110,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose }: Pick<EventDia
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false }: EventDialogProps) {
+function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText }: EventDialogProps & { stage?: boolean; onText?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? [];
   const [draft, setDraft] = useState('');
@@ -166,7 +192,18 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
           </div>
         </header>
 
-        <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`}>
+        {stage && (
+          <div className="event-stage-wrap">
+            <VnReader
+              beats={beatsFromTurns(turns, { playerName: '所长', scene: { id: 'room:lounge' } })}
+              title={event.title}
+              cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
+              onText={onText}
+              onClose={onClose}
+            />
+          </div>
+        )}
+        <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`} style={stage ? { display: 'none' } : undefined}>
           <aside className={`battle-note-side left ${cast.length ? '' : 'empty'} ${cast.length >= 3 ? 'dense' : ''}`} aria-label="在场角色">
             {cast.length > 0 && <span className="battle-note-side-label">在场</span>}
             {cast.map(person => {

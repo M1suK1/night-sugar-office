@@ -79,3 +79,50 @@ export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptio
   beats.push({ kind: 'end' });
   return beats;
 }
+
+/** 交互剧情的一轮：旁白正文，或玩家写下的一句行动。 */
+export interface TurnLike {
+  id: string;
+  role: 'narrator' | 'player';
+  text: string;
+  lines?: { speakerId: string; speakerName: string; expression?: Expression; text: string }[];
+}
+
+/**
+ * 把「你一句我一句」的剧情折成舞台节拍（v93）。
+ *
+ * 玩家的输入对舞台来说是「所长」的一句台词；旁白与台词按现有字段直接搬。
+ * 输入框仍在舞台外，舞台只负责把已经发生的这段演出来。
+ */
+export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName?: string; scene?: VnBackdrop } = {}): VnBeat[] {
+  const beats: VnBeat[] = [{ kind: 'bg', backdrop: options.scene ?? { id: 'night' } }];
+  for (const turn of turns) {
+    const text = tidy(turn.text ?? '');
+    if (text) {
+      for (const paragraph of text.split(/\n{2,}/)) {
+        const line = tidy(paragraph).replace(/\n/g, ' ');
+        if (!line) continue;
+        beats.push({
+          kind: 'say',
+          speakerId: turn.role === 'player' ? 'player' : NARRATOR_ID,
+          name: turn.role === 'player' ? options.playerName ?? '所长' : '旁白',
+          text: line,
+          thought: turn.role !== 'player',
+        });
+      }
+    }
+    for (const line of turn.lines ?? []) {
+      const body = tidy(line.text ?? '');
+      if (!body) continue;
+      beats.push({
+        kind: 'say',
+        speakerId: line.speakerId,
+        name: line.speakerName || '她',
+        text: body,
+        expression: line.expression,
+      });
+    }
+  }
+  beats.push({ kind: 'end' });
+  return beats;
+}

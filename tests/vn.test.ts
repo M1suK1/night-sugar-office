@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beatsFromPassage, NARRATOR_ID } from '../src/vn/beats.ts';
+import { beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
 import { vnInitial, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import type { VnBeat } from '../src/vn/types.ts';
@@ -106,4 +106,19 @@ test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 
   assert.equal(night.image, '', '没图的场景只用渐变');
   const custom = resolveBackdrop('district:nowhere', '#123456');
   assert.match(custom.gradient, /#123456/);
+});
+
+test('v93 交互剧情适配器：旁白/玩家/台词都折成 say，路上先给背景', () => {
+  const beats = beatsFromTurns([
+    { id: 't1', role: 'narrator', text: '雨下到现在。\n\n她把窗关上了。', lines: [{ speakerId: 'yue', speakerName: '月见桃', expression: 'sad', text: '你来了。' }] },
+    { id: 't2', role: 'player', text: '我点了灯。' },
+  ], { playerName: '所长' });
+  assert.equal(beats[0]!.kind, 'bg');
+  const says = beats.filter(beat => beat.kind === 'say') as Extract<typeof beats[number], { kind: 'say' }>[];
+  assert.equal(says.length, 4, '两段旁白 + 一句台词 + 玩家一说');
+  assert.equal(says[0]!.speakerId, NARRATOR_ID);
+  assert.equal(says[2]!.name, '月见桃');
+  assert.equal(says[2]!.expression, 'sad');
+  assert.equal(says[3]!.name, '所长');
+  assert.equal(beats.at(-1)!.kind, 'end');
 });
