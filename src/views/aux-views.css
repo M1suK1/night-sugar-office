@@ -731,6 +731,7 @@
 
 /* 一人一格的契约者卡片（诊所 / 宿舍） */
 .girl-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 10px; }
+.girl-card-selected { border-color: #f3aec977; box-shadow: 0 0 0 1px #f3aec933, 0 8px 22px #00000055; }
 .girl-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ffffff12; border-radius: 6px; background: #14101c; }
 .girl-card-face { position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: linear-gradient(180deg, #241a2c, #120e18); }
 .girl-card-face .girl-portrait, .girl-card-face svg, .girl-card-face img { position: absolute; inset: 0; width: 100%; height: 100%; }

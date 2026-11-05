@@ -151,7 +151,9 @@ export function BaseView({
     : undefined;
   const availableEnvoys = factionIds.filter(id => !state.factions[id].envoyTaskId).length;
   const needCareCount = active.filter(g => g.hp < g.maxHp || g.fatigue >= 45 || (g.corruption ?? 0) >= 35 || inWithdrawal(g)).length;
-  const toggleExpedition = (id: string) => setExpeditionSquad(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 2 ? current : [...current, id]);
+  const observatoryLevel = state.rooms.find(room => room.type === 'observatory')?.level ?? 1;
+  const expeditionCap = 2 + Math.max(0, observatoryLevel - 1);
+  const toggleExpedition = (id: string) => setExpeditionSquad(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= expeditionCap ? current : [...current, id]);
 
   const renderRoomModule = (item: Room) => {
     const Icon = roomIcons[item.type];
@@ -644,21 +646,30 @@ export function BaseView({
                 ) : (
                   <>
                     <p className="av-module-hint">派 1–{2 + Math.max(0, (state.rooms.find(room => room.type === 'observatory')?.level ?? 1) - 1)} 名待命成员进入星象台远行：每人每小时带回 {300 + Math.max(0, (state.rooms.find(room => room.type === 'observatory')?.level ?? 1) - 1) * 50} 星砂与 10 点经验，偶尔还会带回一段能写进档案的见闻（断药期不可参加）。每升一级星象台，人数上限 +1、每小时收益 +50 星砂。</p>
-                    <div className="av-exp-roster" role="group" aria-label="选择远行成员">
-                      {eligible.length ? eligible.map(girl => (
-                        <button
-                          key={girl.id}
-                          id={`av-expedition-pick-${girl.id}`}
-                          type="button"
-                          className="av-exp-pick"
-                          aria-pressed={expeditionSquad.includes(girl.id)}
-                          onClick={() => toggleExpedition(girl.id)}
-                        >
-                          <img src={witchAwarePortrait(girl)} alt="" loading="lazy" />
-                          <span>{girl.name}<small>Lv.{girl.level} · 疲劳 {girl.fatigue}</small></span>
-                          {expeditionSquad.includes(girl.id) && <Check size={13} />}
-                        </button>
-                      )) : <small className="av-op-empty">没有可出发的成员。让她们先休息，或结束当前派遣。</small>}
+                    <div className="girl-card-grid" role="group" aria-label="选择远行成员">
+                      {eligible.length ? eligible.map(girl => {
+                        const picked = expeditionSquad.includes(girl.id);
+                        return (
+                          <article key={girl.id} className={`girl-card ${picked ? 'girl-card-selected' : ''}`}>
+                            <div className="girl-card-face"><GirlPortrait girl={girl} variant="avatar" /></div>
+                            <div className="girl-card-body">
+                              <strong>{girl.name} <small>{statusText[girl.status]}</small></strong>
+                              <span>Lv.{girl.level} · 疲劳 {girl.fatigue}/100 · 侵蚀 {girl.corruption ?? 0}%</span>
+                              <div className="girl-card-actions">
+                                <button
+                                  id={`av-expedition-pick-${girl.id}`}
+                                  type="button"
+                                  className={`av-btn av-btn-small ${picked ? 'av-btn-primary' : ''}`}
+                                  aria-pressed={picked}
+                                  onClick={() => toggleExpedition(girl.id)}
+                                >
+                                  {picked ? <><Check size={11} />已选入队</> : <><Compass size={11} />选入队伍</>}
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      }) : <small className="av-op-empty">没有可出发的成员。让她们先休息，或结束当前派遣。</small>}
                     </div>
                     <button
                       id="av-expedition-start"
@@ -667,7 +678,7 @@ export function BaseView({
                       disabled={!expeditionSquad.length}
                       onClick={() => { onStartExpedition(expeditionSquad); setExpeditionSquad([]); }}
                     >
-                      <Compass size={13} />组建远行队 · 已选 {expeditionSquad.length} / 2
+                      <Compass size={13} />组建远行队 · 已选 {expeditionSquad.length} / {expeditionCap}
                     </button>
                   </>
                 )}
