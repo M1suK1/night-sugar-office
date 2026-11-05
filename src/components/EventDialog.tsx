@@ -48,16 +48,18 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText }
   const [revealed, setRevealed] = useState(1);
   useEffect(() => { setRevealed(1); }, [event.id, event.stage]);
 
+  const stageBeats = useMemo(
+      () => beatsFromPassage(
+        { id: `${event.id}-${event.stage}`, title: scene?.title ?? '', narration: scene?.narration ?? '', lines: (scene?.lines ?? []).map(line => ({ speaker: line.speaker, text: line.text })), choices: scene?.choices ?? [], scene: 'room:lounge' },
+    { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element },
+  ), [event.id, event.stage, scene, girl?.id, girl?.name, girl?.expression, girl?.element]);
   if (!scene) return null;
   if (stage) {
-    const beats = beatsFromPassage(
-      { id: `${event.id}-${event.stage}`, title: scene.title, narration: scene.narration, lines: scene.lines.map(line => ({ speaker: line.speaker, text: line.text })), choices: scene.choices ?? [], scene: 'room:lounge' },
-      { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element },
-    );
     return (
       <div className="event-modal event-modal-stage">
         <VnReader
-          beats={beats}
+          beats={stageBeats}
+          resetKey={`${event.id}-${event.stage}`}
           title={scene.title}
           cast={girl ? [{ id: girl.id, name: girl.name, girl }] : []}
           onText={onText}
@@ -129,6 +131,11 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
       return found ? [found] : [];
     });
   }, [event.cast, girl, pool]);
+  // 交互剧情的节拍：只随轮次变化，避免每次渲染都让舞台回到开头。
+  const stageBeats = useMemo(
+    () => beatsFromTurns(turns, { playerName: '所长', scene: { id: 'room:lounge' } }),
+    [turns],
+  );
   const latest = useMemo(() => {
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const line = turns[index]?.lines?.[turns[index]!.lines!.length - 1];
@@ -195,7 +202,8 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
         {stage && (
           <div className="event-stage-wrap">
             <VnReader
-              beats={beatsFromTurns(turns, { playerName: '所长', scene: { id: 'room:lounge' } })}
+              beats={stageBeats}
+              resetKey={event.id}
               title={event.title}
               cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
               onText={onText}

@@ -15,7 +15,7 @@ const PAUSE_MS = 900;
  * 只负责「一句一句演」：背景 → 立绘 → 对话框 → 选项。默认关闭，
  * 由设置里的全局开关决定要不要用它（`StoryPlayerDialog` 里挂载）。
  */
-export function VnReader({ beats, cast, onChoose, onClose, onText, title }: {
+export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetKey }: {
   beats: VnBeat[];
   cast: VnCastMember[];
   onChoose?: (choiceId: string) => void;
@@ -23,13 +23,24 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title }: {
   /** 切回原文视图（由外层弹窗提供）。 */
   onText?: () => void;
   title?: string;
+  /** 换一段演出（不同 event / passage）时用它重置；只追加台词不会打断进度。 */
+  resetKey?: string;
 }) {
   const [state, setState] = useState(() => vnInitial(beats));
   const [auto, setAuto] = useState(false);
   const [fast, setFast] = useState(false);
   const timer = useRef<number | undefined>(undefined);
+  const keyRef = useRef(resetKey);
+  const lengthRef = useRef(beats.length);
 
-  useEffect(() => { setState(vnInitial(beats)); }, [beats]);
+  // 换演出（resetKey 变了）→ 从头演；只是追加了新台词 → 保留当前进度。
+  // 交互剧情每生成一轮都会追加，如果每次都重置，玩家永远停在第一句。
+  useEffect(() => {
+    const reset = keyRef.current !== resetKey || beats.length < lengthRef.current;
+    keyRef.current = resetKey;
+    lengthRef.current = beats.length;
+    setState(current => (reset ? vnInitial(beats) : { ...current, beats, index: Math.min(current.index, Math.max(0, beats.length - 1)) }));
+  }, [beats, resetKey]);
 
   // 离开时把这次播过的句子记进 sessionStorage（不进存档）。
   useEffect(() => () => rememberBeats(beats), [beats]);
