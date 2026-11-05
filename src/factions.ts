@@ -5,6 +5,7 @@
  * 首领与所属少女分别来自 `content/factionLeaders.ts` 与 `content/factionGirls.ts`。
  * 档案 UI 与结算都经由访问器读取，不各自复制一份数值。
  */
+import { portraitString, type PortraitSubjectLike } from './portrait.ts';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey, Outfit } from './types.ts';
 import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
@@ -474,7 +475,7 @@ export function canIntercept(
  * 静态三方名册的 portrait 是空的（走程序化绘制），只有从卡库/编成进来的人才带图；
  * 魔女形态的人优先用她卡上那张魔女化立绘，没有再退回普通立绘。
  */
-export function witchAwarePortrait(person: { portrait?: string; witch?: boolean; witchForm?: { portrait?: string } }): string {
-  if (person.witch && person.witchForm?.portrait) return person.witchForm.portrait;
-  return person.portrait ?? '';
+export function witchAwarePortrait(person: PortraitSubjectLike): string {
+  // v87：统一走 portraitSource——势力人物没有衣柜，会自动落到 witchForm / portrait。
+  return portraitString(person);
 }
