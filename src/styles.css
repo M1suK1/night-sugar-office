@@ -809,6 +809,18 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .council-figure .girl-portrait.full { width: 100%; height: 100%; background: transparent; overflow: visible; }
 .council-figure .girl-portrait.full > img { object-fit: contain; object-position: 50% 50%; }
 .council-figure .girl-portrait.bare { background: transparent; overflow: visible; }
+/* v114：议会厅的大立绘不该有描边/边框——`imported` 立绘自带一圈「表情描边」，
+   放在这张大图上看起来就像给人物套了个相框。 */
+.council-figure .girl-portrait,
+.council-figure .girl-portrait.imported,
+.council-figure .girl-portrait.full,
+.council-figure .girl-portrait.bare {
+  outline: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
 .council-options { display: grid; gap: 8px; width: min(560px, 100%); }
 .council-option { display: grid; grid-template-columns: 26px 18px 1fr 16px; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(20, 17, 24, .9); color: var(--text); }
 .council-option em { font-style: normal; font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; text-align: center; }

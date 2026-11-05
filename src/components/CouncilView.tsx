@@ -41,7 +41,12 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
   const [index, setIndex] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
   const [phase, setPhase] = useState<'entering' | 'idle' | 'leaving'>('entering');
-  const current = pending[Math.min(index, Math.max(0, pending.length - 1))];
+  // v114：决议之后这条议题会立刻从 pending 里消失；如果马上渲染新的 current，
+  // 就会出现「内容已经换了、淡出还没播完」的闪烁。先冻结正在淡出的那条，
+  // 等淡出结束再交给下一条。
+  const [frozen, setFrozen] = useState<Opinion | null>(null);
+  const live = pending[Math.min(index, Math.max(0, pending.length - 1))];
+  const current = frozen ?? live;
   const speaker = current ? state.girls.find(girl => girl.id === current.authorId) ?? state.memorial.find(entry => entry.girl.id === current.authorId)?.girl : undefined;
   const assistant = state.girls.find(girl => girl.id === state.assistantId) ?? state.girls.find(girl => !girl.retired);
   const next = pending[index + 1];
@@ -68,15 +73,19 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
   }, [pending.length, index]);
 
   const decide = (optionId: 'accept' | 'defer' | 'reject') => {
-    if (!current || !dialogueDone) return;
+    if (!current || !dialogueDone || frozen) return;
     const option = options.find(entry => entry.id === optionId);
     if (!option || !previewOpinionOption(state, current, option).ok) return;
+    const decided = current;
+    // 先冻结这条，让淡出完整播完；pending 变小影响的是 `live`，画面不动。
+    setFrozen(decided);
     setPhase('leaving');
-    onDecide(current.id, optionId);
+    onDecide(decided.id, optionId);
     window.setTimeout(() => {
-      setIndex(value => Math.min(value + 1, Math.max(0, pending.length - 1)));
-      setPhase('entering');
-    }, 320);
+      // 决议后这条已经从 pending 里移除，索引不动正好指向下一条；
+      // 解冻会让 current?.id 变化，从而触发「入场」动画。
+      setFrozen(null);
+    }, 340);
   };
 
   const advanceDialogue = () => {
