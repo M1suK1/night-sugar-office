@@ -184,6 +184,78 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
     setSending(false);
   };
 
+  const composerContent = (
+    <>
+      {readOnly && (
+        <div className="session-readonly" id="session-readonly">
+          <span>这段剧情已经结束。你现在只是在回看{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '，结局在最后一段' : ''}。</span>
+          <button id="story-close" type="button" className="btn" onClick={onClose}>把这一段收进记忆</button>
+        </div>
+      )}
+      {!readOnly && (
+        <footer className="event-composer">
+          {event.pendingChoice && (
+            <div className="session-options branch-options" id="session-branch">
+              <p className="session-lead">她停在门口，等你拿主意。选完这段剧情就结束。</p>
+              {(pending?.options ?? []).map(option => (
+                <button key={option.id} id={`story-branch-${option.id}`} type="button" disabled={loading} onClick={() => onBranch?.(option.id)}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {options.length > 0 && !event.pendingChoice && (
+            <div className="session-options">
+              <p className="session-lead" id="session-lead">她没有再往下说。轮到你决定。</p>
+              {options.map((option, index) => (
+                <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          {!event.pendingChoice && (
+            <div className="session-input">
+              <label className="sr-only" htmlFor="story-action">写下你的行动</label>
+              <textarea
+                id="story-action"
+                rows={2}
+                maxLength={300}
+                value={draft}
+                disabled={loading}
+                placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话……'}
+                onChange={input => setDraft(input.target.value)}
+                onKeyDown={input => {
+                  if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') {
+                    input.preventDefault();
+                    void submit(draft);
+                  }
+                }}
+              />
+              <button id="story-submit" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>
+                行动
+              </button>
+              {confirmEnd ? (
+                <span className="session-end-confirm">
+                  <button id="story-end-confirm" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>
+                    {busy ? '正在收尾…' : '确认结束'}
+                  </button>
+                  <button id="story-end-cancel" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>
+                    再聊一会
+                  </button>
+                </span>
+              ) : (
+                <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>
+                  {branch && !event.pendingChoice ? '导向结局' : '结束事件'}
+                </button>
+              )}
+            </div>
+          )}
+        </footer>
+      )}
+    </>
+  );
+
   return (
     <div className="battle-note-overlay event-overlay" role="dialog" aria-modal="true" aria-label="角色事件">
       <div className="battle-note-shell">
@@ -199,112 +271,91 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
           </div>
         </header>
 
-        {stage && (
-          <div className="event-stage-wrap">
-            <VnReader
-              beats={stageBeats}
-              resetKey={event.id}
-              title={event.title}
-              cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
-              onText={onText}
-              onClose={onClose}
-            />
+        {stage ? (
+          <>
+            <div className="event-stage-wrap">
+              <VnReader
+                beats={stageBeats}
+                resetKey={event.id}
+                title={event.title}
+                cast={cast.map(person => ({ id: person.id, name: person.name, girl: person }))}
+                onText={onText}
+                onClose={onClose}
+              />
+            </div>
+            {composerContent}
+          </>
+        ) : (
+          <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`}>
+            <aside className={`battle-note-side left ${cast.length ? '' : 'empty'} ${cast.length >= 3 ? 'dense' : ''}`} aria-label="在场角色">
+              {cast.length > 0 && <span className="battle-note-side-label">在场</span>}
+              {cast.map(person => {
+                const expression = expressionFor(person);
+                const speaking = Boolean(preview && preview.id === person.id) || Boolean(latest && latest.id === person.id);
+                return (
+                  <figure key={person.id} className={`battle-note-portrait ${speaking ? 'speaking' : ''}`} style={{ '--note-color': person.color } as CSSProperties}>
+                    <div className="battle-note-portrait-art">
+                      <GirlPortrait girl={{ ...person, expression }} variant="full" />
+                      <span className="battle-note-expression">{expressionLabel[expression]}</span>
+                    </div>
+                    <figcaption>
+                      <b>{person.name}</b>
+                      <small>{person.codename ?? '契约者'}</small>
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </aside>
+
+            <main className="battle-note-center event-center">
+              <div ref={end} className="battle-note-body" role="log" aria-live="polite">
+                {turns.length === 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={22} className="spin" /><b>叙事者正在写开场白</b><span>她先开口，你随后决定用什么方式接下去。</span></div>}
+                {turns.map((turn, turnIndex) => turn.role === 'player' ? (
+                  <div key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="battle-note-line right player-turn">
+                    <span className="battle-note-speaker">所长</span>
+                    <span className="battle-note-bubble">{turn.text}</span>
+                  </div>
+                ) : (
+                  <section key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="story-narrator-turn">
+                    {(() => {
+                      // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
+                      const paragraphs = turn.text.split(/\n+/).filter(Boolean);
+                      const turnLines = turn.lines ?? [];
+                      const renderLine = (line: StoryLine, index: number) => {
+                        const right = line.speakerId === 'player';
+                        const active = preview ? preview.id === line.speakerId && !right : false;
+                        return (
+                          <div key={`${turn.id}-${index}`} className={`battle-note-line ${right ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${active || right ? 'active' : ''}`}
+                            style={{ '--speaker-color': colorOf(line.speakerId) } as CSSProperties}
+                            onMouseEnter={() => !right && setPreview({ id: line.speakerId, expression: line.expression })}
+                            onMouseLeave={() => setPreview(null)}>
+                            <span className="battle-note-speaker">{right ? '所长' : line.speakerName}{line.mode === 'thought' ? ' · 心声' : ''}</span>
+                            <span className="battle-note-bubble">{line.text}</span>
+                          </div>
+                        );
+                      };
+                      return interleaveTurn(paragraphs, turnLines).map(segment => segment.kind === 'narration'
+                        ? <p key={`p-${segment.index}`} className="battle-note-narration">{paragraphs[segment.index]}</p>
+                        : renderLine(turnLines[segment.index]!, segment.index));
+                    })()}
+                    {turnIndex > 0 && <button type="button" className="story-rewrite" id={`story-rewrite-${turn.id}`} disabled={loading} onClick={() => void onRewrite(event.id, turn.id)}><RefreshCw size={12} />重写这一段</button>}
+                  </section>
+                ))}
+                {loading && turns.length > 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={18} className="spin" /><b>她在等你说完</b></div>}
+              </div>
+
+              {composerContent}
+            </main>
+
+            <aside className="battle-note-side right" aria-label="所长">
+              <span className="battle-note-side-label">所长</span>
+              <figure className="battle-note-portrait player" aria-label="所长（玩家）">
+                <div className="battle-note-portrait-art event-player-art"><span>所长</span></div>
+                <figcaption><b>所长</b><small>你</small></figcaption>
+              </figure>
+            </aside>
           </div>
         )}
-        <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`} style={stage ? { display: 'none' } : undefined}>
-          <aside className={`battle-note-side left ${cast.length ? '' : 'empty'} ${cast.length >= 3 ? 'dense' : ''}`} aria-label="在场角色">
-            {cast.length > 0 && <span className="battle-note-side-label">在场</span>}
-            {cast.map(person => {
-              const expression = expressionFor(person);
-              const speaking = Boolean(preview && preview.id === person.id) || Boolean(latest && latest.id === person.id);
-              return (
-                <figure key={person.id} className={`battle-note-portrait ${speaking ? 'speaking' : ''}`} style={{ '--note-color': person.color } as CSSProperties}>
-                  <div className="battle-note-portrait-art">
-                    <GirlPortrait girl={{ ...person, expression }} variant="full" />
-                    <span className="battle-note-expression">{expressionLabel[expression]}</span>
-                  </div>
-                  <figcaption>
-                    <b>{person.name}</b>
-                    <small>{person.codename ?? '契约者'}</small>
-                  </figcaption>
-                </figure>
-              );
-            })}
-          </aside>
-
-          <main className="battle-note-center event-center">
-            <div ref={end} className="battle-note-body" role="log" aria-live="polite">
-              {turns.length === 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={22} className="spin" /><b>叙事者正在写开场白</b><span>她先开口，你随后决定用什么方式接下去。</span></div>}
-              {turns.map((turn, turnIndex) => turn.role === 'player' ? (
-                <div key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="battle-note-line right player-turn">
-                  <span className="battle-note-speaker">所长</span>
-                  <span className="battle-note-bubble">{turn.text}</span>
-                </div>
-              ) : (
-                <section key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="story-narrator-turn">
-                  {(() => {
-                    // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
-                    const paragraphs = turn.text.split(/\n+/).filter(Boolean);
-                    const turnLines = turn.lines ?? [];
-                    const renderLine = (line: StoryLine, index: number) => {
-                      const right = line.speakerId === 'player';
-                      const active = preview ? preview.id === line.speakerId && !right : false;
-                      return (
-                        <div key={`${turn.id}-${index}`} className={`battle-note-line ${right ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${active || right ? 'active' : ''}`}
-                          style={{ '--speaker-color': colorOf(line.speakerId) } as CSSProperties}
-                          onMouseEnter={() => !right && setPreview({ id: line.speakerId, expression: line.expression })}
-                          onMouseLeave={() => setPreview(null)}>
-                          <span className="battle-note-speaker">{right ? '所长' : line.speakerName}{line.mode === 'thought' ? ' · 心声' : ''}</span>
-                          <span className="battle-note-bubble">{line.text}</span>
-                        </div>
-                      );
-                    };
-                    return interleaveTurn(paragraphs, turnLines).map(segment => segment.kind === 'narration'
-                      ? <p key={`p-${segment.index}`} className="battle-note-narration">{paragraphs[segment.index]}</p>
-                      : renderLine(turnLines[segment.index]!, segment.index));
-                  })()}
-                  {turnIndex > 0 && <button type="button" className="story-rewrite" id={`story-rewrite-${turn.id}`} disabled={loading} onClick={() => void onRewrite(event.id, turn.id)}><RefreshCw size={12} />重写这一段</button>}
-                </section>
-              ))}
-              {loading && turns.length > 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={18} className="spin" /><b>她在等你说完</b></div>}
-            </div>
-
-            {readOnly && <div className="session-readonly" id="session-readonly">
-              <span>这段剧情已经结束。你现在只是在回看{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '，结局在最后一段' : ''}。</span>
-              <button id="story-close" type="button" className="btn" onClick={onClose}>把这一段收进记忆</button>
-            </div>}
-            {!readOnly && <footer className="event-composer">
-              {event.pendingChoice && (
-                <div className="session-options branch-options" id="session-branch">
-                  <p className="session-lead">她停在门口，等你拿主意。选完这段剧情就结束。</p>
-                  {(pending?.options ?? []).map(option => (
-                    <button key={option.id} id={`story-branch-${option.id}`} type="button" disabled={loading} onClick={() => onBranch?.(option.id)}>
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {options.length > 0 && !event.pendingChoice && <div className="session-options"><p className="session-lead" id="session-lead">她没有再往下说。轮到你决定。</p>{options.map((option, index) => <button key={`${option}-${index}`} type="button" id={`story-option-${index}`} disabled={loading} onClick={() => void submit(option)}>{option}</button>)}</div>}
-              {!event.pendingChoice && <div className="session-input">
-                <label className="sr-only" htmlFor="story-action">写下你的行动</label>
-                <textarea id="story-action" rows={2} maxLength={300} value={draft} disabled={loading} placeholder={loading ? '她正在回应……' : '写下你要做的事，或说的话……'} onChange={input => setDraft(input.target.value)} onKeyDown={input => { if ((input.ctrlKey || input.metaKey) && input.key === 'Enter') { input.preventDefault(); void submit(draft); } }} />
-                <button id="story-submit" type="button" className="btn primary" disabled={!draft.trim() || loading} onClick={() => void submit(draft)}>行动</button>
-                {confirmEnd ? <span className="session-end-confirm">
-                  <button id="story-end-confirm" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>{busy ? '正在收尾…' : '确认结束'}</button>
-                  <button id="story-end-cancel" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>再聊一会</button>
-                </span> : <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>{branch && !event.pendingChoice ? '导向结局' : '结束事件'}</button>}
-              </div>}
-            </footer>}
-          </main>
-
-          <aside className="battle-note-side right" aria-label="所长">
-            <span className="battle-note-side-label">所长</span>
-            <figure className="battle-note-portrait player" aria-label="所长（玩家）">
-              <div className="battle-note-portrait-art event-player-art"><span>所长</span></div>
-              <figcaption><b>所长</b><small>你</small></figcaption>
-            </figure>
-          </aside>
-        </div>
       </div>
     </div>
   );
