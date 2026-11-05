@@ -1,7 +1,7 @@
 import { sanitizePortraitSrc } from '../image.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { loadBalance } from '../balance.ts';
-import { EXPRESSION_VARIANT_LIMIT, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
+import { EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
 import { WARDROBE_LIMIT } from '../rules/labels.ts';
 import { sanitizeVoice } from '../voice.ts';
 import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
@@ -238,6 +238,8 @@ export function applySetOutfitDescription(state: GameState, action: Extract<Game
       const description = action.description.trim().slice(0, 200);
       if (!description) return { state, ok: false, message: '描述不能为空。' };
       outfit.description = description;
+      // 正在穿的这套改了描述，就把「她此刻的装扮」同步过去：提示词与导出卡片读的是这个字段。
+      if (currentExpressionOutfitId(girl) === outfit.id) girl.outfitDescription = description;
       return { state: next, ok: true, message: `「${outfit.name}」的描述已更新。` };
 }
 

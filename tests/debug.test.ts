@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { DEFAULT_BALANCE } from '../src/balance.ts';
+import { currentExpressionOutfitId } from '../src/expressions.ts';
 
 test('v94 终端：witch 让指定少女立刻魔女化（补侵蚀、补立绘、写日志）', () => {
   const s = createInitialState();
@@ -52,4 +53,35 @@ test('v94 终端：找不到人时不改状态', () => {
   const result = act(s, { type: 'debugGirl', girlId: 'nobody', mode: 'witch' });
   assert.equal(result.ok, false);
   assert.equal(result.state, s);
+});
+
+test('v94 换装后服装描述跟着当前礼装，魔女形态写的是形态描述', () => {
+  const s = createInitialState();
+  const girl = s.girls[0]!;
+  const first = girl.wardrobe[0]!;
+  // 1) 普通形态：写进当前礼装，并同步「此刻的装扮」
+  const edited = act(s, { type: 'setOutfitDescription', girlId: girl.id, outfitId: first.id, description: '换成深紫色的短外套。' });
+  assert.equal(edited.ok, true, edited.message);
+  const after = edited.state.girls.find(item => item.id === girl.id)!;
+  assert.equal(after.wardrobe[0]!.description, '换成深紫色的短外套。');
+  if (currentExpressionOutfitId(after) === first.id) assert.equal(after.outfitDescription, '换成深紫色的短外套。');
+
+  // 2) 不是当前这套时，不动「此刻的装扮」
+  girl.wardrobe.push({ ...first, id: 'outfit-other', name: '另一套', description: '' });
+  const second = act(s, { type: 'setOutfitDescription', girlId: girl.id, outfitId: 'outfit-other', description: '备用的那套。' });
+  assert.equal(second.ok, true, second.message);
+  const untouched = second.state.girls.find(item => item.id === girl.id)!;
+  assert.equal(untouched.wardrobe.find(item => item.id === 'outfit-other')!.description, '备用的那套。');
+
+  // 3) 魔女形态：描述写进 witchForm
+  const witchedState = act(s, { type: 'debugGirl', girlId: girl.id, mode: 'witch' }).state;
+  const witched = witchedState.girls.find(item => item.id === girl.id)!;
+  assert.ok(witched.witchForm);
+  const withDescription = act(witchedState, {
+    type: 'setWitchForm', girlId: girl.id,
+    outfit: { ...witched.witchForm!, description: '影子长出了第二种颜色。' },
+    personality: witched.witchPersonality,
+  });
+  assert.equal(withDescription.ok, true, withDescription.message);
+  assert.equal(withDescription.state.girls.find(item => item.id === girl.id)!.witchForm!.description, '影子长出了第二种颜色。');
 });

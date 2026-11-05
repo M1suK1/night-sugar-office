@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
-import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionVariantKey } from '../expressions';
+import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionOutfits, expressionVariantKey } from '../expressions';
 import { planForSlot } from '../storyplan';
 import { activePersonality } from '../personality';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
@@ -38,12 +38,16 @@ function gearSummary(item: Equipment) {
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
+export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
   /** 关掉这个人的加点提醒（升级发新点数后会重新出现）。 */
   onMutePoints?: () => void;
   onProfileText?: (field: 'appearance' | 'outfitDescription' | 'voiceTone' | 'voiceHabits' | 'voiceSamples', text: string) => void;
+  /** 魔女化之后，服装描述改成编辑魔女形态的描述。 */
+  onWitchDescription?: (text: string) => void;
+  /** 普通形态下，服装描述编辑的是「当前穿着的那套礼装」。 */
+  onOutfitDescription?: (outfitId: string, text: string) => void;
   /** 这位少女演完的交互剧情：点开只读回看。 */
   memories?: { id: string; title: string; day: number; rounds: number }[];
   onMemory?: (eventId: string) => void;
@@ -96,7 +100,14 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const [editingPersonality, setEditingPersonality] = useState(false);
   const [personalityDraft, setPersonalityDraft] = useState('');
   const [appearanceDraft, setAppearanceDraft] = useState(girl.appearance ?? '');
-  const [outfitDraft, setOutfitDraft] = useState(girl.outfitDescription ?? '');
+  // 这一栏永远跟着「她现在穿着的那一套」：魔女形态 → witchForm；普通形态 → 当前礼装。
+  // 换了衣服，描述就换一栏，不会把上一套的文字带到下一套上。
+  const wornOutfit = girl.witch
+    ? girl.witchForm
+    : expressionOutfits(girl).find(item => item.id === currentExpressionOutfitId(girl)) ?? girl.wardrobe?.[0];
+  const outfitText = wornOutfit?.description ?? girl.outfitDescription ?? '';
+  const outfitLabel = girl.witch ? '魔女形态描述' : wornOutfit?.name ? `服装描述 · ${wornOutfit.name}` : '服装描述';
+  const [outfitDraft, setOutfitDraft] = useState(outfitText);
   const [voiceToneDraft, setVoiceToneDraft] = useState(girl.voice?.tone ?? '');
   const [voiceHabitsDraft, setVoiceHabitsDraft] = useState((girl.voice?.habits ?? []).join('\n'));
   const [voiceSamplesDraft, setVoiceSamplesDraft] = useState((girl.voice?.samples ?? []).join('\n'));
@@ -106,11 +117,11 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const voiceFilled = Boolean(voiceToneDraft.trim() || habitCount || sampleCount);
   useEffect(() => {
     setAppearanceDraft(girl.appearance ?? '');
-    setOutfitDraft(girl.outfitDescription ?? '');
+    setOutfitDraft(wornOutfit?.description ?? girl.outfitDescription ?? '');
     setVoiceToneDraft(girl.voice?.tone ?? '');
     setVoiceHabitsDraft((girl.voice?.habits ?? []).join('\n'));
     setVoiceSamplesDraft((girl.voice?.samples ?? []).join('\n'));
-  }, [girl.id, girl.appearance, girl.outfitDescription, girl.voice]);
+  }, [girl.id, girl.appearance, girl.outfitDescription, girl.witch, girl.witchForm?.description, girl.outfitId, girl.wardrobe, girl.voice]);
   const candidate = !state.girls.some(g => g.id === girl.id);
   const keys = Object.keys(statLabels) as StatKey[];
   const stage = relationshipStage(girl.bond);
@@ -479,10 +490,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                       onBlur={() => { if (appearanceDraft !== (girl.appearance ?? '')) onProfileText?.('appearance', appearanceDraft); }} />
                   </label>
                   <label className="text-panel">
-                    <span className="text-panel-head"><b>服装描述</b><small>{outfitDraft.length}/240</small></span>
-                    <textarea id="dossier-outfit-input" rows={4} maxLength={240} value={outfitDraft} placeholder="她此刻这身衣服：颜色、材质、穿法，以及哪里不合规矩。"
+                    <span className="text-panel-head"><b>{outfitLabel}</b><small>{outfitDraft.length}/240</small></span>
+                    <textarea id="dossier-outfit-input" rows={4} maxLength={240} value={outfitDraft} placeholder={girl.witch ? '她现在是魔女形态：这一身长出什么、遮住了什么、还留着哪些原本的痕迹。' : '她此刻这身衣服：颜色、材质、穿法，以及哪里不合规矩。'}
                       onChange={event => setOutfitDraft(event.target.value)}
-                      onBlur={() => { if (outfitDraft !== (girl.outfitDescription ?? '')) onProfileText?.('outfitDescription', outfitDraft); }} />
+                      onBlur={() => {
+                        if (outfitDraft === outfitText) return;
+                        if (girl.witch) { onWitchDescription?.(outfitDraft); return; }
+                        // 普通形态：优先写进当前这套礼装；没有礼装（老档）才退回旧字段。
+                        if (wornOutfit?.id && wornOutfit.id !== 'witchform') onOutfitDescription?.(wornOutfit.id, outfitDraft);
+                        else onProfileText?.('outfitDescription', outfitDraft);
+                      }} />
                   </label>
                 </div>
               </section>
