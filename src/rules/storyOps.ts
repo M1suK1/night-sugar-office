@@ -186,8 +186,11 @@ export function applyAppendStoryTurn(state: GameState, action: Extract<GameActio
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event || event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
       if (event.mode !== 'session') return { state, ok: false, message: '这段剧情不是交互模式。' };
+      // v108：轮次上限只拦「再写一句」这个动作，不拦模型对这一句的回应。
+      // 否则玩家第 12 轮写完 → 叙事者的回复被这条守卫丢掉，界面上就是「生成了但什么都不显示」。
       const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
-      if (rounds >= STORY_SESSION_TURNS) return { state, ok: false, message: `这段剧情已经走了 ${STORY_SESSION_TURNS} 轮，先结束事件吧。` };
+      const opensRound = action.turn.role === 'player' && !event.turns?.some(turn => turn.id === action.turn.id);
+      if (opensRound && rounds >= STORY_SESSION_TURNS) return { state, ok: false, message: `这段剧情已经走了 ${STORY_SESSION_TURNS} 轮，先结束事件吧。` };
       event.turns = [...(event.turns ?? []), action.turn];
       return { state: next, ok: true, message: '' };
 }

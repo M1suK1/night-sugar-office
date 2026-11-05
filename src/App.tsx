@@ -553,14 +553,21 @@ export default function App() {
       const result = await generateStoryTurn(config, appended.state, appended.state.events.find(item => item.id === eventId)!, text, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
       if (!result.ok) { notify(`${result.message}这一句已经记下了，可以再试一次。`, false); return false; }
       const gains = result.turn.bond;
+      // 模型写完了却没能写进剧情时，必须说出来——以前这里是静默丢弃，
+      // 表现就是「引擎显示生成成功，但界面里一个字都没有」。
+      let appendError = '';
       setState(prev => {
         const turn: StoryTurn = { id: `turn-n-${Date.now().toString(36)}`, role: 'narrator', text: result.turn.narration, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
         const applied = act(prev, { type: 'appendStoryTurn', eventId, turn });
-        if (!applied.ok) return prev;
+        if (!applied.ok) { appendError = applied.message; return prev; }
         if (!gains) return applied.state;
         const next = { ...applied.state, girls: applied.state.girls.map(girl => girl.id === event.girlId ? { ...girl, bond: Math.max(0, Math.min(100, girl.bond + gains)) } : girl) };
         return next;
       });
+      if (appendError) {
+        notify(`这一轮没能写进剧情：${appendError}`, false);
+        return false;
+      }
       return true;
     } finally {
       setStoryBusyTurn(false);

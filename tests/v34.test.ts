@@ -89,6 +89,23 @@ test('v104 删掉自己说的话：只能删 player 轮，旁白不能删', () =
   assert.match(rejected.message ?? '', /自己/);
 });
 
+test('v108 轮次上限只拦新的一句，叙事者对最后一句的回应不会被丢掉', () => {
+  const full: StoryTurn[] = [narratorTurn('n0', '开场')];
+  for (let index = 0; index < STORY_SESSION_TURNS; index += 1) full.push(playerTurn(`p${index}`, `第 ${index} 轮`));
+  const { state, id } = session(createInitialState(), { turns: full });
+
+  // 已经满 12 轮：新的玩家回合仍然被挡住
+  const blocked = act(state, { type: 'appendStoryTurn', eventId: id, turn: playerTurn('extra', '再来一轮') });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message ?? '', /12 轮/);
+
+  // 但叙事者对已有那些回合的回应必须能写进去（以前这里被同一条守卫吞掉，
+  // 表现就是引擎显示生成成功、界面里却什么都不出现）
+  const reply = act(state, { type: 'appendStoryTurn', eventId: id, turn: narratorTurn('n-last', '她抬眼看你。') });
+  assert.equal(reply.ok, true, '旁白不受轮次上限限制');
+  assert.equal(eventOf(reply.state, id).turns?.at(-1)?.id, 'n-last');
+});
+
 test('v34 单段重写只换旁白，并累加重写次数', () => {
   const turns: StoryTurn[] = [narratorTurn('t0', '开场'), playerTurn('t1', '我在。'), narratorTurn('t2', '她抬眼。')];
   const { state, id } = session(createInitialState(), { turns });
