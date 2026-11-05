@@ -5,6 +5,7 @@ import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '
 import { battleActors, battleCast, battleOutcomeLabel, totalBattleRounds } from '../battleNote';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
+import { VnModeToggle } from '../vn/VnModeToggle';
 import { beatsFromBattleNote } from '../vn/beats';
 
 const expressionLabel: Record<Expression, string> = {
@@ -190,6 +191,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
             <span className="battle-note-outcome">{battleOutcomeLabel(battle.outcome)}</span>
             {note?.format !== 'continuous' && <span>{totalBattleRounds(battle)} 回合</span>}
             {note && <span className={`battle-note-source ${note.source}`}>{note.source === 'llm' ? '叙事版' : '简报版'}</span>}
+            {vnStory && textMode && note && !busy && <VnModeToggle id="battle-note-vn-enter" onSwitch={() => setTextMode(false)} />}
             <button id="battle-note-close" type="button" className="icon-btn" aria-label="关闭战斗札记" onClick={onClose}><X size={18} /></button>
           </div>
         </header>

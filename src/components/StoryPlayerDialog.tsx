@@ -3,6 +3,7 @@ import { ArrowRight, BookOpen, Heart, Sparkles, X } from 'lucide-react';
 import type { CharacterEvent, Girl } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
+import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { beatsFromPassage } from '../vn/beats';
 
 /** 分幕剧情：一次完整故事，每段结尾做一次选择，直到收束。 */
@@ -62,6 +63,10 @@ export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose
           <h2>{done ? '这件事收束了。' : current?.title ?? event.title}</h2>
           <p>{event.hook}</p>
         </header>
+
+        {Boolean(vnStory) && textMode && !busy && (
+          <VnModeRow><VnModeToggle id="story-vn-enter" onSwitch={() => setTextMode(false)} /></VnModeRow>
+        )}
 
         {stage && current && !busy && (
           <VnReader

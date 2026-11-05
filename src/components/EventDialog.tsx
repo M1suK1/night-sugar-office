@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight, LoaderCircle, MessageCircle, RefreshCw, Spark
 import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
+import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { beatsFromPassage, beatsFromTurns } from '../vn/beats';
 import { interleaveTurn } from '../storyLines';
 import { scrollTopForNewTurn } from '../storyScroll';
@@ -36,14 +37,15 @@ export function EventDialog({ event, girl, state, busy = false, onAdvance, onCho
   // 舞台里点「原文」只切当前弹窗，不改全局开关。
   const [textMode, setTextMode] = useState(false);
   const stage = Boolean(vnStory) && !textMode && !readOnly;
-  const shared = { stage, onText: () => setTextMode(true) } as const;
+  // 切回演出只在「已经切到原文」时才有意义（舞台里再放一个「演出」按钮是多余的）。
+  const shared = { stage, onText: () => setTextMode(true), onStage: vnStory && textMode && !readOnly ? () => setTextMode(false) : undefined } as const;
   if (event.mode === 'session') {
     return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} {...shared} />;
 }
 
-function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText }: Pick<EventDialogProps, 'event' | 'girl' | 'onAdvance' | 'onChoose' | 'onClose'> & { stage?: boolean; onText?: () => void }) {
+function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, onStage }: Pick<EventDialogProps, 'event' | 'girl' | 'onAdvance' | 'onChoose' | 'onClose'> & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const scene = event.scenes[Math.min(event.stage, event.scenes.length - 1)];
   const [revealed, setRevealed] = useState(1);
   useEffect(() => { setRevealed(1); }, [event.id, event.stage]);
@@ -80,6 +82,9 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText }
         <h2>{scene.title}</h2>
         <p className="event-title">{event.title} · {event.hook}</p>
       </div>
+      {onStage && (
+        <VnModeRow><VnModeToggle id="event-vn-enter" onSwitch={onStage} /></VnModeRow>
+      )}
       <div className="event-body">
         {girl && <div className="event-figure"><GirlPortrait girl={girl} variant="full" /></div>}
         <div className="event-script" role="log">
@@ -112,7 +117,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText }
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText }: EventDialogProps & { stage?: boolean; onText?: () => void }) {
+function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? [];
   const [draft, setDraft] = useState('');
@@ -337,6 +342,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEnd, bran
           </div>
           <div className="battle-note-head-meta">
             <span className="battle-note-source llm">交互剧情</span>
+            {onStage && <VnModeToggle id="session-vn-enter" onSwitch={onStage} />}
             <button id="event-close" type="button" className="icon-btn" aria-label="关闭事件" onClick={onClose}><X size={18} /></button>
           </div>
         </header>

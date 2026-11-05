@@ -197,6 +197,30 @@
   font-weight: 500;
 }
 
+/* 原文视图里的「演出」回切按钮（与舞台工具栏同一套暗紫细描边风格） */
+.vn-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -2px 0 10px;
+}
+
+.vn-chip.vn-mode-toggle {
+  min-height: 26px;
+  padding: 3px 11px;
+  color: #f3aec9;
+  border-color: rgba(243, 174, 201, 0.5);
+  background: rgba(34, 22, 43, 0.82);
+  letter-spacing: .04em;
+}
+
+.vn-chip.vn-mode-toggle:hover {
+  color: #1a0f16;
+  background: #f3aec9;
+  border-color: #f3aec9;
+}
+
 .vn-progress {
   position: absolute;
   top: 16px;
