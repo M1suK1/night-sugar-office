@@ -1339,7 +1339,7 @@ export interface GeneratedStorylineBeat {
 }
 export interface GeneratedStoryline { title: string; premise: string; tone: string; beats: GeneratedStorylineBeat[] }
 export interface GeneratedIncident { title: string; body: string; options: { label: string; hint: string; effect: IncidentEffect }[] }
-export interface GeneratedEvent { title: string; hook: string; scenes: { title: string; narration: string; lines: { speaker: string; tone: string; text: string }[] }[] }
+export interface GeneratedEvent { title: string; hook: string; scenes: { title: string; narration: string; lines: { speaker: string; tone: string; text: string; after?: number }[] }[] }
 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
@@ -1685,8 +1685,8 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
   const meta: LlmCallMeta = {};
   const body = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
 只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}]}]}
-要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行。`;
+{"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
+要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
   const result = await callJson(config, preset, 'event', body, eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
@@ -1716,6 +1716,7 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
           speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim().slice(0, 12) : girl.name,
           tone: typeof line.tone === 'string' ? line.tone.trim().slice(0, 10) : '',
           text: typeof line.text === 'string' ? line.text.trim().slice(0, 120) : '',
+          after: typeof line.after === 'number' && Number.isFinite(line.after) ? Math.max(0, Math.round(line.after)) : undefined,
         })).filter(line => line.text),
       };
     }),
@@ -1727,7 +1728,7 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
 export interface GeneratedArcPassage {
   title: string;
   narration: string;
-  lines: { speaker: string; tone: string; text: string }[];
+  lines: { speaker: string; tone: string; text: string; after?: number }[];
   choices: { label: string; intent: string; effect?: StoryEffect }[];
 }
 
@@ -1782,6 +1783,7 @@ export async function generateStoryArc(config: LlmConfig, girl: Girl, input: Sto
         speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim().slice(0, 12) : girl.name,
         tone: typeof line.tone === 'string' ? line.tone.trim().slice(0, 10) : '',
         text: typeof line.text === 'string' ? line.text.trim().slice(0, 200) : '',
+        after: typeof line.after === 'number' && Number.isFinite(line.after) ? Math.max(0, Math.round(line.after)) : undefined,
       })).filter(line => line.text),
       choices: choices.map((choice, at) => ({
         label: typeof choice.label === 'string' && choice.label.trim() ? choice.label.trim().slice(0, 30) : `选择 ${at + 1}`,

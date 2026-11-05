@@ -78,7 +78,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   立绘层：无背景、放大至顶天立地、底部与界面底部绝对齐平
+   立绘层：多人并肩站位，先到的人靠左，后来的人从右侧进场
    ───────────────────────────────────────────────────────────── */
 .vn-cast {
   position: absolute;
@@ -89,6 +89,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  gap: 0;
+  padding: 0 2%;
   pointer-events: none;
   z-index: 1; /* 立绘在背景之上、对话框之下 */
 }
@@ -98,16 +100,35 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 98%; /* 放大至顶天立地，撑满整屏高度 */
+  flex: 0 1 auto;
+  height: 96%;
   width: auto;
-  max-width: min(80%, 720px);
+  max-width: min(46%, 640px);
   transition: opacity .3s ease, filter .3s ease, transform .3s ease;
+  animation: vn-actor-in .34s cubic-bezier(.16, 1, .3, 1) both;
 }
 
+/* 站位轻微叠压，多人时不会排成一条生硬的分栏 */
+.vn-actor + .vn-actor {
+  margin-left: clamp(-72px, -3.4vw, -18px);
+}
+
+@keyframes vn-actor-in {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 人越多单人越收一点，保证每个人脸都露得出来 */
+.vn-cast[data-count="1"] .vn-actor { height: 98%; max-width: min(80%, 720px); }
+.vn-cast[data-count="2"] .vn-actor { height: 94%; max-width: min(50%, 660px); }
+.vn-cast[data-count="3"] .vn-actor { height: 86%; max-width: min(38%, 560px); }
+.vn-cast[data-count="4"] .vn-actor { height: 78%; max-width: min(31%, 480px); }
+.vn-cast[data-count="5"] .vn-actor { height: 72%; max-width: min(26%, 420px); }
+
 .vn-actor.dimmed {
-  opacity: .55;
-  filter: brightness(.7) saturate(.85);
-  transform: translateY(8px) scale(.98);
+  opacity: .8;
+  filter: brightness(.8) saturate(.9);
+  transform: translateY(6px) scale(.99);
 }
 
 .vn-actor.active {
@@ -441,6 +462,22 @@
   object-fit: cover !important;
   object-position: 50% 12% !important;
   background: transparent !important;
+}
+
+/* 所长：没有立绘，用同一副头像框装一枚剪影标记 */
+.vn-box-avatar.you {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f3aec9;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(243, 174, 201, 0.22), rgba(14, 10, 18, 0.72) 68%),
+    rgba(14, 10, 18, 0.72);
+}
+
+.vn-box-avatar.you svg {
+  opacity: .92;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
 }
 
 .vn-box-content {

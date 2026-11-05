@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
 import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
+import { mergeCastOrder } from '../src/vn/cast.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
 const passage = {
@@ -25,10 +26,14 @@ test('v93 适配器：旁白拆段、台词顺序、表情透传、选项收尾�
   assert.equal(beats[0]!.kind, 'bg', '开头先给背景');
   const says = beats.filter(beat => beat.kind === 'say');
   assert.equal(says.length, 4, '两段旁白 + 两句台词（空台词被丢掉）');
+  // v99：台词要插回旁白中间，不能整段塌在结尾
+  const sayText = (at: number) => (says[at] as Extract<VnBeat, { kind: 'say' }>).text;
   assert.equal((says[0] as Extract<VnBeat, { kind: 'say' }>).speakerId, NARRATOR_ID);
-  assert.equal((says[2] as Extract<VnBeat, { kind: 'say' }>).name, '月见桃');
-  assert.equal((says[2] as Extract<VnBeat, { kind: 'say' }>).speakerId, 'yue');
-  assert.equal((says[2] as Extract<VnBeat, { kind: 'say' }>).expression, 'smile');
+  assert.equal(sayText(0), '雨停在她肩上。');
+  assert.equal((says[1] as Extract<VnBeat, { kind: 'say' }>).name, '月见桃');
+  assert.equal((says[1] as Extract<VnBeat, { kind: 'say' }>).speakerId, 'yue');
+  assert.equal((says[1] as Extract<VnBeat, { kind: 'say' }>).expression, 'smile');
+  assert.equal(sayText(3), '远处有电车经过。', '末段旁白仍然在最后');
   const choice = beats.find(beat => beat.kind === 'choice');
   assert.ok(choice, '选项要收尾一条 choice');
   assert.equal((choice as Extract<VnBeat, { kind: 'choice' }>).options.length, 2);
@@ -143,6 +148,38 @@ test('v98 只是变短或原地不变时不乱跳', () => {
   assert.equal(same.done, false);
 });
 
+test('v99 站位顺序：新人从右侧进场、老人不因开口换位、离场的人被移走', () => {
+  const start = mergeCastOrder([], ['a', 'b']);
+  assert.deepEqual(start, ['a', 'b'], '开场按名单站好');
+
+  // b 开口：不重排，站位不动
+  assert.equal(mergeCastOrder(start, ['a', 'b'], 'b'), start, '同一批人开口不换位（连引用都不变）');
+
+  // 新人 c 进场：追加到最右
+  assert.deepEqual(mergeCastOrder(start, ['a', 'b', 'c'], 'c'), ['a', 'b', 'c']);
+
+  // 名单外的说话人也要有站位（例如临时登场）
+  assert.deepEqual(mergeCastOrder(['a'], ['a'], 'ghost'), ['a', 'ghost']);
+
+  // a 离场：只去掉 a，其余相对顺序不变
+  assert.deepEqual(mergeCastOrder(['a', 'b', 'c'], ['b', 'c']), ['b', 'c']);
+});
+
+test('v99 一整段旁白 + 末尾台词：按句子摊开后把台词插进去，不会全堆在最后', () => {
+  const beats = beatsFromPassage({
+    id: 'p10',
+    narration: '夜雨敲在玻璃上。她把灯拧暗了一格。走廊尽头有人在等。门缝里透出一线光。',
+    lines: [
+      { speaker: '月见桃', text: '你来得比我说的晚。' },
+      { speaker: '所长', text: '路上耽搁了。' },
+    ],
+    choices: [],
+  });
+  const says = beats.filter(beat => beat.kind === 'say') as Extract<VnBeat, { kind: 'say' }>[];
+  const order = says.map(say => (say.speakerId === NARRATOR_ID ? '旁白' : say.name));
+  assert.deepEqual(order, ['旁白', '月见桃', '旁白', '所长', '旁白'], '台词被夹在旁白块之间，最后仍落在旁白上');
+});
+
 test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {
   const lounge = resolveBackdrop('room:lounge');
   assert.match(lounge.gradient, /gradient/);
@@ -162,8 +199,10 @@ test('v93 交互剧情适配器：旁白/玩家/台词都折成 say，路上先�
   const says = beats.filter(beat => beat.kind === 'say') as Extract<typeof beats[number], { kind: 'say' }>[];
   assert.equal(says.length, 4, '两段旁白 + 一句台词 + 玩家一说');
   assert.equal(says[0]!.speakerId, NARRATOR_ID);
-  assert.equal(says[2]!.name, '月见桃');
-  assert.equal(says[2]!.expression, 'sad');
+  // v99：这一轮里唯一的台词插在第一段旁白之后，而不是等旁白全说完
+  assert.equal(says[1]!.name, '月见桃');
+  assert.equal(says[1]!.expression, 'sad');
+  assert.equal(says[2]!.speakerId, NARRATOR_ID);
   assert.equal(says[3]!.name, '所长');
   assert.equal(beats.at(-1)!.kind, 'end');
 });
@@ -179,9 +218,30 @@ test('v95 战斗札记适配器：先标题卡、再旁白、再台词；找不�
   assert.equal(beats[1]!.kind, 'scene');
   const says = beats.filter(beat => beat.kind === 'say') as Extract<typeof beats[number], { kind: 'say' }>[];
   assert.equal(says.length, 4, '两段旁白 + 一句台词 + 一句无名台词');
-  assert.equal(says[2]!.name, '月见桃');
-  assert.equal(says[2]!.expression, 'angry');
-  assert.equal(says[3]!.speakerId, NARRATOR_ID, '找不到的说话人退成旁白');
+  // v99：两句台词插进两段旁白之间，不是念完旁白再听台词
+  assert.equal(says[1]!.name, '月见桃');
+  assert.equal(says[1]!.expression, 'angry');
+  assert.equal(says[2]!.speakerId, NARRATOR_ID, '找不到的说话人退成旁白');
+});
+
+test('v99 交织：after 决定这句台词插在第几段旁白之后', () => {
+  const beats = beatsFromPassage({
+    id: 'p9',
+    narration: '第一段。\n\n第二段。\n\n第三段。',
+    lines: [
+      { speaker: '月见桃', text: '插在第二段之后。', after: 2 },
+      { speaker: '所长', text: '插在最前面。', after: 0 },
+    ],
+    choices: [],
+  });
+  const says = beats.filter(beat => beat.kind === 'say') as Extract<VnBeat, { kind: 'say' }>[];
+  assert.deepEqual(says.map(say => say.text), [
+    '插在最前面。',
+    '第一段。',
+    '第二段。',
+    '插在第二段之后。',
+    '第三段。',
+  ]);
 });
 
 test('v95 视觉小说开关会同步两条内置词条', async () => {

@@ -288,8 +288,9 @@ export const SECTION_IDS = SECTION_PROMPTS.map(entry => entry.id);
 export function arcContract(targets: string): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
-    '{"title":"","hook":"","summary":"","passages":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":""}],"choices":[{"label":"","intent":"","effect":{"bond":2}}]}]}',
+    '{"title":"","hook":"","summary":"","passages":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}],"choices":[{"label":"","intent":"","effect":{"bond":2}}]}]}',
     `篇幅：${targets}；summary 用 60–120 字概括这一段剧情。`,
+    'after 必填：这句台词插在旁白的第几段之后（0 = 旁白最前面；narration 里按空行分段、从 0 数）。台词要贴着它回应或打断的那一段，不要全堆在旁白之后。',
     'effect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6。',
   ].join('\n');
 }

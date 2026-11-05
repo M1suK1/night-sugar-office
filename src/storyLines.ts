@@ -5,8 +5,6 @@
  * 现在每句台词可以带 \`after\`（插在第几段旁白之后）；没写就按位置均匀铺开，
  * 至少不会整段塌在结尾。
  */
-import type { StoryLine } from './types.ts';
-
 export interface StorySegment {
   kind: 'narration' | 'line';
   /** 旁白段落下标 / 台词下标，渲染时当 key 用。 */
@@ -19,7 +17,12 @@ export function spreadAfter(count: number, paragraphs: number): number[] {
   return Array.from({ length: count }, (_, index) => Math.min(paragraphs, Math.round((index + 1) * paragraphs / (count + 1))));
 }
 
-export function interleaveTurn(paragraphs: string[], lines: StoryLine[]): StorySegment[] {
+/** 只要知道「插在第几段之后」就行，旁白/台词的其余字段与这里无关。 */
+export interface Placeable {
+  after?: number;
+}
+
+export function interleaveTurn(paragraphs: string[], lines: readonly Placeable[]): StorySegment[] {
   const total = paragraphs.length;
   const explicit = lines.some(line => typeof line.after === 'number');
   const positions = explicit

@@ -619,7 +619,7 @@ export interface StoryPassage {
   id: string;
   title?: string;
   narration: string;
-  lines: { speaker: string; tone?: string; text: string }[];
+  lines: { speaker: string; tone?: string; text: string; after?: number }[];
   choices: { id: string; label: string; intent?: string; effect?: StoryEffect }[];
 }
 

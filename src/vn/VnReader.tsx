@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, FastForward, Square } from 'lucide-react';
+import { ArrowRight, FastForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
+import { mergeCastOrder } from './cast';
 import { vnAwaitingChoice, vnBeatKey, vnInitial, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
@@ -153,11 +154,25 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     return resolveBackdrop('night');
   }, [state.index, state.beats]);
 
-  const isSay = beat?.kind === 'say';
-  const isNarrator = isSay && (beat.speakerId === 'narrator' || !beat.speakerId);
-  const speaker = isSay && !isNarrator ? cast.find(member => member.id === beat.speakerId) : undefined;
+  const say = beat && beat.kind === 'say' ? beat : undefined;
+  const isSay = Boolean(say);
+  const isNarrator = Boolean(say) && (say!.speakerId === 'narrator' || !say!.speakerId);
+  const isPlayer = Boolean(say) && !isNarrator && say!.speakerId === 'player';
+  const speaker = say && !isNarrator && !isPlayer ? cast.find(member => member.id === say.speakerId) : undefined;
   const focus = speaker ?? cast[0];
-  const speakerColor = speaker?.girl.color || focus?.girl.color || '#f3aec9';
+  const speakerColor = isPlayer ? '#f3aec9' : speaker?.girl.color || focus?.girl.color || '#f3aec9';
+
+  // 出场顺序：先到的人站左边，后来的人从右侧进场（已存在的自然往左挤）。
+  const castIds = useMemo(() => cast.map(member => member.id), [cast]);
+  const [order, setOrder] = useState<readonly string[]>(castIds);
+  const speakingId = isSay && !isNarrator && !isPlayer ? say!.speakerId : '';
+  useEffect(() => {
+    setOrder(current => mergeCastOrder(current, castIds, speakingId));
+  }, [castIds, speakingId]);
+
+  const shownCast = order
+    .map(id => cast.find(member => member.id === id))
+    .filter((member): member is VnCastMember => Boolean(member));
 
   // 是否读到结尾（用于控制右侧建议选项浮现）
   const isAtEnd = state.done || state.index >= state.beats.length - 1;
@@ -166,19 +181,20 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
       {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
       <div className="vn-vignette" aria-hidden="true" />
-      <div className="vn-cast" aria-hidden="true">
-        {focus && (
-          <div className={`vn-actor ${isNarrator ? 'dimmed' : 'active'}`}>
-            <GirlPortrait
-              girl={{
-                ...focus.girl,
-                expression: isSay && beat.expression ? beat.expression : focus.girl.expression ?? 'calm',
-              }}
-              variant="full"
-              bare
-            />
-          </div>
-        )}
+      <div className="vn-cast" data-count={Math.min(shownCast.length, 5)} aria-hidden="true">
+        {shownCast.map((member, at) => {
+          const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === member.id;
+          const expression = (speaking ? say?.expression : undefined) ?? member.girl.expression ?? 'calm';
+          return (
+            <div
+              key={member.id}
+              className={`vn-actor ${speaking ? 'active' : 'dimmed'}`}
+              style={{ zIndex: speaking ? 40 : 10 + at }}
+            >
+              <GirlPortrait girl={{ ...member.girl, expression }} variant="full" bare />
+            </div>
+          );
+        })}
       </div>
 
       <div className="vn-toolbar">
@@ -235,24 +251,27 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
                 {speaker && (
                   <div className="vn-box-avatar" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
                     <GirlPortrait
-                      girl={{
-                        ...speaker.girl,
-                        expression: isSay && beat.expression ? beat.expression : speaker.girl.expression ?? 'calm',
-                      }}
+                      girl={{ ...speaker.girl, expression: say?.expression ?? speaker.girl.expression ?? 'calm' }}
                       variant="avatar"
                       bare
                     />
                   </div>
                 )}
+                {/* 所长不是立绘角色：给他一个同样尺寸、同样描边的头像框，里面放剪影标记。 */}
+                {isPlayer && (
+                  <div className="vn-box-avatar you" style={{ '--speaker-color': speakerColor } as React.CSSProperties}>
+                    <UserRound size={26} strokeWidth={1.4} />
+                  </div>
+                )}
                 <div className="vn-box-content">
-                  {/* 旁白不挂名牌：左上角只留给真正开口的人。 */}
-                  {!isNarrator && (
+                  {/* 旁白与所长都不挂名牌：左上角只留给有名有姓的那几位。 */}
+                  {!isNarrator && !isPlayer && (
                     <div className="vn-box-meta">
                       <span
                         className="vn-name"
                         style={{ color: speakerColor, borderColor: `${speakerColor}55` }}
                       >
-                        {isSay ? beat.name : ''}
+                        {say?.name ?? ''}
                       </span>
                     </div>
                   )}
