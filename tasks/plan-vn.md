@@ -1,163 +1,132 @@
-# 方案 v91 · 视觉小说模式（VN Stage）
+# 方案 v92 · 视觉小说阅读器（只改两处：角色剧情、战斗札记）
 
-> 状态：待你过一遍再动手。全部结论都在最后一节「待你确认」。
+> 上一版（v91）想做全游戏演出层，方向错了。这一版只做**一个可复用的阅读器**，套在两处长文本上：
+> **角色剧情**（`StoryPlayerDialog`）与**战斗札记**（`BattleNoteDialog`）。
+> 议会演出、事件弹窗、私语聊天、主界面全部不动。
 
-## 一、要做成什么
+## 一、目标
 
-把现在散在三处的「逐段文字」——分幕剧情的 passage、事件弹窗的 scene、议会的提案者对白——收进同一个**演出舞台**：
+这两处现在是「一屏文字 + 翻页按钮」。改成视觉小说的看法：
 
-- 全屏暗场：背景 → 立绘 → 半透明对话框 → 名牌 → 台词，一次只推进一句。
-- 点击 / 空格 / 回车推进，支持自动播放、快进、跳过已读、历史回看。
-- 立绘按 `expression` 换表情，按脚本决定站位（左 / 中 / 右）、进场退场、缩放。
-- 选项以舞台内的选择卡出现，选完继续演，不再切回弹窗。
+- 一句一句出，点击 / 空格推进，带打字机。
+- 立绘常驻：角色剧情用她的立绘；战斗札记用**当前说话的单位**，说话的人亮、其他人压暗。
+- 台词下面一行浅色小字放动作 / 神态（现有 `action` 字段已有内容）。
+- 剧情里的选项直接出现在舞台下方，不再跳回正文列表。
+- 保留「原文」开关：一键退回现有的整段文字视图，方便回看与检索。
 
-**不是**要做的事：不改剧情怎么生成（LLM 契约保持现状）、不改存档里的剧情数据结构、不做语音与 BGM（留接口）。
+**不做**：全屏路由、全局开关、议会 / 事件 / 交互剧情改造、LLM 契约改动、语音与 BGM。
 
-## 二、现状盘点（能复用什么）
+## 二、复用清单
 
-| 能力 | 现在在哪 | 复用方式 |
+| 能力 | 现成位置 | 用途 |
 | --- | --- | --- |
-| 立绘 + 表情 + 差分 + 资产解析 | `GirlPortrait`、`expressionOutfits`、`portraitSource()`（v87/v88 刚统一） | 直接用，VN 只控制「用哪张、放哪儿」 |
-| 剧情对白数据 | `event.passages[].lines[{speaker,tone,text}]`（`StoryPassage`） | 适配成 beat |
-| 事件对白 | `event.scenes[].lines[]`（`EventLine`） | 适配成 beat |
-| 议会逐段对白 | `opinion.dialogue: OpinionDialogueLine[]`（已有 speakerId / expression / action） | 适配成 beat |
-| 交互剧情的旁白/台词 | `StoryTurn`（`StoryLine[]`，带 speakerId / expression / after） | 二期再进舞台 |
-| 模态系统 | `Dialog.tsx` + `App.tsx` 的 `modal` 联合类型 | VN 作为独立 `mode: 'vn'` 的全屏层，不进 `Dialog` 的纸片容器 |
-| 程序化背景 | 只有 CSS 渐变与 `RoomFurniture` 线稿，没有背景图资产 | 一期用「渐变 + 网格 + 房间线稿」拼，二期可接导入图 |
+| 立绘 + 表情差分 + 魔女形态 + 资产解析 | `GirlPortrait` / `portraitSource()` | 舞台立绘直接用，不用新写取图逻辑 |
+| 角色剧情的段落与选项 | `StoryPassage { narration, lines[{speaker,tone,text}], choices[] }` | 适配成 beat |
+| 战斗札记的分场与台词 | `BattleNote.scenes[]` 的 `BattleNoteLine`（已有 speaker / expression / text） | 适配成 beat |
+| 战斗单位 → 立绘 | `battleNote.portraitSourceOf(unit, girl)` | 决定每个说话人画谁 |
+| 现有版式 | `story-player-*`、`battle-note-*` 的配色与暗紫细描边 | 舞台沿用，不新造视觉语言 |
 
-## 三、数据模型
-
-新增 `src/vn/types.ts`（纯数据，可测试，不碰 React）：
+## 三、数据（`src/vn/types.ts`，纯数据，不碰 React）
 
 ```ts
-export type VnActorSide = 'left' | 'center' | 'right';
-
-export interface VnActor {
-  /** 少女 id；'player' 表示玩家；'narrator' 表示旁白。 */
-  id: string;
-  name: string;
-  side: VnActorSide;
-  expression?: Expression;
-  /** 出场时是否压暗其他人。 */
-  focus?: boolean;
-}
-
 export type VnBeat =
-  | { kind: 'bg'; backdrop: VnBackdrop }            // 换背景：室内/街区/辖区/夜色
-  | { kind: 'enter'; actor: VnActor }               // 立绘进场（可带表情）
-  | { kind: 'exit'; actorId: string }               // 立绘退场
   | { kind: 'say'; speakerId: string; name: string; text: string; expression?: Expression; action?: string; thought?: boolean }
   | { kind: 'choice'; prompt?: string; options: { id: string; label: string; hint?: string }[] }
-  | { kind: 'wait'; ms: number }                    // 留白/换场
-  | { kind: 'end'; /** 从这里接回游戏 */ resume: 'close' | 'event' | 'story' };
+  | { kind: 'scene'; title?: string }   // 换场标题卡（战斗札记的分场）
+  | { kind: 'end' };
 ```
 
-背景：
+两个适配器（纯函数，便于测试）：
 
-```ts
-export interface VnBackdrop {
-  /** 语义名，渲染层自己查表：lounge / clinic / dorm / observatory / street / district:<id> / night / void */
-  id: string;
-  /** 渐变主色，缺省按 id 查表。 */
-  tint?: string;
-  /** 可选背景图（data URL 或资产 id），二期支持导入。 */
-  image?: string;
-}
-```
+- `beatsFromPassage(passage, { speakerId, name })`：`narration` 按空行拆段，每段一条旁白 say；
+  `lines[]` 依次 say（`expression` 直接透传）；`choices[]` 收尾成一条 choice。
+- `beatsFromBattleNote(note, cast)`：每个 `scene` 开头插一条 `scene` beat（带标题），
+  然后 `lines[]` 逐条 say；`speakerId → BattleActor` 决定 `name` 与立绘；
+  `speaker` 为空的（魔物动作 / 环境描写）按旁白处理，不挂立绘。
 
-适配器（纯函数，各写 20 行以内）：
-
-- `beatsFromPassages(passage)` — passage 的 `narration` 拆成旁白 say，`lines` 依次 say；`choices` → choice beat。
-- `beatsFromScenes(scene)` — 同上，`narration` + `lines`。
-- `beatsFromCouncil(dialogue)` — 议会 3–5 句，speakerId 已有，直接 say。
-
-## 四、渲染层
+## 四、渲染（`src/vn/VnReader.tsx`）
 
 ```
-VnStage（全屏，role="dialog"）
-├─ VnBackdrop        背景层：渐变 + 网格 + 房间线稿 + 暗角
-├─ VnCast            立绘层：按 side 定位，最多 3 人；非发言者压暗 0.55
-├─ VnTextBox         对话框：名牌 / 台词（Typewriter）/ 动作斜体 / ▶ 指示
-├─ VnChoices         选项卡（键盘 1..N）
-└─ VnToolbar         自动 / 快进 / 历史 / 跳过 / 关闭（暗紫细描边按钮，与现有 .av-btn 一致）
+VnReader(beats, cast, { variant })
+├─ .vn-stage      舞台：暗底 + 暗角 + 程序化背景（见第六节）
+├─ .vn-cast       立绘层：说话人居中偏左，非说话人压暗 0.5
+├─ .vn-box        对话框：名牌 / 台词（打字机）/ 动作小字 / ▼ 继续指示
+├─ .vn-choices    选项：舞台下方卡片，键盘 1..N
+└─ .vn-toolbar    自动 / 快进 / 原文 / 关闭（沿用 .av-btn）
 ```
 
-组件文件：`src/vn/VnStage.tsx`、`VnBackdrop.tsx`、`VnCast.tsx`、`VnTextBox.tsx`、`VnChoices.tsx`、`src/vn/useTypewriter.ts`、`src/vn/useVnScript.ts`（推进状态机）。
+状态机抽成纯函数 `vnReducer(state, event)`：
 
-状态机（`useVnScript`）：
+- `advance`：正在打字 → 立刻打完；否则前进一条；遇 `choice` 停止推进。
+- `choose(id)`：记录选择（用 `chosenId` 锁死，保证只回调一次），继续到 `end` 交回外层。
+- `skip`：只跳过 `seen` 里的 say（`seen` 按 beat key 记在 sessionStorage，不进存档）。
 
-```
-beats[i] --点击--> 若正在打字 → 立刻打完
-                 → 否则 i++；遇到 choice 停下等选择；遇到 end 调 onFinish
-```
+`variant: 'story' | 'note'` 决定字号、是否显示「原文」开关、选项样式。
 
-只读状态**不进存档**（进度按 `event.passages[].id` / `scene.id` 记在 sessionStorage 的 `vn:seen`），避免存档膨胀；「跳过已读」按这个集合判断。
+## 五、接入
 
-## 五、演出细节（一期的验收口径）
+### 角色剧情（`StoryPlayerDialog`）
 
-1. **打字机**：默认 28ms/字，句读标点 +120ms；`prefers-reduced-motion` 或设置里关掉时直接整句出现。
-2. **推进**：点击舞台任意处 / 空格 / 回车；**选择出现时**推进键失效（避免误跳）。
-3. **自动播放**：读完停 900ms 再推进；遇到 choice 自动暂停。
-4. **快进**：按住 Ctrl 或点「快进」= 立即读完当前句并 120ms 推进下一句。
-5. **跳过已读**：工具栏按钮，跳过所有 `seen` 的 say，遇到没看过的自动停。
-6. **历史**：抽屉列出本次演出所有已播 say（说话人 + 文本），可滚回；不写存档。
-7. **表情**：`say.expression` 有值就切该说话人的表情；缺省保留当前表情。
-8. **站位**：`enter.actor.side` 决定列；同侧多人时按进场顺序堆叠，最多 3 人（超出把最旧的先压暗再挤出）。
-9. **无障碍**：`role="dialog"`、`aria-live="polite"` 的台词区、焦点陷阱、Esc 关闭（关闭前确认「本次演出未结束」）、Tab 焦点顺序 对话框 → 选项 → 工具栏。
+- 右侧正文区换成 `VnReader`：一次只播当前 passage；该段播完且还有下一段时，底部出现「继续」；
+  passage 自带 `choices` 时出现选项卡，选完照旧调 `onChoose`（只调一次）。
+- 左侧头像 / 羁绊 / 侵蚀 / 段落圆点保留，位置不动。
+- `event.mode === 'session'`（你一句我一句）**不进舞台**，仍走原有输入界面。
 
-## 六、接入范围（分批）
+### 战斗札记（`BattleNoteDialog`）
 
-### 批 1 · 舞台骨架 + 分幕剧情（独立可用）
+- 中间逐句阅读区换成 `VnReader`：整篇札记一次装进 beats，`scene` beat 负责换场标题卡。
+- 「重新生成 / 关闭」按钮保留；键盘 ←/→ 仍可上一句 / 下一句。
+- 立绘：说话人是谁就画谁（`battleActors` + `portraitSourceOf`）；旁白时把上一位说话人压暗。
 
-- `src/vn/*` 全部新文件；`App.tsx` 增加 `mode: 'vn'` 全屏层。
-- `StoryPlayerDialog` 保留旧版作为兜底；新增设置项 **「剧情演出：弹窗 / 视觉小说」**（默认视觉小说，旧档跟随默认、可随时切回）。
-- 适配器 `beatsFromPassages` + 打字机 + 选项 + 工具栏（自动/快进/关闭）。
-- 验收：分幕剧情在 VN 舞台里能从头演到尾、选项生效、结束回到时间线；关掉开关立刻回到旧弹窗。
+### 原文模式
 
-### 批 2 · 事件与议会
+两处工具栏各放一个「原文」开关，切回现有实现。默认进舞台，状态记 `localStorage`（两个界面各自记）。
 
-- `EventDialog` / `IncidentDialog` 的 scene 走 `beatsFromScenes`；议会 `CouncilView` 的提案者对白走 `beatsFromCouncil`（保留原来的「继续 / 空格 / 跳过」语义）。
-- 立绘进场退场、发言者聚光、背景按所在辖区/房间切换。
-- 验收：三处入口行为一致；议会原有 105 项状态测试不回归。
+## 六、背景（这一版的取舍）
 
-### 批 3 · 体验补齐
+项目里没有任何背景图资产，所以舞台背景**只做程序化**：
 
-- 历史抽屉、跳过已读、自动播放记忆、移动端竖屏（对话框占下方 38%、立绘 `anchor='face'`）。
-- 舞台内 `expression` 切换走表情差分（`importedVariants`）；魔女形态的少女用 `witchForm` 立绘。
-- 验收：键盘全流程可玩；触屏可推进/选择；prefers-reduced-motion 下无动画。
+- 角色剧情：按 `event.source` 与 `girl.element` 取同色系渐变 + 稀疏网格 + 暗角。
+- 战斗札记：按战斗所在辖区取辖区色渐变（没有辖区就用夜色）。
+- 以后要换真图：只需给 `VnReader` 传 `backdrop`，排版不用改。
 
-### 批 4 · 生成侧（可选）
+## 七、分批
 
-- 事件/剧情契约增加**可选**字段：`scene.backdrop`、`lines[].side`、`lines[].action`；缺省时走本地推断（说话人 → 站位；辖区 → 背景）。
-- 本地模板兜底同步补上这三个字段，保证没有 key 也有完整演出。
-- 验收：旧数据不报错（全部 optional），新生成的数据能指定背景与站位。
+### 批 1 · 阅读器内核 + 战斗札记（先做小面）
 
-## 七、性能与边界
+- 新增 `src/vn/types.ts`、`beats.ts`、`reducer.ts`、`VnReader.tsx`、`vn.css`。
+- `BattleNoteDialog` 接入舞台 + 原文开关。
+- 验收：任意战斗札记能从第一句演到最后一句；说话人立绘正确；Esc / 关闭回原界面；原文模式与旧版一致。
 
-- 立绘只用 `GirlPortrait`（内部已按资产 id 异步取图），不进 base64 复制；最多同时挂 3 张 `variant="full"`。
-- 打字机用 `requestAnimationFrame` + 字符串切片，不用 `setInterval` 改 state。
-- 跳过/自动/历史都在组件内部状态，不写 `GameState`；只有「演出已看完」这种进度写 sessionStorage。
-- 关闭舞台时若还有未播完的 say，只记「看过」，不自动把剧情标成完成（完成仍由原有 action 决定）。
+### 批 2 · 角色剧情
 
-## 八、测试计划
+- `StoryPlayerDialog` 接入；选项在舞台内完成且只调一次 `onChoose`；段落圆点与「继续」衔接。
+- 验收：三段故事连着演不串段；选项效果与旧版一致；`session` 模式不受影响。
 
-- `tests/vn.test.ts`：
-  - 适配器：passage / scene / council 三种输入 → beat 序列（旁白在前、say 顺序、choice 落在末尾、空文本被跳过）。
-  - 状态机：`useVnScript` 的纯 reducer 抽成 `vnReducer(state, action)`，测「点击 → 打字中先打完 → 再点击才前进」「choice 阻塞推进」「end 触发 resume」。
-  - 跳过已读：`seen` 集合命中即跳过，未命中停住。
-  - 背景/站位推断：同侧第三人进场时最旧的被标记 `dimmed`。
-- 回归：`game.test.ts` 里剧情/事件/议会相关用例全绿；`check-imports` 的 450 行上限对 `src/vn/**` 同样生效（`src/rules/**` 才受硬限，`src/vn` 自觉保持 <400 行/文件）。
+### 批 3 · 打磨
+
+- 自动播放、快进、跳过已读、历史抽屉（限 60 条）；`prefers-reduced-motion` 关动画；
+  窄屏竖屏排版（对话框占下方 40%）。
+- 键盘：空格 / 回车推进、1..N 选项、←/→ 上一句 / 下一句、Esc 关闭（有未播完的句子时先确认）。
+
+## 八、测试
+
+`tests/vn.test.ts`（纯函数，不测 React）：
+
+- `beatsFromPassage`：narration 拆段数、lines 顺序、expression 透传、choice 在末尾、空文本被跳过。
+- `beatsFromBattleNote`：分场标题顺序、旁白不挂立绘、说话人映射到 actor。
+- `vnReducer`：打字中点击先打完；再点击前进；`choice` 阻塞推进且只回调一次；`end` 只触发一次；`skip` 只跳 `seen`。
+
+回归：现有剧情 / 战报用例全绿；`check-imports` 通过（`src/vn/**` 单文件 <400 行）。
 
 ## 九、风险
 
-1. **背景素材**：现在没有任何背景图资产。一期只能用渐变 + 线稿，观感会和「全屏 VN」有落差。要么接受程序化背景，要么你给 3–4 张背景图（会客厅 / 街区 / 辖区夜景 / 诊所），走资产库。
-2. **旧弹窗并存**：两套演出同时存在会增加维护面；建议默认切到 VN，但保留开关至少一个大版本。
-3. **移动端**：立绘 + 对话框在窄屏容易挤，需要专门排版（批 3）。
-4. **议会演出时序**：现在议会有「对白结束前选项锁定」的规则，搬进舞台要保证同一语义，否则会重复算一次决议。
+1. **战斗札记可能很长**（几十行、跨多场）：一次装进 beats 没问题，但历史抽屉要限条数。
+2. **选项重复触发**：reducer 用 `chosenId` 锁死并写测试，避免 `onChoose` 被调用两次。
+3. **原文模式**：建议保留；否则回看长文很累。
 
 ## 十、待你确认
 
-1. **背景**：接受一期程序化背景（渐变 + 线稿），还是你给我 3–4 张背景图接进资产库？
-2. **默认行为**：新档默认进视觉小说演出、旧档保持原样，还是全局默认 VN + 设置里可切？
-3. **范围**：批 1（分幕剧情）先做，还是批 1+2（含事件与议会）一起做？
-4. **交互剧情（session 模式）**：这次要不要一起进舞台？它是「你一句我一句」，舞台化要额外做输入框，我建议放到批 5。
+1. 批 1 直接开工（先做战斗札记），还是两处一起做？
+2. 「原文模式」保留吗？（我倾向：默认舞台，可切原文）
+3. 打字机默认 28ms/字、标点停顿 120ms，可以吗？
