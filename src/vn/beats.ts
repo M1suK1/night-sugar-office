@@ -1,0 +1,81 @@
+/**
+ * 把现有数据折成舞台节拍（v93）。
+ *
+ * 角色剧情的正文是 `StoryPassage { narration, lines[{speaker,tone,text}], choices[] }`。
+ * 规则很简单：旁白按空行拆段 → 每段一条 say（speakerId 固定 `narrator`）；
+ * 台词依次 say；选项收尾成一条 choice。空文本直接丢掉，免得舞台空转一屏。
+ */
+import type { Expression } from '../types.ts';
+import { backdropForElement } from './backdrops.ts';
+import type { VnBeat, VnBackdrop } from './types.ts';
+
+export interface PassageLine {
+  speaker: string;
+  tone?: string;
+  text: string;
+}
+
+export interface PassageLike {
+  id: string;
+  title?: string;
+  narration: string;
+  lines: PassageLine[];
+  choices: { id: string; label: string; intent?: string }[];
+  /** 未来字段：模型可以指定这一段的场景（room:lounge / street / district:candy）。 */
+  scene?: string;
+}
+
+export const NARRATOR_ID = 'narrator';
+
+export interface PassageBeatOptions {
+  /** 这一段实际出场的人：台词里的 speaker 名字 → id / 表情由这里兜住。 */
+  speakerId?: string;
+  speakerName?: string;
+  expression?: Expression;
+  element?: string;
+  scene?: string;
+}
+
+const tidy = (text: string): string => text.replace(/\r\n/g, '\n').trim();
+
+export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptions = {}): VnBeat[] {
+  const beats: VnBeat[] = [];
+  const backdrop: VnBackdrop = passage.scene
+    ? { id: passage.scene }
+    : options.scene
+      ? { id: options.scene }
+      : backdropForElement(options.element);
+  beats.push({ kind: 'bg', backdrop });
+
+  for (const paragraph of tidy(passage.narration).split(/\n{2,}/)) {
+    const text = tidy(paragraph).replace(/\n/g, ' ');
+    if (!text) continue;
+    beats.push({ kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text, thought: true });
+  }
+
+  for (const line of passage.lines ?? []) {
+    const text = tidy(line.text ?? '');
+    if (!text) continue;
+    const fromNarrator = !line.speaker || line.speaker === '旁白';
+    beats.push({
+      kind: 'say',
+      speakerId: fromNarrator ? NARRATOR_ID : options.speakerId ?? line.speaker,
+      name: fromNarrator ? '旁白' : line.speaker,
+      text,
+      expression: fromNarrator ? undefined : options.expression,
+      thought: fromNarrator,
+    });
+  }
+
+  const options_ = (passage.choices ?? []).filter(choice => tidy(choice.label ?? ''));
+  if (options_.length) {
+    beats.push({
+      kind: 'choice',
+      prompt: passage.title,
+      options: options_.map(choice => ({ id: choice.id, label: tidy(choice.label), hint: choice.intent?.trim() || undefined })),
+    });
+  }
+
+  beats.push({ kind: 'end' });
+  return beats;
+}

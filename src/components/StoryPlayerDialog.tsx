@@ -1,13 +1,17 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Heart, Sparkles, X } from 'lucide-react';
 import type { CharacterEvent, Girl } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { VnReader } from '../vn/VnReader';
+import { beatsFromPassage } from '../vn/beats';
 
 /** 分幕剧情：一次完整故事，每段结尾做一次选择，直到收束。 */
-export function StoryPlayerDialog({ event, girl, busy, onChoose, onClose }: {
+export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose, onClose }: {
   event: CharacterEvent;
   girl?: Girl;
   busy?: boolean;
+  /** 视觉小说模式（v93 全局开关）：开着时正文区换成一句句演的舞台。 */
+  vnStory?: boolean;
   onChoose: (eventId: string, choiceId: string) => void;
   onClose: () => void;
 }) {
@@ -16,6 +20,13 @@ export function StoryPlayerDialog({ event, girl, busy, onChoose, onClose }: {
   const current = passages[index];
   const done = event.status === 'done';
   const started = useRef(false);
+  // 舞台里点「原文」：本次弹窗内临时回到整段文字，不改全局开关。
+  const [textMode, setTextMode] = useState(false);
+  const stage = Boolean(vnStory) && !textMode;
+  const beats = useMemo(
+    () => (current ? beatsFromPassage(current, { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element }) : []),
+    [current, girl?.id, girl?.name, girl?.expression, girl?.element],
+  );
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,6 +63,17 @@ export function StoryPlayerDialog({ event, girl, busy, onChoose, onClose }: {
           <p>{event.hook}</p>
         </header>
 
+        {stage && current && !busy && (
+          <VnReader
+            beats={beats}
+            title={`${event.title} · ${current.title ?? ''}`}
+            cast={girl ? [{ id: girl.id, name: girl.name, girl }] : []}
+            onChoose={choiceId => onChoose(event.id, choiceId)}
+            onText={() => setTextMode(true)}
+            onClose={onClose}
+          />
+        )}
+        {stage && current && !busy ? null : (
         <div className="story-player-body" ref={bodyRef} role="log">
           {history.map(passage => (
             <article key={passage.id} className="story-passage past">
@@ -83,8 +105,9 @@ export function StoryPlayerDialog({ event, girl, busy, onChoose, onClose }: {
             </article>
           )}
         </div>
+        )}
 
-        <footer className="story-player-actions">
+        {!stage && <footer className="story-player-actions">
           {busy ? (
             <span className="story-busy"><Sparkles size={13} />叙事者正在写……</span>
           ) : done ? (
@@ -102,7 +125,7 @@ export function StoryPlayerDialog({ event, girl, busy, onChoose, onClose }: {
           ) : (
             <button id="story-close" type="button" className="btn" onClick={onClose}>收起</button>
           )}
-        </footer>
+        </footer>}
       </section>
     </div>
   );

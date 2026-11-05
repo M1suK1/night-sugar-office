@@ -65,6 +65,7 @@ import { blockingIncidents, openIncidentFor } from './incidents';
 import { pendingChoiceOf } from './rules/storyChoice';
 import { finishedSessionEvents } from './rules/storyEvent';
 import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } from './points';
+import { loadVnStory, saveVnStory, type VnStoryMode } from './vnPrefs';
 import { dismissToast, expireToasts, pushToast } from './toasts';
 import { hostilityOf } from './hostility';
 import { EventDialog } from './components/EventDialog';
@@ -189,6 +190,8 @@ export default function App() {
   const [hadSave, setHadSave] = useState(false);
   /** 卡库里能用的卡数：够选人池上限时编成界面不掺内置角色。 */
   const [boxUsable, setBoxUsable] = useState(0);
+  // 视觉小说模式（v93）：默认关闭，关着时角色剧情仍是原文。
+  const [vnStory, setVnStory] = useState<VnStoryMode>(() => loadVnStory());
   const enterPlay = () => { try { sessionStorage.setItem(STARTED_KEY, '1'); } catch { /* 忽略存储异常 */ } setPhase('play'); };
   /** 载入存档后的分流：没编成过的老档先补编成，空白档直接进正片。 */
   const afterLoad = (next: GameState) => { if (!next.startersPicked && !next.blank) setPhase('roster'); else enterPlay(); };
@@ -1591,7 +1594,7 @@ export default function App() {
         notify(`已导入 ${entries.length} 张契约卡（分 ${planCardBatches(entries).length} 批读取）。`);
       }} />}
       {modal.type === 'custom' && <CustomGirlDialog onGenerate={draftGirlProfile} onCreate={draft => { if (perform({ type: 'createGirl', draft })) setModal(null); }} />}
-      {modal.type === 'settings' && <SettingsDialog boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} chime={chime} onChime={setChime} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} proposalCheck={proposalCheck} onProposalCheck={setProposalCheck} />}
+      {modal.type === 'settings' && <SettingsDialog vnStory={vnStory} onVnStory={mode => { setVnStory(mode); saveVnStory(mode); }} boot={modal.boot} state={state} reduced={reduced} onReduced={setReduced} chime={chime} onChime={setChime} onExport={exportSave} onImport={importSave} onReset={() => setModal({ type: 'reset' })} onStarter={() => setModal({ type: 'starter' })} onCardbox={() => setModal({ type: 'cardbox' })} onSlots={() => setModal({ type: 'slots' })} onPoolLimit={(pool, value) => perform({ type: 'setPoolLimit', pool, value }, true)} onDeleteMission={missionId => perform({ type: 'deleteMission', missionId })} onDeleteCandidate={girlId => perform({ type: 'deleteCandidate', girlId })} onDeleteMonster={monsterId => perform({ type: 'deleteMonster', monsterId })} onGenerate={generateContent} autoGenerate={autoGenerate} onAutoGenerate={setAutoGenerate} onPresets={openPresetScope} levelUpMode={state.levelUpMode ?? 'auto'} onLevelUpMode={mode => perform({ type: 'setLevelUpMode', mode })} proposalCheck={proposalCheck} onProposalCheck={setProposalCheck} />}
       {modal.type === 'presets' && <PresetDialog initialScope={modal.scope} initialPresetId={modal.presetId} presets={presets} binding={binding} onPresets={setPresets} onBinding={setBinding} onNotify={notify} />}
       {modal.type === 'help' && <HelpDialog />}{modal.type === 'notifications' && <NotificationsDialog state={state} />}{modal.type === 'reset' && <ResetDialog onConfirm={() => { perform({ type: 'reset' }); setAuto(false); setModal(null); }} />}
     </Dialog>}
@@ -1682,7 +1685,7 @@ export default function App() {
       const target = state.events.find(event => event.id === modal.id);
       if (!target) return null;
       const subject = state.girls.find(item => item.id === target.girlId);
-      if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
+      if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog vnStory={vnStory === 'on'} event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
       const dialog = <EventDialog event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}

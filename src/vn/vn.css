@@ -1,0 +1,214 @@
+/* 视觉小说阅读器（v93）——沿用项目统一的暗紫细描边与衬线标题。 */
+
+.vn-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 420px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background-color: #0a0810;
+  background-size: cover;
+  background-position: center;
+  isolation: isolate;
+}
+
+.vn-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 50% 30%, transparent 45%, #06040988 100%),
+    linear-gradient(180deg, #06040955 0%, transparent 28%, #06040a99 100%);
+  pointer-events: none;
+}
+
+.vn-cast {
+  position: absolute;
+  inset: 0 0 30%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.vn-actor {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 3 / 4;
+  max-width: 46%;
+  filter: drop-shadow(0 12px 28px #00000088);
+}
+
+.vn-actor .girl-portrait,
+.vn-actor .girl-portrait img,
+.vn-actor .girl-portrait svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+}
+
+.vn-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.vn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: #cbb9d4;
+  background: #14101ccc;
+  border: 1px solid #f3aec933;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .18s, border-color .18s, background .18s;
+}
+
+.vn-chip:hover { color: #f7e8f1; border-color: #f3aec9aa; }
+.vn-chip.on { color: #1e1119; background: #f3aec9; border-color: #f3aec9; }
+
+.vn-bottom {
+  position: relative;
+  z-index: 1;
+  padding: 0 14px 16px;
+}
+
+.vn-box {
+  display: block;
+  width: 100%;
+  min-height: 128px;
+  padding: 16px 18px 20px;
+  text-align: left;
+  font: inherit;
+  color: #f2e4ed;
+  background: linear-gradient(180deg, #1a1320e6, #120d18f2);
+  border: 1px solid #f3aec940;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px #00000066, inset 0 0 0 1px #ffffff08;
+  cursor: pointer;
+}
+
+.vn-name {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 1px 8px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: #f3aec9;
+  border: 1px solid #f3aec955;
+  border-radius: 999px;
+}
+
+.vn-text {
+  display: block;
+  font-family: var(--font-display, "Noto Serif SC", serif);
+  font-size: 15px;
+  line-height: 1.85;
+  letter-spacing: .02em;
+  min-height: 52px;
+  white-space: pre-wrap;
+}
+
+.vn-text.thought { color: #c7bcd2; font-style: italic; }
+
+.vn-action {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-style: italic;
+  color: #9b879f;
+}
+
+.vn-next {
+  position: absolute;
+  right: 16px;
+  bottom: 10px;
+  font-size: 11px;
+  color: #f3aec955;
+  opacity: 0;
+  transition: opacity .2s;
+}
+
+.vn-next.ready { opacity: 1; animation: vn-bob 1.1s ease-in-out infinite; }
+
+@keyframes vn-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(3px); }
+}
+
+.vn-choices {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: #120d18f2;
+  border: 1px solid #f3aec940;
+  border-radius: 10px;
+}
+
+.vn-choice-prompt {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: #9b879f;
+  letter-spacing: .06em;
+}
+
+.vn-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: #f2e4ed;
+  background: #1b1522;
+  border: 1px solid #ffffff14;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .18s, transform .18s, background .18s;
+}
+
+.vn-choice:hover { border-color: #f3aec988; background: #241a2c; transform: translateX(2px); }
+.vn-choice em { font-style: normal; font-size: 10px; color: #f3aec9; border: 1px solid #f3aec955; border-radius: 4px; padding: 0 4px; }
+.vn-choice small { margin-left: auto; font-size: 10px; color: #9b879f; }
+
+.vn-progress {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  font-family: var(--font-data, monospace);
+  font-size: 10px;
+  letter-spacing: .14em;
+  color: #f3aec9aa;
+}
+
+.vn-mode-note {
+  position: absolute;
+  top: 14px;
+  left: 78px;
+  z-index: 2;
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: #9b879f;
+}
+
+/* 窄屏：对话框占下方更大比例，立绘缩小 */
+@media (max-width: 720px) {
+  .vn-stage { min-height: 360px; }
+  .vn-actor { max-width: 68%; }
+  .vn-text { font-size: 14px; line-height: 1.8; }
+  .vn-box { min-height: 110px; padding: 12px 14px 18px; }
+}
