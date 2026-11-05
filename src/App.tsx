@@ -910,7 +910,11 @@ export default function App() {
     setPendingSave(next);
   };
 
-  const saveToSlot = async (id: SaveSlotId) => { const result = await writeSlot(id, state); notify(result.message, result.ok); };
+  const saveToSlot = async (id: SaveSlotId) => {
+    const stamp = `第 ${state.day} 日 · ${state.startersPicked ? '已编成' : '未编成'}`;
+    const result = await writeSlot(id, state);
+    notify(result.ok ? `${result.message}（${stamp}）` : result.message, result.ok);
+  };
   const loadFromSlot = async (id: SaveSlotId) => {
     const next = await readSlot(id).then(async slotState => (slotState ? hydrateStatePortraits(slotState) : null));
     if (!next) { notify('这个档位读不出来，可能已经损坏。', false); return; }

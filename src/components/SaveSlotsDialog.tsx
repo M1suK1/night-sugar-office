@@ -88,7 +88,7 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
           <div className="slot-body">
             {summary ? <>
               <span id={`slot-time-${id}`}>{formatSlotTime(summary.savedAt)}</span>
-              <span>{summary.blank ? '空白档案' : summary.startersPicked ? '已编成' : '未编成'}</span>
+              <span title={summary.startersPicked || summary.blank ? undefined : '这局还没确认开局编成；读回来会先进编成界面。'}>{summary.blank ? '空白档案' : summary.startersPicked ? '已编成' : '未编成 · 读回先编成'}</span>
               <span>{summary.headline}</span>
               <span>{Math.max(1, Math.round(summary.bytes / 1024))} KB</span>
             </> : <span className="slot-empty-note">还没有存过东西。</span>}
