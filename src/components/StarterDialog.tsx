@@ -278,7 +278,14 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     const hashes = [...new Set(placed)]
       .filter(id => id.startsWith('card-'))
       .map(id => id.slice('card-'.length));
-    const art = new Map<string, { portrait?: string; portraitSpec?: RosterSubject['portraitSpec']; witchForm?: RosterSubject['witchForm'] }>();
+    const art = new Map<string, {
+      portrait?: string;
+      portraitSpec?: RosterSubject['portraitSpec'];
+      witchForm?: RosterSubject['witchForm'];
+      wardrobe?: RosterSubject['wardrobe'];
+      outfitId?: string;
+      expression?: RosterSubject['expression'];
+    }>();
     for (const hash of hashes.slice(0, 8)) {
       try {
         const raw = await readCardRaw(hash);
@@ -289,6 +296,10 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
         art.set(`card-${hash}`, {
           portrait: girl.portrait,
           portraitSpec: girl.portraitSpec,
+          // v88：卡面图通常就在衣柜里，一块搬过去，势力档案与会客厅才画得出人。
+          wardrobe: girl.wardrobe,
+          outfitId: girl.outfitId,
+          expression: girl.expression,
           witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
         });
       } catch { /* 单张读失败就当没立绘，别挡住编成。 */ }

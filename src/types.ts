@@ -121,6 +121,10 @@ export interface FactionLeader {
   witch?: boolean;
   /** 魔女化立绘（同 FactionGirl）。 */
   witchForm?: Outfit;
+  /** v88：同 FactionGirl，卡面图可能在衣柜里。 */
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  expression?: Expression;
   /** v85：这个位置还空着（没有从卡库编成进来的人）。 */
   vacant?: boolean;
 }
@@ -153,6 +157,10 @@ export interface FactionGirl {
   witch?: boolean;
   /** 魔女化立绘：卡里带了就一路带到名册，魔女形态优先用它。 */
   witchForm?: Outfit;
+  /** v88：卡面图往往存在衣柜里，名册的人也把衣柜带上，头像才画得出卡上那张。 */
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  expression?: Expression;
 }
 export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {

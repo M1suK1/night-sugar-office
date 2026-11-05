@@ -6,7 +6,7 @@
  * 档案 UI 与结算都经由访问器读取，不各自复制一份数值。
  */
 import { portraitString, type PortraitSubjectLike } from './portrait.ts';
-import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey, Outfit } from './types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, GirlFaction, PortraitSpec, StatKey, Outfit, Expression } from './types.ts';
 import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
 import { factionGirls, girlsOfFaction } from './content/factionGirls.ts';
@@ -181,6 +181,10 @@ export interface RosterSubject {
   cardId?: string;
   witch?: boolean;
   witchForm?: Outfit;
+  /** v88：卡面图常在衣柜里，编成条目也要带得动。 */
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  expression?: Expression;
 }
 
 /** 原属首领 → 面板条目。 */
@@ -189,6 +193,7 @@ export function subjectOfLeader(leader: FactionLeader): RosterSubject {
     id: leader.id, name: leader.name, faction: leader.faction, title: leader.title,
     level: leader.level, color: leader.color, portrait: leader.portrait,
     portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
+    wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
     stats: leader.stats, skillIds: leader.skillIds,
   };
 }
@@ -199,6 +204,7 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
     id: girl.id, name: girl.name, faction: girl.tag, title: girl.title,
     level: girl.level, color: girl.color, portrait: girl.portrait,
     portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
+    wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
     stats: girl.stats, skillIds: girl.skills, codename: girl.codename,
   };
 }
@@ -208,7 +214,7 @@ export function subjectOfCustom(input: {
   id: string; name: string; factionTag: GirlFaction; level: number; color: string;
   portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
   skillIds: string[]; codename?: string; quote?: string; title?: string; cardId?: string;
-  witch?: boolean; witchForm?: Outfit;
+  witch?: boolean; witchForm?: Outfit; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
 }): RosterSubject {
   return {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
@@ -216,6 +222,7 @@ export function subjectOfCustom(input: {
     portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
     origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
     witch: input.witch, witchForm: input.witchForm,
+    wardrobe: input.wardrobe, outfitId: input.outfitId, expression: input.expression,
   };
 }
 
@@ -241,6 +248,7 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
     // v85：编进月蚀庭的人默认按魔女形态出场（玩家自己的角色不受影响，只在这里落到名册条目上）。
     witch: subject.witch ?? (faction === 'witch' ? true : undefined),
     witchForm: subject.witchForm,
+    wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
   };
 }
 
@@ -251,6 +259,7 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
     portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
     quote: subject.quote, note: '由事务所编入名册的少女。',
     witch: subject.witch ?? (faction === 'witch' ? true : undefined), witchForm: subject.witchForm,
+    wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
     level: factionLeaderLevel(subject.level),
     stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
     skillIds: subject.skillIds ?? [],
@@ -296,6 +305,10 @@ export interface FactionRepresentative {
   /** v85：这位首领默认以魔女形态出场（目前只有月蚀庭）。 */
   witch?: boolean;
   witchForm?: Outfit;
+  /** v88：卡面图在衣柜里时，界面靠这三个字段取图。 */
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  expression?: Expression;
   /** v85：这个席位还空着——界面要提示「契约卡不足，需要导入」。 */
   vacant?: boolean;
   kind: 'leader' | 'envoy';
@@ -319,6 +332,7 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     // v85：月蚀庭的首领开局就是魔女形态；玩家自己的月蚀庭角色不沾这条。
     witch: leader.witch || undefined,
     witchForm: leader.witchForm,
+    wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
     vacant: leader.vacant,
     kind: 'leader',
   };

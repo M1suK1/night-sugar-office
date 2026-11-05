@@ -325,6 +325,7 @@ export function BaseView({
                               id: representative.id, name: representative.name, color: representative.color,
                               portrait: representative.portrait ?? '', portraitSpec: representative.portraitSpec,
                               witch: representative.witch, witchForm: representative.witchForm,
+                              wardrobe: representative.wardrobe, outfitId: representative.outfitId, expression: representative.expression,
                             }}
                             variant="avatar"
                           />

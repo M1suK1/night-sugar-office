@@ -1,3 +1,4 @@
+import { portraitSource, type PortraitSubjectLike } from './portrait.ts';
 import { districtAt, districts } from './districts.ts';
 import { factionInfo } from './content/items.ts';
 import { pollutionTierLabel } from './pollution.ts';
@@ -84,11 +85,16 @@ export function battleCast(battle: BattleState): BattleActor[] {
  */
 export function portraitSourceOf(
   unit: { portrait: string; portraitAsset?: string; girlId?: string },
-  girl?: { portrait?: string; portraitAsset?: string },
+  girl?: PortraitSubjectLike,
 ): { portrait: string; portraitAsset?: string } {
-  const portrait = unit.portrait || girl?.portrait || '';
-  const portraitAsset = unit.portraitAsset ?? girl?.portraitAsset;
-  return portraitAsset ? { portrait, portraitAsset } : { portrait };
+  // 快照里有 data URL 就以快照为准：战报要的是「当场那个样子」。
+  if (unit.portrait) {
+    return unit.portraitAsset ? { portrait: unit.portrait, portraitAsset: unit.portraitAsset } : { portrait: unit.portrait };
+  }
+  if (unit.portraitAsset) return { portrait: '', portraitAsset: unit.portraitAsset };
+  // v88：快照只记了 portrait（卡面图在衣柜里时是空的），回查时按统一规则重新取一次。
+  const resolved = girl ? portraitSource(girl) : { portrait: '' };
+  return resolved.asset ? { portrait: resolved.portrait, portraitAsset: resolved.asset } : { portrait: resolved.portrait };
 }
 
 export function totalBattleRounds(battle: BattleState): number {

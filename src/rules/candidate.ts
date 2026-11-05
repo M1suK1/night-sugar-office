@@ -11,7 +11,7 @@ import { defaultWitchPersonality } from '../personality.ts';
 import { hashText } from '../rules/core.ts';
 import { sanitizeStoryPlan } from '../storyplan.ts';
 import { FACTION_ORDER } from '../territories.ts';
-import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlFaction, Outfit, StatKey } from '../types.ts';
+import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlFaction, Outfit, StatKey , Expression} from '../types.ts';
 import { clone } from './core.ts';
 import { WARDROBE_LIMIT } from './labels.ts';
 import { sanitizeOutfit } from './outfits.ts';
@@ -69,6 +69,9 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     duty: src.duty ?? { faction, note: '被事务所编进名册的少女，出勤时替这一方办事。' },
     cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
     witch: src.witch === true ? true : undefined,
+    wardrobe: Array.isArray(src.wardrobe) ? src.wardrobe.map(item => sanitizeOutfit(item, typeof src.color === 'string' && src.color ? src.color : '#f3aec9')).filter((item): item is Outfit => Boolean(item)).slice(0, 8) : undefined,
+    outfitId: typeof src.outfitId === 'string' ? src.outfitId.slice(0, 40) : undefined,
+    expression: typeof src.expression === 'string' ? src.expression as Expression : undefined,
     // v85：卡上的魔女化立绘要跟着人进名册，否则月蚀庭的人永远只有普通立绘。
     witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
@@ -96,6 +99,9 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     note: '由事务所编入名册的少女。',
     cardId: typeof src.cardId === 'string' && src.cardId.trim() ? src.cardId.trim().slice(0, 64) : undefined,
     witch: src.witch === true ? true : undefined,
+    wardrobe: Array.isArray(src.wardrobe) ? src.wardrobe.map(item => sanitizeOutfit(item, typeof src.color === 'string' && src.color ? src.color : '#f3aec9')).filter((item): item is Outfit => Boolean(item)).slice(0, 8) : undefined,
+    outfitId: typeof src.outfitId === 'string' ? src.outfitId.slice(0, 40) : undefined,
+    expression: typeof src.expression === 'string' ? src.expression as Expression : undefined,
     witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
 }

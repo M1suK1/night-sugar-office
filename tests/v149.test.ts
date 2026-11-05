@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { portraitSource, portraitString } from '../src/portrait.ts';
 import { witchAwarePortrait } from '../src/factions.ts';
+import { portraitSourceOf } from '../src/battleNote.ts';
+import { customGirlOf, subjectOfCustom } from '../src/factions.ts';
 import type { Outfit } from '../src/types.ts';
 
 const DATA_A = 'data:image/png;base64,AAAA';
@@ -54,4 +56,25 @@ test('v149 势力人物（无衣柜）走同一条规则：魔女形态 > 本体
   assert.equal(witchAwarePortrait(leader), DATA_B);
   assert.equal(witchAwarePortrait({ portrait: DATA_A }), DATA_A);
   assert.equal(portraitString({ portrait: '', witch: true, witchForm: outfit({ id: 'witchform', form: 'witch' }) }), '', '只有资产时字符串为空');
+});
+
+test('v149 三方名册的人也带衣柜：卡面图存进名册后仍能画出来', () => {
+  const subject = subjectOfCustom({
+    id: 'seat-1', name: '安可', factionTag: 'witch', level: 8, color: '#b98ad9',
+    portrait: '', stats: { magic: 40, insight: 40, agility: 40, empathy: 40 },
+    skillIds: ['moon-slash'], wardrobe: [outfit({ portrait: DATA_A })], outfitId: 'custom', expression: 'calm',
+  });
+  const member = customGirlOf('witch', subject);
+  assert.equal(member.wardrobe?.[0]?.portrait, DATA_A);
+  assert.equal(portraitSource(member).portrait, DATA_A, '名册成员也能取到衣柜里的图');
+});
+
+test('v149 战报：快照只有空 portrait 时按衣柜回查', () => {
+  const girl = { portrait: '', wardrobe: [outfit({ portrait: DATA_A })], outfitId: 'custom' };
+  const source = portraitSourceOf({ portrait: '', girlId: 'g1' }, girl);
+  assert.equal(source.portrait, DATA_A);
+  // 快照里有图就以快照为准
+  assert.equal(portraitSourceOf({ portrait: DATA_B, girlId: 'g1' }, girl).portrait, DATA_B);
+  // 快照只有资产 id 时也优先用它
+  assert.equal(portraitSourceOf({ portrait: '', portraitAsset: 'asset-9' }, girl).portraitAsset, 'asset-9');
 });

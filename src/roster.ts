@@ -49,6 +49,7 @@ function girlSubject(girl: Girl): RosterSubject {
     portraitSpec: girl.portraitSpec,
     stats: { ...girl.stats },
     skillIds: [...girl.skills],
+    wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
     codename: girl.codename,
     quote: girl.quote,
     title: girl.title,
@@ -228,6 +229,7 @@ export function subjectFromCard(card: GirlCard, id: string): RosterSubject {
     codename: girl.codename,
     quote: girl.quote,
     title: girl.title,
+    wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
     witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
   });
 }
