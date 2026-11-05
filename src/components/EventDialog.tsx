@@ -5,8 +5,7 @@ import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
-import { beatsFromPassage, beatsFromTurns } from '../vn/beats';
-import { interleaveTurn } from '../storyLines';
+import { arrangeStoryText, beatsFromPassage, beatsFromTurns } from '../vn/beats';
 import { scrollTopForNewTurn } from '../storyScroll';
 
 const expressionLabel: Record<Expression, string> = {
@@ -453,9 +452,9 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
                         </div>
                       </div>
                     ) : (() => {
-                      // 旁白与台词按 after 交织：以前台词全堆在正文之后，读起来像先读小说再看对白。
-                      const paragraphs = turn.text.split(/\n+/).filter(Boolean);
-                      const turnLines = turn.lines ?? [];
+                      // v111：和舞台走同一个 arrangeStoryText，两边的插入位置不会再各算一套。
+                      const arranged = arrangeStoryText(turn.text, turn.lines ?? []);
+                      const turnLines = arranged.lines;
                       const renderLine = (line: StoryLine, index: number) => {
                         const right = line.speakerId === 'player';
                         const active = preview ? preview.id === line.speakerId && !right : false;
@@ -469,8 +468,8 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
                           </div>
                         );
                       };
-                      return interleaveTurn(paragraphs, turnLines).map(segment => segment.kind === 'narration'
-                        ? <p key={`p-${segment.index}`} className="battle-note-narration">{paragraphs[segment.index]}</p>
+                      return arranged.segments.map(segment => segment.kind === 'narration'
+                        ? <p key={`p-${segment.index}`} className="battle-note-narration">{arranged.chunks[segment.index]}</p>
                         : renderLine(turnLines[segment.index]!, segment.index));
                     })()}
                     {editing?.id !== turn.id && <div className="story-turn-tools">

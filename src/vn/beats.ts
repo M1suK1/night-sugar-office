@@ -46,10 +46,17 @@ export interface PassageBeatOptions {
 const tidy = (text: string): string => text.replace(/\r\n/g, '\n').trim();
 
 /** 旁白按空行拆段；段内换行压成空格（一行一句，舞台更好读）。 */
+/**
+ * 旁白拆段（v111）。
+ *
+ * 契约里写的是「按 narration 里的换行分段、从 0 数」——所以这里**按换行切**，
+ * 和原文视图（`turn.text.split(/\n+/)`）保持同一套分段。以前这里按空行切，
+ * 两个视图对同一个 after 的理解就不一样：原文插对了，舞台却插到别处。
+ */
 function paragraphsOf(text: string): string[] {
   return tidy(text ?? '')
-    .split(/\n{2,}/)
-    .map(paragraph => tidy(paragraph).replace(/\n/g, ' '))
+    .split(/\n+/)
+    .map(paragraph => tidy(paragraph))
     .filter(Boolean);
 }
 
@@ -101,6 +108,15 @@ function interleave<T extends { after?: number }>(paragraphs: string[], lines: r
   // 落点统一交给 placeLines：after 只当意图，写得没区分度就均匀铺开。
   const positions = placeLines(lines.map(line => line.after), Math.max(1, paragraphs.length), chunks.length);
   return { chunks, lines, segments: segmentsFromPositions(chunks.length, positions) };
+}
+
+/**
+ * 一段旁白 + 台词按 after 交织后的顺序（v111）。
+ *
+ * 原文视图与舞台都走这一个函数，两个视图再也不会各算一套。
+ */
+export function arrangeStoryText<T extends { after?: number; text?: string }>(text: string, lines: readonly T[]): { chunks: string[]; lines: readonly T[]; segments: StorySegment[] } {
+  return interleave(paragraphsOf(text), lines);
 }
 
 export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptions = {}): VnBeat[] {
