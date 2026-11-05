@@ -27,7 +27,19 @@
 export type VnBeat =
   | { kind: 'say'; speakerId: string; name: string; text: string; expression?: Expression; action?: string; thought?: boolean }
   | { kind: 'choice'; prompt?: string; options: { id: string; label: string; hint?: string }[] }
+  /** 换场：剧本里出现新的场景线索时插一条（见第六节「背景接口」）。 */
+  | { kind: 'bg'; backdrop: VnBackdrop; fadeMs?: number }
   | { kind: 'end' };
+
+/** 背景只描述「是哪一场」，怎么画交给渲染层查表——以后接真图不用改剧本。 */
+export interface VnBackdrop {
+  /** 语义 id：room:lounge / room:clinic / room:dorm / room:observatory / district:<id> / night / void */
+  id: string;
+  /** 主色；缺省由查表推导。 */
+  tint?: string;
+  /** 背景图：data URL 或资产 id（资产走 assetUrl 异步解析）。现在一律为空。 */
+  image?: string;
+}
 ```
 
 - 适配器 `beatsFromPassage(passage, { speakerId, name })`：`narration` 按空行拆段 → 旁白 say；
@@ -74,13 +86,35 @@ export type VnBeat =
 - 副作用要透明：设置项下面写一行小字「开启后会启用预设里的『视觉小说演出』条目（可在预设里改）」。
 - 关掉开关时只 `enabled: false`，不删条目，方便再次开启。
 
-## 六、分批
 
-### 批 1 · 开关 + 舞台 + 角色剧情
+## 六、背景接口（现在不实现，但先把口子留好）
+
+背景是「以后一定要加」的东西，所以这一版只留接口、不画背景：
+
+1. **剧本层**：`VnBeat` 里有 `{ kind: 'bg', backdrop }`。适配器现在只做一次推断：
+   `beatsFromPassage(passage, { element, source })` 在开头插一条
+   `{ id: 'district:candy', tint: <元素色> }` 这类占位；同一段里再出现换场线索就再插一条。
+2. **数据来源**（三条，按优先级，全部可选、缺了不影响旧数据）：
+   - `passage.scene?: string`（未来 LLM 字段，形如 `room:lounge` / `street`）；
+   - `event.stage` 对应的默认场景（分幕剧情第几幕 → 默认在事务所 / 街区）；
+   - 都没有 → `night`（暗底 + 暗角）。
+3. **渲染层**：`src/vn/backdrops.ts` 导出 `resolveBackdrop(id, ctx): { gradient: string; image?: string }`。
+   现在只返回渐变（同色系 + 稀疏网格 + 暗角）；将来接真图时在这里补 `image`，
+   组件按 `image ? <img> : <gradient>` 渲染，剧本与适配器一行都不用改。
+4. **换场动效**：`bg` beat 触发 400ms 交叉淡入（`fadeMs` 可调）；
+   `prefers-reduced-motion` 或快进时直接切换。
+5. **资产接法**：`image` 如果是资产 id，走现成的 `assetUrl()`（`usePortrait` 同一个存储），
+   不把图片字节塞进 `GameState`；剧本里只存 id。
+6. **战斗札记复用**：以后做札记时，同一套 `bg` beat 直接按辖区 id 换场
+   （`district:<id>`），不需要第二套机制。
+
+## 七、分批
+
+### 批 1 · 开关 + 舞台 + 角色剧情（含 `bg` beat 的接线）
 
 - `src/vn/{types,beats,reducer,VnReader,vn.css}`；设置项与读取；`StoryPlayerDialog` 接入。
 - 验收：默认（原文）行为与现在完全一致；打开开关后同一段剧情一句句演完、选项生效且只结算一次；
-  舞台内「原文」按钮可临时切回文字视图。
+  舞台内「原文」按钮可临时切回文字视图；`bg` beat 能切换占位背景（不同元素色可见差别）。
 
 ### 批 2 · 提示词联动
 
@@ -93,7 +127,7 @@ export type VnBeat =
 - 自动播放、快进、跳过已读（sessionStorage）、历史抽屉（限 60 条）；
   键盘 空格/回车、1..N 选项、←/→ 上下句、Esc 关闭；窄屏竖排（对话框占下方 40%）。
 
-## 七、测试
+## 八、测试
 
 - `tests/vn.test.ts`（纯函数）：
   - `beatsFromPassage`：narration 拆段数、lines 顺序与 expression、choice 在末尾、空文本跳过。
@@ -101,15 +135,16 @@ export type VnBeat =
   - `syncVnPrompt`：条目不存在时创建并启用；存在时只改 `enabled`；玩家改过的 `content` 不被覆盖。
 - 回归：现有剧情用例全绿；`check-imports` 通过（`src/vn/**` 单文件 <400 行）。
 
-## 八、风险
+## 九、风险
 
 1. **两套 UI 并存**：开关默认关闭，所以旧路径必须保持零改动可用；舞台代码只在开启时才挂载（可 `React.lazy`）。
 2. **选项重复结算**：reducer 用 `chosenId` 锁死，单测覆盖。
 3. **提示词被玩家改过**：只切 `enabled`，不覆盖内容；设置项里说明清楚。
 4. **旁白仍然多**：词条只能引导，不能强制；批 2 验收时用真实日志对比 `lines.length` 与旁白字数。
 
-## 九、后续（不在本次）
+## 十、后续（不在本次）
 
 - 战斗札记进舞台（同样一个 `VnReader`，适配器换成 `beatsFromBattleNote`）。
 - 议会提案者对白进舞台。
-- 背景图：等你给素材再谈，接口预留 `backdrop`。
+- 背景图：等你给素材再谈。接口已经在第六节定死（`VnBackdrop` + `resolveBackdrop` + 资产 id），
+  到时候只补 `backdrops.ts` 的查表与图片渲染，不动剧本。
