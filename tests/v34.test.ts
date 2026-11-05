@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState, STORY_SESSION_TURNS } from '../src/game.ts';
 import { sanitizeGraph } from '../src/storygraph.ts';
-import { generateStoryOpening, generateStoryTurn } from '../src/llm.ts';
+import { generateStoryOpening, generateStoryTurn, localSessionSummary } from '../src/llm.ts';
 import type { CharacterEvent, GameState, StoryTurn } from '../src/types.ts';
 
 const session = (state: GameState, patch: Partial<CharacterEvent> = {}): { state: GameState; id: string; girlId: string } => {
@@ -107,6 +107,22 @@ test('v108 叙事者对最后一句的回应永远能写进剧情（曾经的静
   const reply = act(state, { type: 'appendStoryTurn', eventId: id, turn: narratorTurn('n-last', '她抬眼看你。') });
   assert.equal(reply.ok, true);
   assert.equal(eventOf(reply.state, id).turns?.at(-1)?.id, 'n-last');
+});
+
+test('v117 收尾兜底摘要：没有模型时也能拼出一段能用的前情提要', () => {
+  const turns: StoryTurn[] = [
+    narratorTurn('t0', '开场：她在门口站了很久。'),
+    playerTurn('t1', '我把伞靠在门边。'),
+    narratorTurn('t2', '她抬眼看你，什么也没说。'),
+  ];
+  const { state, id } = session(createInitialState(), { turns });
+  const event = eventOf(state, id);
+  const summary = localSessionSummary(event, '');
+  assert.ok(summary.includes('雨里的访客'), '带上事件标题');
+  assert.ok(summary.includes('1 轮'), '带上轮数');
+  assert.ok(summary.includes('所长最后说'), '带上最后一次行动');
+  assert.ok(summary.includes('她抬眼看你'), '没有结局正文时用最后一段旁白兜底');
+  assert.ok(summary.length <= 400);
 });
 
 test('v34 单段重写只换旁白，并累加重写次数', () => {

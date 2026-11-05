@@ -630,7 +630,7 @@ export default function App() {
     if (!event) return false;
     if (storyBusyTurn) return false;
     const config = loadLlmConfig();
-    // 没有配叙事者、或者正卡在蓝图岔路口：按老路子直接收尾。
+    // 没有配叙事者、或者正卡在蓝图岔路口：只能本地收尾（没有模型可重试）。
     // 收尾时仍然留一份本地摘要，之后的历史只引用它。
     if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
       return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
@@ -639,8 +639,10 @@ export default function App() {
     try {
       const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
       if (!result.ok) {
-        notify(`收尾没有写出来：${result.message}`, false);
-        return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
+        // v117：收尾没写出来就**不要**结束事件——否则这一段既没有结局也没有摘要，
+        // 等于把剧情硬切断。保持开着，玩家可以再点一次「结束事件」重试。
+        notify(`收尾没有写出来：${result.message}剧情还开着，可以再点一次「结束事件」。`, false);
+        return false;
       }
       return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary });
     } finally {

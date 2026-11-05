@@ -1890,13 +1890,17 @@ function storyHistory(turns: StoryTurn[], limit = 8): string {
     : `${turn.text}${turn.lines?.length ? `\n${turn.lines.map(line => `${line.speakerName}：「${line.text}」`).join('\n')}` : ''}`).join('\n\n');
 }
 
-/** 模型没写摘要时的兜底：用标题、最后一次行动与结局开头拼一小段，够当「前情提要」用。 */
+/** 模型没写摘要时的兜底：用标题、轮数、最后一次行动与最后一段正文拼一小段，够当「前情提要」用。 */
 export function localSessionSummary(event: CharacterEvent, narration: string): string {
-  const lastPlayer = [...(event.turns ?? [])].reverse().find(turn => turn.role === 'player')?.text ?? '';
+  const turns = event.turns ?? [];
+  const lastPlayer = [...turns].reverse().find(turn => turn.role === 'player')?.text ?? '';
+  const lastNarration = [...turns].reverse().find(turn => turn.role === 'narrator')?.text ?? '';
+  const rounds = turns.filter(turn => turn.role === 'player').length;
+  const ending = (narration || lastNarration).replace(/\s+/g, ' ');
   const parts = [
-    `「${event.title}」`,
+    `「${event.title}」${rounds ? `（${rounds} 轮）` : ''}`,
     lastPlayer ? `所长最后说：${lastPlayer.slice(0, 60)}` : '',
-    narration ? `收束：${narration.slice(0, 180)}` : '',
+    ending ? `收束：${ending.slice(0, 180)}` : '',
   ].filter(Boolean);
   return parts.join('　').slice(0, 400);
 }
