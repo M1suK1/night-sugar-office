@@ -6,6 +6,8 @@ import {
   factionSeatsMissing, factionSeatEmpty, rosterLeader, rosterMembers,
 } from '../src/factions.ts';
 import { FACTION_ORDER } from '../src/territories.ts';
+import { factionSnapshotFromCards } from '../src/roster.ts';
+import type { GirlCard } from '../src/types.ts';
 import { makeLeader, makeGirl, seedRoster, withFactionRoster } from './fixtureRoster.ts';
 
 test('v147 静态三方名册已经废除：没有随从、首领是空缺占位', () => {
@@ -75,4 +77,27 @@ test('v147 势力覆灭后可以雇佣卡面首领（静态名册没了也要能
   assert.equal(hired.ok, true, hired.message);
   assert.ok(hired.state.girls.some(girl => girl.id === leaderId), '首领进了事务所名册');
   assert.ok(hired.state.gold < state.gold, '扣了雇佣费');
+});
+
+test('v147 编成确认会把「已编成的卡面人」原样交回去（否则规则层报三方阵容不合法）', () => {
+  const cards = [1, 2, 3, 4, 5, 6].map(index => ({
+    girl: {
+      name: '卡' + index, codename: 'k' + index, title: '', element: '', color: '#b98ad9', archetype: '输出',
+      level: 1, stats: { magic: 40, insight: 40, agility: 40, empathy: 40 },
+      skillIds: ['moon-slash', 'moon-guard', 'moon-ult'], traitIds: [], appearance: '', personality: '',
+      voice: {}, quote: '', goal: '', factionTag: index % 3 === 0 ? 'witch' : index % 3 === 1 ? 'association' : 'government',
+    },
+  })) as unknown as GirlCard[];
+  let state = createInitialState();
+  const snapshot = factionSnapshotFromCards(cards)!;
+  state = act(state, { type: 'assignFactionRoster', ...snapshot }).state;
+  const imported = act(state, { type: 'importCards', cards: cards.slice(0, 2) });
+  assert.equal(imported.ok, true, imported.message);
+  const picked = imported.state.candidates.slice(0, 2).map(girl => girl.id);
+  // 界面上原样把「已编成的人」交回去：就是 customFactionLeaders/Girls 里那些对象。
+  const leaders = imported.state.customFactionLeaders;
+  const girls = imported.state.customFactionGirls;
+  const result = act(imported.state, { type: 'setStarters', girlIds: picked, roster: imported.state.factionRoster, customLeaders: leaders, customGirls: girls });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.state.customFactionLeaders.length, 3);
 });

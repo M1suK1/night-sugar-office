@@ -5,6 +5,7 @@ import { factionInfo } from '../content/items';
 import { parseGirlCard } from '../cards';
 import { FACTION_ORDER } from '../territories';
 import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, type RosterSubject } from '../factions';
+import { sanitizeFactionRoster } from '../rules/candidate';
 import { loadCardBox, type CardBoxEntry , readCardRaw } from '../cardbox';
 import { STARTER_COUNT, cardFactionRoster, randomStarterAssignment, rosterPool, starterPicks } from '../roster';
 import { OPENING_CARDS } from '../opening';
@@ -130,6 +131,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     });
   }, [pool, pickedSet]);
 
+  const [note, setNote] = useState('');
   const [tab, setTab] = useState<'own' | FactionId>('own');
   const [source, setSource] = useState<SourceFilter>('all');
   const [query, setQuery] = useState('');
@@ -149,6 +151,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
         });
       }
     }
+    setNote('');
     setPicked(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 6 ? current : [...current, id]);
   };
 
@@ -294,16 +297,37 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       const extra = art.get(subject.id);
       return extra ? { ...subject, ...extra } : subject;
     };
+    // v86：静态名册废掉之后，池子里的「已编成的人」也是我们自己的快照
+    //（origin 是 leader / member，不再是 custom），必须原样交回去，
+    // 不然规则层校验拿不到人，就会回一句「三方阵容不合法」。
+    const takenLeader = (faction: FactionId, id: string): FactionLeader | undefined => {
+      const saved = state.customFactionLeaders?.find(leader => leader.id === id);
+      if (saved) return { ...saved, faction };
+      const subject = pool.find(item => item.id === id);
+      if (!subject || subject.origin !== 'custom') return undefined;
+      return customLeaderOf(faction, enrich(subject));
+    };
+    const takenGirl = (faction: FactionId, id: string): FactionGirl | undefined => {
+      const saved = state.customFactionGirls?.find(girl => girl.id === id);
+      if (saved) return { ...saved, faction, tag: faction };
+      const subject = pool.find(item => item.id === id);
+      if (!subject || subject.origin !== 'custom') return undefined;
+      return customGirlOf(faction, enrich(subject));
+    };
     const leaders: FactionLeader[] = [];
     const girls: FactionGirl[] = [];
     for (const faction of FACTION_ORDER) {
-      const leaderId = roster[faction].leaderId;
-      const leaderSubject = pool.find(subject => subject.id === leaderId);
-      if (leaderSubject && leaderSubject.origin === 'custom') leaders.push(customLeaderOf(faction, enrich(leaderSubject)));
+      const leader = takenLeader(faction, roster[faction].leaderId);
+      if (leader) leaders.push(leader);
       for (const id of roster[faction].memberIds) {
-        const subject = pool.find(item => item.id === id);
-        if (subject && subject.origin === 'custom') girls.push(customGirlOf(faction, enrich(subject)));
+        const girl = takenGirl(faction, id);
+        if (girl) girls.push(girl);
       }
+    }
+    // 交出去之前先按规则层那套校验一次：界面上说「合法」，提交却被打回，是最难查的错。
+    if (!sanitizeFactionRoster(roster, leaders, girls)) {
+      setNote('三方阵容不合法：每方 1 位首领、1–4 位随从，同一个人不能占两个位置。');
+      return;
     }
     onConfirm(picked, roster, { leaders, girls }, assistantId);
   };
@@ -535,8 +559,8 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       </section>
 
       <footer className="starter-foot">
-        <span className={legal ? 'starter-ok' : 'starter-bad'} title={issues.join('；')}>
-          {legal ? '编成合法，可以确认' : `${issues.slice(0, 2).join('；')}${issues.length > 2 ? ` 等 ${issues.length} 项` : ''}`}
+        <span className={legal && !note ? 'starter-ok' : 'starter-bad'} title={note || issues.join('；')}>
+          {note || (legal ? '编成合法，可以确认' : `${issues.slice(0, 2).join('；')}${issues.length > 2 ? ` 等 ${issues.length} 项` : ''}`)}
         </span>
         <div className="starter-foot-actions">
           {!legal && <button id="starter-fill" type="button" className="btn ghost" onClick={fillEmpty}>补齐空位</button>}
