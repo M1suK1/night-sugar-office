@@ -27,9 +27,13 @@ const outDir = path.join(root, 'src', 'content', 'presets', 'shipped');
 const sourceDir = process.argv[2];
 
 if (!sourceDir) {
-  console.error('用法：node tools/import-presets.mjs <预设目录>');
+  console.error('用法：node tools/import-presets.mjs <预设目录> [--only <scope>]');
   process.exit(1);
 }
+
+// 只更新某一份（例如只想换「完整剧情」）：--only arc
+const onlyAt = process.argv.indexOf('--only');
+const only = onlyAt > 0 ? process.argv[onlyAt + 1] : '';
 
 const files = await fs.readdir(sourceDir);
 const picked = new Map();
@@ -38,8 +42,13 @@ for (const name of files) {
   // 「角色对话 (1).json」这种副本跳过：同名只留最短的那个文件名（没有空格括号）。
   const hit = SCOPES.find(item => name.includes(item.keyword));
   if (!hit) continue;
+  if (only && hit.scope !== only) continue;
   const known = picked.get(hit.scope);
   if (!known || name.length < known.length) picked.set(hit.scope, name);
+}
+if (only && picked.size === 0) {
+  console.error(`没在 ${sourceDir} 里找到「${only}」对应的导出文件。`);
+  process.exit(1);
 }
 
 await fs.mkdir(outDir, { recursive: true });
@@ -58,10 +67,15 @@ for (const [scope, name] of picked) {
   console.log(`✓ ${scope} ← ${name}（${(JSON.stringify(cleaned).length / 1024).toFixed(0)}KB）`);
 }
 
-const indexBody = `/** 出厂预设清单：由 tools/import-presets.mjs 生成，请勿手改。 */\n${index
+// 只更新一份时不重写清单：清单是「全部」的产物，局部导入不该动它。
+if (only) {
+  console.log(`只更新了 ${only}，清单 index.ts 保持原样。`);
+} else {
+  const indexBody = `/** 出厂预设清单：由 tools/import-presets.mjs 生成，请勿手改。 */\n${index
   .map(item => `import { PRESET as ${item.scope.toUpperCase()}_PRESET } from './${item.scope}.ts';`)
   .join('\n')}\n\nexport interface ShippedPreset {\n  id: string;\n  /** 这份预设服务哪个任务作用域。 */\n  scope: string;\n  name: string;\n  raw: unknown;\n}\n\nexport const SHIPPED_PRESETS: ShippedPreset[] = [\n${index
   .map(item => `  { id: '${item.id}', scope: '${item.scope}', name: ${JSON.stringify(item.name)}, raw: ${item.scope.toUpperCase()}_PRESET },`)
   .join('\n')}\n];\n`;
-await fs.writeFile(path.join(outDir, 'index.ts'), indexBody, 'utf8');
+  await fs.writeFile(path.join(outDir, 'index.ts'), indexBody, 'utf8');
+}
 console.log(`共 ${index.length} 份，写到 src/content/presets/shipped/`);

@@ -301,56 +301,6 @@ export const PRESET = {
       "disable": false
     },
     {
-      "identifier": "daily:contract",
-      "name": "每日提案 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"version\":2,\"mission\":{\"title\":\"\",\"description\":\"\",\"work\":\"combat\",\"difficulty\":\"中危\"},\"opinions\":[{\"authorId\":\"\",\"authorKind\":\"girl\",\"authorFaction\":null,\"topic\":\"经费\",\"faction\":\"witch\",\"district\":null,\"title\":\"\",\"text\":\"\",\"request\":\"\",\"dialogue\":[{\"speakerId\":\"\",\"speaker\":\"\",\"text\":\"\",\"expression\":\"sad\"}],\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"\",\"changes\":[{\"kind\":\"gold\",\"amount\":-600}],\"outcomes\":[]},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"\",\"changes\":[{\"kind\":\"girl\",\"girlId\":\"\",\"field\":\"bond\",\"amount\":-2},{\"kind\":\"faction\",\"faction\":\"witch\",\"amount\":-4},{\"kind\":\"gold\",\"amount\":-300}],\"outcomes\":[]}]}],\"envoy\":{\"faction\":\"association\",\"title\":\"\",\"description\":\"\",\"work\":\"investigation\",\"difficulty\":\"中危\",\"district\":\"station\",\"rewardGirlLevel\":0},\"loot\":[{\"tier\":3,\"slot\":\"charm\",\"faction\":\"witch\"}]}\n\n把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。",
-      "role": "system",
-      "scope": "daily",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"version\":2,\"mission\":{\"title\":\"\",\"description\":\"\",\"work\":\"combat\",\"difficulty\":\"中危\"},\"opinions\":[{\"authorId\":\"\",\"authorKind\":\"girl\",\"authorFaction\":null,\"topic\":\"经费\",\"faction\":\"witch\",\"district\":null,\"title\":\"\",\"text\":\"\",\"request\":\"\",\"dialogue\":[{\"speakerId\":\"\",\"speaker\":\"\",\"text\":\"\",\"expression\":\"sad\"}],\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"\",\"changes\":[{\"kind\":\"gold\",\"amount\":-600}],\"outcomes\":[]},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"\",\"changes\":[{\"kind\":\"girl\",\"girlId\":\"\",\"field\":\"bond\",\"amount\":-2},{\"kind\":\"faction\",\"faction\":\"witch\",\"amount\":-4},{\"kind\":\"gold\",\"amount\":-300}],\"outcomes\":[]}]}],\"envoy\":{\"faction\":\"association\",\"title\":\"\",\"description\":\"\",\"work\":\"investigation\",\"difficulty\":\"中危\",\"district\":\"station\",\"rewardGirlLevel\":0},\"loot\":[{\"tier\":3,\"slot\":\"charm\",\"faction\":\"witch\"}]}\n\n把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。",
-      "marker": false,
-      "disable": false
-    },
-    {
-      "identifier": "news:contract",
-      "name": "城市新闻 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 20 字的标题\",\"items\":[{\"text\":\"一条播报\",\"tone\":\"faction|pollution|stability|street\"}]}\nitems 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。",
-      "role": "system",
-      "scope": "news",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 20 字的标题\",\"items\":[{\"text\":\"一条播报\",\"tone\":\"faction|pollution|stability|street\"}]}\nitems 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。",
-      "marker": false,
-      "disable": false
-    },
-    {
-      "identifier": "incident:contract",
-      "name": "突发事件 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"entries\":[{\"category\":\"report|decision|scene\",\"kind\":\"faction|environment|girl\",\"title\":\"\",\"body\":\"\",\"trigger\":{\"kind\":\"dayStart|wave|missionDone\",\"wave\":1,\"work\":\"combat|investigation\"},\"girlId\":\"\",\"district\":\"\",\"faction\":\"association|government|witch\",\"ttlMinutes\":240,\"options\":[{\"label\":\"\",\"hint\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"faction\":{\"id\":\"association|government|witch\",\"standing\":0},\"girl\":{\"bond\":0}}}]}]}\n要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。\ntitle 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。\n【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。\n【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。\n【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。\n【数值幅度】gold ≤ 800（可负，最低 −800）；reputation ±4；faction.standing ±4；girl.bond ±6；girl.fatigue / girl.spirit ±8。不要出现需要额外数值系统的效果。\n【存活时长】ttlMinutes 60–480，默认 240。report 不拦时间；decision 与 scene 会拦住打烊，所以别把通报写成 decision。",
-      "role": "system",
-      "scope": "incident",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"entries\":[{\"category\":\"report|decision|scene\",\"kind\":\"faction|environment|girl\",\"title\":\"\",\"body\":\"\",\"trigger\":{\"kind\":\"dayStart|wave|missionDone\",\"wave\":1,\"work\":\"combat|investigation\"},\"girlId\":\"\",\"district\":\"\",\"faction\":\"association|government|witch\",\"ttlMinutes\":240,\"options\":[{\"label\":\"\",\"hint\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"faction\":{\"id\":\"association|government|witch\",\"standing\":0},\"girl\":{\"bond\":0}}}]}]}\n要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。\ntitle 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。\n【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。\n【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。\n【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。\n【数值幅度】gold ≤ 800（可负，最低 −800）；reputation ±4；faction.standing ±4；girl.bond ±6；girl.fatigue / girl.spirit ±8。不要出现需要额外数值系统的效果。\n【存活时长】ttlMinutes 60–480，默认 240。report 不拦时间；decision 与 scene 会拦住打烊，所以别把通报写成 decision。",
-      "marker": false,
-      "disable": false
-    },
-    {
-      "identifier": "battle:contract",
-      "name": "战斗札记 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"format\":\"continuous\",\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"narration\":\"\",\"lines\":[{\"after\":0,\"speakerSide\":\"ally|enemy\",\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\nnarration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。\nexpression 只能取 calm / smile / surprise / sad / angry / shy；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。\n不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。",
-      "role": "system",
-      "scope": "battle",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"format\":\"continuous\",\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"narration\":\"\",\"lines\":[{\"after\":0,\"speakerSide\":\"ally|enemy\",\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\nnarration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。\nexpression 只能取 calm / smile / surprise / sad / angry / shy；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。\n不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。",
-      "marker": false,
-      "disable": false
-    },
-    {
-      "identifier": "storyline:contract",
-      "name": "故事线起点 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"nodes\":[{\"id\":\"n1\",\"kind\":\"start\",\"title\":\"开始\",\"data\":{\"kind\":\"start\"}}],\"edges\":[{\"from\":\"n1\",\"fromPort\":\"out\",\"to\":\"n2\"}]}\n节点 kind 只能用这九种：start、choice、mission、incident、opinion、event、reward、wait、end。\n节点 id 只能用字母、数字、下划线与连字符（≤12 字符）；edges 的 from / to 必须指向存在的节点；不要给 x、y、边 id、颜色或 note。",
-      "role": "system",
-      "scope": "storyline",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"nodes\":[{\"id\":\"n1\",\"kind\":\"start\",\"title\":\"开始\",\"data\":{\"kind\":\"start\"}}],\"edges\":[{\"from\":\"n1\",\"fromPort\":\"out\",\"to\":\"n2\"}]}\n节点 kind 只能用这九种：start、choice、mission、incident、opinion、event、reward、wait、end。\n节点 id 只能用字母、数字、下划线与连字符（≤12 字符）；edges 的 from / to 必须指向存在的节点；不要给 x、y、边 id、颜色或 note。",
-      "marker": false,
-      "disable": false
-    },
-    {
       "identifier": "entry-mw0j5k4w-40-791",
       "name": "描写",
       "content": "作为观察使魔，你在描写时要注意以下几点:\n# 角色描写\n## 角色在新场景出场时，默认用户知道角色的外貌特征，只需要进行一次简单外观描绘，保留部分最核心的特征一起入镜，不必再次完整描写\n## 编排角色对白时，要先结合性格模拟角色内心想法，然后通过对白表达出来。不要直接将内心的想法写出来\n\n# 场景描写\n## 镜头切换到新场景时，对整个场景进行详细描绘。由远及近，先整体后局部，如同电影运镜一样，先描绘场景的整体景观，然后再推进到主角所在的局部\n## 在剧情过程中，也可以通过场景特写适时烘托情绪氛围\n\n# 动作描写\n## 描写角色动作时，分远景、近景和特写，远景可把整个动作一笔带过。近景描写时，将动作拆分并依次写出。对于特写，在描写拆分动作的基础上进一步描写细节，包括动作的力度、节奏和角色相应部位的外观描写。\n## 无论是远景、近景还是特写，都绝不能直接写出动作所蕴含的情绪或内心想法。情绪应通过节奏编排自然流露。\n\n# 情绪表达\n## 角色的情绪、场景的氛围、故事的整体基调…… 一切都不应直接写在表面上。在剧情中的每一部分通过五感的描写，将情绪藏在可见的物理特征下面。\n## 角色的情绪体现在动作和语言中，场景的氛围融入到环境里，在动作和语言后不要解释它们蕴含的情绪或想法。\n## “声音带着一丝不容置疑的意味”，“话语中带着一丝不易察觉的愤怒”…… 此类的表达需要极力避免，不容置疑和愤怒应该体现在台词内容和动作里，而不是直接写出来。此外，如果只有一丝、如果不易察觉，那就不要写出来，不要以上帝视角替读者解读本应隐蔽的细节。\n\n# 段落编排\n## 剧情段落有起 承 转 合，一个场景、一段剧情不能无止境的继续下去。\n## 剧情段落间要有直接的分界，一整段剧情内容结束后，直接用---分隔并开始新的段落。（是整段大的剧情节点结束，不要滥用分隔）\n## 整个剧情节点还没结束，但本段正文结束的时候，直接在最后一个角色动作/对白切断即可，不需要像“夜晚才刚刚开始”这样的收束\n## 开始新剧情段落或进入新场景时，参考场景描写指南从整体引入局部。从段中接续剧情时自然承接上文即可。\n## 在开始写作之前，要判断自己处于当前剧情的什么阶段，适当主动推进进度以防一段剧情一直写不完。\n##角色要有真实感、活人感，别为了强调人设让角色变得不真实。嗯，就是要更多的情感驱动而不是逻辑驱动，语言要直白生活化贴近日常，别说些莫名其妙的听不懂的话\n##要写够1500字!",
@@ -381,6 +331,76 @@ export const PRESET = {
       "disable": false
     },
     {
+      "identifier": "profile:contract",
+      "name": "角色起草 · 语料契约",
+      "content": "语料（voice）写给她本人，不是对她的描述：tone 说她怎么说话（120 字内、一句话说完）；habits 是口头习惯（自称、语气词、句子长短、回避什么），2–3 条、每条不超过 120 字且要是完整的一句话；samples 是三句她说得出口的例话，每句不超过 120 字。\n例话必须听得出出身与教养：协会的用词、政府的公文腔、无所属的短句与沉默，各不相同。\n不要用「温柔但坚定」这类两头堵的形容词，用具体习惯替代（自称「我」还是「人家」、句尾带不带「啦」、会不会先反问）。",
+      "role": "system",
+      "scope": "profile",
+      "system_prompt": "语料（voice）写给她本人，不是对她的描述：tone 说她怎么说话（120 字内、一句话说完）；habits 是口头习惯（自称、语气词、句子长短、回避什么），2–3 条、每条不超过 120 字且要是完整的一句话；samples 是三句她说得出口的例话，每句不超过 120 字。\n例话必须听得出出身与教养：协会的用词、政府的公文腔、无所属的短句与沉默，各不相同。\n不要用「温柔但坚定」这类两头堵的形容词，用具体习惯替代（自称「我」还是「人家」、句尾带不带「啦」、会不会先反问）。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "daily:contract",
+      "name": "每日提案 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"version\":2,\"mission\":{\"title\":\"\",\"description\":\"\",\"work\":\"combat\",\"difficulty\":\"中危\"},\"opinions\":[{\"authorId\":\"\",\"authorKind\":\"girl\",\"authorFaction\":null,\"topic\":\"经费\",\"faction\":\"witch\",\"district\":null,\"title\":\"\",\"text\":\"\",\"request\":\"\",\"dialogue\":[{\"speakerId\":\"\",\"speaker\":\"\",\"text\":\"\",\"expression\":\"sad\"}],\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"\",\"changes\":[{\"kind\":\"gold\",\"amount\":-600}],\"outcomes\":[]},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"\",\"changes\":[{\"kind\":\"girl\",\"girlId\":\"\",\"field\":\"bond\",\"amount\":-2},{\"kind\":\"faction\",\"faction\":\"witch\",\"amount\":-4},{\"kind\":\"gold\",\"amount\":-300}],\"outcomes\":[]}]}],\"envoy\":{\"faction\":\"association\",\"title\":\"\",\"description\":\"\",\"work\":\"investigation\",\"difficulty\":\"中危\",\"district\":\"station\",\"rewardGirlLevel\":0},\"loot\":[{\"tier\":3,\"slot\":\"charm\",\"faction\":\"witch\"}]}\n\n把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。\n同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。\n三条提案不要全在花星砂：至少留一条「不花钱」的——两个人的矛盾要你裁决、对排班或辖区归属不满、她护着的人被谁伤了。这类提案的代价落在关系与情绪上（bond / fatigue），不是账本。\n涉及两个人的提案，dialogue 里两人都要说话，且第二个人必须反驳或加码；不要只有提出者一个人讲完。",
+      "role": "system",
+      "scope": "daily",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"version\":2,\"mission\":{\"title\":\"\",\"description\":\"\",\"work\":\"combat\",\"difficulty\":\"中危\"},\"opinions\":[{\"authorId\":\"\",\"authorKind\":\"girl\",\"authorFaction\":null,\"topic\":\"经费\",\"faction\":\"witch\",\"district\":null,\"title\":\"\",\"text\":\"\",\"request\":\"\",\"dialogue\":[{\"speakerId\":\"\",\"speaker\":\"\",\"text\":\"\",\"expression\":\"sad\"}],\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"\",\"changes\":[{\"kind\":\"gold\",\"amount\":-600}],\"outcomes\":[]},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"\",\"changes\":[{\"kind\":\"girl\",\"girlId\":\"\",\"field\":\"bond\",\"amount\":-2},{\"kind\":\"faction\",\"faction\":\"witch\",\"amount\":-4},{\"kind\":\"gold\",\"amount\":-300}],\"outcomes\":[]}]}],\"envoy\":{\"faction\":\"association\",\"title\":\"\",\"description\":\"\",\"work\":\"investigation\",\"difficulty\":\"中危\",\"district\":\"station\",\"rewardGirlLevel\":0},\"loot\":[{\"tier\":3,\"slot\":\"charm\",\"faction\":\"witch\"}]}\n\n把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。\n同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。\n三条提案不要全在花星砂：至少留一条「不花钱」的——两个人的矛盾要你裁决、对排班或辖区归属不满、她护着的人被谁伤了。这类提案的代价落在关系与情绪上（bond / fatigue），不是账本。\n涉及两个人的提案，dialogue 里两人都要说话，且第二个人必须反驳或加码；不要只有提出者一个人讲完。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "news:contract",
+      "name": "城市新闻 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 20 字的标题\",\"items\":[{\"text\":\"一条播报\",\"tone\":\"faction|pollution|stability|street\"}]}\nitems 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。",
+      "role": "system",
+      "scope": "news",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 20 字的标题\",\"items\":[{\"text\":\"一条播报\",\"tone\":\"faction|pollution|stability|street\"}]}\nitems 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "incident:contract",
+      "name": "突发事件 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"entries\":[{\"category\":\"report|decision|scene\",\"kind\":\"faction|environment|girl\",\"title\":\"\",\"body\":\"\",\"trigger\":{\"kind\":\"dayStart|wave|missionDone\",\"wave\":1,\"work\":\"combat|investigation\"},\"girlId\":\"\",\"district\":\"\",\"faction\":\"association|government|witch\",\"ttlMinutes\":240,\"options\":[{\"label\":\"\",\"hint\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"faction\":{\"id\":\"association|government|witch\",\"standing\":0},\"girl\":{\"bond\":0}}}]}]}\n要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。\ntitle 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。\n【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。\n【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。\n【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。\n【数值幅度】gold ≤ 800（可负，最低 −800）；reputation ±4；faction.standing ±4；girl.bond ±6；girl.fatigue / girl.spirit ±8。不要出现需要额外数值系统的效果。\n【存活时长】ttlMinutes 60–480，默认 240。report 不拦时间；decision 与 scene 会拦住打烊，所以别把通报写成 decision。",
+      "role": "system",
+      "scope": "incident",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"entries\":[{\"category\":\"report|decision|scene\",\"kind\":\"faction|environment|girl\",\"title\":\"\",\"body\":\"\",\"trigger\":{\"kind\":\"dayStart|wave|missionDone\",\"wave\":1,\"work\":\"combat|investigation\"},\"girlId\":\"\",\"district\":\"\",\"faction\":\"association|government|witch\",\"ttlMinutes\":240,\"options\":[{\"label\":\"\",\"hint\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"faction\":{\"id\":\"association|government|witch\",\"standing\":0},\"girl\":{\"bond\":0}}}]}]}\n要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。\ntitle 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。\n【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。\n【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。\n【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。\n【数值幅度】gold ≤ 800（可负，最低 −800）；reputation ±4；faction.standing ±4；girl.bond ±6；girl.fatigue / girl.spirit ±8。不要出现需要额外数值系统的效果。\n【存活时长】ttlMinutes 60–480，默认 240。report 不拦时间；decision 与 scene 会拦住打烊，所以别把通报写成 decision。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "battle:contract",
+      "name": "战斗札记 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"format\":\"continuous\",\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"narration\":\"\",\"lines\":[{\"after\":0,\"speakerSide\":\"ally|enemy\",\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\nnarration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。\nexpression 只能取 calm / smile / surprise / sad / angry / shy，每句自己挑一个，不许写竖线列表，也不许整篇同一个表情；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。\n不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。\n战报里出现的「眩晕」是心防被打穿后的状态（她被打穿、站不稳），不是技能，也不是她对自己施放：写成「她心防被打穿，陷入眩晕」这类描述，不要写成「X 使用眩晕」。",
+      "role": "system",
+      "scope": "battle",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"format\":\"continuous\",\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"narration\":\"\",\"lines\":[{\"after\":0,\"speakerSide\":\"ally|enemy\",\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\nnarration 是一整篇连贯叙事，6000–10000 字；lines 给 6–14 句，after 是这句之前已经写完的旁白段数，必须随剧情递增。\nexpression 只能取 calm / smile / surprise / sad / angry / shy，每句自己挑一个，不许写竖线列表，也不许整篇同一个表情；speakerSide 只能是 ally 或 enemy；speakerId 必须来自【可以说话的角色】表。\n不要写伤害数字、回合数、生命或心防数值、星砂数字，也不要写「第几回合」。\n战报里出现的「眩晕」是心防被打穿后的状态（她被打穿、站不稳），不是技能，也不是她对自己施放：写成「她心防被打穿，陷入眩晕」这类描述，不要写成「X 使用眩晕」。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "storyline:contract",
+      "name": "故事线蓝图 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"nodes\":[{\"id\":\"n1\",\"kind\":\"start\",\"title\":\"开始\",\"data\":{\"kind\":\"start\"}}],\"edges\":[{\"from\":\"n1\",\"fromPort\":\"out\",\"to\":\"n2\"}]}\n节点 kind 只能用这九种：start、choice、mission、incident、opinion、event、reward、wait、end。\n节点 id 只能用字母、数字、下划线与连字符（≤12 字符）；edges 的 from / to 必须指向存在的节点；不要给 x、y、边 id、颜色或 note。",
+      "role": "system",
+      "scope": "storyline",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"nodes\":[{\"id\":\"n1\",\"kind\":\"start\",\"title\":\"开始\",\"data\":{\"kind\":\"start\"}}],\"edges\":[{\"from\":\"n1\",\"fromPort\":\"out\",\"to\":\"n2\"}]}\n节点 kind 只能用这九种：start、choice、mission、incident、opinion、event、reward、wait、end。\n节点 id 只能用字母、数字、下划线与连字符（≤12 字符）；edges 的 from / to 必须指向存在的节点；不要给 x、y、边 id、颜色或 note。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "storyline:start",
+      "name": "故事线起点 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"beats\":[{\"title\":\"\",\"summary\":\"\",\"scene\":\"\",\"hook\":\"\",\"mission\":{\"title\":\"\",\"goal\":\"\",\"difficulty\":\"简单|常规|棘手|危险\",\"duration\":90,\"district\":\"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks\",\"requirement\":\"magic|insight|agility|empathy\"},\"choices\":[{\"label\":\"\",\"intent\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"bond\":0,\"corruption\":0,\"trait\":\"\",\"trigger\":{\"kind\":\"dialogue|event|mission|opinion|incident\"}}}]}]}\n要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清「她要在这场委托里做到什么」，不能是空泛的情绪。\nduration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。\n每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。",
+      "role": "system",
+      "scope": "storyline",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"premise\":\"\",\"tone\":\"\",\"beats\":[{\"title\":\"\",\"summary\":\"\",\"scene\":\"\",\"hook\":\"\",\"mission\":{\"title\":\"\",\"goal\":\"\",\"difficulty\":\"简单|常规|棘手|危险\",\"duration\":90,\"district\":\"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks\",\"requirement\":\"magic|insight|agility|empathy\"},\"choices\":[{\"label\":\"\",\"intent\":\"\",\"effect\":{\"gold\":0,\"reputation\":0,\"bond\":0,\"corruption\":0,\"trait\":\"\",\"trigger\":{\"kind\":\"dialogue|event|mission|opinion|incident\"}}}]}]}\n要求：恰好 4 幕；每一幕都必须给出 mission（明确的委托目标），goal 写清「她要在这场委托里做到什么」，不能是空泛的情绪。\nduration 60–180 分钟；difficulty 只能从四个值里选；district 必须从上面九个 id 里选一个；requirement 决定用哪项属性判定。\n每幕 2 个选项，选项要真的不同（一个靠近、一个退开）；effect 只填有变化的字段，数值幅度小。",
+      "marker": false,
+      "disable": false
+    },
+    {
       "identifier": "arc:contract",
       "name": "故事线蓝图 · 结构契约",
       "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"passages\":[{\"title\":\"\",\"narration\":\"\",\"lines\":[{\"speaker\":\"\",\"tone\":\"\",\"text\":\"\"}],\"choices\":[{\"label\":\"\",\"intent\":\"\",\"effect\":{\"bond\":2}}]}]}\n篇幅：demo-node；summary 用 60–120 字概括这一段剧情。\neffect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6。",
@@ -388,51 +408,81 @@ export const PRESET = {
       "scope": "arc",
       "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"title\":\"\",\"hook\":\"\",\"summary\":\"\",\"passages\":[{\"title\":\"\",\"narration\":\"\",\"lines\":[{\"speaker\":\"\",\"tone\":\"\",\"text\":\"\"}],\"choices\":[{\"label\":\"\",\"intent\":\"\",\"effect\":{\"bond\":2}}]}]}\n篇幅：demo-node；summary 用 60–120 字概括这一段剧情。\neffect 只能用 bond / corruption / gold / reputation，数值绝对值不超过 6。",
       "marker": false,
-      "disable": false
+      "disable": true
     },
     {
       "identifier": "arc:opening",
       "name": "蓝图开场 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"]}\nnarration 250–350 字；lines 2–5 句，speakerId 只能取在场的人或 player；options 恰好 3 条，每条不超过 24 字、用「你……」开头。\n不要写数值与技能名。",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"]}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 24 字、用「你……」开头。\n不要写数值与技能名。",
       "role": "system",
       "scope": "arc",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"]}\nnarration 250–350 字；lines 2–5 句，speakerId 只能取在场的人或 player；options 恰好 3 条，每条不超过 24 字、用「你……」开头。\n不要写数值与技能名。",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"]}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 24 字、用「你……」开头。\n不要写数值与技能名。",
       "marker": false,
-      "disable": false
+      "disable": true
     },
     {
       "identifier": "arc:turn",
       "name": "蓝图续写 · 结构契约",
-      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nnarration 900–3000 字；lines 2–8 句，speakerId 只能取在场的人或 player；options 恰好 3 条、每条不超过 24 字、用「你……」开头。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；player 的台词只能来自所长这一次的行动，不要替他编新话。",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2 句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 24 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白不要刻意的引导向选项，要自然地收尾.",
       "role": "system",
       "scope": "arc",
-      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm|smile|surprise|sad|angry|shy\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nnarration 900–3000 字；lines 2–8 句，speakerId 只能取在场的人或 player；options 恰好 3 条、每条不超过 24 字、用「你……」开头。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；player 的台词只能来自所长这一次的行动，不要替他编新话。",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2 句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 24 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白不要刻意的引导向选项，要自然地收尾.",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "arc:ending",
+      "name": "剧情收尾 · 结构契约",
+      "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\n这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。\nnarration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。\nlines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。\n不要写数值、伤害、技能名，也不要写「第几轮」。",
+      "role": "system",
+      "scope": "arc",
+      "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}]}\n这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。\nnarration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。\nlines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。\n不要写数值、伤害、技能名，也不要写「第几轮」。",
       "marker": false,
       "disable": false
     },
     {
       "identifier": "chat:contract",
       "name": "角色对话 · 回复格式契约",
-      "content": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"calm|smile|surprise|sad|angry|shy\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。",
+      "content": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"smile\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要三条都用同一个值。",
       "role": "system",
       "scope": "chat",
-      "system_prompt": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"calm|smile|surprise|sad|angry|shy\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。",
+      "system_prompt": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"smile\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要三条都用同一个值。",
       "marker": false,
       "disable": false
     },
     {
       "identifier": "whisper:contract",
       "name": "灯下私语 · 回复格式契约",
-      "content": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"calm|smile|surprise|sad|angry|shy\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。",
+      "content": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"smile\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要三条都用同一个值。",
       "role": "system",
       "scope": "whisper",
-      "system_prompt": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"calm|smile|surprise|sad|angry|shy\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。",
+      "system_prompt": "【回复格式】只输出 JSON，不要 markdown 代码块，不要解释：\n{\"lines\":[{\"text\":\"说出口的台词\",\"action\":\"可省略的动作或神态\",\"expression\":\"smile\"}]}\n一次 1–3 条，像她连续发来的短消息；动作写在 action，不要和台词混在同一段；每条台词 1–2 句，总长不超过 300 字。\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要三条都用同一个值。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "vn-battle",
+      "name": "视觉小说演出 · 战斗札记",
+      "content": "■ 演出格式（视觉小说）\n· 旁白只写必要的动作与环境，一到两句就停；不要把台词的内容写成旁白。\n· 每一场至少 4 句对白，最多 8 句；一句一个说话人，单句 ≤ 40 字。\n· 对白要能独立读懂：情绪写进动作与神态，不靠旁白解释。\n· 双方都要说话；同一场里说话人交替，不要一个人念完。\n· 战斗结果、伤害与技能名照旧不写。",
+      "role": "system",
+      "scope": "battle",
+      "system_prompt": "■ 演出格式（视觉小说）\n· 旁白只写必要的动作与环境，一到两句就停；不要把台词的内容写成旁白。\n· 每一场至少 4 句对白，最多 8 句；一句一个说话人，单句 ≤ 40 字。\n· 对白要能独立读懂：情绪写进动作与神态，不靠旁白解释。\n· 双方都要说话；同一场里说话人交替，不要一个人念完。\n· 战斗结果、伤害与技能名照旧不写。",
+      "marker": false,
+      "disable": false
+    },
+    {
+      "identifier": "vn-arc",
+      "name": "视觉小说演出 · 完整剧情",
+      "content": "注意，现在任务变更为视觉小说，前文要求的描写方式作废，但仍需要遵守JSON 形状要求！\n■ 演出格式（视觉小说）\n· 现在你正在构思一段视觉小说的剧情，视觉小说主要内容由人物的对话构成，必须用大量角色对话填充，减少旁白的使用。\n· 旁白只写必要的一两句，用来交代时间、地点与动作，字数小于150字，对话内容不要写成旁白。\n· 每段 passage 的 lines 至少 12句对话，每句大于20字，加强角色和所长的互动。\n· 对白要能独立读懂：情绪写进 action（动作 / 神态），不要靠旁白解释。\n· 每个人说话有自己的口癖与节奏，同一段里说话人要交替。\n· 如果处于nsfw场景，角色的台词要用18+ASMR风格，融入呻吟和喘息声，适当描述自身身体感受、结合部位的感觉及情感反应。但注意保持角色人设和说话方式，避免硬凹温柔导致OOC。可以适当使用♡符号增强情感表达，但注意不要在日常场景滥用♡\n· 结尾用一句留白收束，给玩家留下「继续」的期待。",
+      "role": "system",
+      "scope": "arc",
+      "system_prompt": "注意，现在任务变更为视觉小说，前文要求的描写方式作废，但仍需要遵守JSON 形状要求！\n■ 演出格式（视觉小说）\n· 现在你正在构思一段视觉小说的剧情，视觉小说主要内容由人物的对话构成，必须用大量角色对话填充，减少旁白的使用。\n· 旁白只写必要的一两句，用来交代时间、地点与动作，字数小于150字，对话内容不要写成旁白。\n· 每段 passage 的 lines 至少 12句对话，每句大于20字，加强角色和所长的互动。\n· 对白要能独立读懂：情绪写进 action（动作 / 神态），不要靠旁白解释。\n· 每个人说话有自己的口癖与节奏，同一段里说话人要交替。\n· 如果处于nsfw场景，角色的台词要用18+ASMR风格，融入呻吟和喘息声，适当描述自身身体感受、结合部位的感觉及情感反应。但注意保持角色人设和说话方式，避免硬凹温柔导致OOC。可以适当使用♡符号增强情感表达，但注意不要在日常场景滥用♡\n· 结尾用一句留白收束，给玩家留下「继续」的期待。",
       "marker": false,
       "disable": false
     }
   ],
   "extensions": {},
-  "description": "默认选项：温度略高，适合日常对话与叙事提案。",
+  "description": "出厂预设 · 服务「arc」用途。只读；要改就复制一份。",
   "prompt_order": [
     {
       "character_id": 100001,
@@ -554,6 +604,22 @@ export const PRESET = {
           "enabled": true
         },
         {
+          "identifier": "entry-mw0j5k4w-40-791",
+          "enabled": true
+        },
+        {
+          "identifier": "entry-mw0m2fla-41-348",
+          "enabled": true
+        },
+        {
+          "identifier": "entry-mw0j4jk4-39-630",
+          "enabled": true
+        },
+        {
+          "identifier": "profile:contract",
+          "enabled": true
+        },
+        {
           "identifier": "daily:contract",
           "enabled": true
         },
@@ -574,27 +640,23 @@ export const PRESET = {
           "enabled": true
         },
         {
-          "identifier": "entry-mw0j5k4w-40-791",
-          "enabled": true
-        },
-        {
-          "identifier": "entry-mw0m2fla-41-348",
-          "enabled": true
-        },
-        {
-          "identifier": "entry-mw0j4jk4-39-630",
+          "identifier": "storyline:start",
           "enabled": true
         },
         {
           "identifier": "arc:contract",
-          "enabled": true
+          "enabled": false
         },
         {
           "identifier": "arc:opening",
-          "enabled": true
+          "enabled": false
         },
         {
           "identifier": "arc:turn",
+          "enabled": true
+        },
+        {
+          "identifier": "arc:ending",
           "enabled": true
         },
         {
@@ -603,6 +665,14 @@ export const PRESET = {
         },
         {
           "identifier": "whisper:contract",
+          "enabled": true
+        },
+        {
+          "identifier": "vn-battle",
+          "enabled": true
+        },
+        {
+          "identifier": "vn-arc",
           "enabled": true
         }
       ]
