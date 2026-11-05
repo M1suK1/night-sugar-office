@@ -5,14 +5,22 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  min-height: 420px;
-  height: 100%;
+  /* v97：舞台按 16:9 撑开，窄屏再退成 4:3；不再被容器压成一条长条。 */
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 78vh;
+  min-height: 320px;
+  height: auto;
   overflow: hidden;
   border-radius: 10px;
   background-color: #0a0810;
   background-size: cover;
   background-position: center;
   isolation: isolate;
+}
+
+@supports not (aspect-ratio: 16 / 9) {
+  .vn-stage { height: min(78vh, 720px); }
 }
 
 .vn-backdrop-art {
@@ -37,7 +45,7 @@
 
 .vn-cast {
   position: absolute;
-  inset: 0 0 30%;
+  inset: 6% 0 24%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -48,8 +56,8 @@
   position: relative;
   height: 100%;
   aspect-ratio: 3 / 4;
-  max-width: 46%;
-  filter: drop-shadow(0 12px 28px #00000088);
+  max-width: min(46%, 460px);
+  filter: drop-shadow(0 14px 30px #00000099);
 }
 
 .vn-actor .girl-portrait,
@@ -92,14 +100,18 @@
 .vn-bottom {
   position: relative;
   z-index: 1;
-  padding: 0 14px 16px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 clamp(12px, 4vw, 48px) clamp(12px, 2.4vw, 28px);
 }
 
 .vn-box {
   display: block;
   width: 100%;
-  min-height: 128px;
-  padding: 16px 18px 20px;
+  min-height: 0;
+  max-height: 46%;
+  padding: 14px 20px 22px;
   text-align: left;
   font: inherit;
   color: #f2e4ed;
@@ -124,10 +136,10 @@
 .vn-text {
   display: block;
   font-family: var(--font-display, "Noto Serif SC", serif);
-  font-size: 15px;
+  font-size: clamp(14px, 1.15vw, 17px);
   line-height: 1.85;
   letter-spacing: .02em;
-  min-height: 52px;
+  min-height: 2.6em;
   white-space: pre-wrap;
 }
 
@@ -218,10 +230,13 @@
 
 /* 窄屏：对话框占下方更大比例，立绘缩小 */
 @media (max-width: 720px) {
-  .vn-stage { min-height: 360px; }
-  .vn-actor { max-width: 68%; }
+  .vn-stage { aspect-ratio: 4 / 3; min-height: 300px; max-height: 68vh; }
+  .vn-cast { inset: 4% 0 28%; }
+  .vn-actor { max-width: 74%; }
+  .vn-bottom { padding: 0 10px 12px; }
+  .vn-box { padding: 12px 14px 18px; }
   .vn-text { font-size: 14px; line-height: 1.8; }
-  .vn-box { min-height: 110px; padding: 12px 14px 18px; }
+  .vn-toolbar { gap: 4px; transform: scale(.92); transform-origin: top right; }
 }
 
 /* 事件 / 交互剧情里的舞台：留出与弹窗一致的边距，别顶到边框 */
@@ -236,3 +251,8 @@
 
 .vn-scene-card .vn-text { font-size: 18px; letter-spacing: .12em; text-align: center; min-height: 0; }
 .vn-scene-card { text-align: center; }
+
+/* 外层容器特别宽而矮时（比如札记弹窗的中间栏），按容器高度走，不再强制 16:9 */
+@media (min-aspect-ratio: 21 / 9) {
+  .vn-stage { aspect-ratio: auto; height: min(78vh, 640px); }
+}

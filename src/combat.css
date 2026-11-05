@@ -1066,8 +1066,8 @@
 }
 .battle-note-stage-body .vn-stage {
   flex: 1;
-  min-height: 420px;
+  min-height: 0;
 }
 @media (max-width: 900px) {
-  .battle-note-stage-body .vn-stage { min-height: 320px; }
+  .battle-note-stage-body .vn-stage { min-height: 0; }
 }
