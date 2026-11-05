@@ -4,6 +4,7 @@ import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } fr
 import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice, vnBeatKey } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
 import { mergeCastOrder } from '../src/vn/cast.ts';
+import { placeLines } from '../src/storyLines.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
 const passage = {
@@ -180,6 +181,23 @@ test('v99 一整段旁白 + 末尾台词：按句子摊开后把台词插进去�
   assert.deepEqual(order, ['旁白', '月见桃', '旁白', '所长', '旁白'], '台词被夹在旁白块之间，最后仍落在旁白上');
 });
 
+test('v100 落点：只有第一句写了 after 时，其余不能全被挤到末尾', () => {
+  // 4 段旁白、4 句台词：模型只给第一句写了 after=1，剩下 3 句没写
+  const positions = placeLines([1, undefined, undefined, undefined], 4, 4);
+  assert.ok(positions.filter(position => position >= 4).length <= 2, '不能一半以上挤在结尾');
+  assert.equal(new Set(positions).size >= 3, true, '至少铺在三个空档里');
+  assert.equal(positions[0], 1, '写了 after 的那句照它插');
+});
+
+test('v100 落点：after 超出段数（一对一整段旁白）时退回均匀铺开', () => {
+  const positions = placeLines([0, 1, 2], 1, 4);
+  assert.deepEqual(positions, [1, 2, 3], '一段旁白没有区分度，按均匀位置铺开');
+});
+
+test('v100 落点：模型老老实实写全了 after 就照它插', () => {
+  assert.deepEqual(placeLines([0, 1, 2, 3], 4, 5), [0, 1, 3, 4]);
+});
+
 test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {
   const lounge = resolveBackdrop('room:lounge');
   assert.match(lounge.gradient, /gradient/);
@@ -229,8 +247,8 @@ test('v99 交织：after 决定这句台词插在第几段旁白之后', () => {
     id: 'p9',
     narration: '第一段。\n\n第二段。\n\n第三段。',
     lines: [
-      { speaker: '月见桃', text: '插在第二段之后。', after: 2 },
       { speaker: '所长', text: '插在最前面。', after: 0 },
+      { speaker: '月见桃', text: '插在第二段之后。', after: 2 },
     ],
     choices: [],
   });

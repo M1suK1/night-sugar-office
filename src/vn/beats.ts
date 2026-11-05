@@ -7,7 +7,7 @@
  * 台词按 `after`（第几段旁白之后）插回旁白之间，没写 `after` 就均匀铺开。
  */
 import type { Expression } from '../types.ts';
-import { interleaveTurn } from '../storyLines.ts';
+import { placeLines, segmentsFromPositions } from '../storyLines.ts';
 import type { StorySegment } from '../storyLines.ts';
 import { backdropForElement } from './backdrops.ts';
 import type { VnBeat, VnBackdrop } from './types.ts';
@@ -94,14 +94,11 @@ function chunkParagraphs(paragraphs: string[], wanted: number): string[] {
  * `after` 是按「原始旁白段」数的，摊成更细的块之后要按比例换算，
  * 否则模型写 after=1 的台词会跑偏。
  */
-function interleave<T extends { after?: number }>(paragraphs: string[], lines: readonly T[]): { chunks: string[]; lines: T[]; segments: StorySegment[] } {
+function interleave<T extends { after?: number }>(paragraphs: string[], lines: readonly T[]): { chunks: string[]; lines: readonly T[]; segments: StorySegment[] } {
   const chunks = chunkParagraphs(paragraphs, lines.length + 1);
-  const ratio = paragraphs.length ? chunks.length / paragraphs.length : 1;
-  const mapped = lines.map(line => ({
-    ...line,
-    after: typeof line.after === 'number' ? Math.max(0, Math.min(chunks.length, Math.round(line.after * ratio))) : undefined,
-  })) as T[];
-  return { chunks, lines: mapped, segments: interleaveTurn(chunks, mapped) };
+  // 落点统一交给 placeLines：after 只当意图，写得没区分度就均匀铺开。
+  const positions = placeLines(lines.map(line => line.after), Math.max(1, paragraphs.length), chunks.length);
+  return { chunks, lines, segments: segmentsFromPositions(chunks.length, positions) };
 }
 
 export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptions = {}): VnBeat[] {
