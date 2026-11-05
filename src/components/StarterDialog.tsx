@@ -4,7 +4,7 @@ import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState } 
 import { factionInfo } from '../content/items';
 import { parseGirlCard } from '../cards';
 import { FACTION_ORDER } from '../territories';
-import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, type RosterSubject } from '../factions';
+import { customGirlOf, customLeaderOf, defaultFactionRoster, factionTagColor, factionTagLabel, subjectOfGirl, subjectOfLeader, type RosterSubject } from '../factions';
 import { sanitizeFactionRoster } from '../rules/candidate';
 import { loadCardBox, type CardBoxEntry , readCardRaw } from '../cardbox';
 import { STARTER_COUNT, cardFactionRoster, randomStarterAssignment, rosterPool, starterPicks } from '../roster';
@@ -300,19 +300,25 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
     // v86：静态名册废掉之后，池子里的「已编成的人」也是我们自己的快照
     //（origin 是 leader / member，不再是 custom），必须原样交回去，
     // 不然规则层校验拿不到人，就会回一句「三方阵容不合法」。
+    // 一个人可能从随从被挪成首领、也可能从别的方挪过来：三个来源都查一遍
+    //（已存首领 / 已存随从 / 池子条目），任一处有就能交出去。
+    // 一个人可能从随从被挪成首领、也可能从别的方挪过来：三个来源都查一遍
+    //（已存首领 / 已存随从 / 池子条目），任一处有就能交出去。
     const takenLeader = (faction: FactionId, id: string): FactionLeader | undefined => {
-      const saved = state.customFactionLeaders?.find(leader => leader.id === id);
-      if (saved) return { ...saved, faction };
+      const savedLeader = state.customFactionLeaders?.find(leader => leader.id === id);
+      if (savedLeader) return { ...savedLeader, faction };
+      const savedGirl = state.customFactionGirls?.find(girl => girl.id === id);
+      if (savedGirl) return customLeaderOf(faction, subjectOfGirl(savedGirl));
       const subject = pool.find(item => item.id === id);
-      if (!subject || subject.origin !== 'custom') return undefined;
-      return customLeaderOf(faction, enrich(subject));
+      return subject ? customLeaderOf(faction, enrich(subject)) : undefined;
     };
     const takenGirl = (faction: FactionId, id: string): FactionGirl | undefined => {
-      const saved = state.customFactionGirls?.find(girl => girl.id === id);
-      if (saved) return { ...saved, faction, tag: faction };
+      const savedGirl = state.customFactionGirls?.find(girl => girl.id === id);
+      if (savedGirl) return { ...savedGirl, faction, tag: faction };
+      const savedLeader = state.customFactionLeaders?.find(leader => leader.id === id);
+      if (savedLeader) return customGirlOf(faction, subjectOfLeader(savedLeader));
       const subject = pool.find(item => item.id === id);
-      if (!subject || subject.origin !== 'custom') return undefined;
-      return customGirlOf(faction, enrich(subject));
+      return subject ? customGirlOf(faction, enrich(subject)) : undefined;
     };
     const leaders: FactionLeader[] = [];
     const girls: FactionGirl[] = [];
@@ -356,7 +362,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           <p>{cardsOnly
             ? '今夜只从你的卡库挑人：卡库里带回来的少女已经先选中了。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好——这一步定完，灯才会亮。'
             : forced
-              ? '卡库还没满，先用默认阵容补满；卡库一次会摆满，也可以用「从契约卡库添加」随时补。挑 2 位签进事务所（最多 6 位），再把三方阵营的首领与随从点好。'
+              ? '三方席位只能来自契约卡库：卡不够时先用这里现有的人把三方坐满（各 1 首领 + 1 随从），也可以用「从契约卡库添加」随时补。挑 2 位签进事务所（最多 6 位）。'
               : '挑 2 位少女签进事务所（最多 6 位），再把三方阵营的首领与随从点好。首领和随从都可以用你自己带来的少女，之后改动只能在档案页里一个个谈。'}</p>
         </div>
         <div className="starter-head-actions">
