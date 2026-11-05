@@ -104,6 +104,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title }: {
 
   return (
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
+      {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
       <div className="vn-vignette" aria-hidden="true" />
       <div className="vn-cast" aria-hidden="true">
         {focus && (

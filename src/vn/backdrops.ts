@@ -29,12 +29,18 @@ const districtTint = (id: string): string => {
   return `radial-gradient(120% 90% at 50% 12%, ${first}dd 0%, ${second}f0 45%, ${third} 100%)`;
 };
 
+/** 已经画好的背景图（放在 public/art 下，走 /art/* 静态路径）。 */
+const IMAGES: Record<string, string> = {
+  'room:lounge': '/art/council-lounge.jpg',
+  lounge: '/art/council-lounge.jpg',
+};
+
 export function resolveBackdrop(id: string, tint?: string): ResolvedBackdrop {
   const palette = PALETTE[id];
   const gradient = palette
     ? districtTint(id)
     : `radial-gradient(120% 90% at 50% 12%, ${(tint ?? '#2a1c28') + 'dd'} 0%, #150f1b 55%, #08060d 100%)`;
-  return { gradient, image: '' };
+  return { gradient, image: IMAGES[id] ?? '' };
 }
 
 /** 元素色 → 占位背景（角色剧情没有场景线索时用）。 */

@@ -98,10 +98,12 @@ test('v93 跳过已读：没看过的句子会停住', () => {
   assert.equal(state.typing, true);
 });
 
-test('v93 背景查表：已知 id 出渐变，未知 id 用 tint，永远没有图', () => {
+test('v93 背景查表：渐变永远有，已画好的场景带图，未知 id 用 tint', () => {
   const lounge = resolveBackdrop('room:lounge');
   assert.match(lounge.gradient, /gradient/);
-  assert.equal(lounge.image, '', '现在不接背景图');
+  assert.equal(lounge.image, '/art/council-lounge.jpg', '会客厅已经有真背景图');
+  const night = resolveBackdrop('night');
+  assert.equal(night.image, '', '没图的场景只用渐变');
   const custom = resolveBackdrop('district:nowhere', '#123456');
   assert.match(custom.gradient, /#123456/);
 });

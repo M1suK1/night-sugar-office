@@ -18,43 +18,18 @@ const optionMeta: Record<Opinion['options'][number]['id'], { label: string; icon
   reject: { label: '驳回', icon: X },
 };
 
+/**
+ * 会客厅（议会厅）背景。
+ *
+ * 以前是手写 SVG 线稿；现在换成画好的室内图（public/art/council-lounge.jpg），
+ * 上面压一层暗罩，保证左右两侧面板的文字还看得清。
+ */
 function CouncilBackdrop() {
   return (
-    <svg className="council-backdrop" viewBox="0 0 900 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <defs>
-        <linearGradient id="council-wall" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#211a26" />
-          <stop offset="1" stopColor="#120f16" />
-        </linearGradient>
-        <linearGradient id="council-window" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#2b3a5c" />
-          <stop offset="1" stopColor="#101827" />
-        </linearGradient>
-        <radialGradient id="council-lamp" cx="0.5" cy="0.2" r="0.8">
-          <stop offset="0" stopColor="#ffd6e6" stopOpacity="0.55" />
-          <stop offset="1" stopColor="#ffd6e6" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <rect width="900" height="420" fill="url(#council-wall)" />
-      <g opacity="0.5" stroke="#ffffff" strokeWidth="0.6">
-        {Array.from({ length: 12 }, (_, index) => <line key={index} x1={index * 80} y1="0" x2={index * 80 - 40} y2="300" opacity="0.08" />)}
-      </g>
-      <rect x="620" y="42" width="190" height="150" rx="6" fill="url(#council-window)" stroke="#4a3a55" strokeWidth="2" />
-      <line x1="715" y1="42" x2="715" y2="192" stroke="#4a3a55" strokeWidth="2" />
-      <line x1="620" y1="117" x2="810" y2="117" stroke="#4a3a55" strokeWidth="2" />
-      <circle cx="676" cy="86" r="17" fill="#f6e7d8" opacity="0.85" />
-      <circle cx="82" cy="150" r="46" fill="url(#council-lamp)" />
-      <path d="M82 34v58" stroke="#6d5a48" strokeWidth="2" />
-      <path d="M52 92h60l-14 26H66z" fill="#f3d8c2" opacity="0.9" />
-      <rect x="120" y="268" width="470" height="74" rx="16" fill="#2b2231" />
-      <rect x="120" y="250" width="470" height="30" rx="12" fill="#392d40" />
-      <rect x="150" y="342" width="14" height="30" fill="#1d1822" />
-      <rect x="546" y="342" width="14" height="30" fill="#1d1822" />
-      <ellipse cx="430" cy="396" rx="300" ry="26" fill="#0d0b10" opacity="0.7" />
-      <rect x="672" y="300" width="56" height="44" rx="7" fill="#33283a" />
-      <path d="M700 300c-4-26-18-40-34-46 20-2 32 10 34 26 4-20 16-30 34-28-14 10-22 26-24 48z" fill="#3f5a4a" opacity="0.9" />
-      <path d="M700 300c-2-22-10-34-22-42 12 8 18 22 20 42z" fill="#4d6b58" opacity="0.8" />
-    </svg>
+    <>
+      <img className="council-backdrop" src="/art/council-lounge.jpg" alt="" />
+      <span className="council-backdrop-shade" aria-hidden="true" />
+    </>
   );
 }
 
