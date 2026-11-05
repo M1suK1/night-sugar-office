@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/game.ts';
-import { representativeNameOf, representativeTitleOf } from '../src/factions.ts';
+import { factionRepresentativeOf, factionSeatsMissing, representativeNameOf, representativeTitleOf } from '../src/factions.ts';
+import { factionInfo } from '../src/content/items.ts';
+import { FACTION_ORDER } from '../src/territories.ts';
 import { prologueFor } from '../src/prologue.ts';
 import { blueprintFactionLine } from '../src/llm.ts';
 import type { GameState } from '../src/types.ts';
@@ -22,10 +24,19 @@ function withCustomLeaders(): GameState {
   return state;
 }
 
-test('v48 默认状态下的代表就是内置首领', () => {
+test('v48 默认状态下三方代表都是空缺占位，不再指向内置首领', () => {
   const state = createInitialState();
-  assert.equal(representativeNameOf(state, 'association'), '白鹭千秋');
-  assert.equal(representativeNameOf(state, 'government'), '雨宫澄');
+  for (const faction of FACTION_ORDER) {
+    const rep = factionRepresentativeOf(state, faction);
+    assert.equal(rep.vacant, true, `${faction} 的代表该是空缺`);
+    assert.equal(rep.name, '席位空缺');
+    assert.equal(rep.id, `vacant-${faction}`);
+    assert.equal(representativeNameOf(state, faction), '席位空缺', '界面提示「契约卡不足，需要导入」');
+  }
+  assert.equal(factionSeatsMissing(state), 3);
+  // 没有存档时只退回界面兜底文案，不写死任何内置首领的名字。
+  assert.equal(representativeNameOf(undefined, 'association'), factionInfo.association.envoy);
+  assert.equal(representativeTitleOf(undefined, 'association'), factionInfo.association.title);
 });
 
 test('v48 换掉首领后，代表名与头衔跟着换', () => {

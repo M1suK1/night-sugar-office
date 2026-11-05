@@ -13,7 +13,7 @@ import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PRESET_SCHEMA, PROMPT_TASK_SCO
 import { playerSummary } from '../src/player.ts';
 import { advancedCost, effectiveStats } from '../src/economy.ts';
 import { mulberry32, rollStats, statsForArchetype } from '../src/content/archetypes.ts';
-import { customGirlOf, customLeaderOf, defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers, subjectOfLeader } from '../src/factions.ts';
+import { customGirlOf, customLeaderOf, defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers } from '../src/factions.ts';
 import { rosterPool } from '../src/roster.ts';
 import { subjectOfCustom } from '../src/factions.ts';
 import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
@@ -38,7 +38,7 @@ import { blueprintIssues, buildGraphFromDraft, compileBeatsToGraph, layoutStoryG
 import { WORLDBOOK_KEY, builtinWorldbook, defaultWorldbook, exportWorldbookJson, importWorldbookJson, loadWorldbook, officeWorldbookEntry, sanitizeWorldbookEntry, saveWorldbook, syncBuiltinWorldbook, syncOfficeWorldbook, worldbookContext } from '../src/worldbook.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, clearBalanceCache, sanitizeBalance } from '../src/balance.ts';
 import { POLLUTION_MAX, POLLUTION_MIN, clampPollution, cityAveragePollution, dirtiestDistrict, initialPollution, mergeDistrictEffects, pollutionDailyRise, pollutionEffect, pollutionForecast, pollutionIsEstimated, pollutionPenalty, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierLabel, repairPollution } from '../src/pollution.ts';
-import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
+import { EMPLOYER_LABEL, FACTION_PURIFICATION, canIntercept, factionBrief, factionDossiers, factionGirlsOf, factionLeader, factionPurification, factionRelationLine, factionRepresentativeOf, factionSeatEmpty, factionSeatsMissing, factionTagColor, factionTagFor, factionTagLabel, girlFactionLabels, isGirlFaction, sanitizeGirlFaction } from '../src/factions.ts';
 import { DEFAULT_OFFICE_PROFILE, OFFICE_LIMITS, OFFICE_WORLDBOOK_ID, officeWorldbookContent, representativeOf, sanitizeOfficeProfile } from '../src/office.ts';
 import { HOSTILITY_AFTER_WAR, HOSTILITY_COOLDOWN_CAP, applyHostility, clampHostility, hottestPair, hostilityFlavor, hostilityGain, hostilityLines, hostilityTier, hostilityTierLabel, hostilityValue, incidentHostility, pairLabel, warCoolingDown } from '../src/hostility.ts';
 import { openFrontIn, planFronts, resolveDueFronts, squadPower } from '../src/fronts.ts';
@@ -51,6 +51,7 @@ import { effectiveGuard } from '../src/economy.ts';
 import { emptyItem } from '../src/content/library.ts';
 import { items } from '../src/content/items.ts';
 import { CARD_BOX_LIMIT, CARD_BOX_MAX_BYTES, cardBoxByteSize, cardBoxTagLabel, cardboxAdd, cardboxCards, cardboxFilter, cardboxRemove, formatByteSize, loadCardBox, readCardRaw, saveCardBox } from '../src/cardbox.ts';
+import { makeGirl, makeLeader, seedRoster, withFactionRoster } from './fixtureRoster.ts';
 
 /** v46：场景改成强制弹窗后，故事线会先停在 incident 上；测试里顺手点掉，走到下一个岔口。 */
 const settleIncidents = (state: GameState): GameState => {
@@ -3076,9 +3077,15 @@ function buffGirl(state: GameState, id: string): void {
   girl.spirit = 2000;
 }
 
-/** 造一个「糖果街归协会、协会在戒备」的场面。 */
+/** 糖果街上的那位当主随从：拦截战的敌人应当就是她（静态名册已废除，人是 fixture 造的）。 */
+const CANDY_LEADER = '协会临时主事';
+const CANDY_MEMBER = '协会临时随从';
+
+/** 造一个「糖果街归协会、协会在戒备」的场面；协会名册里有一位首领与一位随从。 */
 function hostileCandy(): GameState {
-  const state = v19State();
+  const state = withFactionRoster(v19State(), {
+    association: { leader: makeLeader('association', CANDY_LEADER), members: [makeGirl('association', CANDY_MEMBER)] },
+  });
   state.territories.candy = 'association';
   state.factions.association.standing = 20;
   return state;
@@ -3292,8 +3299,9 @@ test('v19 读档保留委托快照，并把非法污染/档案修回合法值', 
   assert.equal(fixed.office.goal, '只有目标', '合法字段原样保留');
 });
 
-test('v19 三方档案自洽：领袖、附属少女、关系与净化加成都不缺', () => {
+test('v19 三方档案自洽：关系与净化加成齐全，名册只剩空席等导卡', () => {
   const factions: FactionId[] = ['association', 'government', 'witch'];
+  const fresh = createInitialState();
   for (const faction of factions) {
     const dossier = factionDossiers[faction];
     assert.ok(dossier, `${faction} 缺档案`);
@@ -3301,21 +3309,29 @@ test('v19 三方档案自洽：领袖、附属少女、关系与净化加成都�
     assert.ok(dossier.technologyStance.length > 5, `${faction} 没写对技术的态度`);
     assert.ok(dossier.witchStance.length > 5 && dossier.girlStance.length > 5);
 
+    // v85：静态名册废除之后，档案指向的首领就是「席位空缺」占位。
     const leader = factionLeader(faction);
     assert.equal(leader.faction, faction);
-    assert.equal(dossier.leaderId, leader.id, '档案指向的领袖必须就是查出来的那个');
-    assert.ok(leader.name.length > 0 && leader.title.length > 0 && leader.quote.length > 0);
-    assert.equal(leader.portrait, '', '领袖走程序化立绘，不依赖图片资源');
+    assert.equal(leader.vacant, true, `${faction} 的首领位该是空缺`);
+    assert.equal(leader.name, '席位空缺');
+    assert.equal(leader.id, `vacant-${faction}`);
+    assert.ok(leader.title.length > 0 && leader.quote.length > 0);
+    assert.equal(leader.portrait, '', '空席走程序化立绘，不依赖图片资源');
+    // 档案里的 leaderId / girlIds 还是旧静态 id：它们已经查不到任何在册的人，
+    // 也不再有代码读（见最终报告里记的 src 待清理项）。
+    assert.equal(leaderById(dossier.leaderId), undefined, '档案里的旧领袖 id 已经不在任何名册里');
+    assert.deepEqual(dossier.girlIds.filter(id => rosterMembers(fresh, faction).some(girl => girl.id === id)), [], '档案成员表里的旧 id 也对不上任何人');
 
-    const girls = factionGirlsOf(faction);
-    assert.ok(girls.length >= 3, `${faction} 的附属少女太少`);
-    assert.deepEqual(dossier.girlIds, girls.map(girl => girl.id), '档案成员顺序与成员表一致');
-    for (const girl of girls) {
-      assert.equal(girl.faction, faction);
-      assert.equal(girl.tag, faction, '附属少女的出身标签必须等于所属势力');
-      assert.ok(girl.name.length > 0 && girl.quote.length > 0);
-      assert.equal(girl.portrait, '');
-    }
+    assert.deepEqual(factionGirlsOf(faction), [], `${faction} 不该再有内置随从`);
+    assert.deepEqual(rosterMembers(fresh, faction), [], '新档这一方名册里一个人都没有');
+    assert.equal(rosterLeader(fresh, faction).vacant, true);
+
+    // 空席要能被界面读出来：代表带 vacant，界面据此提示「契约卡不足，需要导入」。
+    const representative = factionRepresentativeOf(fresh, faction);
+    assert.equal(representative.vacant, true, `${faction} 的代表该是空缺`);
+    assert.equal(representative.id, leader.id);
+    assert.equal(factionSeatEmpty(fresh, faction), true);
+
     assert.ok(factionPurification(faction).relief >= 0);
     assert.ok(factionRelationLine(faction, faction).length > 0, `${faction} 没写对自己的看法`);
   }
@@ -3325,6 +3341,7 @@ test('v19 三方档案自洽：领袖、附属少女、关系与净化加成都�
     }
   }
   assert.ok(factionDossiers.witch.coup, '月蚀庭要有内部政变线');
+  assert.equal(factionSeatsMissing(fresh), 3, '新档三方首领位全空，缺口就是 3');
   assert.ok(factionBrief('association', 20).includes('戒备'));
   assert.ok(factionBrief('association', 50).includes('中立'));
   assert.equal(EMPLOYER_LABEL, '夜糖事务所', '雇主是固定文案，不随出身变');
@@ -3498,7 +3515,12 @@ test('v19 保存事务所档案会写进档并留下日志', () => {
 test('v19 拦截判定：只有被当主戒备的普通辖区委托才会被拦', () => {
   const hostile = hostileCandy();
   const candy = hostile.missions.find(item => item.id === 'candy')!;
-  assert.equal(canIntercept(hostile, candy), true);
+  assert.equal(canIntercept(hostile, candy), true, '协会名册里有随从，才拦得住');
+
+  // v85：名册搬空就没人可派——拦截的前提是这一方真的有随从。
+  const bare = hostileCandy();
+  bare.factionRoster.association.memberIds = [];
+  assert.equal(canIntercept(bare, bare.missions.find(item => item.id === 'candy')!), false, '名册空着就没人来拦');
 
   const calm = hostileCandy();
   calm.factions.association.standing = 50;
@@ -3511,18 +3533,21 @@ test('v19 拦截判定：只有被当主戒备的普通辖区委托才会被拦'
   if (envoy) assert.equal(canIntercept(hostile, envoy), false, '来使委托不拦');
 
   assert.equal(canIntercept(hostile, { ...candy, storylineId: 'arc-1' }), false, '剧情委托不拦');
-  assert.equal(canIntercept(hostile, { ...candy, interception: { faction: 'association', girlIds: ['fg-association-rin'] } }), false, '已经拦过的不再拦');
+  const already = makeGirl('association', CANDY_MEMBER).id;
+  assert.equal(canIntercept(hostile, { ...candy, interception: { faction: 'association', girlIds: [already] } }), false, '已经拦过的不再拦');
   assert.equal(canIntercept(hostile, { ...candy, district: undefined }), false, '没有辖区的委托不拦');
   assert.equal(canIntercept(hostile, { ...candy, district: 'nowhere' }), false, '没有当主的辖区不拦');
 });
 
 test('v19 拦截战胜利：声望 −4，原委托作废且不算完成', () => {
   const state = hostileCandy();
+  // 当主只派得出名册里那一位随从（8 级、血比旧静态表更厚），所以带两个人去才稳赢。
   buffGirl(state, 'yue');
+  buffGirl(state, 'tang');
   const before = state.factions.association.standing;
   const pollution = state.pollution.candy;
 
-  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue', 'tang'], missionId: 'candy' });
   assert.equal(deployed.ok, true, deployed.message);
   const settled = act(deployed.state, { type: 'advance', minutes: 180 });
   assert.equal(settled.ok, true, settled.message);
@@ -3530,6 +3555,7 @@ test('v19 拦截战胜利：声望 −4，原委托作废且不算完成', () =>
 
   const mission = settled.state.missions.find(item => item.id === 'candy')!;
   assert.equal(mission.interception?.faction, 'association');
+  assert.deepEqual(mission.interception?.girlIds, [makeGirl('association', CANDY_MEMBER).id], '拦截编队取自协会名册');
   assert.equal(mission.interception?.outcome, 'win');
   assert.equal(mission.status, 'expired', '拦截战覆盖了原委托，不会完成');
   assert.equal((mission.squad ?? []).length, 0, '作废的委托不能留着队伍');
@@ -3568,9 +3594,10 @@ test('v19 拦截战只换敌人：辖区归属与污染都不动，人也会放�
   assert.ok(settled.state.logs.some(log => log.text.includes('拦截')), '要在日志里说明被拦了');
 });
 
-test('v19 拦截战换上的敌人是当主附属少女，不是原委托的魔物', () => {
+test('v19 拦截战换上的敌人是当主名册里的随从，不是原委托的魔物', () => {
   const state = hostileCandy();
   buffGirl(state, 'yue');
+  const guard = makeGirl('association', CANDY_MEMBER);
   const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
   const settled = act(deployed.state, { type: 'advance', minutes: 180 });
   const battle = settled.battle;
@@ -3578,15 +3605,12 @@ test('v19 拦截战换上的敌人是当主附属少女，不是原委托的魔�
 
   const enemies = battle.units.filter(unit => unit.side === 'enemy');
   assert.ok(enemies.length > 0);
-  const girls = factionGirlsOf('association');
-  const girlNames = new Set(girls.map(girl => girl.name));
   for (const enemy of enemies) {
-    assert.ok(girlNames.has(enemy.name), `${enemy.name} 不是星灯协会的附属少女`);
-    assert.equal(enemy.monster, undefined, '附属少女不该带魔物模板');
+    assert.equal(enemy.girlId, guard.id, `${enemy.name} 不是协会名册里的随从`);
+    assert.equal(enemy.name, guard.name);
+    assert.equal(enemy.monster, undefined, '名册里的随从不该带魔物模板');
   }
-  const first = girls.find(girl => girl.name === enemies[0].name);
-  assert.ok(first);
-  assert.deepEqual(enemies[0].stats, first.stats, '附属少女的数值不按等级差缩放');
+  assert.deepEqual(enemies[0].stats, guard.stats, '随从的数值不按等级差缩放');
 });
 
 test('v19 战斗会记住辖区污染，战报摘要里也有一行', () => {
@@ -4035,7 +4059,7 @@ test('v20 战线：结算写一条《辖区的夜战》编年史', () => {
 });
 
 test('v20 战线：开战那条街不再触发拦截，别处照常', () => {
-  const state = createInitialState();
+  const state = withFactionRoster(createInitialState());
   state.hostility['association-government'] = { pair: 'association-government', value: 100, updatedDay: 1, reason: '灯油配额' };
   const fronts = planFronts(state, { day: 2, minutes: 20 * 60 });
   assert.equal(fronts.length, 1);
@@ -4045,8 +4069,9 @@ test('v20 战线：开战那条街不再触发拦截，别处照常', () => {
   const mission = { district: front.district } as never;
   assert.equal(canIntercept(state as never, mission), false, '战线期间这条街不再拦截');
   const other = Object.keys(districts).find(id => id !== front.district && state.territories[id as never] === front.defender) as never;
+  assert.ok(other, '这一方还该有别的辖区可比');
   state.factions[front.defender].standing = 10;
-  assert.equal(canIntercept(state as never, { district: other } as never), state.territories[other] === front.defender && Boolean(factionGirlsOf(front.defender).length), '别的街按原规则');
+  assert.equal(canIntercept(state as never, { district: other } as never), true, '别的街照常按名册拦人');
 });
 
 test('v20 战线：冷却期内再烧满只夹到 95，不开第二场', () => {
@@ -4533,104 +4558,152 @@ test('批量导入：全都重复时明确说没有新的，不伪造成功', ()
 // ── v21 §4.12 自定义少女也能编进势力 ──────────────
 test('v21 编成：自定义少女可以当势力首领，被编进来的人占住那个位置', () => {
   const base = createInitialState();
-  const subject = subjectOfLeader({ ...leaderById('leader-association')!, id: 'card-abc', name: '外来首领', faction: 'government' });
-  const customLeader = customLeaderOf('government', subject);
-  const roster = defaultFactionRoster();
-  roster.government.leaderId = 'card-abc';
-  roster.government.memberIds = roster.government.memberIds.filter(id => id !== 'fg-government-mio');
-  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customLeaders: [customLeader] });
+  const customLeader = makeLeader('government', '外来首领', { id: 'card-abc' });
+  const seed = seedRoster({ government: { leader: customLeader } });
+  const next = act(base, {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
+  });
   assert.equal(next.ok, true, next.message);
   const leader = rosterLeader(next.state, 'government');
+  assert.equal(leader.id, 'card-abc');
   assert.equal(leader.name, '外来首领');
   assert.equal(leader.faction, 'government');
-  assert.equal(next.state.customFactionLeaders.length, 1);
+  assert.equal(next.state.factionRoster.government.leaderId, 'card-abc', '席位记的是她');
+  assert.equal(next.state.customFactionLeaders.length, 3, '三方名册各存一份首领快照');
 });
 
 test('v21 编成：自定义少女可以当随从，拦截战按她的数值出场', () => {
   const base = createInitialState();
-  const subject = subjectOfLeader({ ...leaderById('leader-witch')!, id: 'card-def', name: '外来随从', faction: 'association' });
-  const customGirl = customGirlOf('association', { ...subject, stats: { magic: 88, insight: 40, agility: 40, empathy: 40 }, level: 9 });
-  const roster = defaultFactionRoster();
-  roster.association.memberIds = [...roster.association.memberIds.slice(0, 2), 'card-def'];
-  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customGirls: [customGirl] });
+  const mine = makeGirl('association', '外来随从', { id: 'card-def', level: 9, stats: { magic: 88, insight: 40, agility: 40, empathy: 40 } });
+  const seed = seedRoster({ association: { members: [makeGirl('association', '陪站的甲', { id: 'card-aaa' }), mine] } });
+  const next = act(base, {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
+  });
   assert.equal(next.ok, true, next.message);
   const members = rosterMembers(next.state, 'association');
-  assert.equal(members.length, 3);
-  const mine = members.find(girl => girl.id === 'card-def');
-  assert.ok(mine);
-  assert.equal(mine.level, 9);
-  assert.equal(mine.stats.magic, 88);
+  assert.equal(members.length, 2);
+  const got = members.find(girl => girl.id === 'card-def');
+  assert.ok(got);
+  assert.equal(got.level, 9);
+  assert.equal(got.stats.magic, 88);
+
+  // 拦截战读的就是这份名册：她是协会这边等级最高的，站出来的一定是她。
+  const hostile = { ...next.state, factions: { ...next.state.factions, association: { ...next.state.factions.association, standing: 20 } } };
+  const district = districtOrder.find(id => hostile.territories[id] === 'association');
+  assert.ok(district);
+  const intercept = interceptionFor(hostile, { ...hostile.missions[0]!, district, id: 'probe-intercept', interception: undefined });
+  assert.ok(intercept, '协会戒备时该有人来拦');
+  assert.equal(intercept!.faction, 'association');
+  assert.ok(intercept!.girlIds.includes('card-def'), '拦截编队里要有她');
+  assert.equal(intercept!.girlIds[0], 'card-def', '等级最高的排最前');
 });
 
 test('v21 编成：同一个人不能既当首领又当随从，也不能被两方各占一次', () => {
   const base = createInitialState();
-  const subject = subjectOfLeader({ ...leaderById('leader-association')!, id: 'card-dup', name: '重名的人', faction: 'association' });
-  const customLeader = customLeaderOf('association', subject);
-  const roster = defaultFactionRoster();
-  roster.association.leaderId = 'card-dup';
-  roster.association.memberIds = [...roster.association.memberIds, 'card-dup'];
-  const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customLeaders: [customLeader] });
-  assert.equal(bad.ok, false);
+  const subject = subjectOfCustom({
+    id: 'card-dup', name: '重名的人', factionTag: 'association', level: 9, color: '#f1a7c6',
+    portrait: '', stats: { magic: 60, insight: 60, agility: 60, empathy: 60 }, skillIds: ['moon-slash'],
+  });
+  const seed = seedRoster({ association: { leader: customLeaderOf('association', subject) } });
+  const both = { ...seed.roster, association: { leaderId: 'card-dup', memberIds: ['card-dup'] } };
+  const first = act(base, {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: both, customLeaders: seed.leaders, customGirls: [customGirlOf('association', subject)],
+  });
+  assert.equal(first.ok, false, '同一个人不能既当首领又当随从');
+  assert.equal(base.startersPicked, false);
+
+  const crossed = { ...seed.roster, witch: { ...seed.roster.witch, leaderId: 'card-dup' } };
+  const second = act(base, {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: crossed, customLeaders: seed.leaders, customGirls: [customGirlOf('association', subject)],
+  });
+  assert.equal(second.ok, false, '同一个人也不能被两方各占一次');
   assert.equal(base.startersPicked, false);
 });
 
 test('v21 编成：自定义名册随存档往返，读档后仍认得出是谁', () => {
   const base = createInitialState();
-  const subject = subjectOfLeader({ ...leaderById('leader-government')!, id: 'card-keep', name: '存下来的人', faction: 'witch' });
-  const customGirl = customGirlOf('witch', subject);
-  const roster = defaultFactionRoster();
-  roster.witch.memberIds = [...roster.witch.memberIds.slice(0, 2), 'card-keep'];
-  const next = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster, customGirls: [customGirl] });
+  const keep = makeGirl('witch', '存下来的人', { id: 'card-keep' });
+  const seed = seedRoster({ witch: { members: [makeGirl('witch', '陪站的乙', { id: 'card-bbb' }), keep] } });
+  const next = act(base, {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
+  });
   assert.equal(next.ok, true, next.message);
   const reloaded = loadState(JSON.stringify(next.state));
   assert.ok(reloaded);
   const members = rosterMembers(reloaded, 'witch');
   assert.equal(members.find(girl => girl.id === 'card-keep')?.name, '存下来的人');
+  assert.deepEqual(reloaded.factionRoster.witch.memberIds, ['card-bbb', 'card-keep'], '席位顺序也原样存回来');
 });
 
 // ── v21 §4 开局编成 ──────────────────────────────
-test('v21 新档带默认三方阵容：首领回原属，随从 3/3/3', () => {
+test('v21 新档三方全空席：缺口 3，代表带 vacant 等导卡', () => {
   const state = createInitialState();
   assert.equal(state.version, 20);
   assert.equal(state.startersPicked, false);
   for (const faction of FACTION_ORDER) {
     const entry = state.factionRoster[faction];
-    assert.equal(entry.leaderId, `leader-${faction}`);
-    assert.equal(entry.memberIds.length, 3);
+    assert.equal(entry.leaderId, '', `${faction} 的首领位开局就空着`);
+    assert.deepEqual(entry.memberIds, [], `${faction} 也没有随从`);
+    assert.equal(factionSeatEmpty(state, faction), true);
+    assert.equal(factionRepresentativeOf(state, faction).vacant, true, '代表是空缺占位');
+    assert.equal(factionRepresentativeOf(state, faction).name, '席位空缺');
   }
-  assert.equal(defaultFactionRoster().association.memberIds.length, 3);
+  assert.equal(factionSeatsMissing(state), 3, '三方各缺一个首领位');
+  // defaultFactionRoster 也不再塞回任何内置 id。
+  const fallback = defaultFactionRoster();
+  for (const faction of FACTION_ORDER) {
+    assert.equal(fallback[faction].leaderId, '');
+    assert.deepEqual(fallback[faction].memberIds, []);
+  }
 });
 
 test('v21 首领可以换位：现属头衔跟着势力走，台词不变', () => {
-  const roster = defaultFactionRoster();
   const assoc: FactionId = 'association';
   const witch: FactionId = 'witch';
-  const swap = roster[assoc].leaderId;
-  roster[assoc].leaderId = roster[witch].leaderId;
-  roster[witch].leaderId = swap;
-  const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster });
+  // 她原本是月蚀庭的人（三套头衔里月蚀庭那套是「净血派领袖」），现在坐到协会的席位上。
+  const moved = makeLeader('witch', '蚀医·夜鸮', {
+    id: 'card-moved',
+    titles: { association: '净血讲师 · 客卿', witch: '净血派领袖' },
+    quote: '城市不把魔女当人，我们就自己写人的定义。',
+  });
+  const seed = seedRoster({ association: { leader: moved } });
+  const next = act(createInitialState(), {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
+  });
   assert.equal(next.ok, true, next.message);
-  const moved = rosterLeader(next.state, assoc);
-  assert.equal(moved.name, '蚀医·夜鸮');
-  assert.equal(leaderTitle(moved, assoc), '净血讲师 · 客卿');
-  assert.equal(leaderTitle(moved, witch), '净血派领袖');
-  assert.equal(moved.quote, '城市不把魔女当人，我们就自己写人的定义。');
+  const leader = rosterLeader(next.state, assoc);
+  assert.equal(leader.id, 'card-moved');
+  assert.equal(leader.name, '蚀医·夜鸮');
+  assert.equal(leaderTitle(leader, assoc), '净血讲师 · 客卿', '现属头衔跟着席位走');
+  assert.equal(leaderTitle(leader, witch), '净血派领袖', '原属那套头衔还在');
+  assert.equal(leader.quote, '城市不把魔女当人，我们就自己写人的定义。', '台词不随席位变');
 });
 
 test('v21 编成：人数必须是 2–6，非法阵容被拒绝且不改状态', () => {
   const base = createInitialState();
-  const tooFew = act(base, { type: 'setStarters', girlIds: ['yue'], roster: defaultFactionRoster() });
+  const seed = seedRoster();
+  const args = { roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls };
+  const tooFew = act(base, { type: 'setStarters', girlIds: ['yue'], ...args });
   assert.equal(tooFew.ok, false);
-  assert.equal(act(base, { type: 'setStarters', girlIds: ['yue', 'tang'], roster: defaultFactionRoster() }).ok, true, '两位就可以开局');
-  const dupLeader = defaultFactionRoster();
-  dupLeader.government.leaderId = dupLeader.association.leaderId;
-  const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: dupLeader });
+  assert.equal(act(base, { type: 'setStarters', girlIds: ['yue', 'tang'], ...args }).ok, true, '两位就可以开局');
+  const dupLeader = { ...seed.roster, government: { ...seed.roster.government, leaderId: seed.roster.association.leaderId } };
+  const bad = act(base, { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], ...args, roster: dupLeader });
   assert.equal(bad.ok, false);
   assert.equal(base.startersPicked, false);
 });
 
 test('v21 编成后名册只剩选中的人，没被选中的原班人马不回市场', () => {
-  const next = act(createInitialState(), { type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: defaultFactionRoster() });
+  const seed = seedRoster();
+  const next = act(createInitialState(), {
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'],
+    roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
+  });
   assert.equal(next.ok, true);
   // 新游戏栀子不再默认退役；编成没选中她时，她和其他未入选者一样离开名册。
   assert.deepEqual(next.state.girls.map(girl => girl.id).sort(), ['ling', 'tang', 'wu', 'yue']);
@@ -4641,46 +4714,55 @@ test('v21 编成后名册只剩选中的人，没被选中的原班人马不回�
 });
 
 test('v21 拦截战改读阵容：把某方随从搬空后不再拦截', () => {
-  const state = createInitialState();
-  const creator = { ...state, factionRoster: { ...defaultFactionRoster() } };
-  for (const faction of FACTION_ORDER) creator.factionRoster[faction].memberIds = [];
-  creator.factionRoster.association.memberIds = ['fg-association-tou'];
-  creator.factions.association.standing = 20;
+  const state = withFactionRoster(createInitialState(), {
+    association: { leader: makeLeader('association', '协会临时主事'), members: [makeGirl('association', '协会临时随从')] },
+  });
+  state.factions.association.standing = 20;
   const district = districtOrder.find(id => state.territories[id] === 'association');
   assert.ok(district);
   const mission = { ...state.missions[0], district } as typeof state.missions[number];
-  assert.equal(rosterMembers(creator, 'association').length, 1);
-  assert.equal(canIntercept(creator, mission), true);
-  creator.factionRoster.association.memberIds = [];
-  assert.equal(canIntercept(creator, mission), false);
+  assert.equal(rosterMembers(state, 'association').length, 1);
+  assert.equal(canIntercept(state, mission), true);
+  state.factionRoster.association.memberIds = [];
+  assert.equal(rosterMembers(state, 'association').length, 0);
+  assert.equal(canIntercept(state, mission), false);
 });
 
-test('v21 势力覆灭后才能雇佣首领，且只扣一次星砂', () => {
-  const state = createInitialState();
+test('v21 首领雇佣：卡面首领与空席都雇不到，也不会白扣星砂', () => {
+  const leader = makeLeader('association', '协会临时主事', { id: 'card-hire', stats: { magic: 88, insight: 70, agility: 66, empathy: 50 } });
+  const state = withFactionRoster(createInitialState(), { association: { leader } });
   state.gold = 20000;
-  const taken = act(state, { type: 'hireLeader', leaderId: 'leader-association' });
-  assert.equal(taken.ok, false, '辖区还在时不该能雇');
 
+  // 卡面首领现在可以被雇佣了，但**先要有覆灭**才算数：辖区还在的时候她哪也不去。
+  const hired = act(state, { type: 'hireLeader', leaderId: leader.id });
+  assert.equal(hired.ok, false);
+  assert.match(hired.message, /辖区|不在任何一方/);
+  assert.equal(hired.state.gold, 20000, '被拒绝时一分钱都不该扣');
+  assert.equal(hired.state.girls.length, state.girls.length, '也不该有人混进名册');
+
+  // 势力覆灭之后也一样：空席没有人可以雇，覆盖也照样不动。
   for (const id of districtOrder) if (state.territories[id] === 'association') state.territories[id] = 'government';
-  const hired = act(state, { type: 'hireLeader', leaderId: 'leader-association' });
-  assert.equal(hired.ok, true, hired.message);
-  assert.equal(hired.state.gold, 8000);
-  const leader = hired.state.girls.find(girl => girl.id === 'leader-association');
-  assert.ok(leader);
-  assert.equal(leader.leader, true);
-  assert.equal(leader.level, 10);
-  assert.equal(hired.state.factions.association.standing, 0);
-  assert.equal(hired.state.factions.government.standing, 53);
-  const again = act(hired.state, { type: 'hireLeader', leaderId: 'leader-association' });
-  assert.equal(again.ok, false);
+  const vacancy = act(state, { type: 'hireLeader', leaderId: 'vacant-association' });
+  assert.equal(vacancy.ok, false, '空席没有人可以雇');
+  assert.match(vacancy.message, /空着/);
+  assert.equal(vacancy.state.gold, 20000);
+
+  const bogus = act(state, { type: 'hireLeader', leaderId: 'leader-nobody' });
+  assert.equal(bogus.ok, false);
+  assert.match(bogus.message, /没有这位首领/);
 });
 
-test('v21 谎报首领会失败；名字与属性来自数据表', () => {
+test('v21 谎报首领会失败；名册里的首领走 10 级那套口径', () => {
   const state = createInitialState();
   const bogus = act(state, { type: 'hireLeader', leaderId: 'leader-nobody' });
   assert.equal(bogus.ok, false);
-  const leader = leaderById('leader-witch');
-  assert.ok(leader);
+  assert.match(bogus.message, /没有这位首领/);
+  // v85：静态表只剩空席占位，旧的 leader-<faction> 已经查不到人。
+  assert.equal(leaderById('leader-witch'), undefined);
+  assert.equal(act(state, { type: 'hireLeader', leaderId: 'leader-witch' }).ok, false);
+
+  // 名册条目（`customLeaderOf` 那条路径）：等级一律 10，属性来自她的快照。
+  const leader = makeLeader('witch', '净血派客卿', { level: 9, stats: { magic: 88, insight: 70, agility: 66, empathy: 50 } });
   assert.equal(leader.level, 10);
   assert.deepEqual(leader.stats, { magic: 88, insight: 70, agility: 66, empathy: 50 });
 });
@@ -4787,18 +4869,21 @@ test('存档位：标签与时间对人类友好', async () => {
 });
 
 
-test('v21 编成池：三方首领与随从之外，自定义少女也能进池，系统少女不进池', () => {
+test('v21 编成池：只有卡库与自定义少女，系统少女与内置人物都不进池', () => {
   const state = createInitialState();
   const plain = rosterPool(state);
-  assert.equal(plain.length, 12, '默认池就是 3 位首领 + 9 位随从');
+  assert.equal(plain.length, 0, '新档没有卡也没有自定义少女，池子就该是空的');
   assert.equal(plain.some(subject => subject.id === 'yue'), false, '系统少女不进三方候选');
+  assert.equal(plain.some(subject => subject.id.startsWith('vacant-')), false, '空席占位不进候选');
+  assert.equal(plain.some(subject => subject.origin === 'leader' || subject.origin === 'member'), false, '内置首领与随从不再补位');
 
   state.girls = state.girls.map(girl => (girl.id === 'zhi' ? { ...girl, custom: true, retired: false, dead: false } : girl));
   const widened = rosterPool(state);
+  assert.equal(widened.length, 1, '只有登记过的自定义少女能进池');
   const zhi = widened.find(subject => subject.id === 'zhi');
   assert.ok(zhi, '登记过的自定义少女要出现在候选里');
   assert.equal(zhi.origin, 'custom');
-  assert.equal(widened.length, 13);
+  assert.equal(zhi.witch, undefined, '玩家自己带来的人不会被当成魔女形态');
 });
 
 test('v21 编成：自定义少女可以坐首领位，快照存进存档并顶替原属首领', () => {
@@ -4806,21 +4891,22 @@ test('v21 编成：自定义少女可以坐首领位，快照存进存档并顶�
   state.girls = state.girls.map(girl => (girl.id === 'zhi' ? { ...girl, custom: true, retired: false, dead: false } : girl));
   const subject = rosterPool(state).find(item => item.id === 'zhi');
   assert.ok(subject);
-  const roster = defaultFactionRoster();
-  roster.witch.leaderId = 'zhi';
-  roster.witch.memberIds = ['fg-witch-mian'];
+  const seed = seedRoster({ witch: { leader: customLeaderOf('witch', subject) } });
 
   const next = act(state, {
     type: 'setStarters',
     girlIds: ['yue', 'tang', 'ling', 'wu'],
-    roster,
-    customLeaders: [customLeaderOf('witch', subject)],
+    roster: seed.roster,
+    customLeaders: seed.leaders,
+    customGirls: seed.girls,
   });
   assert.equal(next.ok, true, next.message);
   assert.equal(rosterLeader(next.state, 'witch').id, 'zhi');
   assert.equal(rosterLeader(next.state, 'witch').name, '栀子');
-  assert.equal(next.state.customFactionLeaders?.length, 1);
+  assert.equal(next.state.customFactionLeaders?.length, 3, '三方各存一份首领快照');
+  assert.equal(next.state.customFactionLeaders?.find(leader => leader.id === 'zhi')?.name, '栀子');
   assert.equal(leaderTitle(rosterLeader(next.state, 'witch'), 'witch'), subject.title);
+  assert.equal(next.state.factionRoster.witch.leaderId, 'zhi');
 });
 
 test('v21 编成：已经在名册里的人不能再占三方位置', () => {
@@ -4832,15 +4918,17 @@ test('v21 编成：已经在名册里的人不能再占三方位置', () => {
     portrait: yue.portrait, stats: { ...yue.stats }, skillIds: [...yue.skills],
     codename: yue.codename, quote: yue.quote, title: yue.title,
   });
-  const roster = defaultFactionRoster();
-  roster.association.memberIds = ['yue'];
+  // 名册本身是合法的（协会随从就是事务所里那位），冲突只在「一个人坐两个地方」上。
+  const seed = seedRoster({ association: { members: [customGirlOf('association', subject)] } });
   const next = act(state, {
     type: 'setStarters',
     girlIds: ['yue', 'tang', 'ling', 'wu'],
-    roster,
-    customGirls: [customGirlOf('association', subject)],
+    roster: seed.roster,
+    customLeaders: seed.leaders,
+    customGirls: seed.girls,
   });
   assert.equal(next.ok, false);
+  assert.match(next.message, /名册/);
   assert.equal(next.state.girls.length, state.girls.length, '被拒绝时不该改状态');
 });
 

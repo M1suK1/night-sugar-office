@@ -4,7 +4,7 @@ import { act, createBlankState, createInitialState, loadState } from '../src/gam
 import { openingGaps, openingLabel, openingNeed } from '../src/opening.ts';
 import { PROLOGUE, prologueFor, prologueFrom } from '../src/prologue.ts';
 import { buildGirlCard } from '../src/cards.ts';
-import { leaderById } from '../src/factions.ts';
+import { makeLeader, seedRoster, withFactionRoster } from './fixtureRoster.ts';
 import type { GameState } from '../src/types.ts';
 
 /** 首夜空缺的测试要能自己控制缺口，所以先把种子内容清干净。 */
@@ -141,8 +141,10 @@ test('v26 编成确认后可以把卡库里的候选排进名册', () => {
   const candidate = imported.state.candidates.find(girl => girl.name === '卡库来的');
   assert.ok(candidate, '导入后应该进候选');
   const picked = [state.girls[0]!.id, state.girls[1]!.id, state.girls[2]!.id, candidate.id];
+  // 三方名册得先有人（v85：静态名册废除，卡不够时它是空的）。
+  const seed = seedRoster();
   const result = act(imported.state, {
-    type: 'setStarters', girlIds: picked, roster: imported.state.factionRoster, customLeaders: [], customGirls: [],
+    type: 'setStarters', girlIds: picked, roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
   });
   assert.equal(result.ok, true, result.message);
   assert.equal(result.state.startersPicked, true);
@@ -154,8 +156,9 @@ test('v26 编成没被选中的卡留在市场，栀子不再默认退休', () =
   const cards = ['留下的甲', '留下的乙'].map((name, index) => buildGirlCard({ ...state.girls[index]!, name }, state));
   const imported = act(state, { type: 'importCards', cards });
   assert.equal(imported.ok, true, imported.message);
+  const seed = seedRoster();
   const result = act(imported.state, {
-    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: imported.state.factionRoster, customLeaders: [], customGirls: [],
+    type: 'setStarters', girlIds: ['yue', 'tang', 'ling', 'wu'], roster: seed.roster, customLeaders: seed.leaders, customGirls: seed.girls,
   });
   assert.equal(result.ok, true, result.message);
   assert.ok(result.state.candidates.some(girl => girl.name === '留下的甲'), '没被选中的卡还挂在市场');
@@ -164,15 +167,16 @@ test('v26 编成没被选中的卡留在市场，栀子不再默认退休', () =
 });
 
 test('v26 序章换了自定义首领就换名字', () => {
-  const state = createInitialState();
-  const base = leaderById(state.factionRoster.witch.leaderId);
-  assert.ok(base, '默认月蚀庭首领应该在册');
-  const custom = { ...base, id: 'custom-leader-v26', name: '新来的庭主' };
-  state.customFactionLeaders = [custom];
-  state.factionRoster = { ...state.factionRoster, witch: { ...state.factionRoster.witch, leaderId: custom.id } };
+  const state = withFactionRoster(createInitialState(), { witch: { leader: makeLeader('witch', '新来的庭主', { id: 'custom-leader-v26' }) } });
   const roster = prologueFor(state)[1]!.narration.join('');
   assert.ok(roster.includes('新来的庭主'), roster);
-  assert.equal(roster.includes('蚀医·夜鸮'), false, '换掉的首领不再出现在第二幕');
+  assert.equal(roster.includes('蚀医·夜鸮'), false, '内置首领不该再出现');
+  assert.equal(roster.includes('席位空缺'), false, '三方都坐满了，就不该还有空席');
+
+  // 还没编成时三方全空席：序章照实说「席位空缺」，而不是塞回内置名字。
+  const vacant = prologueFor(createInitialState())[1]!.narration.join('');
+  assert.ok(vacant.includes('席位空缺'), vacant);
+  assert.equal(vacant.includes('白鹭千秋'), false);
 });
 
 test('v26 卡库优先：原生少女仍在池里兜底，卡库没卡也能开局', () => {

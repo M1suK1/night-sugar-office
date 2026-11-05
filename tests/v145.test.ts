@@ -7,7 +7,7 @@ import { clinicQuote } from '../src/rules/roster.ts';
 import { defaultOpinionOptions } from '../src/opinions.ts';
 import { normalizeToLevel } from '../src/cardLibrary.ts';
 import { envoyOfferOf } from '../src/rules/envoy.ts';
-import { customGirlOf, factionGirlsOf, factionRepresentativeOf, subjectOfCustom, witchAwarePortrait } from '../src/factions.ts';
+import { customGirlOf, customLeaderOf, factionRepresentativeOf, subjectOfCustom, witchAwarePortrait } from '../src/factions.ts';
 import { sanitizeCustomGirl } from '../src/rules/candidate.ts';
 import type { GirlCard } from '../src/types.ts';
 
@@ -101,14 +101,39 @@ test('v145 经费议案是给钱的类型，代价压在疲劳与羁绊上', () 
   assert.ok(accept.changes.some(change => change.kind === 'girl' && (change as { field: string }).field === 'fatigue'));
 });
 
-test('v145 月蚀庭的首领与随从默认魔女形态，玩家的月蚀庭角色不受影响', () => {
+test('v145 编进月蚀庭的人默认魔女形态，玩家的月蚀庭角色不受影响', () => {
   const s = createInitialState();
-  const representative = factionRepresentativeOf(s, 'witch');
-  assert.equal(representative.witch, true, '月蚀庭首领默认魔女形态');
+  // v85：新档三方全是空席，代表没有形态可言（界面提示去导卡）。
+  assert.equal(factionRepresentativeOf(s, 'witch').vacant, true);
+  assert.equal(factionRepresentativeOf(s, 'witch').witch, undefined);
   assert.equal(factionRepresentativeOf(s, 'association').witch, undefined);
-  for (const girl of factionGirlsOf('witch')) assert.equal(girl.witch, true, girl.name + ' 默认魔女形态');
-  for (const girl of factionGirlsOf('association')) assert.notEqual(girl.witch, true);
-  // 玩家自己名册里的月蚀庭角色不跟着变
+
+  const portrait = 'data:image/png;base64,AAAA';
+  const witchPortrait = 'data:image/png;base64,BBBB';
+  const witchForm = { id: 'witchform', form: 'witch' as const, name: '夜之形', description: '', palette: ['#2a1524'], layerKey: 'witch', portrait: witchPortrait };
+  const subject = subjectOfCustom({
+    id: 'card-witch-1', name: '夜祷', factionTag: 'witch', level: 4, color: '#b98ad9',
+    portrait, stats: { magic: 40, insight: 40, agility: 40, empathy: 40 },
+    skillIds: ['moon-slash', 'moon-guard', 'moon-ult'], codename: 'nightfall', witchForm,
+  });
+
+  // 编进月蚀庭：首领与随从都默认魔女形态，立绘优先用魔女化那张。
+  const asLeader = customLeaderOf('witch', subject);
+  const asMember = customGirlOf('witch', subject);
+  assert.equal(asLeader.witch, true, '月蚀庭首领默认魔女形态');
+  assert.equal(asMember.witch, true, '月蚀庭随从默认魔女形态');
+  assert.equal(witchAwarePortrait(asLeader), witchPortrait);
+  assert.equal(witchAwarePortrait(asMember), witchPortrait);
+
+  // 同一批人编进别的势力就不沾这条，立绘退回普通那张。
+  const otherLeader = customLeaderOf('association', subject);
+  const otherMember = customGirlOf('association', subject);
+  assert.equal(otherLeader.witch, undefined);
+  assert.equal(otherMember.witch, undefined);
+  assert.equal(witchAwarePortrait(otherLeader), portrait);
+  assert.equal(witchAwarePortrait(otherMember), portrait);
+
+  // 玩家自己名册里的月蚀庭角色不跟着变。
   const own = s.girls.find(girl => girl.factionTag === 'witch');
   if (own) assert.equal(Boolean(own.witch), false);
 });

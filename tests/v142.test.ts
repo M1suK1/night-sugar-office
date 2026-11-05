@@ -4,12 +4,20 @@ import { act, createInitialState } from '../src/game.ts';
 import { envoyOfferOf, envoyRaidHostility } from '../src/rules/envoy.ts';
 import { expeditionGoldPerHour } from '../src/expedition.ts';
 import { hostilityValue, pairOf } from '../src/hostility.ts';
+import { withFactionRoster } from './fixtureRoster.ts';
 import type { FactionId } from '../src/types.ts';
 
 const FACTIONS: FactionId[] = ['witch', 'association', 'government'];
 
+/**
+ * 破坏行动要有「对面的人」才排得出来（`envoyRaidSquad` 读三方名册）。
+ *
+ * v85 静态随从表废除之后，新档三方名册是空的，所以这里先播种：三方各一位随从。
+ */
+const seeded = () => withFactionRoster(createInitialState());
+
 test('v142 三种形态都能生成，且都带着说明', () => {
-  const base = createInitialState();
+  const base = seeded();
   const kinds = new Set<string>();
   for (let day = 14; day < 20; day += 1) {
     for (const faction of FACTIONS) {
@@ -25,6 +33,10 @@ test('v142 三种形态都能生成，且都带着说明', () => {
         assert.ok(offer.mission, '共建/破坏要带上委托');
         assert.equal(offer.mission!.envoyKind, offer.kind);
         assert.equal(offer.mission!.envoyFaction, faction);
+        if (offer.kind === 'raid') {
+          assert.ok(offer.target, '破坏行动要有挨打的那一方');
+          assert.ok((offer.mission!.interception?.girlIds ?? []).length > 0, '敌人取自对方名册');
+        }
       }
     }
   }
@@ -112,7 +124,7 @@ test('v143 借调：先付钱、好感 +1、不加疲劳、到点回岗', () => 
 });
 
 test('v143 破坏行动：对方好感 −3、火气上升、报酬高 50%', () => {
-  const base = createInitialState();
+  const base = seeded();
   const faction: FactionId = 'government';
   let offer: ReturnType<typeof envoyOfferOf> | undefined;
   let day = 14;

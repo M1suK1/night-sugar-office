@@ -97,18 +97,22 @@ test('v27 市场池满了也不挡叙事者：候选者已经不由它产出', (
   assert.equal(canAcceptGeneratedContent(full).ok, true);
 });
 
-test('v27 编成池：卡够 20 就只给卡，不够才用内置角色补到 20', () => {
+test('v27 编成池：只装卡库条目与自定义少女，不够 20 也不会凭空补人', () => {
   const { state } = importedCards(20);
   const cardsOnly = rosterPool(state, [], { cardsOnly: true, limit: 20 });
   assert.equal(cardsOnly.length, 20);
   assert.equal(cardsOnly.some(subject => subject.id.startsWith('leader-')), false, '内置首领不该出现');
   assert.equal(cardsOnly.some(subject => subject.id.startsWith('fg-')), false, '内置随从不该出现');
+  assert.equal(cardsOnly.every(subject => subject.origin === 'custom'), true, '池子里全是玩家自己带来的人');
 
+  // v85：内置名册废除之后没有「补到 20」这回事——卡不够，池子就短。
   const few = importedCards(3).state;
   const mixed = rosterPool(few, [], { cardsOnly: false, limit: 20 });
-  assert.equal(mixed.length, 15, '3 张卡 + 3 位首领 + 9 位随从');
-  assert.equal(mixed.some(subject => subject.id === 'leader-association'), true, '卡不够时内置首领补位');
-  assert.equal(mixed.slice(0, 3).every(subject => subject.origin === 'custom'), true, '卡排在内置前面');
+  assert.equal(mixed.length, 3, '3 张卡就只给 3 个候选，不会补到 20');
+  assert.equal(mixed.every(subject => subject.origin === 'custom'), true);
+  assert.equal(mixed.some(subject => subject.id.startsWith('leader-')), false, '卡不够时也不会冒出内置首领');
+  assert.equal(mixed.some(subject => subject.id.startsWith('fg-')), false, '卡不够时也不会冒出内置随从');
+  assert.equal(mixed.some(subject => subject.id.startsWith('vacant-')), false, '空席占位不进池');
 });
 
 test('v27 同一张卡不会在编成池里出现两次', () => {
