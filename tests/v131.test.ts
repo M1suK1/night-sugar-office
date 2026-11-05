@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { composeTaskSystem, presetRuntime, type ChatPreset } from '../src/presets.ts';
 import { contractPrompts } from '../src/promptContracts.ts';
-import { arcOpeningContract, arcTurnContract, storylineStartContract } from '../src/promptSections.ts';
+import { arcEndingContract, arcOpeningContract, arcTurnContract, stripContractBlocks, storylineStartContract } from '../src/promptSections.ts';
 
 /** 契约词条就住在预设的 prompts 里（带 contract: true），这里按同一形状造一个。 */
 const preset = (contracts: { id: string; content: string; defaultContent?: string }[]): ChatPreset => ({
@@ -53,4 +53,38 @@ test('v131 三个剧情契约互不串味', () => {
   assert.ok(composeTaskSystem(storylineStartContract(), runtime, 'storyline', {}, {}, 'storyline:start').system.includes('【起点特别版】'));
   const blueprint = composeTaskSystem('【蓝图默认】', runtime, 'storyline', {}, {}, 'storyline:contract');
   assert.ok(blueprint.system.includes('【蓝图默认】'), '蓝图契约没被改过就该用代码默认值');
+});
+
+/** 旧预设里的契约丢了 contract 标记：它会退化成正文字段，跟着正文一起拼进提示词。 */
+const legacyPreset = (texts: { id: string; content: string }[]): ChatPreset => ({
+  id: 'legacy', name: '旧预设', builtin: false, settings: {}, regex: [],
+  prompts: texts.map(entry => ({
+    id: entry.id, name: entry.id, content: entry.content, role: 'system' as const, enabled: true, scope: 'arc' as const,
+  })),
+}) as unknown as ChatPreset;
+
+test('v103 一次请求只留一份【JSON 形状】：续写只用续写要求，收尾只用收尾要求', () => {
+  const runtime = presetRuntime(legacyPreset([
+    { id: 'old-turn', content: arcTurnContract() },
+    { id: 'old-ending', content: arcEndingContract() },
+  ]));
+  const turn = composeTaskSystem(arcTurnContract(), runtime, 'arc', {}, {}, 'arc:turn');
+  assert.equal(turn.system.split('【JSON 形状】').length - 1, 1, '正文里的旧契约块要剔掉');
+  assert.ok(turn.system.trim().endsWith(arcTurnContract().trim()));
+  assert.ok(turn.system.includes('narration 900–3000 字'));
+  assert.equal(turn.system.includes('这一轮是**收尾**'), false, '续写不该带收尾契约');
+
+  const ending = composeTaskSystem(arcEndingContract(), runtime, 'arc', {}, {}, 'arc:ending');
+  assert.equal(ending.system.split('【JSON 形状】').length - 1, 1);
+  assert.ok(ending.system.includes('narration 400–900 字'));
+  assert.ok(ending.system.trim().endsWith(arcEndingContract().trim()));
+});
+
+test('v103 stripContractBlocks 只删契约段，正文原样留着', () => {
+  const text = ['【世界观】夜之街。', '【JSON 形状】只输出一个 JSON 对象\n{"a":1}\nnarration 900–3000 字。', '她站在门口。'].join('\n\n');
+  const stripped = stripContractBlocks(text);
+  assert.ok(stripped.includes('【世界观】夜之街。'));
+  assert.ok(stripped.includes('她站在门口。'));
+  assert.equal(stripped.includes('【JSON 形状】'), false);
+  assert.equal(stripContractBlocks('没有契约的正文'), '没有契约的正文');
 });

@@ -4,7 +4,7 @@
  * 夜糖用到的子集：采样参数、提示词词条（可增删、可排序、可禁用、可引用变量）。
  * 世界书是独立模块（worldbook.ts），这里只负责把 {{worldbook}} 等变量替换掉。
  */
-import { SECTION_PROMPTS } from './promptSections.ts';
+import { SECTION_PROMPTS, stripContractBlocks } from './promptSections.ts';
 import { contractPrompts } from './promptContracts.ts';
 import { SHIPPED_PRESETS } from './content/presets/shipped/index.ts';
 import { resolveMacros, type MacroContext } from './promptMacros.ts';
@@ -1135,15 +1135,17 @@ export function composeTaskSystem(contract: string, runtime: PresetRuntime, scop
   const world = resolvePresetWorld(runtime, scope, vars);
   const rendered = renderPresetSystem(entries, { ...vars, world }, ctx);
   const parts: string[] = [];
-  if (rendered.system.trim()) parts.push(rendered.system.trim());
+  // v103：正文里如果混进了旧契约块，先剔掉——契约只保留最后追加的那一段，
+  // 否则一次请求里会出现好几份【JSON 形状】，模型不知道该守哪一份。
+  if (rendered.system.trim()) parts.push(stripContractBlocks(rendered.system.trim()));
   else {
-    const main = (runtime.main ?? '').trim();
-    const jailbreak = (runtime.jailbreak ?? '').trim();
+    const main = stripContractBlocks((runtime.main ?? '').trim());
+    const jailbreak = stripContractBlocks((runtime.jailbreak ?? '').trim());
     if (main) parts.push(`【预设·主提示】\n${main}`);
     if (jailbreak) parts.push(`【预设·越狱/收尾约束】\n${jailbreak}`);
   }
   // 这一场的动态正文（在场的人、此前对话、玩家的行动）不算契约：玩家改契约时它必须原样留着。
-  if (contextText.trim()) parts.push(contextText.trim());
+  if (contextText.trim()) parts.push(stripContractBlocks(contextText.trim()));
   // 契约里的枚举与阈值也是宏，跟着同一个上下文展开；它永远排在最后。
   // 预设里有同名契约词条就以它为准（可在界面上逐条审核、修改），否则用代码默认值。
   const id = contractId ?? `${scope}:contract`;

@@ -307,6 +307,30 @@ export function arcEndingContract(): string {
   ].join('\n');
 }
 
+/**
+ * 去掉正文里混进来的「契约块」（v103）。
+ *
+ * 预设里如果留着旧版契约词条（比如导出后丢了 `contract` 标记，或者被复制成了普通词条），
+ * 它就会跟着正文一起拼进提示词，一次请求里出现两三份【JSON 形状】——模型只能瞎猜该守哪一份。
+ * 契约应当只有 `composeTaskSystem` 最后追加的那一段，所以这里把正文里的同类块整段删掉。
+ */
+export function stripContractBlocks(text: string): string {
+  if (!text.includes('【JSON 形状】')) return text;
+  return text
+    .split(/\n{2,}/)
+    .filter(block => {
+      const head = block.trimStart();
+      if (!head) return false;
+      // 契约块以【JSON 形状】开头；它后面的字数要求、after/bond 约束都在同一段里，一起删掉。
+      if (head.startsWith('【JSON 形状】')) return false;
+      // 旧预设里「收尾」契约可能被拆成两段，这个开头单独认一下。
+      if (/^这一轮是\*\*收尾\*\*/.test(head)) return false;
+      return true;
+    })
+    .join('\n\n')
+    .trim();
+}
+
 /** 交互式开场的锁定契约。 */
 export function arcOpeningContract(): string {
   return [
