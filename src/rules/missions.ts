@@ -3,6 +3,7 @@ import { spawnBossMonster } from '../content/bosses.ts';
 import { factionInfo } from '../content/items.ts';
 import { customMissionTemplates } from '../content/library.ts';
 import { suggestedLevel } from '../missionLevel.ts';
+import { gradeOfEnemies, missionLevelFor } from '../missionTier.ts';
 import { extraMissions } from '../content/missions-extra.ts';
 import { monsters } from '../content/monsters.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
@@ -64,8 +65,16 @@ export function annotateMission(state: GameState, mission: Mission, wave = 0): M
   const district = mission.district ?? districtAt(mission.x, mission.y);
   const spawnAt = mission.spawnedAt ?? absoluteMinutes(state.day, state.minutes);
   const window: CommissionWindow = mission.window ?? (mission.duration >= 90 ? 'long' : 'urgent');
+  // v161：战斗委托的档位与推荐等级跟实际编成走；已经被污染抬过档的（scaledFrom）不重算。
+  const graded = mission.work === 'combat' && !mission.boss && !mission.scaledFrom && (mission.enemyIds?.length ?? 0) > 0
+    ? (() => {
+      const grade = gradeOfEnemies(mission.enemyIds!);
+      return { difficulty: grade.tier, recommendedLevel: missionLevelFor(grade.tier, grade.count) };
+    })()
+    : {};
   const base: Mission = {
     ...mission,
+    ...graded,
     enemyIds: mission.enemyIds ? mission.enemyIds.slice(0, MAX_ENEMIES) : mission.enemyIds,
     district, window, wave: mission.wave ?? wave,
     spawnedAt: spawnAt, deadlineAt: mission.deadlineAt ?? deadlineFor(window, state.day, spawnAt),

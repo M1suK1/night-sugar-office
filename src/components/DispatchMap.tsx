@@ -9,6 +9,7 @@ import { windowLabel } from '../shift';
 import { cityAveragePollution, clampPollution, pollutionEffect, pollutionLines, pollutionRelief, pollutionTier, pollutionTierColors, pollutionTierLabel, pollutionTierNames, pollutionTierOrder } from '../pollution';
 import { canIntercept, factionPurification } from '../factions';
 import { missionBaselineNote } from '../rules/missions';
+import { compareMissionsByTier } from '../missionTier';
 import { frontRemaining } from '../fronts';
 import { factionAttitude } from '../economy';
 
@@ -54,7 +55,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
       })}
     </div>
     {list ? <div className="mission-list-view">
-      {missions.filter(visible).map(m => {
+      {missions.filter(visible).sort(compareMissionsByTier).map(m => {
         const Icon = icons[m.id as keyof typeof icons] ?? (m.work === 'combat' ? Swords : ScanEye);
         const region = districtOfMission(m);
         const deadline = missionDeadlineLabel(m, state);
