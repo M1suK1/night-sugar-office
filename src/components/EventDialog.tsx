@@ -7,6 +7,7 @@ import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { arrangeStoryText, beatsFromPassage, beatsFromTurns } from '../vn/beats';
+import { storyBackdropOf } from '../vn/backdrops';
 import { scrollTopForNewTurn } from '../storyScroll';
 
 /** 空数组也要稳定引用：否则每次渲染都会重建节拍表。 */
@@ -170,7 +171,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   }, [event.cast, girl, pool]);
   // 交互剧情的节拍：只随轮次变化，避免每次渲染都让舞台回到开头。
   const stageBeats = useMemo(
-    () => beatsFromTurns(turns, { playerName: '所长', scene: { id: 'room:lounge' } }),
+    () => beatsFromTurns(turns, { playerName: '所长', scene: storyBackdropOf(event) }),
     [turns],
   );
   const latest = useMemo(() => {

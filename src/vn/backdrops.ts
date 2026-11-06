@@ -33,7 +33,50 @@ const districtTint = (id: string): string => {
 const IMAGES: Record<string, string> = {
   'room:lounge': '/art/council-lounge.jpg',
   lounge: '/art/council-lounge.jpg',
+  // v178：九块辖区的夜景 —— 剧情发生在哪，就挂哪一块。
+  candy: '/art/districts/candy.jpg',
+  station: '/art/districts/station.jpg',
+  plaza: '/art/districts/plaza.jpg',
+  greenhouse: '/art/districts/greenhouse.jpg',
+  cathedral: '/art/districts/cathedral.jpg',
+  crossroad: '/art/districts/crossroad.jpg',
+  oldtown: '/art/districts/oldtown.jpg',
+  clocktower: '/art/districts/clocktower.jpg',
+  docks: '/art/districts/docks.jpg',
 };
+
+export const DISTRICT_BACKDROP_IDS = ['candy', 'station', 'plaza', 'greenhouse', 'cathedral', 'crossroad', 'oldtown', 'clocktower', 'docks'] as const;
+
+/** 同样的种子永远落回同一块辖区：这一段重开也不会换地方。 */
+function districtBySeed(seed: string): string {
+  let sum = 7;
+  for (let index = 0; index < seed.length; index += 1) sum = (sum * 31 + seed.charCodeAt(index)) % 1000003;
+  return DISTRICT_BACKDROP_IDS[sum % DISTRICT_BACKDROP_IDS.length] ?? 'night';
+}
+
+/**
+ * 这一段剧情在哪（v178）。
+ *
+ * 优先级：会议地点写着哪块辖区 → 场景里点名的辖区 → 桩在屋里的场景照旧用房间；
+ * 都没有时按事件 id 稳定地分一块辖区，免得每段故事都站在同一片空背景前。
+ */
+export function storyBackdropOf(event: {
+  id: string;
+  meeting?: { placeId?: string };
+  /** 事件场景各有各的形状，这里只认里面可能有的 scene 字段。 */
+  scenes?: readonly unknown[];
+  stage?: number;
+}): VnBackdrop {
+  const place = event.meeting?.placeId ?? '';
+  if (place.startsWith('district:')) {
+    const id = place.slice('district:'.length);
+    if ((DISTRICT_BACKDROP_IDS as readonly string[]).includes(id)) return { id };
+  }
+  const scene = (event.scenes?.[event.stage ?? 0] as { scene?: unknown } | undefined)?.scene;
+  if (typeof scene === 'string' && IMAGES[scene]) return { id: scene };
+  if (place && IMAGES[place]) return { id: place };
+  return { id: districtBySeed(event.id) };
+}
 
 export function resolveBackdrop(id: string, tint?: string): ResolvedBackdrop {
   const palette = PALETTE[id];

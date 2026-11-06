@@ -5,6 +5,7 @@ import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { beatsFromPassage } from '../vn/beats';
+import { storyBackdropOf } from '../vn/backdrops';
 
 /** 分幕剧情：一次完整故事，每段结尾做一次选择，直到收束。 */
 export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose, onClose }: {
@@ -25,7 +26,7 @@ export function StoryPlayerDialog({ event, girl, busy, vnStory = false, onChoose
   const [textMode, setTextMode] = useState(false);
   const stage = Boolean(vnStory) && !textMode;
   const beats = useMemo(
-    () => (current ? beatsFromPassage(current, { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element, segment: index }) : []),
+    () => (current ? beatsFromPassage(current, { speakerId: girl?.id, speakerName: girl?.name, expression: girl?.expression ?? 'calm', element: girl?.element, segment: index, scene: storyBackdropOf(event).id }) : []),
     [current, index, girl?.id, girl?.name, girl?.expression, girl?.element],
   );
   const bodyRef = useRef<HTMLDivElement>(null);
