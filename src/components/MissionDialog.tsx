@@ -7,7 +7,7 @@ import { districtOfMission, effectLines } from '../districts';
 import { windowLabel } from '../shift';
 import { findMonster } from '../content/monsters';
 import { getItem } from '../content/items';
-import { canIntercept } from '../factions';
+import { canIntercept, factionGirlsOf } from '../factions';
 import { factionName } from '../territories';
 import { clampPollution, pollutionEffect, pollutionIsEstimated, pollutionLines, pollutionRelief, pollutionSnapshotOf, pollutionTier, pollutionTierColors, pollutionTierLabel } from '../pollution';
 import { MonsterGlyph } from './MonsterGlyph';
@@ -117,7 +117,27 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         </section>
       )}
 
-      {mission.work === 'combat' && (
+      {mission.work === 'combat' && mission.envoyKind === 'raid' && (
+        <section className="enemy-lineup" aria-label="对面的人">
+          <div className="modal-section-heading"><h3>对面的人</h3><small>破坏行动打的是这一方的魔法少女，不是魔物</small></div>
+          <div className="enemy-row">
+            {(mission.interception?.girlIds ?? []).map(id => {
+              const person = state.girls.find(girl => girl.id === id) ?? (state.customFactionGirls ?? []).find(girl => girl.id === id);
+              const staticGirl = person ?? (factionGirlsOf(mission.interception?.faction ?? 'association').find(girl => girl.id === id) as unknown as typeof person);
+              if (!staticGirl) return null;
+              return (
+                <div id={`raid-enemy-${id}`} key={id} className="enemy-card" style={{ '--enemy-color': staticGirl.color } as React.CSSProperties}>
+                  <span><b>{staticGirl.name}</b><small>{staticGirl.title ?? '对方名册'} · Lv.{staticGirl.level}</small></span>
+                </div>
+              );
+            })}
+            {!(mission.interception?.girlIds ?? []).length && <p className="enemy-note">这一方的名册是空的，今晚没人出来迎战。</p>}
+          </div>
+          <p className="enemy-note"><Skull size={12} />战斗全自动进行，每 15 分钟一轮，玩家无法干预结果。失败会让全员获得疤痕。</p>
+        </section>
+      )}
+
+      {mission.work === 'combat' && mission.envoyKind !== 'raid' && (
         <section className="enemy-lineup" aria-label="本次委托的魔物">
           <div className="modal-section-heading"><h3>魔物反应</h3><small>点击查看图鉴</small></div>
           <div className="enemy-row">

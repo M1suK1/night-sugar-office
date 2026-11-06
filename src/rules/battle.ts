@@ -21,6 +21,7 @@ import { makeOpinion } from './opinion.ts';
 import { capacity, seatsTaken } from './roster.ts';
 import { completeStoryMission } from './storyRun.ts';
 import { settleDefeat } from './missionDefeat.ts';
+import { envoyRaidSquadIds } from './envoy.ts';
 // v35 从 src/game.ts 拆出：战斗与调查的结算（不是 combat.ts）。
 
 export function applyScar(state: GameState, girl: Girl, scar: Scar): void {
@@ -132,7 +133,12 @@ export function interceptionFor(state: GameState, mission: Mission): Interceptio
 }
 
 export function settleCombat(state: GameState, mission: Mission, squad: Girl[], at: { day: number; minutes: number }): BattleState {
-  const interception = mission.interception;
+  // v168：破坏行动永远打「对面的人」。旧档里漏写 interception 的破坏委托在这里补一份阵容，
+  // 否则它会退回成打魔物 —— 那正是这条委托不该做的事。
+  const interception = mission.interception
+    ?? (mission.envoyKind === 'raid' && mission.envoyTarget
+      ? { faction: mission.envoyTarget, girlIds: envoyRaidSquadIds(state, mission.envoyTarget, mission.spawnedAt ? Math.floor(mission.spawnedAt / 1440) : at.day) }
+      : undefined);
   // 破坏行动也要打「人」，但它不是被人拦截：敌人取自 interception，结算走自己的分支。
   const raid = Boolean(mission.envoyKind === 'raid' && interception);
   const factionPool = rosterMembers(state, interception?.faction ?? 'association');

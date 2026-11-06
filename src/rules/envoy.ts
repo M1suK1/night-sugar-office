@@ -118,6 +118,16 @@ function envoyRaidSquad(state: GameState, target: FactionId, seed: number): stri
   return [sorted[0]!.id, ...picked];
 }
 
+/**
+ * 破坏行动要打的对面人手（v168）。
+ *
+ * 这条口子对外，是为了让**结算**能在旧档里补齐阵容：以前漏写 `interception` 的破坏委托
+ * 会退回成「打魔物」，而破坏行动从来都该是跟对方的魔法少女打。
+ */
+export function envoyRaidSquadIds(state: GameState, target: FactionId, day = state.day): string[] {
+  return envoyRaidSquad(state, target, hashText(`envoy:${day}:${target}`));
+}
+
 /** 破坏行动的火气：基础值 + 污染档位，再按该辖区所在的安定度放大，夹在 4–20。 */
 export function envoyRaidHostility(state: GameState, district: DistrictId): number {
   const balance = loadBalance();
@@ -140,11 +150,22 @@ function envoyMission(
 ): Mission {
   const representative = factionRepresentativeOf(state, faction);
   const label = kind === 'coop' ? '共建委托' : '破坏行动';
+  // 破坏行动的对手是活人，推荐等级要按对面的等级定，不能沿用「几只魔物」的口径。
+  const targetPool = kind === 'raid' && extra.target
+    ? [...rosterMembers(state, extra.target), ...factionGirlsOf(extra.target)]
+    : [];
+  const squadLevels = (extra.squad ?? [])
+    .map(id => targetPool.find(person => person.id === id)?.level)
+    .filter((level): level is number => typeof level === 'number');
+  const pvpLevel = squadLevels.length
+    ? Math.max(1, Math.min(20, Math.round(squadLevels.reduce((sum, level) => sum + level, 0) / squadLevels.length) - 2))
+    : undefined;
   return annotateMission(state, {
     ...template,
     id: `envoy-${kind}-${faction}-${state.day}`,
     title: kind === 'coop' ? template.title : `破坏·${template.title}`,
     category: `${factionInfo[faction].short} · ${label}`,
+    ...(pvpLevel ? { recommendedLevel: pvpLevel } : {}),
     description: kind === 'coop'
       ? `${representative.name}把一份盖了章的委托推过来：「这一片是我们的地，别让人今晚出事。」`
       : `${representative.name}没抬头：「${extra.target ? factionInfo[extra.target].short : '对面'}的人今晚在那边很碍事。去让他们记住这一夜。」`,
@@ -157,6 +178,12 @@ function envoyMission(
     envoyFaction: faction,
     envoyTarget: extra.target,
     envoyHostility: extra.hostility,
+    // v168：破坏行动打的是对面的人，不是魔物。模板里的魔物名单要清掉，
+    // 否则委托详情会照着 enemyIds 列出「本次委托的魔物」，结算也会退回成打魔物。
+    enemyIds: kind === 'raid' ? [] : template.enemyIds,
+    enemyBuffs: kind === 'raid' ? undefined : template.enemyBuffs,
+    enemyHpOverride: kind === 'raid' ? undefined : template.enemyHpOverride,
+    boss: kind === 'raid' ? false : template.boss,
     interception: kind === 'raid' && extra.target && extra.squad?.length
       ? { faction: extra.target, girlIds: extra.squad }
       : undefined,

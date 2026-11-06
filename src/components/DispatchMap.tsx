@@ -116,7 +116,9 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
               <em><Clock3 size={10} />{m.duration} 分钟<span>+{m.reward} 星砂</span></em>
               <span className={`pin-difficulty tone-${difficultyTone(m.difficulty)}`}><i />{m.difficulty}{missionBaselineNote(m) ? ` · ${missionBaselineNote(m)}` : ''}</span>
               {deadline && (m.status === 'open' || m.status === 'active') && <span className={`pin-deadline ${m.window === 'urgent' ? 'urgent' : ''}`}><Hourglass size={10} />{m.status === 'active' ? '派遣中' : `接取${deadline}`}</span>}
-              {m.work === 'combat' && m.status === 'open' && <span className="pin-threat"><Skull size={10} />{m.enemyIds?.length ?? 0} 魔物 · 威胁 {threat(m)}</span>}
+              {m.work === 'combat' && m.status === 'open' && (m.envoyKind === 'raid'
+                ? <span className="pin-threat"><Swords size={10} />{m.interception?.girlIds.length ?? 0} 人迎战 · 破坏行动</span>
+                : <span className="pin-threat"><Skull size={10} />{m.enemyIds?.length ?? 0} 魔物 · 威胁 {threat(m)}</span>)}
               {m.status === 'open' && m.work === 'combat' && <span className="pin-slots"><Users size={10} />队伍 0 / 3</span>}
               {m.worsened && <span className="pin-wounded">带伤 · 下次 −20%</span>}
             </span>
