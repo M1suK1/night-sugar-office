@@ -781,8 +781,7 @@
 .battle-note-portrait.speaking { opacity: 1; transform: translateY(-5px); z-index: 2; }
 .battle-note-portrait.speaking .battle-note-expression { opacity: 1; border-color: var(--note-color); color: #fff0f6; }
 .battle-note-portrait.speaking .girl-portrait { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--note-color) 22%, transparent)); }
-.battle-note-portrait.down { filter: grayscale(1); opacity: .4; }
-.battle-note-portrait.down.speaking { filter: grayscale(1); opacity: .55; }
+/* v152：倒下的少女不再整张转黑白——是否倒过只看名牌上的「倒下」小标。 */
 .battle-note-portrait figcaption { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; box-sizing: border-box; margin-top: -10px; padding: 5px 4px 4px; border: 1px solid #ffffff12; border-top-color: color-mix(in srgb, var(--note-color) 65%, transparent); background: linear-gradient(180deg, #0c0a10e8, #08060bd9); box-shadow: 0 8px 24px #0008; }
 .battle-note-portrait figcaption b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 400; font-size: 14px; letter-spacing: .06em; color: #f5eaf1; }
 .battle-note-portrait figcaption small { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9d8ba4; font-family: var(--font-data); font-size: 7px; letter-spacing: .12em; }
@@ -803,8 +802,32 @@
 .battle-note-side.three-up .slot-front-right { transform: translateX(112.8%) translateY(0) rotateY(0deg); z-index: 2; }
 .battle-note-side.three-up .slot-back { transform: translateX(56.4%) translateY(-8%) rotateY(12deg); z-index: 1; opacity: .72; }
 .battle-note-side.three-up .battle-note-portrait.speaking { opacity: 1; }
+/* 悬停过的说话人保持不透明，鼠标移开也不重新压暗 */
+.battle-note-side.three-up .battle-note-portrait.lit { opacity: 1; }
+
+/* 轮转：三个格子同时沿弧线换位并转身。
+   目的地决定起点（A 从 B 来、B 从 C 来、C 从 A 来），所以三组关键帧是固定映射。 */
+@keyframes side-rotate-a2c {
+  0%   { transform: translateX(0) translateY(0) rotateY(0deg); }
+  50%  { transform: translateX(30%) translateY(-16%) rotateY(-26deg); }
+  100% { transform: translateX(56.4%) translateY(-8%) rotateY(12deg); }
+}
+@keyframes side-rotate-b2a {
+  0%   { transform: translateX(112.8%) translateY(0) rotateY(0deg); }
+  50%  { transform: translateX(54%) translateY(-18%) rotateY(26deg); }
+  100% { transform: translateX(0) translateY(0) rotateY(0deg); }
+}
+@keyframes side-rotate-c2b {
+  0%   { transform: translateX(56.4%) translateY(-8%) rotateY(12deg); }
+  50%  { transform: translateX(86%) translateY(-5%) rotateY(-18deg); }
+  100% { transform: translateX(112.8%) translateY(0) rotateY(0deg); }
+}
+.battle-note-side.three-up .battle-note-portrait.rotating.slot-front-left { animation: side-rotate-b2a .44s cubic-bezier(.4, 0, .2, 1) both; }
+.battle-note-side.three-up .battle-note-portrait.rotating.slot-front-right { animation: side-rotate-c2b .44s cubic-bezier(.4, 0, .2, 1) both; }
+.battle-note-side.three-up .battle-note-portrait.rotating.slot-back { animation: side-rotate-a2c .44s cubic-bezier(.4, 0, .2, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   .battle-note-side.three-up .battle-note-portrait { transition: none; }
+  .battle-note-side.three-up .battle-note-portrait.rotating { animation: none; }
 }
 .battle-note-portrait figcaption em.down { border-color: #ffffff14; color: #8b7d92; }
 
@@ -896,7 +919,7 @@
   .battle-note-mobile-face.active { opacity: 1; }
   .battle-note-mobile-face.active .girl-portrait { border-color: #f3aec980; }
   .battle-note-mobile-face.active span { color: #f3c1d5; }
-  .battle-note-mobile-face.down { filter: grayscale(1); opacity: .3; }
+  .battle-note-mobile-face.down { opacity: .6; }
   .battle-note-stage, .battle-note-stage.has-left, .battle-note-stage.has-right, .battle-note-stage.has-left.has-right { grid-template-columns: minmax(0, 1fr); padding-top: 4px; }
   .battle-note-side { display: none; }
   .battle-note-center { border-radius: 6px; }

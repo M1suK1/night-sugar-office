@@ -38,12 +38,13 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
 }
 
 /** 单侧立绘栏：三人时前后三格（悬停后排会整体轮转），其余人数保持原来的单排。 */
-function SideCast({ side, list, activeLine, girlsById, hoverKey, resetKey }: {
+function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys, resetKey }: {
   side: 'left' | 'right';
   list: BattleActor[];
   activeLine: BattleNoteLine | null;
   girlsById: Map<string, Girl>;
   hoverKey: string;
+  litKeys: string[];
   resetKey: string;
 }) {
   const idsKey = list.map(actor => actor.girlId ?? actor.uid).join('|');
@@ -53,13 +54,21 @@ function SideCast({ side, list, activeLine, girlsById, hoverKey, resetKey }: {
   }, [idsKey, resetKey]);
 
   const hoveredId = hoverKey.startsWith(`${side}:`) ? hoverKey.slice(side.length + 1) : '';
-  // 只在悬停换人这一下轮转；order 用函数式更新，不放进依赖，免得轮转后自己再转一次。
+  // 轮转时挂一段位移动画（见 combat.css 的 side-rotate-*）：
+  // 三个格子同时沿弧线换位并转身，动画结束再回到静态站位。
+  const [rotating, setRotating] = useState(false);
+  useEffect(() => {
+    if (!rotating) return;
+    const timer = window.setTimeout(() => setRotating(false), 460);
+    return () => window.clearTimeout(timer);
+  }, [rotating]);
+  // 只在悬停换人这一下轮转；order 用当前值，不放进依赖，免得轮转后自己再转一次。
   useEffect(() => {
     if (!hoveredId) return;
-    setOrder(current => {
-      const next = rotateSide(current, hoveredId);
-      return next === current ? current : [...next];
-    });
+    const next = rotateSide(order, hoveredId);
+    if (next === order) return;
+    setOrder([...next]);
+    setRotating(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hoveredId]);
 
@@ -80,7 +89,7 @@ function SideCast({ side, list, activeLine, girlsById, hoverKey, resetKey }: {
         return (
           <figure
             key={actor.uid}
-            className={`battle-note-portrait ${actor.side} ${three ? slots[index] : ''} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`}
+            className={`battle-note-portrait ${actor.side} ${three ? slots[index] : ''} ${rotating ? 'rotating' : ''} ${litKeys.includes(`${side}:${actor.girlId ?? actor.uid}`) ? 'lit' : ''} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`}
             style={{ '--note-color': actor.color } as CSSProperties}
           >
             <div className="battle-note-portrait-art">
@@ -119,6 +128,8 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
   // v152：台词悬停 → 后排的人轮转到前排。
   // 滚动时指针不动、台词从指针底下滑过也会触发 mouseenter，所以刚滚动过的这一下不算悬停。
   const [hoverKey, setHoverKey] = useState('');
+  // 悬停过的说话人保持不透明：鼠标移开也不重新压暗（v152）。
+  const [litKeys, setLitKeys] = useState<string[]>([]);
   const scrolledAt = useRef(0);
   useEffect(() => {
     const onScroll = () => { scrolledAt.current = Date.now(); };
@@ -222,7 +233,9 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
   // 悬停 / 键盘聚焦同一句台词 → 该侧的三人轮转。刚滚动过的这一下不算（内容从指针下滑过也会触发 mouseenter）。
   const focusSpeaker = (line: BattleNoteLine) => {
     if (Date.now() - scrolledAt.current < 150) return;
-    setHoverKey(`${lineOnRight(line) ? 'right' : 'left'}:${line.speakerId}`);
+    const key = `${lineOnRight(line) ? 'right' : 'left'}:${line.speakerId}`;
+    setHoverKey(key);
+    setLitKeys(current => current.includes(key) ? current : [...current, key]);
   };
   const renderSide = (list: BattleActor[], side: 'left' | 'right') => (
     <SideCast
@@ -231,6 +244,7 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
       activeLine={activeLine}
       girlsById={girlsById}
       hoverKey={hoverKey}
+      litKeys={litKeys}
       resetKey={note?.battleId ?? battle.id}
     />
   );
