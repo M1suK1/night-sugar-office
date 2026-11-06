@@ -3,14 +3,11 @@ import type { CSSProperties } from 'react';
 import { ArrowRight, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, Outfit, PortraitSpec, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { arrangeStoryText, beatsFromPassage, beatsFromTurns } from '../vn/beats';
 import { scrollTopForNewTurn } from '../storyScroll';
-
-const expressionLabel: Record<Expression, string> = {
-  calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
-};
 
 /** 空数组也要稳定引用：否则每次渲染都会重建节拍表。 */
 const NO_TURNS: NonNullable<CharacterEvent['turns']> = [];
@@ -213,6 +210,10 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   const options = (lastNarrator?.options ?? []).slice(0, 3);
   const colorOf = (speakerId: string) => speakerId === 'player' ? '#9a939f' : cast.find(person => person.id === speakerId)?.color ?? '#f3aec9';
   const expressionFor = (person: Girl) => preview?.id === person.id ? preview.expression : latest?.id === person.id ? latest.expression : person.expression ?? 'calm';
+  // v172：立绘栏要的数据（与战斗札记共用 SideCast）。
+  const castGirls = useMemo(() => new Map(cast.map(person => [person.id, person])), [cast]);
+  const hoveredCastKey = preview ? `left:${preview.id}` : '';
+  const litCastKeys = useMemo(() => cast.map(person => `left:${person.id}`), [cast]);
 
   const submit = async (value: string) => {
     const text = value.trim();
@@ -480,25 +481,29 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
           </div>
         ) : (
           <div className={`battle-note-stage ${cast.length ? 'has-left' : ''} has-right`}>
-            <aside className={`battle-note-side left ${cast.length ? '' : 'empty'} ${cast.length >= 3 ? 'dense' : ''}`} aria-label="在场角色">
-              {cast.length > 0 && <span className="battle-note-side-label">在场</span>}
-              {cast.map(person => {
-                const expression = expressionFor(person);
-                const speaking = Boolean(preview && preview.id === person.id) || Boolean(latest && latest.id === person.id);
-                return (
-                  <figure key={person.id} className={`battle-note-portrait ${speaking ? 'speaking' : ''}`} style={{ '--note-color': person.color } as CSSProperties}>
-                    <div className="battle-note-portrait-art">
-                      <GirlPortrait girl={{ ...person, expression }} variant="full" />
-                      <span className="battle-note-expression">{expressionLabel[expression]}</span>
-                    </div>
-                    <figcaption>
-                      <b>{person.name}</b>
-                      <small>{person.codename ?? '契约者'}</small>
-                    </figcaption>
-                  </figure>
-                );
-              })}
-            </aside>
+            {/* v172：与战斗札记共用同一个立绘栏 —— 三人走前后三格并轮转换人，
+                更多人也只显示焦点所在的三格，不会把立绘压成细条。 */}
+            <SideCast
+              side="left"
+              list={cast.map(person => ({
+                uid: person.id,
+                side: 'ally' as const,
+                girlId: person.id,
+                name: person.name,
+                codename: person.codename,
+                portrait: person.portrait ?? '',
+                portraitAsset: (person as { portraitAsset?: string }).portraitAsset,
+                color: person.color ?? '#f3aec9',
+                expression: expressionFor(person),
+                monster: undefined,
+                portraitSpec: person.portraitSpec,
+              }))}
+              activeLine={latest ? { speakerId: latest.id, speakerSide: 'ally', expression: latest.expression } : null}
+              girlsById={castGirls}
+              hoverKey={hoveredCastKey}
+              litKeys={litCastKeys}
+              resetKey={event.id}
+            />
 
             <main className="battle-note-center event-center">
               <div ref={end} className="battle-note-body" role="log" aria-live="polite">

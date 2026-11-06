@@ -4,15 +4,11 @@ import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Spar
 import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
 import { battleActors, battleCast, battleOutcomeLabel, splitBattleCast, totalBattleRounds } from '../battleNote';
 import type { BattleActor } from '../battleNote';
-import { rotateSide } from '../storySlots';
 import { GirlPortrait } from './GirlPortrait';
+import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeToggle } from '../vn/VnModeToggle';
 import { beatsFromBattleNote } from '../vn/beats';
-
-const expressionLabel: Record<Expression, string> = {
-  calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
-};
 
 function lineKey(sceneId: string, index: number): string {
   return `${sceneId}:${index}`;
@@ -35,78 +31,6 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
     witchForm: girl?.witchForm,
     importedVariants: girl?.importedVariants,
   };
-}
-
-/** 单侧立绘栏：三人时前后三格（悬停后排会整体轮转），其余人数保持原来的单排。 */
-function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys, resetKey }: {
-  side: 'left' | 'right';
-  list: BattleActor[];
-  activeLine: BattleNoteLine | null;
-  girlsById: Map<string, Girl>;
-  hoverKey: string;
-  litKeys: string[];
-  resetKey: string;
-}) {
-  const idsKey = list.map(actor => actor.girlId ?? actor.uid).join('|');
-  const [order, setOrder] = useState<string[]>(() => list.map(actor => actor.girlId ?? actor.uid));
-  useEffect(() => {
-    setOrder(list.map(actor => actor.girlId ?? actor.uid));
-  }, [idsKey, resetKey]);
-
-  const hoveredId = hoverKey.startsWith(`${side}:`) ? hoverKey.slice(side.length + 1) : '';
-  // 轮转时挂一段位移动画（见 combat.css 的 side-rotate-*）：
-  // 三个格子同时沿弧线换位并转身，动画结束再回到静态站位。
-  const [rotating, setRotating] = useState(false);
-  useEffect(() => {
-    if (!rotating) return;
-    const timer = window.setTimeout(() => setRotating(false), 460);
-    return () => window.clearTimeout(timer);
-  }, [rotating]);
-  // 只在悬停换人这一下轮转；order 用当前值，不放进依赖，免得轮转后自己再转一次。
-  useEffect(() => {
-    if (!hoveredId) return;
-    const next = rotateSide(order, hoveredId);
-    if (next === order) return;
-    setOrder([...next]);
-    setRotating(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoveredId]);
-
-  const byId = new Map(list.map(actor => [actor.girlId ?? actor.uid, actor]));
-  const three = list.length === 3;
-  const slots = ['slot-front-left', 'slot-front-right', 'slot-back'];
-  const shown = three ? order.flatMap(id => { const actor = byId.get(id); return actor ? [actor] : []; }) : list;
-  const label = list.every(actor => actor.side === 'ally') ? '我方' : list.every(actor => actor.side === 'enemy') ? '敌方' : '战场';
-
-  return (
-    <aside className={`battle-note-side ${side} ${list.length ? '' : 'empty'} ${list.length >= 3 ? 'dense' : ''} ${three ? 'three-up' : ''}`} aria-label={side === 'left' ? '左侧角色' : '右侧角色'}>
-      {list.length > 0 && <span className="battle-note-side-label">{label}</span>}
-      {shown.map((actor, index) => {
-        const expression = activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId
-          ? activeLine.expression
-          : actor.expression;
-        const speaking = Boolean(activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId);
-        return (
-          <figure
-            key={actor.uid}
-            className={`battle-note-portrait ${actor.side} ${three ? slots[index] : ''} ${rotating ? 'rotating' : ''} ${litKeys.includes(`${side}:${actor.girlId ?? actor.uid}`) ? 'lit' : ''} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`}
-            style={{ '--note-color': actor.color } as CSSProperties}
-          >
-            <div className="battle-note-portrait-art">
-              <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
-              <span className="battle-note-expression">{expressionLabel[expression]}</span>
-            </div>
-            <figcaption>
-              <b>{actor.name}</b>
-              <small>{actor.codename ?? (actor.side === 'enemy' ? '敌方' : '契约者')}</small>
-              {actor.side === 'enemy' && <em>敌方</em>}
-              {actor.down && <em className="down">倒下</em>}
-            </figcaption>
-          </figure>
-        );
-      })}
-    </aside>
-  );
 }
 
 export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate, onRegenerate, onClose, vnStory = false }: {
