@@ -774,29 +774,21 @@
 .av-envoy-loan-pick .girl-thumb, .av-envoy-loan-pick img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
 
 /* ── v167 代表委托预览 ─────────────────────────────────────────────────── */
-.av-envoy-preview {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  padding: 3px 10px;
-  font: inherit;
-  font-size: 10.5px;
-  color: #cbb9d4;
-  background: rgba(18, 14, 25, 0.78);
-  border: 1px solid rgba(243, 174, 201, 0.28);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: color .18s, border-color .18s, background .18s;
-}
-
-.av-envoy-preview:hover {
-  color: #fff0f6;
-  border-color: rgba(243, 174, 201, 0.7);
-  background: rgba(30, 22, 42, 0.88);
-}
-
 .av-envoy-row { position: relative; }
+
+/* 委托正文整块可点：点开就是完整情报（查看委托那个按钮已经去掉，别再压住「接受委托」）。 */
+.av-envoy-task-clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background .16s, box-shadow .16s;
+}
+
+.av-envoy-task-clickable:hover,
+.av-envoy-task-clickable:focus-visible {
+  background: rgba(243, 174, 201, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(243, 174, 201, 0.22);
+  outline: none;
+}
 
 .envoy-preview { width: min(560px, 92vw); }
 
@@ -868,8 +860,7 @@
 
 .envoy-preview-picks { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.envoy-preview-picks .av-envoy-loan-pick.picked,
-.envoy-preview-picks .av-envoy-loan-pick[aria-pressed='true'] {
+.envoy-preview-picks .av-envoy-loan-pick.picked {
   border-color: rgba(243, 174, 201, 0.7);
   color: #fff0f6;
 }
@@ -884,15 +875,3 @@
 }
 
 .envoy-preview-done { font-size: 12px; color: #9a939f; }
-.av-envoy-task-clickable {
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background .16s, box-shadow .16s;
-}
-
-.av-envoy-task-clickable:hover,
-.av-envoy-task-clickable:focus-visible {
-  background: rgba(243, 174, 201, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(243, 174, 201, 0.22);
-  outline: none;
-}

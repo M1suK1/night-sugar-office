@@ -321,9 +321,6 @@ export function BaseView({
                     const rival = rivals[0];
                     return (
                       <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
-                        {onPreviewEnvoy && (
-                          <button id={`av-envoy-preview-${fid}`} type="button" className="av-envoy-preview" onClick={() => onPreviewEnvoy(fid)}>查看委托</button>
-                        )}
                         <span className="av-envoy-leader-face" title={`${info.name} · ${representative.name}`}>
                           <GirlPortrait
                             girl={{
