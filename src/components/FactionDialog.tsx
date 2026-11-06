@@ -14,6 +14,7 @@ import {
   girlFactionLabels,
 } from '../factions';
 import { factionAttitude } from '../economy';
+import { meetEventId } from '../rules/summon';
 import { districtOrder, districts } from '../districts';
 import { pollutionTierLabel } from '../pollution';
 import { representativeOf } from '../office';
@@ -36,11 +37,13 @@ interface FactionDialogProps {
   onBase: () => void;
   onHire: (leaderId: string) => void;
   onMeet: () => void;
+  /** v168：打开一段已存在的剧情（往次约谈回看）。 */
+  onOpenEvent?: (eventId: string) => void;
   onClose: () => void;
 }
 
 /** 一方势力的完整档案：首领在最上面，其余信息按页签分装。 */
-export function FactionDialog({ state, faction, onBase, onHire, onMeet, onClose }: FactionDialogProps) {
+export function FactionDialog({ state, faction, onBase, onHire, onMeet, onOpenEvent, onClose }: FactionDialogProps) {
   const [tab, setTab] = useState<FactionTab>('origin');
   const [openGirl, setOpenGirl] = useState<string>();
   const info = factionInfo[faction];
@@ -48,6 +51,12 @@ export function FactionDialog({ state, faction, onBase, onHire, onMeet, onClose 
   const leader = rosterLeader(state, faction);
   const girls = rosterMembers(state, faction);
   const collapsed = factionCollapsed(state, faction);
+  // v168：约谈只有点了「结束事件」才算见过；退出对话框只是先离开，入口要一直开着。
+  const meetId = meetEventId(state, faction);
+  const meet = state.events.find(event => event.id === meetId);
+  const pastMeets = state.events
+    .filter(event => event.id.startsWith('meet-') && event.id.endsWith(`-${faction}`) && event.id !== meetId)
+    .slice(0, 4);
   const hired = state.girls.some(girl => girl.id === leader.id && !girl.retired);
   const standing = state.factions?.[faction]?.standing ?? 0;
   const attitude = factionAttitude(standing);
@@ -94,10 +103,27 @@ export function FactionDialog({ state, faction, onBase, onHire, onMeet, onClose 
             <span><small>所属少女</small><b>{girls.length}<i>人</i></b></span>
           </div>
           {!leader.vacant && (
-            <button id="faction-meet-leader" type="button" className="btn faction-meet-btn" onClick={onMeet}>
-              <MessageCircle size={14} />
-              {state.events.some(event => event.id === `meet-${state.day}-${faction}`) ? '今天已约见 · 再聊一次' : `约见 ${leader.name}`}
-            </button>
+            <>
+              <button id="faction-meet-leader" type="button" className="btn faction-meet-btn" onClick={onMeet}>
+                <MessageCircle size={14} />
+                {!meet ? `约见 ${leader.name}` : meet.status === 'done' ? '回看今晚的谈话' : '继续今晚的谈话'}
+              </button>
+              {meet && meet.status !== 'done' && (
+                <p className="faction-meet-hint" id="faction-meet-hint">
+                  这一面还没谈完——退出只是先离开，点「结束事件」才算见过。
+                </p>
+              )}
+              {pastMeets.length > 0 && onOpenEvent && (
+                <div className="faction-meet-past" id="faction-meet-past">
+                  <span>往次约谈</span>
+                  {pastMeets.map(event => (
+                    <button key={event.id} id={`faction-meet-past-${event.id}`} type="button" className="vn-chip" onClick={() => onOpenEvent(event.id)}>
+                      {`第 ${event.day} 日 · ${event.status === 'done' ? '已结束' : '谈到一半'}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </header>

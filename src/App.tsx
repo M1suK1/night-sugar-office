@@ -37,6 +37,7 @@ import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { FactionDialog } from './components/FactionDialog';
 import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
+import { meetEventId } from './rules/summon';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, optimizeCardImages, parseGirlCard } from './cards';
@@ -1777,7 +1778,7 @@ export default function App() {
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
-      {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onMeet={() => { const faction = modal.id; if (perform({ type: 'meetLeader', faction })) setModal({ type: 'event', id: `meet-${state.day}-${faction}` }); }} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
+      {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onMeet={() => { const faction = modal.id; const existing = state.events.find(event => event.id === meetEventId(state, faction)); if (existing) { setModal({ type: 'event', id: existing.id }); return; } if (perform({ type: 'meetLeader', faction })) setModal({ type: 'event', id: meetEventId(state, faction) }); }} onOpenEvent={eventId => setModal({ type: 'event', id: eventId })} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}

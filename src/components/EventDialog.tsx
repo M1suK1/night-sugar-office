@@ -399,13 +399,13 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
             </div>
           </header>
           <section className="story-opening" id="story-opening">
-            <h3 className="story-opening-title">{busyNow ? '她在等你把话说完……' : rewriteOpen ? '把这一夜重新说一遍' : '这一夜是怎么开始的？'}</h3>
+            <h3 className="story-opening-title">{busyNow ? '她在等你把话说完……' : rewriteOpen ? '把这一面重新说一遍' : '提出你的邀约请求'}</h3>
             <p className="story-opening-note">
               {rewriteOpen
                 ? `重写会清掉这一段已有的 ${clearedRounds} 轮对话，回到开场之前。`
                 : event.playerSeed !== undefined && !busyNow
                   ? '上一次开场没有写出来。改一改再试一次，或者按引子开始。'
-                  : '写下你进门的样子、外头的天气，或者你说的第一句。叙事者会接着这一段写开场；不写也行，那就按引子开始。'}
+                  : '写下你想怎么见这一面：递帖、登门、或者要她的人带路。她不会先开口——先给出你的邀约。不写也行，那就按引子开始。'}
             </p>
             <div className="story-opening-input">
               <span className={`story-opening-beam${seedDraft.trim() ? ' lit' : ''}`} aria-hidden="true" />
@@ -497,7 +497,13 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
 
             <main className="battle-note-center event-center">
               <div ref={end} className="battle-note-body" role="log" aria-live="polite">
-                {turns.length === 0 && <div className="battle-note-loading" role="status"><LoaderCircle size={22} className="spin" /><b>叙事者正在写开场白</b><span>她先开口，你随后决定用什么方式接下去。</span></div>}
+                {turns.length === 0 && (
+                  <div className="battle-note-loading" role="status">
+                    {loading ? <LoaderCircle size={22} className="spin" /> : null}
+                    <b>{loading ? '她正在想怎么接你的话……' : '提出你的邀约请求'}</b>
+                    <span>{loading ? '这一段写出来就会接在下面。' : '在「原文」或台上先写一句你想怎么开始这一面。'}</span>
+                  </div>
+                )}
                 {turns.map((turn, turnIndex) => turn.role === 'player' ? (
                   <div key={turn.id} ref={node => { if (node) turnNodes.current.set(turn.id, node); else turnNodes.current.delete(turn.id); }} className="battle-note-line right player-turn">
                     <span className="battle-note-speaker">所长</span>

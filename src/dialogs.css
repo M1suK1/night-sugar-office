@@ -1114,3 +1114,27 @@ button.vn-chip#story-opening-rewrite {
   padding: 2px 10px;
   font-size: 10.5px;
 }
+/* ── v168 约谈入口：只有「结束事件」才收起 ─────────────────────────────── */
+.faction-meet-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #9a939f;
+}
+
+.faction-meet-past {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(247, 242, 245, 0.08);
+  font-size: 11px;
+  color: #6f6878;
+}
+
+.faction-meet-past .vn-chip {
+  padding: 2px 10px;
+  font-size: 10.5px;
+}
