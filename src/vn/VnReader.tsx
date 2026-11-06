@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronsRight, FastForward, Rewind, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { speakersBySegment, stageAfter } from './stage';
+import { castBucket, speakersBySegment, stageAfter } from './stage';
 import { vnAwaitingChoice, vnInitial, vnLastSayIndex, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
@@ -224,7 +224,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
       {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
       <div className="vn-vignette" aria-hidden="true" />
-      <div className="vn-cast" data-count={Math.min(shownCast.length, 5)} aria-hidden="true">
+      <div className="vn-cast" data-count={castBucket(shownCast.length)} aria-hidden="true">
         {shownCast.map(({ id, member }, at) => {
           const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === id;
           const expression = (speaking ? say?.expression : undefined) ?? member.girl.expression ?? 'calm';

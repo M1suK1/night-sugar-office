@@ -134,6 +134,10 @@
 .vn-cast[data-count="3"] .vn-actor { height: 88%; }
 .vn-cast[data-count="4"] .vn-actor { height: 82%; }
 .vn-cast[data-count="5"] .vn-actor { height: 76%; }
+/* v151：六人（6 人编队 / 3v3）各自收一点，并允许轻微交叠，保证六张脸都露得出来 */
+.vn-cast[data-count="6"] .vn-actor { height: 70%; margin: 0 -1.2%; }
+/* 7 人以上：再降一档（目前不会出现，留作兜底） */
+.vn-cast[data-count="many"] .vn-actor { height: 64%; margin: 0 -2%; }
 
 /* 说话的人亮起来，旁边的人压暗但仍然看得清（这里不用 transform，交给进出场动画） */
 .vn-actor.dimmed {
@@ -736,6 +740,9 @@
     max-width: 88%;
     height: 95%;
   }
+  /* 窄屏六人：立绘再收一点、交叠多一点，避免互相遮脸 */
+  .vn-cast[data-count="6"] .vn-actor { height: 64%; margin: 0 -4%; }
+  .vn-cast[data-count="many"] .vn-actor { height: 58%; margin: 0 -5%; }
   .vn-side-options {
     right: 12px;
     bottom: 170px;

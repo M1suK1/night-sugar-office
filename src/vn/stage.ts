@@ -10,6 +10,21 @@
  */
 import type { VnBeat } from './types.ts';
 
+/** 舞台档位：1–6 各占一档，7 人以上合成 "many"。CSS 按 data-count 取高度。 */
+export type CastBucket = 1 | 2 | 3 | 4 | 5 | 6 | 'many';
+
+/**
+ * 舞台上有几个人该用哪一档高度（v151）。
+ *
+ * 六人编队与 3v3 对战都会一次站满六个人，旧版把人数截到 5，
+ * 第六个人掉回默认高度、和邻居叠在一起。7 人以上（目前不会出现）统一降一档，保证不崩。
+ */
+export function castBucket(count: number): CastBucket {
+  if (count >= 7) return 'many';
+  if (count <= 1) return 1;
+  return Math.min(6, Math.floor(count)) as 2 | 3 | 4 | 5 | 6;
+}
+
 /** 旁白与所长不算「立绘角色」：他们开口不该改变舞台站位。 */
 const OFF_STAGE = new Set(['narrator', 'player']);
 

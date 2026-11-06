@@ -77,6 +77,21 @@ export function battleCast(battle: BattleState): BattleActor[] {
 }
 
 /**
+ * 原文模式的左右分栏（v151）。
+ *
+ * - 有敌方立绘（3v3 魔法少女对战）：左我方、右敌方，各按单位顺序。
+ * - 纯我方（6 怪委托）：按队序前一半在左、后一半在右；
+ *   6 人就是左三右三，不会把六个人全塞进一栏被裁掉。
+ */
+export function splitBattleCast(cast: readonly BattleActor[]): { left: BattleActor[]; right: BattleActor[] } {
+  const enemies = cast.filter(actor => actor.side === 'enemy');
+  const allies = cast.filter(actor => actor.side === 'ally');
+  if (enemies.length) return { left: allies, right: enemies };
+  const half = Math.ceil(allies.length / 2);
+  return { left: allies.slice(0, half), right: allies.slice(half) };
+}
+
+/**
  * 战报里该用哪张立绘。
  *
  * 三种来源按可靠性排：

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
-import { battleActors, battleCast, battleOutcomeLabel, totalBattleRounds } from '../battleNote';
+import { battleActors, battleCast, battleOutcomeLabel, splitBattleCast, totalBattleRounds } from '../battleNote';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
 import { VnModeToggle } from '../vn/VnModeToggle';
@@ -54,11 +54,8 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
   const cast = useMemo(() => battleCast(battle), [battle]);
   const actors = useMemo(() => battleActors(battle), [battle]);
   const girlsById = useMemo(() => new Map(girls.map(girl => [girl.id, girl])), [girls]);
-  const enemies = cast.filter(actor => actor.side === 'enemy');
-  const allies = cast.filter(actor => actor.side === 'ally');
-  const splitAllies = enemies.length === 0 && allies.length > 1;
-  const leftCast = enemies.length ? allies : splitAllies ? allies.filter((_, index) => index % 2 === 0) : allies;
-  const rightCast = enemies.length ? enemies : splitAllies ? allies.filter((_, index) => index % 2 === 1) : [];
+  // v151：六人编队按队序左三右三；3v3 左我方、右敌方。
+  const { left: leftCast, right: rightCast } = useMemo(() => splitBattleCast(cast), [cast]);
   const rightKeys = new Set(rightCast.map(actor => `${actor.side}:${actor.girlId}`));
   const actorByKey = new Map(actors.map(actor => [`${actor.side}:${actor.girlId}`, actor]));
   const activeLine = useMemo<BattleNoteLine | null>(() => {
