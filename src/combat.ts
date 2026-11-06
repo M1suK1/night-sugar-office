@@ -3,6 +3,7 @@ import { loadBalance } from './balance.ts';
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, PassiveTrigger, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, getSkill } from './content/skills.ts';
 import { findAnySkill } from './skills.ts';
+import { missionBaseExp } from './missionReward.ts';
 import { attachPassive, passiveDamageBonus, passiveDamageReduction, passiveHitBonus, passiveInitiativeBonus } from './passives.ts';
 import { findMonster } from './content/monsters.ts';
 import { applyEliteBuff, eliteBuffById } from './content/eliteBuffs.ts';
@@ -680,11 +681,10 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   }
   const outcome = state.outcome;
   const rate = rewardRate(outcome, state.partial === true);
-  const baseExp = outcome === 'victory' ? 24 + rounds * 3 : outcome === 'repelled' ? 10 : outcome === 'draw' ? 6 : 0;
-  const exp = Math.round(baseExp * rate);
+  const exp = Math.round(missionBaseExp(mission) * rate);
   // 拦截战没有委托报酬：打赢也只是把那张单子打作废，所以金币恒为 0，只发战斗经验。
-  const monsterBonus = monsterRewardMultiplier(mission.enemyIds?.length ?? 0);
-  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * rate * monsterBonus), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
+  // 多怪奖励已经算进 mission.reward，结算这里不再二次乘倍率。
+  state.rewards = { gold: interception ? 0 : Math.round(mission.reward * rate), exp, bond: outcome === 'victory' ? 3 : outcome === 'defeat' ? -4 : 0 };
   if (outcome === 'defeat') {
     const at = `${day} 日 ${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     state.scars = [];

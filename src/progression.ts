@@ -1,5 +1,6 @@
-import type { Archetype, Girl, StatKey } from './types';
+import type { Archetype, Girl, Mission, StatKey } from './types';
 import { effectiveGuard } from './economy.ts';
+import { missionBaseExp } from './missionReward.ts';
 
 export const MAX_LEVEL = 10;
 /** 每级可分配的四维点数（手动模式）。 */
@@ -23,34 +24,30 @@ export interface LevelUpResult {
   points: number;
 }
 
+/**
+ * 等级经验需求：二次曲线。
+ *
+ * 旧版是 60 + 20 × (level - 1) 的线性曲线，高难委托很容易被半级封顶压平；
+ * v165 改成 60 + 18 × (level - 1) + 3 × (level - 1)²，前两级几乎不变，
+ * 后面逐级拉长，让高难委托的经验优势有意义。
+ */
 export function expNeeded(level: number): number {
   if (level >= MAX_LEVEL) return 0;
-  return 60 + 20 * (level - 1);
-}
-export function battleExp(recommendedLevel: number): number {
-  return 30 + 10 * (Math.max(1, Math.min(MAX_LEVEL, recommendedLevel)) - 1);
-}
-export function investigationExp(recommendedLevel: number): number {
-  return Math.round(battleExp(recommendedLevel) / 2);
+  const step = Math.max(0, level - 1);
+  return 60 + 18 * step + 3 * step * step;
 }
 
 /**
- * 委托经验的封顶比例。
+ * 一次委托给一位少女的经验。
  *
- * 界面一直写着「连续两次达标战斗或四次调查可提升一级」，但经验是按委托的
- * 推荐等级算的：1 级少女去打推荐等级 4 的战斗委托，基础值就是 60，正好等于
- * 1 级的需求（60），于是一单就升级。这里按**她自己的等级需求**封顶：
- * 一次战斗最多半级、一次调查最多四分之一级，既保住「两次 / 四次」的节奏，
- * 又保留高难委托给得更多的差别（封顶之内）。
+ * 基础值由魔物阶级/数量 × 时长（战斗）或难度 × 时长（调查）决定；
+ * 单次最多升 1 级：拿到不超过「到下一级还差多少」，溢出丢弃。
  */
-export const MISSION_EXP_SHARE = { battle: 0.5, investigation: 0.25 } as const;
-
-export function missionExp(girl: Girl, recommendedLevel: number, kind: 'battle' | 'investigation'): number {
+export function missionExp(girl: Girl, mission: Mission): number {
   const need = expNeeded(girl.level);
   if (need <= 0) return 0;
-  const base = kind === 'battle' ? battleExp(recommendedLevel) : investigationExp(recommendedLevel);
-  const cap = Math.max(1, Math.floor(need * MISSION_EXP_SHARE[kind]));
-  return Math.min(base, cap);
+  const remaining = Math.max(0, need - Math.max(0, girl.exp ?? 0));
+  return Math.min(missionBaseExp(mission), remaining);
 }
 export function growthFor(archetype: Archetype = '输出'): [StatKey, StatKey] {
   if (archetype === '输出') return ['magic', 'agility'];

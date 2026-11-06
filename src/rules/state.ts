@@ -5,6 +5,7 @@ import { loadPlayerProfile } from '../player.ts';
 import { bosses } from '../content/bosses.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
 import { applyPct, districtAt, districts } from '../districts.ts';
+import { MIN_REWARD, MISSION_REWARD_VERSION, missionRewardFor } from '../missionReward.ts';
 import { defaultFactionRoster } from '../factions.ts';
 import { initialHostility } from '../hostility.ts';
 import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from '../office.ts';
@@ -49,7 +50,9 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
       rounds: m.rounds ?? Math.max(2, Math.floor(m.duration / ROUND_MINUTES)),
       district, window, longDays, wave: 0, spawnedAt: spawnAt,
       deadlineAt: deadlineFor(window, 14, spawnAt, longDays),
-      target: applyPct(m.target, region.effect.targetPct), reward: applyPct(m.reward, region.effect.rewardPct),
+      target: applyPct(m.target, region.effect.targetPct),
+      reward: Math.max(MIN_REWARD, applyPct(missionRewardFor({ work: m.work, difficulty: m.difficulty, duration: m.duration, enemyCount: m.enemyIds?.length ?? 0, window, longDays }), region.effect.rewardPct)),
+      rewardVersion: MISSION_REWARD_VERSION,
     };
   });
   const logs: Log[] = [

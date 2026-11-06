@@ -7,6 +7,7 @@ import { suggestedLevel } from '../../missionLevel';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
 import { isPassiveSkill } from '../../skills';
+import { missionRewardFor } from '../../missionReward';
 import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
@@ -861,7 +862,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   {mission.work === 'combat' && <label className="field"><span>轮数</span><input id="workshop-mission-rounds" type="number" min="2" max="8" value={mission.rounds} disabled={!editable} onChange={event => patchMission({ rounds: num(event.target.value, 3) })} /></label>}
                   <label className="field"><span>时长（分钟）</span><input id="workshop-mission-duration" type="number" step="15" min="15" max="240" value={mission.duration} disabled={!editable} onChange={event => patchMission({ duration: Math.round(num(event.target.value, 60) / 15) * 15 })} /></label>
                   <label className="field"><span>推荐等级</span><input id="workshop-mission-level" type="number" min="1" max="12" value={mission.recommendedLevel} disabled={!editable} onChange={event => patchMission({ recommendedLevel: Math.max(1, Math.min(10, num(event.target.value, suggestedLevel(mission.difficulty, (mission.enemyIds ?? []).length)))) })} /></label>
-                  <label className="field"><span>报酬（星砂）</span><input id="workshop-mission-reward" type="number" min="0" value={mission.reward} disabled={!editable} onChange={event => patchMission({ reward: Math.max(0, num(event.target.value)) })} /></label>
+                  <label className="field"><span>报酬（投放时重算）</span><input id="workshop-mission-reward" type="number" value={missionRewardFor({ work: mission.work, difficulty: mission.difficulty, duration: mission.duration, enemyCount: mission.enemyIds.length })} disabled readOnly /></label>
                   <label className="field"><span>附赠装备</span><select id="workshop-mission-reward-item" value={mission.rewardEquipmentId ?? ''} disabled={!editable} onChange={event => patchMission({ rewardEquipmentId: event.target.value || undefined })}><option value="">无</option>{allGear.map(entry => <option key={entry.id} value={entry.id}>{entry.name}（{entry.slot}）</option>)}</select></label>
                   <label className="field"><span>免费契约者等级</span><input id="workshop-mission-reward-girl" type="number" min="0" max="12" value={mission.rewardGirlLevel ?? 0} disabled={!editable} onChange={event => patchMission({ rewardGirlLevel: Math.min(12, Math.max(0, Math.round(num(event.target.value, 0)))) })} /><small className="workshop-muted">0 表示没有这项奖励</small></label>
                   <label className="field"><span>辖区</span><select id="workshop-mission-district" value={mission.district ?? ''} disabled={!editable} onChange={event => patchMission({ district: (event.target.value || undefined) as MissionTemplate['district'] })}><option value="">自动轮转</option>{Object.values(districts).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>

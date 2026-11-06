@@ -147,7 +147,7 @@ export function battleDigest(battle: BattleState): string {
   for (const event of events) parts.push(eventLine(event));
   const notes = actors.filter(actor => actor.downRound !== null);
   if (notes.length) parts.push(`倒下：${notes.map(actor => `${actor.name}${actor.side === 'enemy' ? '（敌方）' : ''} 第 ${actor.downRound} 回合`).join('；')}`);
-  if (battle.rewards) parts.push(`奖励：星砂 ${battle.rewards.gold}，经验 ${battle.rewards.exp}，羁绊 ${battle.rewards.bond}`);
+  if (battle.rewards) parts.push(`奖励：星砂 ${battle.rewards.gold}，经验 ${battle.rewards.exp}（每人最多升 1 级），羁绊 ${battle.rewards.bond}`);
   if (battle.scars?.length) parts.push(`疤痕：${battle.scars.map(scar => scar.name).join('、')}`);
   if (battle.fatal?.length) parts.push(`致命：${battle.fatal.join('、')}`);
   return parts.join('\n');

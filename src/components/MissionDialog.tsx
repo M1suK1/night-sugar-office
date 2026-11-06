@@ -55,7 +55,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
       </div>
       <p className="mission-description">{mission.description}</p>
       <div className="mission-facts">
-        <div><Sparkles size={18} /><small>委托报酬</small><b>{mission.reward.toLocaleString()}<em> 星砂</em></b></div>
+        <div><Sparkles size={18} /><small>委托报酬</small><b>{mission.reward.toLocaleString()}<em> 星砂</em></b><span className="mission-fact-note">按队伍机会成本 + 治疗准备金 × 难度结算</span></div>
         <div><Clock3 size={18} /><small>预计耗时</small><b>{mission.duration}<em> 分钟</em></b></div>
         <div><Shield size={18} /><small>{mission.work === 'combat' ? '战斗轮次' : '推荐能力'}</small><b>{mission.work === 'combat' ? mission.rounds : statLabels[mission.requirement]}<em>{mission.work === 'combat' ? ` × ${mission.rounds} 轮` : ` ${mission.target}+`}</em></b></div>
         <div><Users size={18} /><small>编队上限</small><b>{limit}<em> 人</em></b></div>

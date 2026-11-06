@@ -170,7 +170,7 @@ export function BattleReport({ battle, girls = [], hasNote, onNote, onClose }: {
         <div className={`battle-outcome tone-${tone}`}>
           <div className="outcome-mark">{outcome === 'defeat' ? <Skull size={30} /> : <Trophy size={30} />}</div>
           <div><small>{battle.missionTitle} · {battle.round} 轮</small><h2>{outcomeLabel(outcome)}</h2><p>{outcome === 'victory' ? '所有魔物失去战斗能力。委托完成，事件已从城市事件池中移除。' : outcome === 'repelled' ? '委托时间耗尽，魔物被暂时击退。事务所获得八成报酬，事件仍会回到池中。' : outcome === 'defeat' ? '全员失去战斗能力。她们会带着疤痕回来，而事件仍留在城市里。' : '双方都没能彻底结束战斗。城市暂时安静下来。'}</p></div>
-          <div className="outcome-reward"><span>星砂</span><b>{battle.rewards?.gold ?? 0}</b><span>经验</span><b>{battle.rewards?.exp ?? 0}</b><span>羁绊</span><b>{battle.rewards?.bond ?? 0}</b></div>
+          <div className="outcome-reward"><span>星砂</span><b>{battle.rewards?.gold ?? 0}</b><span title="每人最多升 1 级">经验</span><b>{battle.rewards?.exp ?? 0}</b><span>羁绊</span><b>{battle.rewards?.bond ?? 0}</b></div>
         </div>
         <div className="report-body">
           <section>
@@ -188,7 +188,7 @@ export function BattleReport({ battle, girls = [], hasNote, onNote, onClose }: {
                 <p>每道疤痕让血量上限下降约 8%。第五道疤痕意味着死亡。</p>
               </div>
             ) : <div className="report-quiet"><Shield size={16} /><span>{outcome === 'victory' ? '没有人受伤。今晚的星光很温柔。' : '没有新增疤痕，但疲劳会留在她们身上。'}</span></div>}
-            <div className="report-exp"><span>战斗经验</span><i><b style={{ width: `${Math.min(100, (battle.rewards?.exp ?? 0) * 2)}%` }} /></i><b>+{battle.rewards?.exp ?? 0} EXP</b></div>
+            <div className="report-exp"><span>战斗经验</span><i><b style={{ width: `${Math.min(100, (battle.rewards?.exp ?? 0) * 2)}%` }} /></i><b title="每人最多升 1 级">+{battle.rewards?.exp ?? 0} EXP</b></div>
             {battle.fatal?.length ? <div className="fatal-note"><Skull size={14} />{battle.fatal.map(id => battle.units.find(u => u.uid === `ally-${id}`)?.name).join('、')}的第五道疤痕已经出现。她回不来了。</div> : null}
           </section>
         </div>

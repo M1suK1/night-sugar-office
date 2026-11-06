@@ -185,7 +185,7 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'pollutionPowerPct', label: '污染·魔物伤害', hint: '每 100 点污染让魔物伤害加成多少百分比。', min: 0, max: 120, step: 5, unit: '%', group: '污染与难度' },
   { key: 'pollutionTargetPct', label: '污染·判定难度', hint: '每 100 点污染让委托目标值加成多少百分比。', min: 0, max: 60, step: 2, unit: '%', group: '污染与难度' },
   { key: 'pollutionRewardPct', label: '污染·报酬加成', hint: '每 100 点污染让委托报酬加成多少百分比。', min: 0, max: 80, step: 2, unit: '%', group: '污染与难度' },
-  { key: 'rewardPerExtraMonster', label: '多怪奖励加成', hint: '战斗委托每多一只魔物，奖励额外提高多少百分比。', min: 0, max: 60, step: 5, unit: '%', group: '污染与难度' },
+  { key: 'rewardPerExtraMonster', label: '多怪奖励加成（4 只起）', hint: '战斗委托超过 3 只后，每多一只魔物，奖励额外提高多少百分比。', min: 0, max: 60, step: 5, unit: '%', group: '污染与难度' },
   { key: 'envoyTributeWeight', label: '索款权重', hint: '势力代表直接索要星砂的权重。', min: 0, max: 80, step: 5, group: '势力代表' },
   { key: 'envoyTributeMin', label: '索款下限', hint: '一次索款最少要多少星砂。', min: 100, max: 1000, step: 100, unit: '星砂', group: '势力代表' },
   { key: 'envoyTributeMax', label: '索款上限', hint: '一次索款最多要多少星砂。', min: 200, max: 2000, step: 100, unit: '星砂', group: '势力代表' },

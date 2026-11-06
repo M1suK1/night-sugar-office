@@ -462,7 +462,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="growth-columns">
             <div className="growth-col">
             <div className="growth-hero"><div><small>成长记录</small><strong>{girl.level >= 10 ? '已达上限' : 'Lv.' + girl.level + ' → Lv.' + (girl.level + 1)}</strong><span>{state.levelUpMode === 'manual' ? '手动分配 · 每次晋升 10 点' : '自动成长 · 主 +6 / 副 +4'} · 还需 {progressLabel(girl)} EXP</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : 'Lv.' + girl.level}</div></div>
-            <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>经验按委托推荐等级结算，但一次最多给到当前等级需求的 50%（调查 25%）：两次达标战斗或四次调查正好升一级。</small></div>
+            <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>经验按魔物阶级与数量 × 时长结算（调查按难度 × 时长）；每次委托最多升 1 级。</small></div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
             </div>

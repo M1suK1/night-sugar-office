@@ -864,7 +864,7 @@ export interface Memorial {
 }
 export interface Mission {
   id: string; title: string; category: string; description: string; x: number; y: number;
-  difficulty: string; duration: number; reward: number; requirement: StatKey; target: number;
+  difficulty: string; duration: number; reward: number; /** v165：报酬公式版本；旧委托缺省 0。 */ rewardVersion?: number; requirement: StatKey; target: number;
   color: string; status: MissionStatus; girlId?: string; squad: string[];
   work: WorkKind; enemyIds?: string[]; rounds?: number; attempts: number; worsened?: boolean;
   lastOutcome?: 'victory' | 'repelled' | 'defeat' | 'draw'; generated?: boolean; sourcePack?: string;

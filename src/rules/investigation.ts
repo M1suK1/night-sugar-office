@@ -26,7 +26,7 @@ export function settleInvestigation(state: GameState, mission: Mission, squad: G
     state.logs.unshift({ id: `log-inv-${mission.id}-${mission.attempts}`, time: dateLabel(at.day, at.minutes), kind: 'dispatch', text: `调查完成：${mission.title}。${squad.map(g => g.name).join('、')}带回了可以写进档案的答案。${region.name}的环境让这次行动${region.effect.rewardPct && region.effect.rewardPct > 0 ? '额外顺利' : '格外磨人'}。`, delta: mission.reward });
     pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `调查完成 · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}带回了答案，报酬 ${mission.reward} 星砂。` });
     for (const girl of squad) {
-      grantExpWithNotice(state, girl, missionExp(girl, mission.recommendedLevel, 'investigation'));
+      grantExpWithNotice(state, girl, missionExp(girl, mission));
       girl.bond = Math.min(100, girl.bond + 1);
       girl.fatigue = Math.min(100, girl.fatigue + Math.round(mission.duration / 15));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;

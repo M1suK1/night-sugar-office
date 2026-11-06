@@ -3,6 +3,7 @@ import { spawnBossMonster } from '../content/bosses.ts';
 import { factionInfo } from '../content/items.ts';
 import { customMissionTemplates } from '../content/library.ts';
 import { suggestedLevel } from '../missionLevel.ts';
+import { MIN_REWARD, MISSION_REWARD_VERSION, missionRewardFor } from '../missionReward.ts';
 import { gradeOfEnemies, missionLevelFor } from '../missionTier.ts';
 import { extraMissions } from '../content/missions-extra.ts';
 import { monsters } from '../content/monsters.ts';
@@ -81,7 +82,19 @@ export function annotateMission(state: GameState, mission: Mission, wave = 0): M
   };
   // 已有快照的委托不再重算：发出去之后辖区易主或被人净化，不能回头改动这一单。
   if (mission.environment) return base;
-  return { ...base, ...missionSnapshot(state, district, mission.target, mission.reward) };
+  const special = Boolean(mission.boss || mission.faction || mission.envoy || mission.storylineId);
+  const reward = special ? mission.reward : missionRewardFor({
+    work: base.work, difficulty: base.difficulty, duration: base.duration,
+    enemyCount: base.enemyIds?.length ?? 0, window: base.window,
+    longDays: base.longDays ?? (base.window === 'long' ? LONG_MIN_DAYS : undefined),
+  });
+  const snapshot = missionSnapshot(state, district, mission.target, reward);
+  return {
+    ...base,
+    rewardVersion: special ? base.rewardVersion : MISSION_REWARD_VERSION,
+    ...snapshot,
+    reward: special ? snapshot.reward : Math.max(MIN_REWARD, snapshot.reward),
+  };
 }
 
 /**
@@ -131,7 +144,8 @@ export function missionSeed(template: MissionTemplate): Mission {
     y: 50,
     difficulty: template.difficulty,
     duration: template.duration,
-    reward: template.reward,
+    reward: missionRewardFor({ work: template.work, difficulty: template.difficulty, duration: template.duration, enemyCount: template.enemyIds.length }),
+    rewardVersion: MISSION_REWARD_VERSION,
     requirement: template.requirement,
     target: template.target,
     color: template.color,
@@ -290,16 +304,16 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
   const baseline = DIFFICULTY_SCALE[template.difficulty as DifficultyTier] ? template.difficulty as DifficultyTier : undefined;
   const difficulty = template.storylineId ? baseline ?? '中危' : pickDifficulty(state, regionId, id, baseline);
   const scale = DIFFICULTY_SCALE[difficulty] ?? DIFFICULTY_SCALE['中危'];
-  const baseTarget = Math.round(template.target * scale.target);
-  const baseReward = Math.round(template.reward * scale.reward);
-  const snapshot = missionSnapshot(state, regionId, baseTarget, baseReward);
-  const target = Math.min(TARGET_CEILING, snapshot.target + (longDays ? (longDays - 2) * 2 : 0));
-  const urgentBonus = window === 'urgent' ? 1.3 : 0.9 + 0.22 * (longDays ?? 2);
-  const reward = Math.round(snapshot.reward * urgentBonus);
+  const duration = Math.round(template.duration * scale.duration);
   // 战斗委托的具体敌人也在这里抽：模板只写了要几只。
   const count = template.work === 'combat'
     ? ((template.enemyIds?.length ?? 0) > 0 && template.storylineId ? (template.enemyIds ?? []).length : (template.enemyCount ?? scale.enemies[hashText(`${id}:count`) % scale.enemies.length] ?? 2))
     : 0;
+  const baseTarget = Math.round(template.target * scale.target);
+  const baseReward = missionRewardFor({ work: template.work, difficulty, duration, enemyCount: count, window, longDays });
+  const snapshot = missionSnapshot(state, regionId, baseTarget, baseReward);
+  const target = Math.min(TARGET_CEILING, snapshot.target + (longDays ? (longDays - 2) * 2 : 0));
+  const reward = Math.max(MIN_REWARD, snapshot.reward);
   const spawned = template.work === 'combat' ? rollEnemies(state, { count, difficulty, pollution: snapshot.pollutionAtSpawn ?? 0, missionId: id }) : { ids: [], buffs: [] };
   const enemyIds = template.storylineId ? template.enemyIds : spawned.ids;
   return {
@@ -310,7 +324,7 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
     enemyIds,
     enemyBuffs: enemyIds?.length ? spawned.buffs : undefined,
     enemyCount: undefined,
-    duration: Math.round(template.duration * scale.duration),
+    duration,
     recommendedLevel: template.storylineId
       ? template.recommendedLevel
       : Math.max(1, Math.min(10, Math.max(template.recommendedLevel ?? 0, suggestedLevel(difficulty, enemyIds?.length ?? count)))),
@@ -324,6 +338,7 @@ export function makeCommission(state: GameState, wave: number, slot: number): Mi
     y: pin.y,
     target,
     reward,
+    rewardVersion: MISSION_REWARD_VERSION,
     environment: snapshot.environment,
     pollutionAtSpawn: snapshot.pollutionAtSpawn,
     ownerAtSpawn: snapshot.ownerAtSpawn,
@@ -353,12 +368,17 @@ export function deployMissionTemplate(state: GameState, template: MissionTemplat
   const spawnAt = absoluteMinutes(state.day, state.minutes);
   const longDays = window === 'long' ? LONG_MIN_DAYS : undefined;
   const seeded = missionSeed(template);
+  const baseReward = missionRewardFor({
+    work: template.work, difficulty: template.difficulty, duration: template.duration,
+    enemyCount: template.enemyIds.length, window, longDays,
+  });
   // 投放测试的委托同样要冻结环境：否则工坊里看到的数值和玩家接到的不是一份。
-  const snapshot = missionSnapshot(state, regionId, seeded.target, seeded.reward);
+  const snapshot = missionSnapshot(state, regionId, seeded.target, baseReward);
   return {
     ...seeded,
     target: snapshot.target,
-    reward: snapshot.reward,
+    reward: Math.max(MIN_REWARD, snapshot.reward),
+    rewardVersion: MISSION_REWARD_VERSION,
     environment: snapshot.environment,
     pollutionAtSpawn: snapshot.pollutionAtSpawn,
     ownerAtSpawn: snapshot.ownerAtSpawn,

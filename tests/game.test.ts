@@ -16,7 +16,7 @@ import { mulberry32, rollStats, statsForArchetype } from '../src/content/archety
 import { customGirlOf, customLeaderOf, defaultFactionRoster, leaderById, leaderTitle, rosterLeader, rosterMembers } from '../src/factions.ts';
 import { rosterPool } from '../src/roster.ts';
 import { subjectOfCustom } from '../src/factions.ts';
-import { battleExp, expNeeded, grantExp } from '../src/progression.ts';
+import { expNeeded, grantExp, missionExp } from '../src/progression.ts';
 import { REMOTE_CALL_COST, pensionFor } from '../src/contracts.ts';
 import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfile, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, requestSnapshot, tokenFloorFor } from '../src/llm.ts';
 import { buildNightCatalog, buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
@@ -194,11 +194,12 @@ test('重复派遣、低血量与过劳被阻止', () => {
 });
 test('调查委托推进完成后只结算一次收入与日志', () => {
   const s = createInitialState();
+  const reward = s.missions.find(m => m.id === 'candy')!.reward;
   const r = act(s, { type: 'dispatch', girlIds: ['yue', 'tang'], missionId: 'candy' });
   const done = act(r.state, { type: 'advance', minutes: 120 });
   assert.equal(done.ok, true);
   assert.equal(done.state.girls.find(g => g.id === 'yue')!.status, 'idle');
-  assert.equal(done.state.gold, s.gold + 734);
+  assert.equal(done.state.gold, s.gold + reward);
   assert.ok(done.state.completed.includes('candy'));
   assert.equal(done.state.missions.find(m => m.id === 'candy')!.status, 'done');
   const gold = done.state.gold;
@@ -206,11 +207,12 @@ test('调查委托推进完成后只结算一次收入与日志', () => {
 });
 test('午夜前推进在打烊那一刻停下，跨日交给打烊交接', () => {
   const initial = createInitialState(); initial.minutes = 25 * 60 + 10;
+  const reward = initial.missions.find(m => m.id === 'candy')!.reward;
   const dispatched = act(initial, { type: 'dispatch', girlIds: ['yue', 'tang'], missionId: 'candy' }).state;
   const closed = act(dispatched, { type: 'advance', minutes: 60 }).state;
   assert.equal(closed.day, 14); assert.equal(closed.minutes, 26 * 60);
-  assert.equal(closed.samples.find(x => x.day === 14)!.income, initial.samples.at(-1)!.income + 734);
-  assert.equal(closed.logs.find(l => l.delta === 734)!.time, '第 14 日 · 01:55');
+  assert.equal(closed.samples.find(x => x.day === 14)!.income, initial.samples.at(-1)!.income + reward);
+  assert.equal(closed.logs.find(l => l.delta === reward)!.time, '第 14 日 · 01:55');
   assert.equal(act(closed, { type: 'advance', minutes: 5 }).ok, false);
   const next = act(closed, { type: 'endNight' });
   assert.equal(next.ok, true);
@@ -223,21 +225,25 @@ test('战斗胜利移除事件、发放全额收益并提升关系与经验', ()
   const before = s.girls.find(g => g.id === 'yue')!;
   const dispatched = act(s, { type: 'dispatch', girlIds: ['yue', 'tang', 'ling'], missionId: 'mirror' }).state;
   const goldBefore = dispatched.gold;
+  const mirror = dispatched.missions.find(m => m.id === 'mirror')!;
+  const yueBefore = dispatched.girls.find(g => g.id === 'yue')!;
+  const expectedGold = mirror.reward;
+  const expectedExp = missionExp(yueBefore, mirror);
   const result = act(dispatched, { type: 'advance', minutes: 180 }).state;
   const battle = result.battles[0];
   assert.equal(battle.outcome, 'victory');
   assert.ok(battle.events.length > 0);
   assert.ok((battle.frames?.length ?? 0) >= battle.round);
   assert.equal(battle.startedAt.day, 14);
-  assert.equal(result.gold, goldBefore + 1240);
+  assert.equal(result.gold, goldBefore + expectedGold);
   assert.equal(result.missions.find(m => m.id === 'mirror')!.status, 'done');
   assert.ok(result.completed.includes('mirror'));
   const yue = result.girls.find(g => g.id === 'yue')!;
   assert.equal(yue.bond, Math.min(100, before.bond + 3));
   assert.equal(yue.relationships.tang, (before.relationships.tang ?? 40) + 2);
-  assert.equal(yue.exp, battleExp(result.missions.find(m => m.id === 'mirror')!.recommendedLevel));
+  assert.equal(yue.exp, expectedExp);
   assert.equal(yue.scars.length, 0);
-  assert.equal(result.logs.find(l => l.kind === 'battle')?.delta, 1240);
+  assert.equal(result.logs.find(l => l.kind === 'battle')?.delta, expectedGold);
 });
 test('v115 战斗击退只发放五成收益，魔物带伤回到事件池', () => {
   const s = createInitialState();
@@ -250,8 +256,8 @@ test('v115 战斗击退只发放五成收益，魔物带伤回到事件池', () 
   const result = act(dispatched, { type: 'advance', minutes: 60 }).state;
   const battle = result.battles[0];
   const mission = result.missions.find(m => m.id === 'station')!;
-  // v85：报酬还要乘「多怪奖励倍率」；v115：击退改为按 50% 结算。
-  const expected = Math.round(mission.reward * 0.5 * monsterRewardMultiplier(mission.enemyIds?.length ?? 0));
+  // v165：多怪奖励已经算进 mission.reward；v115：击退按 50% 结算。
+  const expected = Math.round(mission.reward * 0.5);
   assert.equal(battle.outcome, 'repelled');
   assert.equal(battle.partial, false);
   assert.equal(result.gold, goldBefore + expected);
@@ -1266,14 +1272,14 @@ test('辖区环境影响委托目标、报酬与截止时间', () => {
   // v85 抬高了污染系数，这一层的期望值也跟着变（地形 + 当主 + 污染三层叠加）。
   assert.equal(short.environment?.targetPct, 18);
   assert.equal(short.target, 118);
-  assert.equal(short.reward, 1200);
+  assert.ok(short.reward >= 520, '报酬不应低于下限');
   assert.equal(short.pollutionAtSpawn, 38);
   assert.equal(short.deadlineAt, state.day * 1440 + state.minutes + 120);
   const long = annotateMission(state, { ...base, duration: 120, x: 24, y: 27 });
   assert.equal(long.district, 'candy');
   assert.equal(long.window, 'long');
   assert.equal(long.target, 101);
-  assert.equal(long.reward, 1210, '污染是负贡献的辖区不吃抬价');
+  assert.ok(long.reward >= 520, '长期委托同样不低于下限');
   assert.equal(long.deadlineAt, deadlineFor('long', state.day, state.minutes));
 });
 

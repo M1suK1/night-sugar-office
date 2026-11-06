@@ -6,6 +6,7 @@ import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validat
 import { getItem, items, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
 import { extraMissions } from '../content/missions-extra.ts';
+import { rebaseOpenMissionRewards } from '../missionReward.ts';
 
 import { districtAt, districts } from '../districts.ts';
 import { effectiveGuard } from '../economy.ts';
@@ -171,6 +172,7 @@ export function loadState(raw: string | null): GameState {
       m.spawnedAt ??= shiftSpawn;
       m.deadlineAt ??= deadlineFor(m.window, state.day, m.spawnedAt, m.longDays);
     });
+    rebaseOpenMissionRewards(state);
     state.shift ??= { day: state.day, wave: previousVersion < 7 ? WAVE_AT.length : 0 };
     if (state.shift.day !== state.day) state.shift = { day: state.day, wave: 0 };
     state.territories = repairTerritories((state.territories ?? {}) as Partial<TerritoryMap>, `${state.packHash ?? createSeedPack().hash}:${previousVersion}`);

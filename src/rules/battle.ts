@@ -227,7 +227,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     girl.spirit = effectiveGuard(girl);
     if (battle.outcome === 'victory' || battle.outcome === 'repelled') {
       // v115：经验与星砂共用一个收益系数——不完全胜利 ×0.9、击退 ×0.5。
-      grantExpWithNotice(state, girl, Math.max(1, Math.round(missionExp(girl, mission.recommendedLevel, 'battle') * rewardRate(battle.outcome, battle.partial === true))));
+      grantExpWithNotice(state, girl, Math.max(1, Math.round(missionExp(girl, mission) * rewardRate(battle.outcome, battle.partial === true))));
       girl.contractEndDay += mission.attempts % 2 === 0 ? 1 : 0;
     }
     girl.bond = Math.max(0, Math.min(100, girl.bond + rewards.bond));
