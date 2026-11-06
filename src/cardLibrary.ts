@@ -7,7 +7,7 @@
  *
  * 两条取卡通道，按顺序试：
  *  1. `/api/cards`——本地跑（npm run dev / start.cmd）才有，能读磁盘上的全部卡；
- *  2. `/cards/index.json`——构建时把 ≤3.5MB 的小卡复制成静态资源，静态托管（Cloudflare Pages）
+ *  2. `/cards/index.json`——构建时把 ≤4MB 的小卡复制成静态资源，静态托管（Cloudflare Pages）
  *     也能有开局名册；大卡不进产物，留给玩家自己拖进来。
  *
  * 约定：

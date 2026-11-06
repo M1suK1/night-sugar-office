@@ -6,12 +6,12 @@
  * 再写一份 `/cards/index.json` 当清单。体积大的卡（10–21MB）不进产物——CF Pages 单文件
  * 上限 25MB，构建产物也吃不下，那些留到「玩家自己拖进来」的通道。
  *
- * 上限默认 3.5MB，和仓库里同步的那批小卡一致；可用 `STATIC_CARDS_MAX_BYTES` 覆盖。
+ * 上限默认 4MB，和仓库里同步的那批小卡一致；可用 `STATIC_CARDS_MAX_BYTES` 覆盖。
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_MAX_BYTES = Math.round(3.5 * 1024 * 1024);
+const DEFAULT_MAX_BYTES = Math.round(4 * 1024 * 1024);
 const INDEX_NAME = 'index.json';
 
 export const STATIC_CARD_BASE = '/cards';
