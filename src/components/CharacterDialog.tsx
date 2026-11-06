@@ -250,10 +250,27 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : girl.status === 'expedition' ? '星象台远行中 · 每 60 分钟回报一次' : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
           </>}
           {tab === 'ability' && <>
-            <div className="modal-section-heading"><h3>四维</h3><small>基础值</small></div>
-            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: girl.stats[k] + '%' }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
-            <div className="modal-section-heading"><h3>有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div>
-            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: Math.min(100, eff[k]) + '%' }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
+            <div className="modal-section-heading"><h3>四维</h3><small>基础值 · 绿为增益，红为减益</small></div>
+            <div className="stat-bars">{keys.map(k => {
+              const base = girl.stats[k];
+              const final = eff[k];
+              const delta = final - base;
+              const basePct = Math.max(0, Math.min(100, base));
+              const finalPct = Math.max(0, Math.min(100, final));
+              const summary = `${statLabels[k]} 基础 ${base}，最终 ${final}${delta ? `（${delta > 0 ? '+' : ''}${delta}）` : ''}`;
+              return (
+                <div key={k} title={summary} aria-label={summary}>
+                  <span>{statLabels[k]}</span>
+                  <i>
+                    <b style={{ width: `${finalPct}%` }} />
+                    {delta > 0 && <em className="stat-gain" style={{ left: `${basePct}%`, width: `${finalPct - basePct}%` }} />}
+                    {delta < 0 && <em className="stat-loss" style={{ left: `${finalPct}%`, width: `${basePct - finalPct}%` }} />}
+                  </i>
+                  <strong>{base}</strong>
+                  {delta !== 0 && <em className={`stat-delta ${delta > 0 ? 'up' : 'down'}`}>{delta > 0 ? `+${delta}` : `−${Math.abs(delta)}`}</em>}
+                </div>
+              );
+            })}</div>
             <div className="modal-section-heading"><h3>技能</h3><small>出勤时自动使用</small></div>
             <div className="skill-list">
               {girl.skills.map(id => findSkill(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).map(skill => (

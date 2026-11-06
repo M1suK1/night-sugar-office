@@ -82,9 +82,14 @@
 .stat-bars{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-top:16px}
 .stat-bars>div{display:flex;align-items:center;gap:8px}
 .stat-bars span{font-size:8px;color:#8e8096;width:28px}
-.stat-bars i{height:3px;background:#ffffff0e;flex:1;border-radius:3px;overflow:hidden}
+.stat-bars i{position:relative;height:3px;background:#ffffff0e;flex:1;border-radius:3px;overflow:hidden}
 .stat-bars i>b{display:block;height:100%;background:linear-gradient(90deg,#b78ca4,#f3aec9);border-radius:3px}
-.stat-bars strong{font-family:var(--font-data);font-size:10px;font-weight:400;color:#ddcbdc;width:22px;text-align:right}
+.stat-bars strong{font-family:var(--font-data);font-size:10px;font-weight:400;color:#ddcbdc;width:auto;min-width:18px;text-align:right}
+.stat-bars i>.stat-gain{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#4f9c74,#9fe3b8);border-radius:3px;pointer-events:none}
+.stat-bars i>.stat-loss{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#d85a7f 0 3px,#8e3350 3px 6px);border-radius:3px;pointer-events:none}
+.stat-bars .stat-delta{font-family:var(--font-data);font-size:8.5px;font-style:normal;letter-spacing:.02em;min-width:22px;text-align:right}
+.stat-bars .stat-delta.up{color:#9fe3b8}
+.stat-bars .stat-delta.down{color:#e58a9b}
 .small-note{font-size:7.5px;color:#7d6f85;line-height:1.8;margin-top:10px;display:flex;gap:5px;align-items:center}
 .bond-hero{display:flex;gap:16px;align-items:center;padding:13px;border:1px solid #ffffff0b;border-radius:9px;background:radial-gradient(circle at 10% 50%,#f3aec90f,transparent 60%)}
 .bond-ring{width:66px;height:66px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex-shrink:0;background:conic-gradient(var(--pink) var(--bond),#ffffff0d 0);position:relative;color:#f6dbe7}
