@@ -9,7 +9,7 @@ import { shouldAutoGenerate } from './autoGenerate';
 import { planForSlot } from './storyplan';
 import { loadProposalCheck, saveProposalCheck, type ProposalCheckMode } from './proposalCheck';
 import { portraitMissing } from './portraitReload';
-import { onLlmFinished } from './llm';
+import { loadLlmLog, onLlmFinished, type LlmLogEntry } from './llm';
 import { SAVE_CURRENT_KEY, bootState } from './migrate';
 import { cityStage, factionAttitude } from './economy';
 import { factionInfo } from './content/items';
@@ -1349,6 +1349,19 @@ export default function App() {
           ? `第 ${made.day} 日的访谈已就绪：${made.headline}（${made.source === 'llm' ? '叙事者' : '本地快报'}，${made.lines?.length ?? 0} 句，主持人 ${made.host?.name ?? '无'}）`
           : '节目没有生成出来，原因看上面的提示。';
       }
+      case 'prompt': case '提示词': {
+        // v177：审查用 —— 把最近几次请求的 system / user 原样打出来，不发新请求。
+        const log = loadLlmLog();
+        if (!log.length) return '还没有请求记录：先让叙事者跑一次，再回来敲 prompt。';
+        const wanted = Number.parseInt(arg, 10);
+        const count = Number.isFinite(wanted) && wanted > 0 ? Math.min(wanted, 5) : 1;
+        const blocks = log.slice(0, count).reverse().map((entry: LlmLogEntry) => {
+          const lines = [`[${entry.kind}] 预设：${entry.request?.preset ?? '未记录'} · 模型 ${entry.model}`];
+          for (const section of entry.request?.sections ?? []) lines.push('', `── ${section.label} ──`, section.text);
+          return lines.join('\n');
+        });
+        return blocks.join('\n\n');
+      }
       case 'variants': case '表情': {
         // v175：差分不见了先别开新档 —— 先看它躺在资产库还是卡面原文里。
         const current = latestState.current ?? state;
@@ -1834,7 +1847,7 @@ export default function App() {
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
       {modal.type === 'stories' && <StoryArchiveDialog onClose={() => setModal(null)} />}
-      {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
+      {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} presetName={boundPreset('news', presets, binding)?.name} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
       {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
         const before = new Set(state.events.map(event => event.id));
         const applied = act(state, { type: 'startMeeting', plan });

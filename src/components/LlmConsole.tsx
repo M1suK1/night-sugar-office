@@ -40,7 +40,7 @@ function compact(text: string, limit = 120): string {
 function entryText(entry: LlmLogEntry): string {
   const lines = [`[${timeLabel(entry.at)}] ${entry.kind} · ${entry.ok ? '成功' : '失败'}${entry.status ? ` · HTTP ${entry.status}` : ''}`, entry.message];
   if (entry.request) {
-    lines.push('', `参数：${Object.entries(entry.request.params).map(([key, value]) => `${key}=${value}`).join('，')}`);
+    lines.push('', `预设：${entry.request.preset ?? '未记录'}`, `参数：${Object.entries(entry.request.params).map(([key, value]) => `${key}=${value}`).join('，')}`);
     for (const section of entry.request.sections) lines.push('', `── ${section.label} ──`, section.text);
   }
   if (entry.response?.text !== undefined) lines.push('', '── 返回内容 ──', entry.response.text || '（空字符串）');
@@ -162,6 +162,7 @@ export function LlmConsole() {
           </button>
           {expanded === entry.id && <div className="llm-entry-detail">
             <div className="llm-entry-facts">
+              <span>预设<b>{entry.request?.preset ?? '未记录'}</b></span>
               <span>模型<b>{entry.model || '未填写'}</b></span>
               <span>接口<b>{entry.endpoint}</b></span>
               {entry.request && <span>消息<b>{entry.request.messageCount} 条</b></span>}

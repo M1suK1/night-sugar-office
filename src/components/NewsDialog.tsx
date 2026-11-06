@@ -8,10 +8,12 @@ import { newsCastPool } from '../cityNews';
  * 主页只放一小块摘要；点开这里能看完整的对话、今日要闻，并就地换主持人。
  * 没有播报时也开得出来 —— 至少能先把人定好，再点「刷新」。
  */
-export function NewsDialog({ state, news, busy, onHost, onRefresh, onClose }: {
+export function NewsDialog({ state, news, busy, presetName, onHost, onRefresh, onClose }: {
   state: GameState;
   news?: CityNews;
   busy: boolean;
+  /** 这一档用的是哪份预设（v177）：不写出来，玩家没法核对词条。 */
+  presetName?: string;
   onHost: (girlId: string) => void;
   onRefresh: () => void;
   onClose: () => void;
@@ -65,6 +67,10 @@ export function NewsDialog({ state, news, busy, onHost, onRefresh, onClose }: {
           <ul>{news.items.map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}</ul>
         </section>
       ) : null}
+
+      <p className="news-dialog-note" id="news-dialog-preset">
+        叙事者预设：{presetName ?? '（还没选）'} —— 读的是这份预设里「城市新闻」那一栏的词条；想看这一次实际发出去的全文，在控制台敲 <code>prompt</code>。
+      </p>
 
       <div className="meeting-actions">
         <button id="news-dialog-close" type="button" className="btn" onClick={onClose}>关闭</button>

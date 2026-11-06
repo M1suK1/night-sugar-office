@@ -26,7 +26,7 @@ export const PROMPT_SCOPES: PromptScopeInfo[] = [
   { id: 'shared', label: '共用', hint: '世界观、语气、玩家档案等所有任务都会用到的词条' },
   { id: 'chat', label: '角色对话', hint: '在事务所或外出时与角色交谈' },
   { id: 'daily', label: '每日提案', hint: '每晚的魔物、候选少女、委托与议会提案' },
-  { id: 'news', label: '城市新闻', hint: '每天一条城市播报：势力、污染与安定度' },
+  { id: 'news', label: '城市新闻', hint: '每天一档夜间访谈：主持人 + 嘉宾聊势力、污染与安定度' },
   { id: 'profile', label: '角色起草', hint: '根据立绘起草新角色的档案' },
   { id: 'storyline', label: '故事线', hint: '为一位角色规划四幕个人故事线' },
   { id: 'event', label: '私人事件', hint: '角色详情页里的两场私人事件' },
@@ -621,15 +621,52 @@ function upgradeTokenBudget(presets: ChatPreset[]): ChatPreset[] {
   }
 }
 
+/**
+ * 老预设里的「城市新闻」词条还写着深夜电台的短讯（v177 已改成访谈）。
+ *
+ * 只替换【写法】那一段：玩家自己改过的势力、污染等提示保持原样；没动过的词条
+ * 下次打开就自动跟上新写法，不用手动去预设里翻。
+ */
+export function upgradeStaleNewsPrompt(presets: ChatPreset[]): ChatPreset[] {
+  const fresh = SECTION_PROMPTS.find(entry => entry.id === 'nw-brief')?.content ?? '';
+  const writingAt = fresh.indexOf('【写法】');
+  if (writingAt < 0) return presets;
+  const freshBlock = fresh.slice(writingAt).trim();
+  let changed = false;
+  const next = presets.map(preset => {
+    const prompts = presetPrompts(preset);
+    let touched = false;
+    const upgraded = prompts.map(entry => {
+      if (entry.id !== 'nw-brief') return entry;
+      const content = entry.content;
+      const stale = content.includes('这是本地电台的播报') && content.includes('1–3 条，一条只讲一件事');
+      const at = content.indexOf('【写法】');
+      if (!stale || at < 0) return entry;
+      const replaced = `${content.slice(0, at).trimEnd()}\n${freshBlock}`;
+      if (replaced === content) return entry;
+      touched = true;
+      return { ...entry, content: replaced, builtin: false };
+    });
+    if (!touched) return preset;
+    changed = true;
+    return { ...preset, prompts: upgraded, updatedAt: now() };
+  });
+  if (!changed) return presets;
+  savePresets(next.filter(preset => !preset.builtin));
+  // 本地存档与 KV 镜像一起更新：换浏览器读回来的也不该是旧的播报写法。
+  void savePresetsToStore(next.filter(preset => !preset.builtin));
+  return next;
+}
+
 export function loadPresets(): ChatPreset[] {
   const builtins = builtinPresets();
   try {
     const raw = localStorage.getItem(PRESET_STORAGE);
-    if (!raw) return migrateLegacyPromptText(builtins);
+    if (!raw) return upgradeStaleNewsPrompt(migrateLegacyPromptText(builtins));
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return migrateLegacyPromptText(builtins);
+    if (!Array.isArray(parsed)) return upgradeStaleNewsPrompt(migrateLegacyPromptText(builtins));
     const custom = upgradeTokenBudget(parsed.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset)).map(ensurePromptScopes));
-    return migrateLegacyPromptText([...builtins, ...custom]);
+    return upgradeStaleNewsPrompt(migrateLegacyPromptText([...builtins, ...custom]));
   } catch {
     return builtins;
   }

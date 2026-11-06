@@ -44,6 +44,8 @@ const LOG_KEY = 'night-sugar:llm-log';
 export interface LlmSlot { index: number; name: string; role: string; tokens: number; enabled: boolean; marker: boolean; }
 
 export interface LlmRequestSnapshot {
+  /** 这次用的是哪个预设：日志里要能对得上，不然不知道读的是哪份词条。 */
+  preset?: string;
   sections: { label: string; text: string }[];
   slots?: LlmSlot[];
   params: Record<string, string | number | boolean>;
@@ -905,14 +907,14 @@ export function slotList(runtime: PresetRuntime): LlmSlot[] {
   }));
 }
 
-export function requestSnapshot(messages: ChatMessage[], params: Record<string, string | number | boolean>, labels: string[], slots?: LlmSlot[]): LlmRequestSnapshot {
+export function requestSnapshot(messages: ChatMessage[], params: Record<string, string | number | boolean>, labels: string[], slots?: LlmSlot[], preset?: string): LlmRequestSnapshot {
   const sections = messages.map((message, index) => {
     const label = labels[index] ?? (message.role === 'system' ? 'system' : message.role === 'user' ? 'user' : 'assistant');
     if (typeof message.content === 'string') return { label, text: message.content };
     const parts = message.content.map(part => part.type === 'text' ? part.text : `[图片输入 ${Math.round((part.image_url.url.length * 3) / 4 / 1024)} KB]`);
     return { label, text: parts.join('\n') };
   });
-  return slots?.length ? { sections, params, messageCount: messages.length, slots } : { sections, params, messageCount: messages.length };
+  return slots?.length ? { sections, params, messageCount: messages.length, slots, preset } : { sections, params, messageCount: messages.length, preset };
 }
 
 function isLocalEndpoint(endpoint: string): boolean {
@@ -1017,6 +1019,7 @@ const elements = ['星光系', '糖霜系', '月影系', '梦境系', '自然系
 const archetypes = ['输出', '守护', '治愈', '控制', '侦查'] as const;
 
 interface LlmCallMeta {
+  presetName?: string;
   request?: LlmRequestSnapshot;
   response?: LlmResponseSnapshot;
   slots?: LlmSlot[];
@@ -1036,7 +1039,7 @@ function logModel(meta: LlmCallMeta, config: LlmConfig): string {
 
 function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], labels: string[], config: LlmConfig, params: LlmCallParams | undefined, result: LlmCallResult) {
   if (!meta) return;
-  meta.request = requestSnapshot(messages, requestParams(config, params), labels, meta.slots);
+  meta.request = requestSnapshot(messages, requestParams(config, params), labels, meta.slots, meta.presetName);
   meta.response = { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined };
   // 同一条记录也落盘：data/llm-logs/YYYY-MM-DD.jsonl，方便直接 grep 与对照。
   persistLlmLog({
@@ -1183,7 +1186,7 @@ async function chatJson(
   const runtime = preset ?? EMPTY_RUNTIME;
   const cfg = applyPresetApi(runtime, config);
   // 记下真正发出去的模型：日志要显示「预设覆盖后」的那一个，不然看着像没生效。
-  if (meta) { meta.slots = slotList(runtime); meta.model = cfg.model; }
+  if (meta) { meta.slots = slotList(runtime); meta.model = cfg.model; meta.presetName = runtime.name; }
   let params: LlmCallParams = presetParams(runtime) ?? {};
   // 统一抬到这一用途的下限：调用方传 0 或很小的值都不再让正文被截断。
   tokenFloor = Math.max(tokenFloor, tokenFloorFor(scope));
@@ -1191,7 +1194,7 @@ async function chatJson(
   if (runtime.maxTokens !== undefined) params = { ...params, maxTokens: Math.max(runtime.maxTokens, tokenFloor) };
   else if (params.maxTokens === undefined) params = { ...params, maxTokens: Math.max(tokenFloor, DEFAULT_TOKEN_BUDGET) };
   else if (tokenFloor > params.maxTokens) params = { ...params, maxTokens: tokenFloor };
-  const { system } = composePrompt(body, runtime, scope, extra, typeof user === 'string' ? user.slice(0, 240) : '图像输入', ctx, appendix);
+  const { system } = composePrompt(body, runtime, scope, extra, undefined, ctx, appendix);
   let messages: ChatMessage[] = applyRegexToMessages([
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -1694,7 +1697,11 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
   const points = newsTalkingPoints(state);
   const castLines = [host, ...guests]
     .filter((person): person is NonNullable<typeof host> => Boolean(person))
-    .map(person => `- id=${person.id} · ${person.name} · ${person.title}${person.id === host?.id ? '（主持人）' : '（嘉宾）'}`)
+    .map(person => {
+      const head = `- id=${person.id} · ${person.name} · ${person.title}${person.id === host?.id ? '（主持人）' : '（嘉宾）'}`;
+      const brief = newsSpeakerBrief(state, person);
+      return brief ? `${head}\n  ${brief}` : head;
+    })
     .join('\n');
   const hint = [
     `请为第 ${state.day} 日的夜晚写这档访谈。提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`,
@@ -1705,6 +1712,7 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
     `- 污染：${points.pollution}`,
     `- 安定：${points.stability}`,
     `- 街头：${points.street}`,
+    '每个人说话都要像她自己：照上面写的性格与说话方式，三个人不要一个腔调，也不要写成汇报或通报。',
   ].join('\n');
   const result = await callJson(config, preset, 'news', newsContract(), hint, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
   if (!result.ok) {
@@ -2437,7 +2445,7 @@ import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
-import { newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
+import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';

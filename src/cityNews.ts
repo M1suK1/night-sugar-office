@@ -6,6 +6,9 @@ import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel, pairMem
 import { pollutionTierLabel } from './pollution.ts';
 import { factionRepresentativeOf, rosterMembers } from './factions.ts';
 import { hashText } from './rules/core.ts';
+import { activePersonality } from './personality.ts';
+import { outfitLine } from './outfitBrief.ts';
+import { voiceLine } from './voice.ts';
 
 export const CITY_NEWS_MAX = 3;
 export const CITY_NEWS_MIN = 1;
@@ -106,6 +109,38 @@ export function newsCastPool(state: GameState): CityNewsSpeaker[] {
 }
 
 /** 主持人：玩家指定的优先，其次按日号在在场人物里定一位（同一天固定，读档不换人）。 */
+/**
+ * 台上这个人的一句简介（v177）。
+ *
+ * 新闻提示词以前只有「id · 名字 · 头衔」，模型只能自己编性格——写出来三个人
+ * 一个腔调，全是保镖式的汇报。这里按她的档案补上性情、说话方式与外形。
+ */
+export function newsSpeakerBrief(state: GameState, speaker: CityNewsSpeaker): string {
+  const girl = [...(state.girls ?? []), ...(state.candidates ?? [])].find(item => item.id === speaker.id);
+  if (girl) {
+    const parts = [`性格：${activePersonality(girl).trim().slice(0, 160)}`];
+    const voice = voiceLine(girl);
+    if (voice) parts.push(voice);
+    const look = (girl.appearance ?? '').trim();
+    if (look) parts.push(`外形：${look.slice(0, 80)}`);
+    const outfit = outfitLine(girl);
+    if (outfit) parts.push(outfit);
+    parts.push(`对所长 ${girl.bond}/100、侵蚀 ${girl.corruption}/100`);
+    return parts.join('；');
+  }
+  if (!speaker.faction) return '';
+  const representative = factionRepresentativeOf(state, speaker.faction);
+  const member = representative.id === speaker.id && !representative.vacant
+    ? representative
+    : rosterMembers(state, speaker.faction).find(item => item.id === speaker.id);
+  const personality = (member as { personality?: string } | undefined)?.personality?.trim() ?? '';
+  const appearance = (member as { appearance?: string } | undefined)?.appearance?.trim() ?? '';
+  const parts: string[] = [];
+  if (personality) parts.push(`性格：${personality.slice(0, 160)}`);
+  if (appearance) parts.push(`外形：${appearance.slice(0, 80)}`);
+  return parts.join('；');
+}
+
 export function pickNewsHost(state: GameState): CityNewsSpeaker | undefined {
   const pool = newsCastPool(state);
   if (!pool.length) return undefined;
