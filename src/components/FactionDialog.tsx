@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BookOpen, ChevronDown, CloudFog, Compass, MoonStar, MapPin, Quote, ScrollText, Users, House, X, ClipboardList } from 'lucide-react';
+import { BookOpen, ChevronDown, CloudFog, Compass, MoonStar, MapPin, Quote, ScrollText, Users, House, X, ClipboardList, MessageCircle } from 'lucide-react';
 import type { FactionGirl, FactionId, GameState } from '../types';
 import { factionInfo } from '../content/items';
 import { hostilityOf, hostilityTier, hostilityTierLabel } from '../hostility';
@@ -35,11 +35,12 @@ interface FactionDialogProps {
   faction: FactionId;
   onBase: () => void;
   onHire: (leaderId: string) => void;
+  onMeet: () => void;
   onClose: () => void;
 }
 
 /** 一方势力的完整档案：首领在最上面，其余信息按页签分装。 */
-export function FactionDialog({ state, faction, onBase, onHire, onClose }: FactionDialogProps) {
+export function FactionDialog({ state, faction, onBase, onHire, onMeet, onClose }: FactionDialogProps) {
   const [tab, setTab] = useState<FactionTab>('origin');
   const [openGirl, setOpenGirl] = useState<string>();
   const info = factionInfo[faction];
@@ -92,6 +93,12 @@ export function FactionDialog({ state, faction, onBase, onHire, onClose }: Facti
             <span><small>额外净化</small><b>{purification > 0 ? `−${purification}` : '无'}</b></span>
             <span><small>所属少女</small><b>{girls.length}<i>人</i></b></span>
           </div>
+          {!leader.vacant && (
+            <button id="faction-meet-leader" type="button" className="btn faction-meet-btn" onClick={onMeet}>
+              <MessageCircle size={14} />
+              {state.events.some(event => event.id === `meet-${state.day}-${faction}`) ? '今天已约见 · 再聊一次' : `约见 ${leader.name}`}
+            </button>
+          )}
         </div>
       </header>
 

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/game.ts';
-import { factionLeader } from '../src/factions.ts';
 import { SUMMON_FACTIONS, SUMMON_TEMPLATE, buildSummonEvent, summonFactionToday, summonRollsToday } from '../src/rules/summon.ts';
 
 test('v79 召见按日号离散滚动：概率为 0 不触发，冷却期内不重复', () => {
@@ -19,12 +18,6 @@ test('v79 三方首领轮流来，事件里只有首领出场', () => {
   const seen = new Set(SUMMON_FACTIONS.map((_, index) => summonFactionToday(state.day + index)));
   assert.equal(seen.size, SUMMON_FACTIONS.length, '轮转覆盖三方');
   const faction = summonFactionToday(state.day);
-  const event = buildSummonEvent(state, faction);
-  const leader = factionLeader(faction);
-  assert.equal(event.girlId, leader.id);
-  assert.deepEqual(event.cast, [leader.id]);
-  assert.equal(event.mode, 'session');
-  assert.equal(event.badge, true);
-  assert.ok(event.hook.includes(leader.name));
-  assert.equal(event.day, state.day);
+  // v160：静态表只剩空席占位，编成里没人的一方不再收到召见。
+  assert.equal(buildSummonEvent(state, faction), undefined, '席位空缺时不制造召见');
 });

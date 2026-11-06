@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ArrowRight, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
-import type { CharacterEvent, Expression, Girl, StoryLine } from '../types';
+import type { CharacterEvent, Expression, Girl, Outfit, PortraitSpec, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
@@ -15,10 +15,19 @@ const expressionLabel: Record<Expression, string> = {
 /** 空数组也要稳定引用：否则每次渲染都会重建节拍表。 */
 const NO_TURNS: NonNullable<CharacterEvent['turns']> = [];
 
+/** 剧情里可出场的人：名册少女、候选，也包括势力名册里的首领与随从（v160）。 */
+export type StoryCastPerson = {
+  id: string; name: string; color?: string; portrait?: string; codename?: string;
+  expression?: Expression; portraitSpec?: PortraitSpec; wardrobe?: Outfit[];
+  outfitId?: string; witch?: boolean; witchForm?: Outfit;
+};
+
 export interface EventDialogProps {
   event: CharacterEvent;
   girl?: Girl;
   state: { girls: Girl[]; candidates: Girl[] };
+  /** 额外的在场人选（势力首领/随从）；缺省只用名册与候选。 */
+  castPool?: StoryCastPerson[];
   busy?: boolean;
   onAdvance: (eventId: string) => void;
   onChoose: (eventId: string, choiceId: string) => void;
@@ -39,7 +48,7 @@ export interface EventDialogProps {
   vnStory?: boolean;
 }
 
-export function EventDialog({ event, girl, state, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
+export function EventDialog({ event, girl, state, castPool, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
   // 舞台里点「原文」只切当前弹窗，不改全局开关。
   const [textMode, setTextMode] = useState(false);
   // v112：剧情演完之后仍然留在演出模式——玩家要在舞台上把结局读完，
@@ -48,7 +57,7 @@ export function EventDialog({ event, girl, state, busy = false, onAdvance, onCho
   const canStage = Boolean(vnStory) && textMode;
   const shared = { stage, onText: () => setTextMode(true), onStage: canStage ? () => setTextMode(false) : undefined } as const;
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
+    return <StorySession event={event} girl={girl} state={state} castPool={castPool} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} {...shared} />;
 }
@@ -125,7 +134,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
+function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? NO_TURNS;
   const [draft, setDraft] = useState('');
@@ -138,7 +147,7 @@ function StorySession({ event, girl, state, busy, onTurn, onRewrite, onEditTurn,
   /** 每一轮的 DOM 位置：新内容出现时停在它的开头，而不是滚到结尾。 */
   const turnNodes = useRef(new Map<string, HTMLElement>());
   const scrolledTurn = useRef('');
-  const pool = useMemo(() => [...state.girls, ...state.candidates], [state.girls, state.candidates]);
+  const pool = useMemo(() => (castPool?.length ? castPool : [...state.girls, ...state.candidates]) as Girl[], [castPool, state.girls, state.candidates]);
   const cast = useMemo(() => {
     const ids = event.cast?.length ? event.cast : girl ? [girl.id] : [];
     return ids.flatMap(id => {

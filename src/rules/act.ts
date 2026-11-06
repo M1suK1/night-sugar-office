@@ -38,6 +38,7 @@ import {
 import {
   advance, endNight,
 } from './time.ts';
+import { applyMeetLeader } from './summon.ts';
 import {
   createBlankState, createInitialState,
 } from './state.ts';
@@ -63,6 +64,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'openingFill': return applyOpeningFill(state, action);
     case 'setStarters': return applySetStarters(state, action);
     case 'hireLeader': return applyHireLeader(state, action);
+    case 'meetLeader': return applyMeetLeader(state, action);
     case 'setOfficeProfile': return applySetOfficeProfile(state, action);
     case 'decideOpinion': return applyDecideOpinion(state, action);
     case 'startExpedition': return applyStartExpedition(state, action);

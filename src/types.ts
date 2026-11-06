@@ -1206,6 +1206,8 @@ export type GameAction =
       customGirls?: FactionGirl[];
     }
   | { type: 'hireLeader'; leaderId: string }
+  /** 主动约见某方首领（v160）：一天一方只建一次事件。 */
+  | { type: 'meetLeader'; faction: FactionId }
   | { type: 'joinFront'; frontId: string; side: 'attacker' | 'defender'; girlIds: string[] }
   | { type: 'decideOpinion'; opinionId: string; decision: 'accept' | 'defer' | 'reject' }
   | { type: 'startExpedition'; memberIds: string[] }
