@@ -127,6 +127,9 @@ export interface FactionLeader {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  /** v122：契约卡带下来的外貌与性情，提示词要写她长什么样、怎么说话。 */
+  appearance?: string;
+  personality?: string;
   /** v85：这个位置还空着（没有从卡库编成进来的人）。 */
   vacant?: boolean;
 }
@@ -165,6 +168,9 @@ export interface FactionGirl {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  /** v122：契约卡带下来的外貌与性情，提示词要写得出她的样子与说话方式。 */
+  appearance?: string;
+  personality?: string;
 }
 export type OutfitForm = 'normal' | 'witch';
 export interface Outfit {

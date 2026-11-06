@@ -53,6 +53,7 @@ function girlSubject(girl: Girl): RosterSubject {
     codename: girl.codename,
     quote: girl.quote,
     title: girl.title,
+    appearance: girl.appearance, personality: girl.personality,
     cardId: girl.cardId,
     // v85：卡上的魔女化立绘跟着人走，编进势力时才能真的用上。
     witch: girl.witch || undefined,
@@ -230,6 +231,8 @@ export function subjectFromCard(card: GirlCard, id: string): RosterSubject {
     quote: girl.quote,
     title: girl.title,
     wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
+    // v122：卡面上的外貌与性情要跟着名字一路走，首领约谈的提示词才写得出她长什么样。
+    appearance: girl.appearance, personality: girl.personality,
     witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
   });
 }

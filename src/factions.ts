@@ -188,6 +188,9 @@ export interface RosterSubject {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  /** 卡面带下来的外貌与性情：名册里的首领/随从也要能把这两句带进提示词。 */
+  appearance?: string;
+  personality?: string;
 }
 
 /** 原属首领 → 面板条目。 */
@@ -197,6 +200,7 @@ export function subjectOfLeader(leader: FactionLeader): RosterSubject {
     level: leader.level, color: leader.color, portrait: leader.portrait,
     portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
     wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
+    appearance: leader.appearance, personality: leader.personality,
     stats: leader.stats, statsLevel: leader.statsLevel, skillIds: leader.skillIds,
   };
 }
@@ -208,6 +212,7 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
     level: girl.level, color: girl.color, portrait: girl.portrait,
     portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
     wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
+    appearance: girl.appearance, personality: girl.personality,
     stats: girl.stats, statsLevel: girl.statsLevel, skillIds: girl.skills, codename: girl.codename,
   };
 }
@@ -218,6 +223,7 @@ export function subjectOfCustom(input: {
   portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
   skillIds: string[]; codename?: string; quote?: string; title?: string; cardId?: string;
   witch?: boolean; witchForm?: Outfit; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
+  appearance?: string; personality?: string;
 }): RosterSubject {
   return {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
@@ -226,6 +232,7 @@ export function subjectOfCustom(input: {
     origin: 'custom', stats: input.stats, statsLevel: input.level, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
     witch: input.witch, witchForm: input.witchForm,
     wardrobe: input.wardrobe, outfitId: input.outfitId, expression: input.expression,
+    appearance: input.appearance, personality: input.personality,
   };
 }
 
@@ -254,6 +261,7 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
     witch: subject.witch ?? (faction === 'witch' ? true : undefined),
     witchForm: subject.witchForm,
     wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
+    appearance: subject.appearance, personality: subject.personality,
   };
 }
 
@@ -267,6 +275,7 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
     quote: subject.quote, note: '由事务所编入名册的少女。',
     witch: subject.witch ?? (faction === 'witch' ? true : undefined), witchForm: subject.witchForm,
     wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
+    appearance: subject.appearance, personality: subject.personality,
     level,
     stats: statsAtLevel(stats, subject.statsLevel ?? 1, level, '输出'), statsLevel: level,
     skillIds: subject.skillIds ?? [],

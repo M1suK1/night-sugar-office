@@ -7,6 +7,7 @@ import { buildMeetEvent } from '../src/rules/summon.ts';
 import { focusGirlOf, focusRoleOf } from '../src/storyFocus.ts';
 import { storyPersonOf } from '../src/storySubject.ts';
 import { dossierOf } from '../src/girlDossier.ts';
+import { factionSnapshotText } from '../src/factionSnapshot.ts';
 import { resolveMacros } from '../src/promptMacros.ts';
 
 /** 一份从卡库编进月蚀庭的首领，配上她的座位。 */
@@ -75,4 +76,35 @@ test('v121 随从与候选照样认得，契约者仍然走原路', () => {
   assert.equal(storyPersonOf(state, girl.id)?.role, undefined);
   assert.equal(storyPersonOf(state, girl.id)?.girl.name, girl.name);
   assert.equal(storyPersonOf(state, 'nobody-at-all'), undefined);
+});
+
+test('v122 首领档案带上卡面的外貌与性情，不再是「外形：不详」', () => {
+  const dressed = customLeaderOf('witch', subjectOfCustom({
+    id: 'card-leader-2', name: '白露', factionTag: 'witch', level: 10, color: '#8a7bd6',
+    portrait: '', stats: { magic: 60, insight: 60, agility: 60, empathy: 60 }, skillIds: [],
+    title: '蚀月祭司', quote: '别点灯。', appearance: '银白长发垂到腰，左眼下有一道旧疤。',
+    personality: '说话很轻，笑起来才露出尖牙。',
+  }));
+  const state = stateWithLeader();
+  const withDressed: GameState = {
+    ...state,
+    customFactionLeaders: [dressed],
+    factionRoster: { ...state.factionRoster!, witch: { leaderId: dressed.id, memberIds: [] } },
+  };
+  const person = storyPersonOf(withDressed, dressed.id)!;
+  assert.equal(person.girl.appearance, '银白长发垂到腰，左眼下有一道旧疤。');
+  const text = dossierOf(person.girl, withDressed, { role: person.role });
+  assert.ok(text.includes('银白长发垂到腰'), text);
+  assert.ok(!text.includes('外形：不详'), '外貌要真的写进提示词');
+});
+
+test('v122 局面：三方火气与该方对事务所的态度都进得了提示词', () => {
+  const state = stateWithLeader();
+  const text = factionSnapshotText(state, 'witch');
+  assert.ok(text.includes('【今夜的三方局面】'), text);
+  assert.ok(text.includes('火气'), text);
+  assert.ok(text.includes('星灯协会'), '三条火气线都要在');
+  assert.ok(text.includes('樱雾市役所'));
+  assert.ok(text.includes('对你的态度'), text);
+  assert.ok(text.includes('声望'), text);
 });

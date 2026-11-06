@@ -61,8 +61,10 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
     .filter(Boolean);
   // 名册里的首领/随从不是契约者：说清她的位置，别让模型把她写成所长的部下。
   const role = opts.role;
+  // 名册投影的 title 本身就是座位（「月蚀庭首领」），别再把同一个词接一遍。
+  const roleSuffix = role ? (girl.title === role ? '' : `· ${role}`) : girl.leader ? '· 一方首领' : '';
   const identity = [
-    `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title}${role ? `· ${role}` : girl.leader ? '· 一方首领' : ''}`,
+    `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title}${roleSuffix}`,
     role
       ? `出身 ${factionTagLabel(girl.factionTag)}；此刻是${role}，她有自己的立场与辖区，和事务所只是往来关系，不是你的契约者。`
       : `出身 ${factionTagLabel(girl.factionTag)}；雇主 夜糖事务所`,

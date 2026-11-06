@@ -2,7 +2,8 @@ import { outfitLine } from './outfitBrief.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
-import { focusGirlOf, focusRoleOf } from './storyFocus.ts';
+import { focusGirlOf, focusRoleOf, personOfEvent } from './storyFocus.ts';
+import { factionSnapshotText } from './factionSnapshot.ts';
 import { storyPersonOf, type StoryPerson } from './storySubject.ts';
 import { dailyHistoryBlock } from './opinionHistory.ts';
 import { recentMissionRuns } from './missionHistory.ts';
@@ -1945,6 +1946,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     event.hook ? `引子：${event.hook}` : '',
     // v109：以前的剧情只以摘要形式出现，不回放原文。
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     '【在场的人】',
     briefs || '只有她和你',
     '【你】所长（player），用「你」称呼，可以是说话人。',
@@ -1993,6 +1995,7 @@ export async function generateStoryEnding(
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
@@ -2048,6 +2051,7 @@ export async function generateStoryTurn(
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
