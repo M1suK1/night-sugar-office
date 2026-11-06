@@ -471,7 +471,7 @@ export function ensurePromptScopes(preset: ChatPreset): ChatPreset {
   return { ...preset, schema: PRESET_SCHEMA, prompts: all, promptOrder: order };
 }
 
-function sanitizePreset(raw: unknown): ChatPreset | null {
+export function sanitizePreset(raw: unknown): ChatPreset | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Partial<ChatPreset>;
   const settings = value.settings && typeof value.settings === 'object' && !Array.isArray(value.settings) ? value.settings as Record<string, unknown> : null;
@@ -723,6 +723,94 @@ export async function savePresetBindingToStore(binding: PresetBinding): Promise<
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * 跟随仓库分发的「我调过的那套预设」（v178）。
+ *
+ * 本地调好的预设只存在浏览器里，换到 CF 试玩页就没了。这里在启动时读一次随包
+ * 发布的 public/presets/local.json，把列表里还没有的那几份补进去；同 id 跳过，
+ * 所以本机不会出现重复，也不会被远端那版覆盖。
+ */
+export const LOCAL_PRESET_URL = 'presets/local.json';
+export const LOCAL_BINDING_URL = 'presets/binding.json';
+export const LOCAL_PRESET_MARKER = 'presets/seeded-local:v1';
+
+export function presetAssetUrl(file = LOCAL_PRESET_URL): string {
+  if (typeof document === 'undefined') return file;
+  return new URL(file, document.baseURI).href;
+}
+
+/** 把随包那批预设合并进来：同 id 保留本地那份，缺的按顺序追加。 */
+export function mergeLocalPresets(current: ChatPreset[], incoming: ChatPreset[]): ChatPreset[] {
+  const known = new Set(current.map(preset => preset.id));
+  const added: ChatPreset[] = [];
+  for (const preset of incoming) {
+    if (!preset || typeof preset.id !== 'string' || !preset.id) continue;
+    if (known.has(preset.id)) continue;
+    known.add(preset.id);
+    added.push({ ...preset, builtin: undefined, description: `同步自带 · ${preset.description ?? '本地调过的那份预设。'}`.slice(0, 200) });
+  }
+  return added.length ? [...current, ...added].slice(0, 40) : current;
+}
+
+/** 随包那套预设各任务该绑谁；只在玩家还没动过这一项时接管。 */
+export function mergeLocalBinding(current: PresetBinding, incoming: PresetBinding | undefined, presets: ChatPreset[]): PresetBinding {
+  if (!incoming) return current;
+  const ids = new Set(presets.map(preset => preset.id));
+  const next: PresetBinding = { ...current };
+  let changed = false;
+  for (const task of Object.keys(DEFAULT_PRESET_BINDING) as PromptTask[]) {
+    const wanted = incoming[task];
+    if (!wanted || !ids.has(wanted)) continue;
+    if (next[task] === wanted) continue;
+    // 玩家自己改过绑定就别抢：只接管还停在出厂默认的那几项。
+    if (next[task] !== DEFAULT_PRESET_BINDING[task]) continue;
+    next[task] = wanted;
+    changed = true;
+  }
+  return changed ? next : current;
+}
+
+export interface LocalPresetSeed {
+  presets: ChatPreset[];
+  binding?: PresetBinding;
+}
+
+export async function hydrateLocalPresetSeed(current: ChatPreset[], currentBinding: PresetBinding): Promise<LocalPresetSeed> {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_PRESET_MARKER)) return { presets: current, binding: currentBinding };
+    const response = await fetch(presetAssetUrl());
+    if (!response.ok) return { presets: current, binding: currentBinding };
+    const parsed = await response.json() as unknown;
+    if (!Array.isArray(parsed)) return { presets: current, binding: currentBinding };
+    const incoming = parsed
+      .map(sanitizePreset)
+      .filter((preset): preset is ChatPreset => Boolean(preset))
+      .map(ensurePromptScopes);
+    const presets = mergeLocalPresets(current, incoming);
+    // 绑定那一份是可选资产：读不到就只补预设，不动绑定。
+    let binding = currentBinding;
+    try {
+      const bound = await fetch(presetAssetUrl(LOCAL_BINDING_URL));
+      if (bound.ok) {
+        const parsedBinding = await bound.json() as unknown;
+        if (parsedBinding && typeof parsedBinding === 'object') {
+          const wanted: PresetBinding = { ...DEFAULT_PRESET_BINDING };
+          for (const task of Object.keys(DEFAULT_PRESET_BINDING) as PromptTask[]) {
+            const id = (parsedBinding as Record<string, unknown>)[task];
+            if (typeof id === 'string' && id) wanted[task] = id;
+          }
+          binding = mergeLocalBinding(currentBinding, wanted, presets);
+        }
+      }
+    } catch { /* 绑定读不到就用原来的。 */ }
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LOCAL_PRESET_MARKER, '1');
+    if (presets !== current) savePresets(presets);
+    return { presets, binding };
+  } catch {
+    return { presets: current, binding: currentBinding };
   }
 }
 
