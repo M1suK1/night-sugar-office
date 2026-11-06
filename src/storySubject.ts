@@ -57,7 +57,7 @@ function projectPerson(person: FactionLeader | FactionGirl, seat: RosterSeat): G
   const leader = isLeader ? (person as FactionLeader) : undefined;
   const member = isLeader ? undefined : (person as FactionGirl);
   const title = isLeader
-    ? `${roleOf(seat)} · ${leaderTitle(leader!, seat.faction)}`
+    ? roleOf(seat)
     : `${roleOf(seat)} · ${member!.title}`;
   const skillIds = isLeader ? (leader!.skillIds ?? []) : (member!.skills ?? []);
   const stats = { ...person.stats };
