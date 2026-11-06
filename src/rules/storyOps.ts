@@ -175,7 +175,14 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       event.sessionDone = false;
       event.status = 'active';
       event.badge = false;
-      event.turns = [{ id: `turn-${Date.now().toString(36)}`, role: 'narrator', text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at: Date.now() }];
+      // v169：玩家先开口。他写的那段是这一段的第一句，叙事者的开场白接在后面，
+      // 这样"谁先说话"就不再取决于模型自觉。
+      const seed = (action.seed ?? '').trim().slice(0, 300);
+      const at = Date.now();
+      event.turns = [
+        ...(seed ? [{ id: `turn-${at.toString(36)}-p`, role: 'player' as const, text: seed, lines: [{ speakerId: 'player', speakerName: '所长', expression: 'calm' as const, text: seed, mode: 'speech' as const }], at }] : []),
+        { id: `turn-${at.toString(36)}`, role: 'narrator' as const, text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at },
+      ];
       const girl = findGirl(next, event.girlId);
       if (girl) girl.eventBadge = '!';
       return { state: next, ok: true, message: '剧情开始。' };

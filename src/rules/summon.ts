@@ -70,6 +70,8 @@ export function buildSummonEvent(state: GameState, faction: FactionId): Characte
     scenes: [],
     mode: 'session',
     cast: factionSceneCast(state, faction),
+    // v169：这两句引子只给界面看，不进提示词 —— 约谈要以玩家先开口为起点。
+    hookInPrompt: false,
     stage: 1,
     status: 'active',
     day: state.day,
@@ -113,6 +115,8 @@ export function buildMeetEvent(state: GameState, faction: FactionId, leaderName:
     scenes: [],
     mode: 'session',
     cast: factionSceneCast(state, faction),
+    // v169：这两句引子只给界面看，不进提示词 —— 约谈要以玩家先开口为起点。
+    hookInPrompt: false,
     stage: 1,
     status: 'active',
     day: state.day,

@@ -550,7 +550,7 @@ export default function App() {
       }
       if (!opening) opening = seed ? `${seed}\n\n${event.hook}` : (event.hook || '她在这里等你开口。');
       if (!options.length) options = ['你先开口问她', '你看一眼她手边的东西', '你什么都不说，等她先讲'];
-      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options }); return applied.ok ? applied.state : prev; });
+      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options, seed }); return applied.ok ? applied.state : prev; });
       setArcBusy(null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

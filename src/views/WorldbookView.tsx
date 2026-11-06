@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Download, Eye, EyeOff, FilePlus2, RotateCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
+import { BookOpen, Check, Download, Eye, EyeOff, FilePlus2, RotateCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   WORLDBOOK_BUDGET, WORLDBOOK_EVENT, defaultWorldbook, exportWorldbookJson, importWorldbookJson,
-  loadWorldbook, saveWorldbook, worldbookContext, type WorldbookEntry,
+  WORLDBOOK_KEY, loadWorldbook, loadWorldbookFromStore, saveWorldbook, saveWorldbookToStore, worldbookContext, type WorldbookEntry,
 } from '../worldbook';
 import { OFFICE_WORLDBOOK_ID } from '../office';
 import { BALANCE_FIELDS, BALANCE_GROUPS, loadBalance, resetBalance, saveBalance, type BalanceRules } from '../balance';
@@ -22,6 +22,34 @@ export function WorldbookView({ onOpenOffice }: { onOpenOffice?: () => void }) {
   const [note, setNote] = useState('');
   const [balance, setBalance] = useState<BalanceRules>(() => loadBalance());
   const fileRef = useRef<HTMLInputElement>(null);
+  /** v169：这一份世界书有没有被"保存并覆盖默认"，以及上一次保存的时间。 */
+  const [savedAt, setSavedAt] = useState<string>('');
+  const [dirty, setDirty] = useState(false);
+
+  // 浏览器里没有副本（换了浏览器 / 清了缓存）时，从存档里把上次保存的世界书取回来。
+  useEffect(() => {
+    let alive = true;
+    void loadWorldbookFromStore().then(stored => {
+      if (!alive || !stored) return;
+      const local = localStorage.getItem(WORLDBOOK_KEY);
+      if (local) { setSavedAt('存档里有一份保存过的世界书'); return; }
+      setEntries(stored);
+      setActiveId(stored[0]?.id ?? '');
+      saveWorldbook(stored);
+      setSavedAt('已从存档恢复上次保存的世界书');
+    });
+    return () => { alive = false; };
+  }, []);
+
+  /** 显式保存：写浏览器 + 写存档，从此以后内置词条不再顶替你的版本。 */
+  const saveNow = async () => {
+    const localOk = saveWorldbook(entries);
+    const storeOk = await saveWorldbookToStore(entries);
+    setDirty(false);
+    if (!localOk) { setNote('浏览器拒绝了这次写入。'); return; }
+    setSavedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+    setNote(storeOk ? '已保存并覆盖默认世界书（浏览器 + 本地存档各一份）。' : '已保存到浏览器；本地存档没写成功，换浏览器时需要重新导入。');
+  };
 
   /** 事务所档案改动后由 `syncOfficeWorldbook` 广播，这里只负责重新读一遍磁盘上的副本。 */
   useEffect(() => {
@@ -77,9 +105,11 @@ export function WorldbookView({ onOpenOffice }: { onOpenOffice?: () => void }) {
         <header>
           <div>
             <b>{entries.length}</b> 条词条 · 常驻 <b>{spent.hits.length}</b>
+            {savedAt && <small className="wb-saved-at" id="worldbook-saved-at"> · {savedAt}</small>}
           </div>
           <div className="wb-list-actions">
             <button id="worldbook-new" className="wb-mini" onClick={() => { const entry = newEntry(); commit([...entries, entry], '已新建词条。'); setActiveId(entry.id); }}><FilePlus2 size={12} />新建</button>
+            <button id="worldbook-save" className={`wb-mini${dirty ? ' wb-dirty' : ''}`} onClick={() => void saveNow()}><Check size={12} />{dirty ? '保存修改' : '已保存'}</button>
             <button id="worldbook-reset" className="wb-mini" onClick={() => { commit(defaultWorldbook(), '已恢复内置词条。'); setActiveId(defaultWorldbook()[0]?.id ?? ''); }}><RotateCcw size={12} />恢复内置</button>
           </div>
         </header>

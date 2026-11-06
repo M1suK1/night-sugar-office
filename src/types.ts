@@ -677,6 +677,8 @@ export interface CharacterEvent {
   opening?: string;
   /** v123：玩家写下的那段开场（叙事者据此写开场白；重写时清空 opening 与 turns）。 */
   playerSeed?: string;
+  /** v169：引子只给界面看，不进提示词（首领约谈/传唤不该被一句固定引子定死）。 */
+  hookInPrompt?: boolean;
   sessionDone?: boolean;
   /** 这段剧情正卡在蓝图的选项上：等玩家选完才算结束。 */
   pendingChoice?: { storylineId: string; nodeId: string };
@@ -1294,7 +1296,7 @@ export type GameAction =
   /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
-  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
+  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }

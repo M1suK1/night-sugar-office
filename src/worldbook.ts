@@ -2,6 +2,7 @@
  * 世界书：与 SillyTavern 的 World Info 同构的词条集合。
  * 常驻词条每次注入；其余按关键词命中注入，总预算默认 1200 字。
  */
+import { kvGet, kvSet } from './store.ts';
 import type { Girl, OfficeProfile } from './types.ts';
 import { DEFAULT_OFFICE_PROFILE, OFFICE_WORLDBOOK_ID, officeWorldbookContent, sanitizeOfficeProfile } from './office.ts';
 
@@ -125,6 +126,31 @@ export function saveWorldbook(entries: WorldbookEntry[]): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** 本地文件里的同一份世界书（v169）：换浏览器、清缓存之后还能拿回来。 */
+export const WORLDBOOK_STORE_KEY = 'worldbook/entries';
+
+/** 把世界书写进存档（本地文件优先，静态部署退回浏览器）。这就是「覆盖默认」的那一步。 */
+export async function saveWorldbookToStore(entries: WorldbookEntry[]): Promise<boolean> {
+  try {
+    await kvSet(WORLDBOOK_STORE_KEY, entries.slice(0, 80));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 读回存档里的世界书；没有或读坏了返回 undefined，让调用方继续用浏览器里的那份。 */
+export async function loadWorldbookFromStore(): Promise<WorldbookEntry[] | undefined> {
+  try {
+    const raw = await kvGet<unknown>(WORLDBOOK_STORE_KEY);
+    if (!Array.isArray(raw)) return undefined;
+    const list = raw.map((item, index) => sanitizeWorldbookEntry(item, index)).filter((item): item is WorldbookEntry => Boolean(item));
+    return list.length ? list : undefined;
+  } catch {
+    return undefined;
   }
 }
 

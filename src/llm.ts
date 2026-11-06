@@ -1878,7 +1878,18 @@ function storyCast(state: GameState, event: CharacterEvent): { id: string; name:
 function castBriefOf(person: StoryPerson): string {
   const girl = person.girl;
   if (person.role) {
-    return `${girl.name}（${girl.id}）· ${person.role}${person.note ? `（${person.note}）` : ''}「${girl.quote?.trim() || '没有留下出场白'}」· 她不是你的契约者，说话按她自己的立场。`;
+    // v169：以前这里只有"名字 + 座位 + 一句出场白"，随从的外貌、性情、能力全丢了。
+    // 名册里的人是投影出来的 Girl，bond 恒为 0，档案摘要会写出「对所长 0/100（厌恶）」，
+    // 所以这里自己拼一份：身份 / 外形 / 性情 / 能力 / 立场。
+    const statNames: Record<string, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情' };
+    const stats = Object.entries(girl.stats).map(([key, value]) => `${statNames[key] ?? key} ${value}`).join(' / ');
+    return [
+      `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${person.role}`,
+      `外形：${girl.appearance?.trim() || '不详'}`,
+      `性情：${girl.personality?.trim() || activePersonality(girl) || '安静'}；出场白：「${girl.quote?.trim() || '没有留下出场白'}」`,
+      `能力：${girl.element} · Lv.${girl.level} · 四维 ${stats}`,
+      `（她是${person.role}，不是你的契约者，也不听事务所调遣；说话按她自己的立场。）`,
+    ].join('\n');
   }
   return storyCastBrief(girl);
 }
@@ -1963,11 +1974,11 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
   const seedText = seed.trim().slice(0, 300);
   return [
     `【这一段剧情】${event.title}`,
-    event.hook ? `引子：${event.hook}` : '',
+    event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     // v109：以前的剧情只以摘要形式出现，不回放原文。
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
-    seedText ? `【所长的开场】${seedText}\n请从这一段起笔：沿用他给出的时间、地点、姿态与他说的第一句话，不要另起炉灶、不要换场景。` : '',
+    seedText ? `【所长的开场】${seedText}\n这一段会作为这一段剧情的第一句，由所长先说。你只写她听见之后的反应、场面与台词：不要替所长补话，也不要抢先替她寒暄；沿用他给出的时间、地点与姿态，不要另起炉灶、不要换场景。` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【你】所长（player），用「你」称呼，可以是说话人。',
@@ -2027,7 +2038,7 @@ export async function generateStoryEnding(
   const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
+    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     '【在场的人】',
@@ -2083,7 +2094,7 @@ export async function generateStoryTurn(
   const playerLine = action.trim().slice(0, 300);
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hook ? `引子：${event.hook}` : '',
+    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     '【在场的人】',
