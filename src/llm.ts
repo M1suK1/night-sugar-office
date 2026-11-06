@@ -2,7 +2,8 @@ import { outfitLine } from './outfitBrief.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
-import { focusGirlOf } from './storyFocus.ts';
+import { focusGirlOf, focusRoleOf } from './storyFocus.ts';
+import { storyPersonOf, type StoryPerson } from './storySubject.ts';
 import { dailyHistoryBlock } from './opinionHistory.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 
@@ -1842,25 +1843,25 @@ export interface StoryTurnDraft {
 
 function storyCast(state: GameState, event: CharacterEvent): { id: string; name: string; brief?: string }[] {
   const ids = (event.cast ?? []).filter(Boolean);
-  const pool = [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)];
-  const leaders = state.customFactionLeaders ?? [];
-  const members = state.customFactionGirls ?? [];
   const people = ids.flatMap(id => {
-    const girl = pool.find(item => item.id === id);
-    if (girl) return [{ id: girl.id, name: girl.name }];
-    // v160：首领/随从来自身势名册，静态表只剩空席；用编成里的真人写简报。
-    const leader = leaders.find(item => item.id === id);
-    if (leader) return [{ id: leader.id, name: leader.name, brief: `${leader.name} · ${leader.title}（${leader.note}）「${leader.quote}」` }];
-    const member = members.find(item => item.id === id);
-    if (member) return [{ id: member.id, name: member.name, brief: `${member.name} · ${member.title}（${member.note}）「${member.quote}」` }];
-    const fallback = leaderById(id);
-    return fallback ? [{ id: fallback.id, name: fallback.name }] : [];
+    const person = storyPersonOf(state, id);
+    if (!person) return [];
+    return [{ id: person.girl.id, name: person.girl.name, brief: castBriefOf(person) }];
   });
   if (!people.length) {
-    const girl = pool.find(item => item.id === event.girlId);
-    if (girl) people.push({ id: girl.id, name: girl.name });
+    const person = storyPersonOf(state, event.girlId);
+    if (person) people.push({ id: person.girl.id, name: person.girl.name, brief: castBriefOf(person) });
   }
   return [...people, { id: 'player', name: '所长' }];
+}
+
+/** 在场的人写进提示词的一句简报：契约者用档案摘要，名册里的首领/随从带上她的位置。 */
+function castBriefOf(person: StoryPerson): string {
+  const girl = person.girl;
+  if (person.role) {
+    return `${girl.name}（${girl.id}）· ${person.role}${person.note ? `（${person.note}）` : ''}「${girl.quote?.trim() || '没有留下出场白'}」· 她不是你的契约者，说话按她自己的立场。`;
+  }
+  return storyCastBrief(girl);
 }
 
 function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], limit = 8): StoryLine[] {
@@ -1936,10 +1937,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
   const people = cast.filter(person => person.id !== 'player');
-  const briefs = people.map(person => {
-    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
-    return girl ? storyCastBrief(girl) : person.brief ?? person.name;
-  }).join('\n');
+  const briefs = people.map(person => person.brief ?? person.name).join('\n');
   // 契约单独给一份，正文另给 appendix：这样预设里改「蓝图开场 · 结构契约」才会生效，
   // 而且改契约不会顺手删掉在场的人和这一场的场面。
   const context = [
@@ -1956,7 +1954,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook, story: event.title, contractId: 'arc:opening',
-    }, { state, focus: focusGirl }, 0, context);
+    }, { state, focus: focusGirl, focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1989,10 +1987,7 @@ export async function generateStoryEnding(
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
-  const briefs = cast.filter(person => person.id !== 'player').map(person => {
-    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
-    return girl ? storyCastBrief(girl) : person.brief ?? person.name;
-  }).join('\n');
+  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
   const context = [
     `【这一段剧情】${event.title}`,
@@ -2008,7 +2003,7 @@ export async function generateStoryEnding(
   ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', arcEndingContract(), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:ending',
-  }, { state, focus: focusGirlOf(state, event) }, 0, context);
+  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2045,10 +2040,7 @@ export async function generateStoryTurn(
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
-  const briefs = cast.filter(person => person.id !== 'player').map(person => {
-    const girl = [...state.girls, ...state.candidates].find(item => item.id === person.id);
-    return girl ? storyCastBrief(girl) : person.brief ?? person.name;
-  }).join('\n');
+  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   const turns = event.turns ?? [];
   const history = storyHistory(turns);
   const playerLine = action.trim().slice(0, 300);
@@ -2068,7 +2060,7 @@ export async function generateStoryTurn(
   const body = arcTurnContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
     char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:turn',
-  }, { state, focus: focusGirlOf(state, event) }, 0, context);
+  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2334,7 +2326,7 @@ import {
 } from './presets.ts';
 import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
-import { leaderById, EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
+import { EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
 import { girlSkillPool, isPassiveSkill, pickCandidateSkills, takeOnePassive } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';

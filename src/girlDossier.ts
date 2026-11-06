@@ -51,7 +51,7 @@ function itemLine(id: string | undefined): string {
 }
 
 /** 她的全量档案：静态设定 + 此刻状态 + 关系与契约。brief 只留身份 / 性情 / 关系 / 心愿。 */
-export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean } = {}): string {
+export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean; role?: string } = {}): string {
   const bondText = `对所长 ${girl.bond}/100（${bondStage(girl.bond)}）`;
   const peers = Object.entries(girl.relationships ?? {})
     .map(([id, value]) => {
@@ -59,9 +59,13 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
       return peer ? `${peer.name} ${value}/100（${bondStage(value)}）` : '';
     })
     .filter(Boolean);
+  // 名册里的首领/随从不是契约者：说清她的位置，别让模型把她写成所长的部下。
+  const role = opts.role;
   const identity = [
-    `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title}${girl.leader ? '· 一方首领' : ''}`,
-    `出身 ${factionTagLabel(girl.factionTag)}；雇主 夜糖事务所`,
+    `身份：${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title}${role ? `· ${role}` : girl.leader ? '· 一方首领' : ''}`,
+    role
+      ? `出身 ${factionTagLabel(girl.factionTag)}；此刻是${role}，她有自己的立场与辖区，和事务所只是往来关系，不是你的契约者。`
+      : `出身 ${factionTagLabel(girl.factionTag)}；雇主 夜糖事务所`,
   ].join('\n');
   const voice = voiceLine(girl);
   const nature = [
@@ -77,16 +81,20 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
     });
   }
 
-  const condition = [
+  const isRoster = Boolean(role);
+  const condition = isRoster ? [] : [
     `此刻：生命 ${girl.hp}/${girl.maxHp} · 心防 ${girl.spirit}/${girl.maxSpirit} · 疲劳 ${girl.fatigue}/100 · 侵蚀 ${girl.corruption ?? 0}/100 · ${statusLabels[girl.status] ?? girl.status}`,
     girl.scars.length ? `疤痕：${girl.scars.map(scar => `${scar.name}（${SCAR_KIND[scar.kind] ?? '身体'}）`).join('、')}` : '疤痕：无',
     girl.conditions.length ? `临时增益：${girl.conditions.map(item => `${item.name}（剩 ${item.remaining} 天）`).join('、')}` : '',
   ].filter(Boolean);
-  const contract = [
+  const contract = isRoster ? '' : [
     `契约：第 ${girl.contractEndDay - (girl.contractDays ?? 0)} 日签约 · 第 ${girl.contractEndDay} 日到期 · 已续约 ${girl.contractRenewals ?? 0} 次`,
     girl.pensionMissed ? `退休金欠缴 ${girl.pensionMissed} 期` : '',
   ].filter(Boolean).join('；');
   const gear = [itemLine(girl.equipment?.weapon), itemLine(girl.equipment?.charm)].filter(Boolean);
+  const relation = isRoster
+    ? `关系：她是${role}，与所长只有这一夜的往来，没有契约、也不听事务所调遣`
+    : `关系：${bondText}${peers.length ? `；与同伴的关系：${peers.join('、')}` : '；与同伴的关系：还没有特别亲近的人'}`;
 
   const lines = [
     identity,
@@ -96,8 +104,8 @@ export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean
     `技能：${skillLine(girl)}`,
     `特性：${girl.traits.length ? girl.traits.map(trait => `${trait.name}（${trait.description || trait.polarity}）`).join('、') : '无'}`,
     ...condition,
-    `关系：${bondText}${peers.length ? `；与同伴的关系：${peers.join('、')}` : '；与同伴的关系：还没有特别亲近的人'}`,
     wish,
+    relation,
     contract,
     gear.length ? `随身：${gear.join(' · ')}` : '随身：空着（没有法器与护符）',
     '（以上是她到今晚为止的全部设定；这里没列出的事她不知道，不要替她编经历、亲友或秘密。）',

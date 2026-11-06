@@ -84,6 +84,7 @@ import { CardLibraryDialog } from './components/CardLibraryDialog';
 import { SaveSlotsDialog } from './components/SaveSlotsDialog';
 import { clearSlot, readSlot, writeSlot, type SaveSlotId } from './saves';
 import { extractStatePortraits, hydrateStatePortraits } from './portraitAssets';
+import { storyPersonOf } from './storySubject';
 import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
 import { LIBRARY_START_ROSTER, normalizeToLevel, readLibraryCards } from './cardLibrary';
@@ -537,7 +538,9 @@ export default function App() {
     const event = state.events.find(item => item.id === eventId);
     const text = action.trim().slice(0, 300);
     if (!event || !text || storyBusyTurn) return false;
-    const target = [...state.girls, ...state.candidates].find(item => item.id === event.girlId);
+    // 主角可能是三方名册里的首领/随从（「登门拜访首领」就是这样），
+    // 只在 girls/candidates 里找会直接断线：玩家写完一句，叙事者永远不会回。
+    const target = storyPersonOf(state, event.girlId)?.girl;
     const playerTurn: StoryTurn = {
       id: `turn-p-${Date.now().toString(36)}`, role: 'player', text,
       lines: [{ speakerId: 'player', speakerName: '所长', expression: 'calm', text, mode: 'speech' }],
@@ -606,7 +609,7 @@ export default function App() {
     if (!action) return false;
     const config = loadLlmConfig();
     if (!config.apiKey) { notify('配置叙事者后才能重写这一段。', false); return false; }
-    const target = [...state.girls, ...state.candidates].find(item => item.id === event.girlId);
+    const target = storyPersonOf(state, event.girlId)?.girl;
     if (!target) return false;
     setStoryBusyTurn(true);
     try {
@@ -1812,8 +1815,9 @@ export default function App() {
         ...(state.customFactionLeaders ?? []),
         ...(state.customFactionGirls ?? []),
       ];
-      const subject = state.girls.find(item => item.id === target.girlId)
-        ?? (factionCast.find(item => item.id === target.girlId) as unknown as Girl | undefined);
+      // v121：主角与在场的人统一走 storyPersonOf —— 契约者、候选、追悼、三方名册都能认，
+      // 「登门拜访首领」这类事件的 girlId 就是名册里的首领。
+      const subject = storyPersonOf(state, target.girlId)?.girl;
       const castPool = [...state.girls, ...state.candidates, ...factionCast];
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog vnStory={vnStory === 'on'} event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
       const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} castPool={castPool} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;

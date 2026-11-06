@@ -20,6 +20,8 @@ import { promptTokens } from './tokens.ts';
 export interface MacroContext {
   state?: GameState;
   focus?: Girl;
+  /** 主角在名册里的位置（「月蚀庭首领」）；契约者没有这一项。 */
+  focusRole?: string;
 }
 
 export interface MacroSpec {
@@ -195,8 +197,9 @@ function nightText(state: GameState | undefined): string {
 
 function heroineText(ctx: MacroContext, arg?: string): string {
   if (!ctx.focus) return '（本任务没有指定主角）';
-  if (arg === 'brief') return dossierOf(ctx.focus, ctx.state, { brief: true });
-  return dossierOf(ctx.focus, ctx.state);
+  const role = ctx.focusRole;
+  if (arg === 'brief') return dossierOf(ctx.focus, ctx.state, { brief: true, role });
+  return dossierOf(ctx.focus, ctx.state, { role });
 }
 
 type Resolver = (ctx: MacroContext, arg?: string) => string;
