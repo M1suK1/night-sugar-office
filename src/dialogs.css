@@ -1334,3 +1334,127 @@ button.vn-chip#story-opening-rewrite {
   font-size: 11.5px;
   color: #9a939f;
 }
+/* ── v176 剧情副本 / 新闻详情 ─────────────────────────────────────────── */
+.news-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 6px;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.news-open h3 { transition: color .16s; }
+.news-open:hover h3 { color: #fff0f6; }
+.news-open:hover { text-decoration: underline dotted rgba(243, 174, 201, 0.5); text-underline-offset: 4px; }
+
+.news-dialog { width: 100%; }
+.news-dialog-meta { margin: 4px 0 14px; font-size: 11.5px; color: #9a939f; }
+
+.news-dialog-host {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(247, 242, 245, 0.1);
+  border-radius: 8px;
+  background: rgba(16, 13, 21, 0.55);
+}
+
+.news-dialog-host h3,
+.news-dialog-items h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: #cbb9d4;
+}
+
+.news-dialog-host-row { display: flex; align-items: center; gap: 10px; }
+.news-dialog-host-row .news-host-pick { margin-left: 0; max-width: none; flex: 1; padding: 5px 8px; font-size: 11.5px; }
+.news-dialog-note { margin: 8px 0 0; font-size: 11.5px; color: #7f7589; }
+
+.news-dialog-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  max-height: 44vh;
+  overflow: auto;
+}
+
+.news-dialog-lines li { display: grid; gap: 3px; }
+.news-dialog-lines .news-speaker { font-size: 10.5px; letter-spacing: .06em; color: #8f8497; }
+.news-dialog-lines li.is-host .news-speaker { color: #f3aec9; }
+.news-dialog-lines p { margin: 0; font-size: 13px; line-height: 1.9; color: #ded4dd; }
+.news-dialog-lines li.is-host p { color: #f7f2f5; }
+
+.news-dialog-items ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.9;
+  color: #a99fb2;
+}
+
+.story-archive { width: 100%; }
+.story-archive-body { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; margin-top: 12px; }
+
+.story-archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.story-archive-list li { display: flex; align-items: stretch; gap: 4px; }
+
+.story-archive-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  color: #d9c7d2;
+  background: rgba(16, 13, 21, 0.7);
+  border: 1px solid rgba(247, 242, 245, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.story-archive-item b { font-size: 12.5px; font-weight: 600; }
+.story-archive-item small { font-size: 10.5px; color: #7f7589; }
+.story-archive-item.active { border-color: rgba(243, 174, 201, 0.6); background: rgba(243, 174, 201, 0.1); color: #fff0f6; }
+.story-archive-del { width: 26px; border: 1px solid rgba(247, 242, 245, 0.1); border-radius: 8px; background: none; color: #8f8497; cursor: pointer; }
+.story-archive-del:hover { color: #f3aec9; border-color: rgba(243, 174, 201, 0.5); }
+
+.story-archive-read { min-width: 0; max-height: 52vh; overflow: auto; padding-right: 4px; }
+.story-archive-read header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.story-archive-read h3 { margin: 0; font-size: 15px; font-weight: 600; color: #f7f2f5; }
+.story-archive-read header small { font-size: 10.5px; color: #7f7589; }
+.story-archive-read header .vn-chip { margin-left: auto; padding: 2px 10px; font-size: 10.5px; }
+.story-archive-summary { margin: 0 0 12px; font-size: 12px; line-height: 1.9; color: #a99fb2; }
+
+.story-archive-turn { margin-bottom: 14px; }
+.story-archive-narration { margin: 0 0 8px; font-size: 12.5px; line-height: 1.95; color: #ded4dd; }
+.story-archive-line { margin: 0 0 6px; font-size: 12.5px; line-height: 1.9; color: #f2ecf1; }
+.story-archive-line span { display: inline-block; margin-right: 8px; font-size: 10.5px; color: #f3aec9; letter-spacing: .06em; }
+.story-archive-line.player { color: #d9c7d2; }
+.story-archive-line.player span { color: #8f8497; }
+
+@media (max-width: 720px) {
+  .story-archive-body { grid-template-columns: 1fr; }
+  .story-archive-list { max-height: 24vh; }
+}

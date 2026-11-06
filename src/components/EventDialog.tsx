@@ -48,13 +48,12 @@ export interface EventDialogProps {
 }
 
 export function EventDialog({ event, girl, state, castPool, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
-  // 舞台里点「原文」只切当前弹窗，不改全局开关。
-  const [textMode, setTextMode] = useState(false);
-  // v112：剧情演完之后仍然留在演出模式——玩家要在舞台上把结局读完，
-  // 之后也能从角色详情里用「演出」重新回看（只读不等于只能看原文）。
-  const stage = Boolean(vnStory) && !textMode;
-  const canStage = Boolean(vnStory) && textMode;
-  const shared = { stage, onText: () => setTextMode(true), onStage: canStage ? () => setTextMode(false) : undefined } as const;
+  // v176：演出场景随时可以切。设置里的「视觉小说」只决定提示词怎么写，
+  // 不再决定玩家能不能用舞台 —— 以前关了开关，连「演出」按钮都不给。
+  const [stageMode, setStageMode] = useState(Boolean(vnStory));
+  const stage = stageMode;
+  const canStage = !stageMode;
+  const shared = { stage, onText: () => setStageMode(false), onStage: canStage ? () => setStageMode(true) : undefined } as const;
   if (event.mode === 'session') {
     return <StorySession event={event} girl={girl} state={state} castPool={castPool} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }

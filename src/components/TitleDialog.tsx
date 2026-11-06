@@ -1,11 +1,11 @@
-import { Moon, Sparkles, ArrowRight, FolderOpen, Settings2, Users } from 'lucide-react';
+import { BookOpen, Moon, Sparkles, ArrowRight, FolderOpen, Settings2, Users } from 'lucide-react';
 
 /**
  * 标题页：开场只问一次「怎么开始」。
  * 三个主入口（新游戏 / 读取存档 / 设置）+ 一个次级空白档案，
  * 具体信息全部由 App 传进来——这里不碰 state，方便在还没读档时渲染。
  */
-export function TitleDialog({ cards, hint, onNew, onLoad, onSettings, onBlank }: {
+export function TitleDialog({ cards, hint, onNew, onLoad, onSettings, onBlank, onStories }: {
   /** 契约卡库里有几张卡；0 表示会用默认六人。 */
   cards: number;
   /** 一句话状态：卡库几张、当前进度停在第几日。 */
@@ -14,6 +14,8 @@ export function TitleDialog({ cards, hint, onNew, onLoad, onSettings, onBlank }:
   onLoad: () => void;
   onSettings: () => void;
   onBlank: () => void;
+  /** v176：观看保存在本地的剧情（不用读档）。 */
+  onStories?: () => void;
 }) {
   return (
     <div className="start-overlay" role="dialog" aria-modal="true" aria-label="夜糖事务所 · 开始">
@@ -36,6 +38,14 @@ export function TitleDialog({ cards, hint, onNew, onLoad, onSettings, onBlank }:
             <small>三个档位、项目目录里的导出文件，或者接着上次那一夜。</small>
             <em>回到已有的夜<ArrowRight size={14} /></em>
           </button>
+          {onStories && (
+            <button id="start-stories" type="button" className="start-option" onClick={onStories}>
+              <span className="start-option-icon"><BookOpen size={20} /></span>
+              <b>观看保存的剧情</b>
+              <small>演完的对话存在本地，不用读档也能在这里重看。</small>
+              <em>翻旧的夜<ArrowRight size={14} /></em>
+            </button>
+          )}
           <button id="start-settings" type="button" className="start-option" onClick={onSettings}>
             <span className="start-option-icon"><Settings2 size={20} /></span>
             <b>设置</b>

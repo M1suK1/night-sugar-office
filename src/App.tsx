@@ -39,6 +39,9 @@ import { FactionDialog } from './components/FactionDialog';
 import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
 import { MeetingPlanDialog } from './components/MeetingPlanDialog';
 import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
+import { NewsDialog } from './components/NewsDialog';
+import { StoryArchiveDialog } from './components/StoryArchiveDialog';
+import { saveStoryToArchive } from './storyArchive';
 import { meetEventId } from './rules/summon';
 import { diagnoseVariants, recoverVariants } from './variantRecovery';
 import { OfficeDialog } from './components/OfficeDialog';
@@ -128,6 +131,8 @@ type Modal =
   | { type: 'envoy'; id: FactionId }
   | { type: 'meeting-plan' }
   | { type: 'meeting-records' }
+  | { type: 'news' }
+  | { type: 'stories' }
   | { type: 'office' };
 
 /** 开场相位：标题页 → 编成 → 序章 → 正片。 */
@@ -441,8 +446,8 @@ export default function App() {
   /** v167：返回这一档最终写入的内容（没生成出来就是 undefined），控制台的 news 命令要用它回话。 */
   const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual', override?: GameState): Promise<CityNews | undefined> => {
     const current = override ?? latestState.current ?? state;
-    // 接手的第一夜固定播开场那一条，不请叙事者。
-    if (current.day <= OPENING_NEWS_DAY) {
+    // 接手的第一夜自动播开场那一条；手动刷新（含 news 命令）照常请叙事者。
+    if (current.day <= OPENING_NEWS_DAY && mode === 'auto') {
       const opening = openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name);
       if (!current.cityNews || current.cityNews.headline !== opening.headline || current.cityNews.items[0]?.text !== opening.items[0]?.text) {
         commitCityNews(opening);
@@ -671,11 +676,19 @@ export default function App() {
     const event = state.events.find(item => item.id === eventId);
     if (!event) return false;
     if (storyBusyTurn) return false;
+    /** v176：收尾成功后把这一段也存进「已保存的剧情」，开局界面能单独回看。 */
+    const archiveFinished = (applied: boolean) => {
+      if (!applied) return;
+      const settled = latestState.current?.events.find(item => item.id === eventId) ?? event;
+      void saveStoryToArchive({ ...settled, status: 'done' }, latestState.current ?? state);
+    };
     const config = loadLlmConfig();
     // 没有配叙事者、或者正卡在蓝图岔路口：只能本地收尾（没有模型可重试）。
     // 收尾时仍然留一份本地摘要，之后的历史只引用它。
     if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
-      return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
+      const applied = perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
+      archiveFinished(applied);
+      return applied;
     }
     setStoryBusyTurn(true);
     try {
@@ -686,7 +699,9 @@ export default function App() {
         notify(`收尾没有写出来：${result.message}剧情还开着，可以再点一次「结束事件」。`, false);
         return false;
       }
-      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary });
+      const applied = perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary });
+      archiveFinished(applied);
+      return applied;
     } finally {
       setStoryBusyTurn(false);
     }
@@ -1316,7 +1331,7 @@ export default function App() {
       case 'news': case '访谈': {
         // v167：立刻把今晚这档访谈生成出来（不推进时间，也不看是不是到点）。
         const current = latestState.current ?? state;
-        if (current.day <= OPENING_NEWS_DAY) return `第 ${current.day} 日还只用开场那一条播报，等过了第 ${OPENING_NEWS_DAY} 日再开节目。`;
+        // v176：第一天也能手动生成访谈（自动流程仍然只在第一夜播开场那一条）。
         if (loadBalance().cityNewsEnabled !== 1) return '城市新闻已在「世界书 → 数值」里关掉了。';
         // 可选：news <名字> 先换主持人再开节目。
         if (arg) {
@@ -1563,6 +1578,7 @@ export default function App() {
         onLoad={() => setModal({ type: 'slots', boot: true })}
         onSettings={() => setModal({ type: 'settings', boot: true })}
         onBlank={() => void startNewGame('blank')}
+        onStories={() => setModal({ type: 'stories' })}
       />
     )}
     {(phase === 'roster' || modal?.type === 'starter') && (
@@ -1592,48 +1608,55 @@ export default function App() {
       {page === 'dispatch' ? <>
         <PageHeading page={page}>
           <div className="heading-side">
-            {newsEnabled && (
-              <aside className="dispatch-news" id="dispatch-news" aria-label="城市新闻">
-                <header>
-                  <Radio size={12} />
-                  <b>夜间访谈</b>
-                  <span>{state.cityNews ? `第 ${state.cityNews.day} 日 · ${state.cityNews.source === 'llm' ? '叙事者' : '本地快报'}` : '等待播报'}</span>
-                  <button id="dispatch-news-refresh" type="button" disabled={newsBusy} onClick={() => void refreshCityNews('manual')}>{newsBusy ? '正在写' : '刷新'}</button>
-                </header>
+            {/* v176：访谈面板常驻主页 —— 读档回来也不会消失，哪怕还没有播报。 */}
+            <aside className="dispatch-news" id="dispatch-news" aria-label="城市新闻">
+              <header>
+                <Radio size={12} />
+                <b>夜间访谈</b>
+                <span>{state.cityNews ? `第 ${state.cityNews.day} 日 · ${state.cityNews.source === 'llm' ? '叙事者' : '本地快报'}` : newsEnabled ? '等待播报' : '已在数值里关闭'}</span>
+                <button id="dispatch-news-refresh" type="button" disabled={newsBusy || !newsEnabled} onClick={() => void refreshCityNews('manual')}>{newsBusy ? '正在写' : '刷新'}</button>
+              </header>
+              <button
+                id="dispatch-news-open"
+                type="button"
+                className="news-open"
+                onClick={() => setModal({ type: 'news' })}
+                title="点开看完整访谈，并在这里换主持人"
+              >
                 <h3>{state.cityNews?.headline ?? '今晚的节目还在准备。'}</h3>
-                {state.cityNews?.host && (
-                  <div className="news-host" id="dispatch-news-host-line">
-                    <span className="news-host-badge">主持人</span>
-                    <b>{state.cityNews.host.name}</b>
-                    <small>{state.cityNews.host.title}</small>
-                    <select
-                      id="dispatch-news-host"
-                      className="news-host-pick"
-                      aria-label="换主持人"
-                      value={state.cityNews.host.id}
-                      onChange={input => changeNewsHost(input.target.value)}
-                    >
-                      {newsCastPool(state).map(person => <option key={person.id} value={person.id}>{person.name} · {person.title}</option>)}
-                    </select>
-                  </div>
-                )}
-                {state.cityNews?.lines?.length ? (
-                  <ol className="news-lines">
-                    {state.cityNews.lines.map((line, index) => (
-                      <li key={`${line.speakerId}-${index}`} className={line.speakerId === state.cityNews?.host?.id ? 'is-host' : 'is-guest'}>
-                        <span className="news-speaker">{line.speakerName}</span>
-                        <p>{line.text}</p>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <ul>
-                    {(state.cityNews?.items ?? []).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
-                    {!state.cityNews?.items.length && <li className="tone-street">节目还没开始，稍等一下，或者点右上角「刷新」。</li>}
-                  </ul>
-                )}
-              </aside>
-            )}
+              </button>
+              {state.cityNews?.host && (
+                <div className="news-host" id="dispatch-news-host-line">
+                  <span className="news-host-badge">主持人</span>
+                  <b>{state.cityNews.host.name}</b>
+                  <small>{state.cityNews.host.title}</small>
+                  <select
+                    id="dispatch-news-host"
+                    className="news-host-pick"
+                    aria-label="换主持人"
+                    value={state.cityNews.host.id}
+                    onChange={input => changeNewsHost(input.target.value)}
+                  >
+                    {newsCastPool(state).map(person => <option key={person.id} value={person.id}>{person.name} · {person.title}</option>)}
+                  </select>
+                </div>
+              )}
+              {state.cityNews?.lines?.length ? (
+                <ol className="news-lines">
+                  {state.cityNews.lines.slice(0, 4).map((line, index) => (
+                    <li key={`${line.speakerId}-${index}`} className={line.speakerId === state.cityNews?.host?.id ? 'is-host' : 'is-guest'}>
+                      <span className="news-speaker">{line.speakerName}</span>
+                      <p>{line.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <ul>
+                  {(state.cityNews?.items ?? []).slice(0, 2).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
+                  {!state.cityNews?.items.length && <li className="tone-street">{newsEnabled ? '节目还没开始，点开这一块，或者点右上角「刷新」。' : '城市新闻在「世界书 → 数值」里关掉了；打开后会重新播。'}</li>}
+                </ul>
+              )}
+            </aside>
             <div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div>
           </div>
         </PageHeading>
@@ -1811,6 +1834,8 @@ export default function App() {
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
+      {modal.type === 'stories' && <StoryArchiveDialog onClose={() => setModal(null)} />}
+      {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
       {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
         const before = new Set(state.events.map(event => event.id));
         const applied = act(state, { type: 'startMeeting', plan });

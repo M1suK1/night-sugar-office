@@ -224,15 +224,18 @@ export function syncBuiltinWorldbook(): boolean {
   }
   const builtins = new Map(builtinWorldbook().map(item => [item.id, item]));
   let changed = false;
+  // v176：这里**只补缺失的常驻词条**，绝不覆盖已有内容。
+  // 以前「内置常驻条目有新版文本就同步」会把玩家自己改过的词条改回默认，
+  // 表现就是「改完世界书，重启又变回默认」。
   const updated = entries.map(item => {
-    // 事务所档案单独由 syncOfficeWorldbook 处理，此处跳过
     if (item.id === OFFICE_WORLDBOOK_ID) return item;
     const fresh = builtins.get(item.id);
-    if (fresh && fresh.builtin && fresh.constant && item.content !== fresh.content) {
+    // 老档里的势力名迁移仍然要做（纯替换旧名，不动正文其余部分）。
+    if (item.content.includes(LEGACY_FACTION_NAME)) {
       changed = true;
-      return { ...item, content: fresh.content };
+      return { ...item, content: item.content.split(LEGACY_FACTION_NAME).join(FACTION_NAME) };
     }
-    return item;
+    return fresh ? item : item;
   });
   const exist = new Set(updated.map(item => item.id));
   const missing = builtinWorldbook().filter(item => item.constant && !exist.has(item.id));

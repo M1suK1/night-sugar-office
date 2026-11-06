@@ -1891,7 +1891,7 @@ function castBriefOf(person: StoryPerson): string {
       `（她是${person.role}，不是你的契约者，也不听事务所调遣；说话按她自己的立场。）`,
     ].join('\n');
   }
-  return storyCastBrief(girl);
+  return storyCastBrief(girl, person.isAssistant === true);
 }
 
 function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], limit = 8): StoryLine[] {
@@ -1951,14 +1951,18 @@ export function localSessionSummary(event: CharacterEvent, narration: string): s
  */
 function recentEventSummaries(state: GameState, girlId: string, limit = 4): string {
   return (state.events ?? [])
-    .filter(event => event.girlId === girlId && event.status === 'done' && (event.summary ?? '').trim())
+    // v176：会议对每位参会者都算「之前发生过的事」。
+    .filter(event => event.status === 'done'
+      && (event.girlId === girlId || (event.cast ?? []).includes(girlId) || Boolean(event.meeting?.attendeeIds.includes(girlId)))
+      && (event.summary ?? '').trim())
     .slice(0, limit)
     .map(event => `· ${event.title}：${(event.summary ?? '').trim()}`)
     .join('\n');
 }
 
-function storyCastBrief(girl: Girl): string {
-  return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
+function storyCastBrief(girl: Girl, isAssistant = false): string {
+  // v176：助手在提示词里要有身份，不然模型只把她当普通契约者。
+  return `${girl.name}（${girl.id}）${isAssistant ? ' · 所长的助手' : ''} · ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
 }
 
 /**

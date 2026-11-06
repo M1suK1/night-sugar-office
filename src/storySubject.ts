@@ -27,6 +27,8 @@ export type StoryPerson = {
   seat?: RosterSeat;
   /** 名册条目自带的一句说明（首领/随从档案里的 note）。 */
   note?: string;
+  /** 她是不是所长当前的助手（v176）：提示词里要写明这层身份。 */
+  isAssistant?: boolean;
 };
 
 function personIn(state: GameState, id: string): { person: FactionLeader | FactionGirl; seat: RosterSeat } | undefined {
@@ -128,7 +130,7 @@ export function storyPersonOf(state: GameState | undefined, id: string | undefin
   const own = inOwnRoster(state, id)
     ?? (state.candidates ?? []).find(girl => girl.id === id)
     ?? (state.memorial ?? []).map(entry => entry.girl).find(girl => girl.id === id);
-  if (own) return { girl: own };
+  if (own) return { girl: own, isAssistant: state.assistantId === own.id };
   const found = personIn(state, id);
   if (!found) return undefined;
   const girl = projectPerson(found.person, found.seat);

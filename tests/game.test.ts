@@ -5188,30 +5188,31 @@ test('v40 城市态势里的三方首领跟随开局指派，不再写死内置�
   assert.ok(prompt.includes('城市不需要英雄，需要可替换的班次'), '势力信条还在');
 });
 
-test('v41 世界书同步：内置常驻词条更新文本时自动刷新已有条目，保留玩家自定义词条', () => {
+test('v176 世界书同步：只补缺失的常驻词条，绝不把玩家改过的内容改回默认', () => {
   withMemoryStorage(() => {
-    // 模拟老玩家的 localStorage 里存了旧版的生命词条与自定义词条
-    const legacyEntry: WorldbookEntry = {
-      id: 'wound', name: '生命与受伤', content: '旧版极短文案：血量低于25不能派遣。',
+    // 玩家把「生命与受伤」改成了自己的说法，还写了一条自己的词条。
+    const editedEntry: WorldbookEntry = {
+      id: 'wound', name: '生命与受伤', content: '我自己改过的版本：血量低于 30 就要停勤。',
       keys: [], enabled: true, constant: true, priority: 95, order: 1, builtin: true,
     };
     const customEntry: WorldbookEntry = {
       id: 'user-wb-01', name: '所长的备忘录', content: '自己的手写条目。',
       keys: ['备忘'], enabled: true, constant: false, priority: 30, order: 99,
     };
-    saveWorldbook([legacyEntry, customEntry]);
+    saveWorldbook([editedEntry, customEntry]);
 
-    // 同步：内置条目应当自动刷出新润色文本，自定义条目不动
-    assert.equal(syncBuiltinWorldbook(), true);
+    // 同步会补齐缺失的常驻条目，但已经存在的那条一个字都不动。
+    syncBuiltinWorldbook();
     const updated = loadWorldbook();
     const wound = updated.find(item => item.id === 'wound');
     assert.ok(wound);
-    assert.ok(wound!.content.includes('契约者的肉体终究无法无休止承载法蚀撕扯'));
+    assert.equal(wound!.content, '我自己改过的版本：血量低于 30 就要停勤。', '玩家的改动不能被内置文案顶掉');
+    assert.ok(updated.some(item => item.id === 'moon' && item.constant), '缺失的常驻条目要补上');
     const user = updated.find(item => item.id === 'user-wb-01');
     assert.ok(user);
     assert.equal(user!.content, '自己的手写条目。');
 
-    // 内容已是最新，再次调用应当空转
+    // 补齐之后再次调用应当空转（不做任何覆盖）。
     assert.equal(syncBuiltinWorldbook(), false);
   });
 });
