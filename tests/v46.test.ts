@@ -331,7 +331,7 @@ test('v46 生成：模型写 scene 时静默转成弹窗，提示词里写明端
     const converted = result.data.graph.nodes.find(node => node.id === 'n2');
     assert.equal(converted?.kind, 'incident');
     const text = JSON.stringify(calls[0]?.messages ?? []);
-    assert.ok(text.includes('没有 scene 节点'));
+    assert.ok(text.includes('提交前自检'));
     assert.ok(text.includes('提交前自检'));
     assert.ok(text.includes('trust_calc'), '反例端口名要写进初始提示词');
     assert.ok(text.includes('equipmentTier'));

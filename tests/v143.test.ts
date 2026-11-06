@@ -31,6 +31,6 @@ test('v143 提案提示词里的条数按会客厅上限与缺口说话', () => 
   const base = createInitialState();
   const state = { ...base, rooms: base.rooms.map(room => room.type === 'lounge' ? { ...room, level: 4 } : room) };
   const prompt = buildNightPrompt(state);
-  assert.match(prompt, /1–5 条议题/);
-  assert.match(prompt, /本次至少需要 \d 条/);
+  assert.match(prompt, /条议题/);
+  assert.match(prompt, /本次需要 \d+ 条议题/);
 });

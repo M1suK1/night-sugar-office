@@ -62,7 +62,7 @@ import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, ensureTaskPresets, hydrateLocalPresetSeed, hydratePresetsFromStore, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresetBindingToStore, savePresets, savePresetsToStore, syncVnPrompts, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
+import { boundPreset, duplicatePreset, ensureTaskPresets, hydratePresetsFromStore, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresetBindingToStore, savePresets, savePresetsToStore, syncVnPrompts, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -266,11 +266,8 @@ export default function App() {
     void (async () => {
       await hydratePresetsFromStore();
       if (!alive) return;
-      // 随仓库分发的那套预设（public/presets/local.json + binding.json）：本机没有的补进来。
-      const seed = await hydrateLocalPresetSeed(loadPresets(), loadBinding());
-      if (!alive) return;
-      setPresets(seed.presets);
-      setBinding(seed.binding ?? loadBinding());
+      setPresets(loadPresets());
+      setBinding(loadBinding());
       presetSynced.current = true;
     })();
     return () => { alive = false; };

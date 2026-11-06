@@ -5,7 +5,7 @@ import { SHIPPED_PRESETS } from '../src/content/presets/shipped/index.ts';
 
 test('v139 八份出厂预设都进到内置列表里', () => {
   const shipped = shippedPresets();
-  assert.equal(shipped.length, 8, `应有 8 份出厂预设，实际 ${shipped.length}`);
+  assert.equal(shipped.length, 11, `应有 11 份出厂预设，实际 ${shipped.length}`);
   const ids = builtinPresets().map(preset => preset.id);
   for (const item of SHIPPED_PRESETS) {
     assert.ok(ids.includes(item.id), `内置预设里缺少 ${item.id}`);

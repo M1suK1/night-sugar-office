@@ -72,7 +72,7 @@ test('v103 一次请求只留一份【JSON 形状】：续写只用续写要求�
   const turn = composeTaskSystem(arcTurnContract(), runtime, 'arc', {}, {}, 'arc:turn');
   assert.equal(turn.system.split('【JSON 形状】').length - 1, 1, '正文里的旧契约块要剔掉');
   assert.ok(turn.system.trim().endsWith(arcTurnContract().trim()));
-  assert.ok(turn.system.includes('narration 900–3000 字'));
+  assert.ok(turn.system.includes('narration 1500–3000 字'));
   assert.equal(turn.system.includes('这一轮是**收尾**'), false, '续写不该带收尾契约');
 
   const ending = composeTaskSystem(arcEndingContract(), runtime, 'arc', {}, {}, 'arc:ending');
