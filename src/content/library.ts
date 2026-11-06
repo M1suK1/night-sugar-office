@@ -478,13 +478,15 @@ export function sanitizeLibrary(raw: unknown): ContentLibrary {
     });
   };
   const cleanSkills = dedupe(Array.isArray(value.skills) ? value.skills.map(sanitizeSkill) : []);
-  // Boss 技能单独一张表，但 Boss 模板要引用它们，所以合法 id 池得并入。
-  const skillPool = new Set([...skillById.keys(), ...bossSkillById.keys(), ...cleanSkills.map(skill => skill.id)]);
-  const cleanItems = dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, skillPool)) : []);
+  // 公共池：装备与魔物能引用的技能，不含 Boss 专属。
+  const publicPool = new Set([...skillById.keys(), ...cleanSkills.map(skill => skill.id)]);
+  // Boss 模板要引用 Boss 技能，所以单独一份更宽的池子，只给它用。
+  const bossPool = new Set([...publicPool, ...bossSkillById.keys()]);
+  const cleanItems = dedupe(Array.isArray(value.items) ? value.items.map(entry => sanitizeItem(entry, publicPool)) : []);
   const itemPool = new Set([...itemById.keys(), ...cleanItems.map(item => item.id)]);
-  const cleanMonsters = dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, skillPool)) : []);
+  const cleanMonsters = dedupe(Array.isArray(value.monsters) ? value.monsters.map(entry => sanitizeMonster(entry, publicPool)) : []);
   const monsterPool = new Set([...monsterById.keys(), ...cleanMonsters.map(monster => monster.id)]);
-  const cleanBosses = dedupe(Array.isArray(value.bosses) ? value.bosses.map(entry => sanitizeBoss(entry, monsterPool, skillPool)) : []);
+  const cleanBosses = dedupe(Array.isArray(value.bosses) ? value.bosses.map(entry => sanitizeBoss(entry, monsterPool, bossPool)) : []);
   return {
     schemaVersion: LIBRARY_SCHEMA,
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),

@@ -946,3 +946,9 @@
       货架标题右侧摘要、validGeneratedItem 要求至少一项数值或效果、`tests/v80c`。
 - [ ] 后续可做：装备列表（AuxViews 的装备栏）也用同一渲染器；同槽位「+6 → +9」差值；
       所长立绘的裁剪拖拽界面（现在只存了 crop 数据，没有拖动条）。
+
+## v163：Boss 专属技能边界（`tasks/plan-v163.md`）
+- [x] `sanitizeLibrary` 拆公共池 / Boss 池：装备与普通魔物不能再引用 `boss-*`，Boss 模板照常可用。
+- [x] `sanitizeCustomLeader` / `sanitizeCustomGirl` 过滤 Boss 技能，旧存档里的名册快照也会被清掉。
+- [x] `tests/v163` 七条；全量 818 通过。
+- [ ] 后续：战斗层兜底（旧档里已物化的 `state.customMonsters` / 装备）按本次范围暂不做。
