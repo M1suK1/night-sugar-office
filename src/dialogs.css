@@ -1382,10 +1382,10 @@ button.vn-chip#story-opening-rewrite {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 0 16px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 44vh;
+  max-height: 32vh;
   overflow: auto;
 }
 
@@ -1395,12 +1395,64 @@ button.vn-chip#story-opening-rewrite {
 .news-dialog-lines p { margin: 0; font-size: 13px; line-height: 1.9; color: #ded4dd; }
 .news-dialog-lines li.is-host p { color: #f7f2f5; }
 
+/* v177：对话改成逐条播放 —— 高度固定，十条也不会把弹窗顶到屏幕外。 */
+.news-dialog-stage {
+  padding: 12px 14px 10px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(247, 242, 245, 0.1);
+  border-radius: 8px;
+  background: rgba(16, 13, 21, 0.55);
+}
+
+.news-dialog-line {
+  display: grid;
+  gap: 5px;
+  min-height: 86px;
+  align-content: start;
+}
+
+.news-dialog-line .news-speaker { font-size: 10.5px; letter-spacing: .06em; color: #8f8497; }
+.news-dialog-line.is-host .news-speaker { color: #f3aec9; }
+.news-dialog-line p { margin: 0; font-size: 13.5px; line-height: 1.95; color: #ded4dd; }
+.news-dialog-line.is-host p { color: #f7f2f5; }
+
+.news-dialog-player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(247, 242, 245, 0.08);
+}
+
+.news-dialog-player .btn {
+  min-width: 28px;
+  min-height: 26px;
+  padding: 3px 7px;
+  justify-content: center;
+  font-size: 10.5px;
+}
+
+.news-dialog-player .btn svg { width: 14px; height: 14px; }
+
+.news-dialog-progress {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: .1em;
+  color: #8f8497;
+  padding: 0 4px;
+}
+
+.news-dialog-player #news-dialog-all { margin-left: auto; }
+
 .news-dialog-items ul {
   margin: 0;
   padding-left: 16px;
   font-size: 12px;
   line-height: 1.9;
   color: #a99fb2;
+  max-height: 18vh;
+  overflow: auto;
 }
 
 .story-archive { width: 100%; }
