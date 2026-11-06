@@ -8,7 +8,8 @@ import { applyPct, districtAt, districts } from '../districts.ts';
 import { MIN_REWARD, MISSION_REWARD_VERSION, missionRewardFor } from '../missionReward.ts';
 import { defaultFactionRoster } from '../factions.ts';
 import { initialHostility } from '../hostility.ts';
-import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from '../office.ts';
+import { sanitizeOfficeProfile } from '../office.ts';
+import { loadOfficeProfile } from '../officeProfile.ts';
 import { initialPollution } from '../pollution.ts';
 import type { CommissionWindow } from '../shift.ts';
 import { SHIFT_START, deadlineFor, shiftStartAt } from '../shift.ts';
@@ -80,7 +81,7 @@ export function createInitialState(pack: ContentPack = createSeedPack(), seed = 
     poolLimits: { missions: 12, monsters: 50, candidates: 30, combatMissions: 0, investigationMissions: 0 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
-    pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
+    pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(loadOfficeProfile()),
   };
   syncShift(state);
   ensureMissionPools(state);
@@ -117,7 +118,7 @@ export function createBlankState(pack: ContentPack = createSeedPack(), seed = `$
     poolLimits: { missions: 12, monsters: 50, candidates: 30, combatMissions: 0, investigationMissions: 0 }, removedMonsters: [],
     shift: { day: 14, wave: 0 },
     territories: assignTerritories(seed), territoryLog: [], incidents: [], incidentPool: [], incidentSeq: 0, incidentCooldowns: {}, storylines: [], events: [], treatments: [],
-    pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(DEFAULT_OFFICE_PROFILE),
+    pollution: initialPollution(), hostility: initialHostility(), fronts: [], warHistory: [], office: sanitizeOfficeProfile(loadOfficeProfile()),
   };
   syncShift(state);
   ensureMissionPools(state);

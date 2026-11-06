@@ -504,6 +504,7 @@ try {
     expect((await stored()).girls.find(g => g.id === 'yue').status).toBe('resting');
     await close();
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     const exported = await exportToFile('#settings-export-save', 'save');
     expect(exported.name).toContain('存档.json');
     await close();
@@ -527,7 +528,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 1080 });
   });
   await check('重置后回到初始夜晚并清空战斗与纪念', async () => {
-    await page.locator('#open-settings').click(); await page.locator('#settings-reset-save').click();
+    await page.locator('#open-settings').click(); await page.locator('#settings-tab-data').click(); await page.locator('#settings-reset-save').click();
     await page.locator('#reset-confirm').click();
     // v26 起：重置会把名册清空，所以先回编成，再让序章自己过去。
     await expect(page.locator('#starter-dialog')).toBeVisible();
@@ -544,7 +545,7 @@ try {
     await page.locator('#cmd-close').click().catch(() => {});
     const before = (await stored()).minutes;
 
-    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await page.locator('#open-settings').click(); await page.locator('#settings-tab-data').click(); await page.locator('#settings-save-slots').click();
     await expect(page.locator('#save-slots-dialog')).toBeVisible();
     await expect(page.locator('#slot-label-2')).toContainText('空存档位');
     await page.locator('#slot-save-1').click();
@@ -563,7 +564,7 @@ try {
     await page.evaluate(async () => sessionStorage.setItem('__keepPrologue', '0'));
     expect((await stored()).minutes).toBeLessThan(before);
 
-    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await page.locator('#open-settings').click(); await page.locator('#settings-tab-data').click(); await page.locator('#settings-save-slots').click();
     await expect(page.locator('#slot-label-1')).toContainText('第 14 日');
     await page.locator('#slot-load-1').click();
     await expect(page.locator('#import-save-confirm')).toBeVisible();
@@ -572,13 +573,14 @@ try {
     const loaded = await stored();
     expect(loaded.minutes).toBe(before);
 
-    await page.locator('#open-settings').click(); await page.locator('#settings-save-slots').click();
+    await page.locator('#open-settings').click(); await page.locator('#settings-tab-data').click(); await page.locator('#settings-save-slots').click();
     await page.locator('#slot-delete-1').click();
     await expect(page.locator('#slot-label-1')).toContainText('空存档位');
     await page.locator('#modal-close').click();
   });
   await check('开局编成：头像网格选人、星标指派首领、自定义来源可筛', async () => {
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     await page.locator('#settings-starter').click();
     await expect(page.locator('#starter-dialog')).toBeVisible();
     await expect(page.locator('#starter-card-yue .starter-card-art')).toHaveCount(1);
@@ -1044,7 +1046,7 @@ try {
     await page.route('**/chat/completions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(nightProposal) } }] }) }));
     const before = await stored();
     await page.locator('#open-settings').click();
-    await page.locator('#settings-tab-llm').click();
+    await page.locator('#settings-tab-pools').click();
     await page.locator('#settings-llm-generate').click();
     await expect(page.locator('.proposal-modal')).toBeVisible();
     await expect(page.locator('.proposal-modal')).toContainText('窗上的第二个月亮');
@@ -1156,6 +1158,7 @@ try {
     expect(brought.portrait.length).toBe(bigPortrait.length);
 
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     await page.locator('#settings-save-slots').click();
     await expect(page.locator('#save-slots-dialog')).toBeVisible();
     await page.locator('#slot-save-1').click();
@@ -1253,6 +1256,7 @@ try {
     await page.locator('#advance-time-30').click();
     const before = await stored();
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     const exportedSave = await exportToFile('#settings-export-save', 'save');
     const savePath = exportedSave.path;
     const exported = JSON.parse(fs.readFileSync(savePath, 'utf8'));
@@ -1263,11 +1267,13 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     await page.setInputFiles('#settings-import-save-file', savePath);
     await expect(page.locator('#import-save-confirm')).toBeVisible();
     await page.locator('#import-save-confirm').click();
     await expect.poll(async () => (await stored()).day).toBe(before.day);
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     await page.setInputFiles('#settings-import-save-file', { name: '坏存档.json', mimeType: 'application/json', buffer: Buffer.from('{"version":6,"girls":[]}') });
     await expect(page.locator('[role="status"]')).toContainText('导入失败');
     await expect(page.locator('#import-save-confirm')).toHaveCount(0);
@@ -1681,6 +1687,7 @@ try {
 
   await check('玩家档案写入后可在刷新后保留', async () => {
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-profile').click();
     await page.locator('#settings-player-name').fill('白鸟');
     await page.locator('#settings-player-alias').fill('所长');
     await page.locator('#settings-player-appearance').fill('总是穿着旧风衣，左手戴一只停摆的表。');
@@ -1691,6 +1698,7 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-profile').click();
     await expect(page.locator('#settings-player-name')).toHaveValue('白鸟');
     await page.locator('#modal-close').click();
   });
@@ -3176,11 +3184,13 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     const day = (await stored()).day;
     // 存档：导出 → 目录里出现 → 存档位列表能看见 → 读回来
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     const saveFile = await exportToFile('#settings-export-save', 'save');
     expect(path.resolve(saveFile.path).startsWith(path.resolve('data', 'saves'))).toBe(true);
     expect(JSON.parse(fs.readFileSync(saveFile.path, 'utf8')).day).toBe(day);
     await close();
     await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-data').click();
     await page.locator('#settings-save-slots').click();
     await expect(page.locator('#slot-local')).toBeVisible();
     await expect(page.locator('#slot-local')).toContainText('data/saves');
@@ -3241,6 +3251,9 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await expect(page.locator('#settings-cardbox')).toBeVisible();
     await expect(page.locator('#settings-export-save')).toHaveCount(0);
     await expect(page.locator('#settings-starter')).toHaveCount(0);
+    await page.locator('#settings-tab-profile').click();
+    await expect(page.locator('#settings-office-background')).toBeVisible();
+    await expect(page.locator('#settings-tab-data')).toHaveCount(0);
     await close();
 
     await page.locator('#start-load').click();

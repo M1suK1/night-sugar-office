@@ -1,7 +1,7 @@
 import { GirlThumb } from './GirlThumb';
 import { useState } from 'react';
-import { Archive, Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, Upload, RotateCcw, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, SlidersHorizontal, Hourglass, MapPin, Terminal, Save } from 'lucide-react';
-import type { Expression, GameState, Girl } from '../types';
+import { Archive, Sparkles, ArrowUpRight, Users, Plus, Building2, MessageCircle, Settings2, Download, Upload, RotateCcw, Grip, Heart, BookOpen, Info, Bell, Check, Moon, ShieldCheck, Bot, Boxes, Trash2, KeyRound, PlugZap, AlertTriangle, SlidersHorizontal, Hourglass, MapPin, Terminal, Save, UserRound } from 'lucide-react';
+import type { Expression, GameState, Girl, OfficeProfile } from '../types';
 import { loadResearchPrefs, saveResearchPrefs } from '../research';
 import { buildCost, capacity, seatsTaken, statusLabels } from '../game';
 import { monsters } from '../content/monsters';
@@ -12,6 +12,8 @@ import type { PromptScope } from '../presets';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
 import { EXPRESSIONS, EXPRESSION_META } from '../expressions';
 import { resizeImageFile } from '../image';
+import { OFFICE_LIMITS } from '../office';
+import { saveOfficeProfile } from '../officeProfile';
 export function HireDialog({girl,state,onConfirm}:{girl:Girl;state:GameState;onConfirm:()=>void}) {
   const taken=seatsTaken(state), full=taken>=capacity(state),poor=state.gold<girl.cost;
   return <div className="standard-modal hire-confirm"><div className="modal-eyebrow"><Sparkles size={14}/>一份新的契约</div><div className="hire-confirm-person"><img src={girl.portrait} alt=""/><div><span>{girl.codename}</span><h2>欢迎，{girl.name}。</h2><p>{girl.skill} · {girl.element}</p></div></div><p className="muted">签署契约后，她将来到星屑会客厅，成为事务所的一员。你可以安排她出勤、照顾她，或开始属于你们的故事。</p><div className="confirmation-facts"><span>契约费用<b>{girl.cost.toLocaleString()} 星砂</b></span><span>剩余星砂<b>{(state.gold-girl.cost).toLocaleString()}</b></span><span>契约席位<b>{taken} / {capacity(state)}</b></span></div>{(full||poor)&&<div className="inline-warning"><Info size={16}/>{full?'契约席位已满，请先扩建晚安宿舍。':'星砂不足，完成更多委托后再来吧。'}</div>}<button id="hire-confirm" className="btn primary full" disabled={full||poor} onClick={onConfirm}>签署契约<ArrowUpRight size={17}/></button></div>;
@@ -26,11 +28,11 @@ export function RoomDialog({state,id,onGirl,onTalk,onBuild}:{state:GameState;id:
 }
 export function HelpDialog(){return <div className="standard-modal help-modal"><div className="modal-eyebrow"><BookOpen size={14}/>给新任所长的夜班手册</div><h2>用温柔，经营一座城。</h2><p className="muted">欢迎来到夜糖事务所。这是一份可操作、自动本地保存的纯前端游戏原型。</p><div className="help-items">{[{Icon:Grip,title:'把心愿，交给合适的人',text:'拖动右侧待命契约者到地图任务点，或点击委托选择人选。疲劳会影响契合度；血量低于 30 或疲劳达到 80 时不能派遣。'},{Icon:MapPin,title:'九块辖区，各有脾气',text:'点击地图上的辖区可以查看背景与「环境影响」：有的委托目标更低、报酬更高，有的更容易受伤。委托所属辖区决定这些修正。'},{Icon:Hourglass,title:'一夜只有六个小时',text:'事务所 20:00 开门、次日 02:00 打烊，午夜之后仍算同一夜。委托分三个时段（20:00 / 22:00 / 00:00）放出，紧急委托两小时内不接就会撤销；忙完后点「前往下一天」跳过白天。'},{Icon:Heart,title:'她们不只是能力数值',text:'点击契约者查看档案，安排治疗、休息，或在基地交谈。衣柜有四个格子，换装会同步立绘与头像。'},{Icon:Terminal,title:'终端与叙事者',text:'顶栏的 CMD 按钮或 Ctrl+K 可以打开事务所终端：help 查看命令，status 查看夜班状态，advance 推进时间，district 查询辖区，generate 呼叫叙事者。终端不会跳过打烊确认。'},{Icon:Moon,title:'叙事者只负责提案',text:'在设置里连接任意 OpenAI 兼容接口，并可从 SillyTavern 导入对话补全预设控制采样参数与主提示词。数值与结算仍由本地规则决定；屏幕右下角的面板能看到每次请求读了什么、思维链与成败。'}].map(({Icon,title,text})=><div key={title}><Icon size={22}/><section><h3>{title}</h3><p>{text}</p></section></div>)}</div><p className="small-note">支持键盘 Tab 导航；Esc 关闭窗口。浏览器存档只属于当前设备，可在设置中导出。</p></div>;}
 
-type SettingsTab = 'general' | 'llm' | 'pools';
+type SettingsTab = 'general' | 'profile' | 'llm' | 'pools' | 'data';
 
 import type { VnStoryMode } from '../vnPrefs';
 
-export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, state,reduced,onReduced,chime=false,onChime,vnStory='off',onVnStory,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onCardbox,onSlots,onStarter,onGenerate,autoGenerate,onAutoGenerate,onPresets,levelUpMode='manual',onLevelUpMode,boot=false}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onCardbox:()=>void;onSlots:()=>void;onStarter:()=>void;onGenerate:()=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void;onPresets:(scope?: PromptScope)=>void;levelUpMode?:'auto'|'manual';onLevelUpMode?:(mode:'auto'|'manual')=>void;chime?:boolean;onChime?:(v:boolean)=>void;vnStory?:VnStoryMode;onVnStory?:(mode:VnStoryMode)=>void;boot?:boolean;proposalCheck?:'strict'|'lenient';onProposalCheck?:(mode:'strict'|'lenient')=>void}) {
+export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, state,reduced,onReduced,chime=false,onChime,vnStory='off',onVnStory,onExport,onImport,onReset,onPoolLimit,onDeleteMission,onDeleteCandidate,onDeleteMonster,onCardbox,onSlots,onStarter,onGenerate,autoGenerate,onAutoGenerate,onPresets,levelUpMode='manual',onLevelUpMode,boot=false,office,onOfficeProfile}:{state:GameState;reduced:boolean;onReduced:(v:boolean)=>void;onExport:()=>void;onImport:(file:File)=>void;onReset:()=>void;onPoolLimit:(pool:'missions'|'monsters'|'candidates',value:number)=>void;onDeleteMission:(id:string)=>void;onDeleteCandidate:(id:string)=>void;onDeleteMonster:(id:string)=>void;onCardbox:()=>void;onSlots:()=>void;onStarter:()=>void;onGenerate:()=>Promise<{ok:boolean;message:string}>;autoGenerate:boolean;onAutoGenerate:(v:boolean)=>void;onPresets:(scope?: PromptScope)=>void;levelUpMode?:'auto'|'manual';onLevelUpMode?:(mode:'auto'|'manual')=>void;chime?:boolean;onChime?:(v:boolean)=>void;vnStory?:VnStoryMode;onVnStory?:(mode:VnStoryMode)=>void;boot?:boolean;proposalCheck?:'strict'|'lenient';onProposalCheck?:(mode:'strict'|'lenient')=>void;office:OfficeProfile;onOfficeProfile:(profile:OfficeProfile)=>void}) {
   const [tab, setTab] = useState<SettingsTab>('general');
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
   const [settings, setSettings] = useState<LlmSettings>(loadLlmSettings);
@@ -38,6 +40,8 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
   const [draft, setDraft] = useState<string | null>(null);
   const [budget, setBudget] = useState<LlmBudget>(loadLlmBudget);
   const [player, setPlayer] = useState<PlayerProfile>(loadPlayerProfile);
+  const [officeDraft, setOfficeDraft] = useState<OfficeProfile>(office);
+  const [officeSaved, setOfficeSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [researchOn, setResearchOn] = useState(() => loadResearchPrefs().enabled);
@@ -97,6 +101,8 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
     setLlmNote(info.kind === 'invalid' ? { ok: false, text: info.message } : { ok: true, text: info.kind === 'service-account' ? `已导入服务账号：${info.clientEmail}（项目 ${info.projectId}）。` : '已导入密钥。' });
   };
   const updatePlayer = (patch: Partial<PlayerProfile>) => { const next = { ...player, ...patch }; setPlayer(next); savePlayerProfile(next); };
+  const patchOffice = (patch: Partial<OfficeProfile>) => { setOfficeDraft(current => ({ ...current, ...patch })); setOfficeSaved(false); };
+  const saveOffice = () => { saveOfficeProfile(officeDraft); onOfficeProfile(officeDraft); setOfficeSaved(true); };
   const uploadDirector = async (file: File | undefined, expression?: Expression) => {
     if (!file) return;
     try {
@@ -107,13 +113,47 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
   };
   const probe = async () => { setBusy(true); setLlmNote(null); const result = await testLlmConnection(llm); setLlmNote({ ok: result.ok, text: result.message }); setBusy(false); };
   const generate = async () => { setGenerating(true); setLlmNote(null); const result = await onGenerate(); setLlmNote({ ok: result.ok, text: result.message }); setGenerating(false); };
-  return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2>{boot&&<p className="muted" id="settings-boot-note">这些偏好与凭证只存在本机，不进存档。</p>}<div className="settings-tabs" role="tablist" aria-label="设置分类">{(boot ? [{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }] : [{ id: 'general', label: '一般', Icon: Settings2 }, { id: 'llm', label: '故事引擎', Icon: Bot }, { id: 'pools', label: '内容池', Icon: Boxes }]).map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
+  return <div className="standard-modal settings-modal"><div className="modal-eyebrow"><Settings2 size={14}/>事务所偏好</div><h2>按自己的节奏，守夜。</h2>
+    <div className="settings-shortcuts"><button id="settings-cardbox" type="button" className="btn small" onClick={onCardbox}><Archive size={14}/>契约卡库</button></div>
+    {boot&&<p className="muted" id="settings-boot-note">这些偏好与凭证只存在本机，不进存档。</p>}<div className="settings-tabs" role="tablist" aria-label="设置分类">{(boot ? [
+        { id: 'general', label: '偏好', Icon: Settings2 },
+        { id: 'profile', label: '所长档案', Icon: UserRound },
+        { id: 'llm', label: '叙事引擎', Icon: Bot },
+      ] : [
+        { id: 'general', label: '偏好', Icon: Settings2 },
+        { id: 'profile', label: '所长档案', Icon: UserRound },
+        { id: 'llm', label: '叙事引擎', Icon: Bot },
+        { id: 'pools', label: '内容', Icon: Boxes },
+        { id: 'data', label: '存档与数据', Icon: Save },
+      ]).map(({ id, label, Icon }) => <button id={`settings-tab-${id}`} key={id} role="tab" aria-selected={tab === id} className={`settings-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id as SettingsTab)}><Icon size={14}/>{label}</button>)}</div>
     {tab === 'general' && <>
+      <div className="modal-section-heading"><h3>演出</h3><small>文字怎么呈现</small></div>
       <div className="settings-row"><div><b>剧情演出</b><p>换成视觉小说：一句句演、带打字机与舞台立绘。默认是现在的整段文字。开启后会自动启用预设里的「视觉小说演出」词条，让叙事者多写对白少写旁白。</p></div><button id="settings-vn-story" role="switch" aria-checked={vnStory === 'on'} aria-label="剧情演出使用视觉小说" className={`toggle ${vnStory === 'on' ? 'on' : ''}`} onClick={() => onVnStory?.(vnStory === 'on' ? 'off' : 'on')}><i /></button></div>
       <div className="settings-row"><div><b>减少动态效果</b><p>关闭漂浮与入场动画，保留必要的状态反馈。</p></div><button id="settings-reduced-motion" role="switch" aria-checked={reduced} aria-label="减少动态效果" className={`toggle ${reduced?'on':''}`} onClick={()=>onReduced(!reduced)}><i/></button></div>
       <div className="settings-row"><div><b>叙事者提示音</b><p>叙事者写完（或失败）时响一声短提示；连接测试不响。</p></div><button id="settings-llm-chime" role="switch" aria-checked={chime} aria-label="叙事者提示音" className={`toggle ${chime?'on':''}`} onClick={()=>onChime?.(!chime)}><i/></button></div>
-      <div className="settings-row"><div><b>本地自动存档</b><p>每次操作后保存于当前浏览器，不上传任何数据。</p></div><span className="settings-enabled"><Check size={14}/>已启用</span></div>
-      <div className="settings-row"><div><b>提案本地审查</b><p>严格：驳回里多写一项势力态度就整份作废，需要重 roll。宽松：就地改成「只掉提出者的羁绊」，结构问题（缺委托、缺议题）仍会拦。</p></div><button id="settings-proposal-check" role="switch" aria-checked={proposalCheck === 'strict'} aria-label="提案严格审查" className={`toggle ${proposalCheck === 'strict' ? 'on' : ''}`} onClick={() => onProposalCheck?.(proposalCheck === 'strict' ? 'lenient' : 'strict')}><i/></button></div>
+      <div className="modal-section-heading"><h3>成长</h3><small>升级时怎么分配属性</small></div>
+      <div className="settings-row"><div><b>升级手动加点</b><p>开启后每次升级发 10 点可分配属性，由你在角色档案里分配；关闭则按职阶自动加主属性 +6、副属性 +4。两种模式最大生命都 +10。</p></div><button id="settings-level-mode" role="switch" aria-checked={levelUpMode==='manual'} aria-label="升级手动加点" className={`toggle ${levelUpMode==='manual'?'on':''}`} onClick={()=>onLevelUpMode?.(levelUpMode==='manual'?'auto':'manual')}><i/></button></div>
+    </>}
+    {tab === 'profile' && <>
+      <div className="modal-section-heading"><h3>事务所档案</h3><small>只存本机，新开局会沿用</small></div>
+      <div className="office-fields settings-office-fields">
+        {([
+          { key: 'background', label: '背景', hint: '事务所从哪里来、为什么关门、又被谁重新点亮。', limit: OFFICE_LIMITS.background, id: 'settings-office-background' },
+          { key: 'philosophy', label: '理念', hint: '它凭什么在三方之间站住脚。', limit: OFFICE_LIMITS.philosophy, id: 'settings-office-philosophy' },
+          { key: 'goal', label: '目标', hint: '你打算把这间事务所带去哪里。', limit: OFFICE_LIMITS.goal, id: 'settings-office-goal' },
+        ] as const).map(field => (
+          <label key={field.key} className="office-field" htmlFor={field.id}>
+            <span className="office-field-head"><b>{field.label}</b><i>{officeDraft[field.key].length} / {field.limit}</i></span>
+            <textarea id={field.id} rows={2} value={officeDraft[field.key]} maxLength={field.limit} onChange={e => patchOffice({ [field.key]: e.target.value.slice(0, field.limit) })} />
+            <small>{field.hint}</small>
+          </label>
+        ))}
+      </div>
+      <div className="settings-office-actions">
+        <button id="settings-office-save" type="button" className="btn" onClick={saveOffice}><Save size={14}/>保存事务所档案</button>
+        {officeSaved && <span className="settings-enabled"><Check size={14}/>已保存，新开局会沿用</span>}
+      </div>
+      <div className="modal-section-heading"><h3>所长档案</h3><small>叙事者会用这里的信息称呼你</small></div>
     <div className="player-card">
         <div className="player-card-head"><b>玩家档案</b><span>叙事者眼里的你；会以 {'{{player}}'} 注入预设词条</span></div>
         <div className="player-grid">
@@ -138,13 +178,25 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
         <label className="player-wide"><span>背景</span><textarea id="settings-player-background" rows={2} value={player.background} maxLength={600} placeholder="你为什么接下这间事务所？" onChange={e => updatePlayer({ background: e.target.value })}/></label>
         <label className="player-wide"><span>与她们的关系</span><textarea id="settings-player-relation" rows={2} value={player.relation} maxLength={400} placeholder="例如：把她们当作同事，但不太会说出口。" onChange={e => updatePlayer({ relation: e.target.value })}/></label>
       </div>
-      <div className="settings-data-actions">{!boot&&<button id="settings-export-save" className="btn" onClick={onExport}><Download size={16}/>导出当前存档</button>}{!boot&&<label id="settings-import-save" className="btn" htmlFor="settings-import-save-file"><Upload size={16}/>导入存档<input id="settings-import-save-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onImport(file); }} /></label>}{!boot&&<button id="settings-starter" className="btn" onClick={onStarter}>开局编成</button>}<button id="settings-cardbox" className="btn" onClick={onCardbox}><Archive size={15}/>契约卡库</button>{!boot&&<button id="settings-save-slots" className="btn" onClick={onSlots}><Save size={15}/>存档位</button>}{!boot&&<button id="settings-reset-save" className="btn danger" onClick={onReset}><RotateCcw size={15}/>重新开始</button>}</div>
+    </>}
+    {tab === 'data' && !boot && <>
+      <div className="modal-section-heading"><h3>存档</h3><small>只存在这台设备</small></div>
+      <div className="settings-row"><div><b>本地自动存档</b><p>每次操作后保存于当前浏览器，不上传任何数据。</p></div><span className="settings-enabled"><Check size={14}/>已启用</span></div>
+      <div className="settings-data-actions">
+        <button id="settings-export-save" className="btn" onClick={onExport}><Download size={16}/>导出当前存档</button>
+        <label id="settings-import-save" className="btn" htmlFor="settings-import-save-file"><Upload size={16}/>导入存档<input id="settings-import-save-file" type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onImport(file); }} /></label>
+        <button id="settings-save-slots" className="btn" onClick={onSlots}><Save size={15}/>存档位</button>
+        <button id="settings-starter" className="btn" onClick={onStarter}>开局编成</button>
+      </div>
+      <div className="modal-section-heading"><h3>危险操作</h3><small>无法撤销</small></div>
+      <div className="settings-data-actions"><button id="settings-reset-save" className="btn danger" onClick={onReset}><RotateCcw size={15}/>重新开始</button></div>
       <div className="prototype-note"><Info size={17}/><p><b>纯前端 · 本地剧情演示</b><br/>不包含后端、登录或支付。故事引擎的密钥只保存在当前浏览器，不会写入游戏存档或日志。</p></div>
     </>}
     {tab === 'llm' && <div className="llm-settings">
       <div className="llm-intro"><Bot size={20}/><div><b>把夜晚交给一位叙事者</b><p>连接 OpenAI 兼容接口，或直接用服务账号 JSON 接上 Google Vertex AI。模型只负责提案，数值、结算与存档仍由本地规则决定。</p></div></div>
       <button id="settings-open-presets" className="btn full preset-entry" onClick={() => onPresets()}><SlidersHorizontal size={15}/>对话补全预设 · SillyTavern 导入</button>
       <p className="llm-preset-note">采样参数（温度、top_p、最大 token、重复惩罚）与主提示词由预设决定，每个生成任务都可以单独绑定一套预设。Vertex AI 不接受重复惩罚参数，选了也会被忽略。</p>
+      <div className="modal-section-heading"><h3>连接</h3><small>凭证与端点</small></div>
       <div id="settings-llm-default" className="llm-default">
         <div className="llm-default-head"><b>默认接口</b><span>两份凭证并存，这里选的那一份负责所有生成</span></div>
         <ul className="llm-default-list">
@@ -235,6 +287,9 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
         </label>
       </details>
       </>}
+      <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥与提示词仅存于 localStorage</span></div>
+      {llmNote && <div id="settings-llm-result" className={`llm-result ${llmNote.ok ? 'ok' : 'error'}`} role="status">{llmNote.ok ? <Check size={14}/> : <AlertTriangle size={14}/>}{llmNote.text}</div>}
+      <div className="modal-section-heading"><h3>写作</h3><small>输出预算与提示词</small></div>
       <section className="llm-budget" aria-label="输出预算">
         <div className="llm-budget-head"><b>输出预算</b><span>{budget.unified} tokens 统一值</span></div>
         <p className="llm-budget-note">这里的额度与预设里的「最大输出」取较大者生效。思维链也吃这份额度，给太宽反而容易被废话占满；填不满或截断时会自动放大一倍重试一次。</p>
@@ -273,15 +328,16 @@ export function SettingsDialog({ proposalCheck = 'lenient', onProposalCheck, sta
           </button>)}
         </div>
       </div>
-      <div className="llm-actions"><button id="settings-llm-test" className="btn" disabled={busy} onClick={probe}><PlugZap size={15}/>{busy ? '正在连接' : '测试连接'}</button><span className="llm-key-note"><KeyRound size={13}/>密钥与提示词仅存于 localStorage</span></div>
-      {llmNote && <div id="settings-llm-result" className={`llm-result ${llmNote.ok ? 'ok' : 'error'}`} role="status">{llmNote.ok ? <Check size={14}/> : <AlertTriangle size={14}/>}{llmNote.text}</div>}
-      <div className="settings-row"><div><b>每日自动补充</b><p>跨日时若池子还有空位，自动请求一次新的委托与议案；候选者不再由叙事者生成。</p></div><button id="settings-auto-generate" role="switch" aria-checked={autoGenerate} aria-label="每日自动补充" className={`toggle ${autoGenerate?'on':''}`} onClick={()=>onAutoGenerate(!autoGenerate)}><i/></button></div>
-      <div className="settings-row"><div><b>升级手动加点</b><p>开启后每次升级发 10 点可分配属性，由你在角色档案里分配；关闭则按职阶自动加主属性 +6、副属性 +4。两种模式最大生命都 +10。</p></div><button id="settings-level-mode" role="switch" aria-checked={levelUpMode==='manual'} aria-label="升级手动加点" className={`toggle ${levelUpMode==='manual'?'on':''}`} onClick={()=>onLevelUpMode?.(levelUpMode==='manual'?'auto':'manual')}><i/></button></div>
+      <div className="modal-section-heading"><h3>生成行为</h3><small>提案校验与角色考据</small></div>
+      <div className="settings-row"><div><b>提案本地审查</b><p>严格：驳回里多写一项势力态度就整份作废，需要重 roll。宽松：就地改成「只掉提出者的羁绊」，结构问题（缺委托、缺议题）仍会拦。</p></div><button id="settings-proposal-check" role="switch" aria-checked={proposalCheck === 'strict'} aria-label="提案严格审查" className={`toggle ${proposalCheck === 'strict' ? 'on' : ''}`} onClick={() => onProposalCheck?.(proposalCheck === 'strict' ? 'lenient' : 'strict')}><i/></button></div>
       <div className="settings-row"><div><b>角色起草联网考据</b><p>只在自定义登记起草同人角色时，用 Vertex 的 googleSearch 查一次公开资料（作品名、角色设定、惯用称呼）；查不到会自动退回无资料起草。仅 Vertex / Gemini 支持，状态会记进叙事引擎面板。</p></div><button id="settings-research" role="switch" aria-checked={researchOn} aria-label="角色起草联网考据" className={`toggle ${researchOn?'on':''}`} onClick={()=>{ const next = !researchOn; setResearchOn(next); saveResearchPrefs({ enabled: next }); }}><i/></button></div>
-      <button id="settings-llm-generate" className="btn primary full" disabled={generating || full} onClick={generate}><Sparkles size={15}/>{full ? '内容池已满，请先清理' : generating ? '叙事者正在书写' : '生成今晚的提案'}</button>
       <div className="llm-warning"><AlertTriangle size={15}/><p>浏览器直连会暴露密钥给页面脚本。正式版本应改为服务端代理；此处仅用于本地原型验证。叙事引擎面板（屏幕右下角）会保留每次请求读取的内容与思维链。</p></div>
     </div>}
     {tab === 'pools' && !boot && <div className="pool-settings">
+      <div className="modal-section-heading"><h3>生成</h3><small>今晚的委托、事件与议案</small></div>
+      <div className="settings-row"><div><b>每日自动补充</b><p>跨日时若池子还有空位，自动请求一次新的委托与议案；候选者不再由叙事者生成。</p></div><button id="settings-auto-generate" role="switch" aria-checked={autoGenerate} aria-label="每日自动补充" className={`toggle ${autoGenerate?'on':''}`} onClick={()=>onAutoGenerate(!autoGenerate)}><i/></button></div>
+      <button id="settings-llm-generate" className="btn primary full" disabled={generating || full} onClick={generate}><Sparkles size={15}/>{full ? '内容池已满，请先清理' : generating ? '叙事者正在书写' : '生成今晚的提案'}</button>
+      <div className="modal-section-heading"><h3>内容池</h3><small>满了就停止补充</small></div>
       <p className="pool-intro">内容池满后，故事引擎会停止补充对应内容。你可以随时手动移除，为新的相遇腾出位置。</p>
       {([{ id: 'missions', label: '事件池', count: openMissions.length, desc: '地图上尚未结束的委托与事件。' }, { id: 'monsters', label: '魔物池', count: state.customMonsters.filter(m => !m.id.startsWith('boss-mon-')).length, desc: '这一档里自己长出来的魔物；内置魔物不进这个池子。' }, { id: 'candidates', label: '市场池', count: state.candidates.length, desc: '市场里的候选者由契约卡库补货，这里可以手动移除。' }] as const).map(pool => <section className="pool-block" key={pool.id}>
         <header><div><b>{pool.label}</b><span>{pool.count} / {state.poolLimits[pool.id]}</span></div><label><span>上限</span><input id={`settings-limit-${pool.id}`} type="number" min={1} max={40} value={state.poolLimits[pool.id]} onChange={e => onPoolLimit(pool.id, Number(e.target.value))}/></label></header>

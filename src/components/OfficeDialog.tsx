@@ -4,6 +4,7 @@ import type { Girl, OfficeProfile } from '../types';
 import { OFFICE_LIMITS, representativeOf } from '../office';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { loadPlayerProfile, savePlayerProfile, type PlayerProfile } from '../player';
+import { saveOfficeProfile } from '../officeProfile';
 
 interface OfficeDialogProps {
   profile: OfficeProfile;
@@ -44,6 +45,7 @@ export function OfficeDialog({ profile, girls, assistantId, onSave, onAssistant,
   };
   const commit = () => {
     savePlayerProfile(player);
+    saveOfficeProfile(draft);
     setSaved(true);
     onSave(draft);
   };
