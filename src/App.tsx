@@ -1616,7 +1616,9 @@ export default function App() {
 
         <div className="dispatch-layout">
           <DispatchMap state={state} onMission={id => setModal({ type: 'mission', id })} onFront={id => setModal({ type: 'front', id })} onDropGirl={(girlId, id) => setModal({ type: 'mission', id, girlId })} />
-          <Roster showPoints={girl => shouldShowPointBadge(girl, state.levelUpMode, pointsMuted)} state={state} onGirl={girl} onMarket={() => navigate('market')} />
+          <div className="roster-slot">
+            <Roster showPoints={girl => shouldShowPointBadge(girl, state.levelUpMode, pointsMuted)} state={state} onGirl={girl} onMarket={() => navigate('market')} />
+          </div>
         </div>
       </> : page === 'base' ? (
         <>

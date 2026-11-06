@@ -3429,6 +3429,21 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await close();
   });
 
+  await check('名册滚动条、瀑布流切换与代表色描边', async () => {
+    await page.locator('#nav-dispatch').click();
+    await expect(page.locator('.roster')).toBeVisible();
+    const scroll = page.locator('.girl-roster-scroll');
+    await expect(scroll).toHaveCSS('overflow-y', 'auto');
+    const border = await page.locator('.girl-roster-main').first().evaluate(node => getComputedStyle(node).borderColor);
+    expect(border).not.toBe('rgba(255, 255, 255, 0.05)');
+    await page.locator('#roster-view-grid').click();
+    await expect(page.locator('.girl-roster')).toHaveClass(/is-grid/);
+    await expect(page.locator('.roster-info').first()).toBeHidden();
+    expect(await page.evaluate(() => localStorage.getItem('night-sugar:roster-view'))).toBe('grid');
+    await page.locator('#roster-view-list').click();
+    await expect(page.locator('.girl-roster')).not.toHaveClass(/is-grid/);
+    await page.evaluate(() => localStorage.removeItem('night-sugar:roster-view'));
+  });
   await check('无浏览器错误或失败资源请求', async () => { if (failures.length) console.log('FAILED_REQUESTS', failures); expect(errors).toEqual([]); expect(failures).toEqual([]); });
 } finally {
   fs.writeFileSync('artifacts/browser-results.json', JSON.stringify({ baseURL, results, errors, failures }, null, 2)); await browser.close();

@@ -97,3 +97,49 @@
 .district-front .front-chip{fill:#160f1c;stroke:#f3aec966;stroke-width:1}
 .district-front .front-chip-text{fill:#ffd7e6;font-size:11px;text-anchor:middle;letter-spacing:.04em}
 .district-front:hover .front-chip{fill:#221630;stroke:#f3aec9cc}
+
+/* ── v156：名册滚动 / 瀑布流 / 代表色描边 ─────────────────────── */
+.roster-tools { display: flex; justify-content: flex-end; margin-top: 9px; }
+.roster-view-toggle { display: flex; gap: 2px; padding: 2px; background: #0d0e1399; border: 1px solid #ffffff0a; border-radius: 5px; }
+.roster-view-toggle button { width: 26px; height: 22px; display: grid; place-items: center; border-radius: 3px; color: #6b6473; }
+.roster-view-toggle button:hover { color: var(--pink); }
+.roster-view-toggle button.selected { background: #2c2533; color: #eac0d3; }
+
+/* 桌面：名册不参与网格行高，地图定高，名单内部滚动 */
+@media (min-width: 801px) {
+  .roster-slot { position: relative; min-height: 0; }
+  .roster-slot > .roster { position: absolute; inset: 0; }
+}
+.roster { min-height: 0; }
+.girl-roster-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #5b4a64 transparent; }
+.girl-roster-scroll::-webkit-scrollbar { width: 5px; }
+.girl-roster-scroll::-webkit-scrollbar-thumb { background: #5b4a64; border-radius: 4px; }
+.girl-roster-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* 代表色细边框：在册少女的栏位 */
+.girl-roster-main { border-color: color-mix(in srgb, var(--girl-color) 34%, transparent); }
+.girl-roster-card:hover .girl-roster-main,
+.girl-roster-card:focus-within .girl-roster-main { border-color: color-mix(in srgb, var(--girl-color) 70%, transparent); }
+
+/* 瀑布流：只显示头像 */
+.girl-roster.is-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-content: start; }
+.girl-roster.is-grid .girl-roster-card { min-width: 0; }
+.girl-roster.is-grid .girl-roster-main { display: block; min-height: 0; aspect-ratio: 1; padding: 0; border-radius: 9px; }
+.girl-roster.is-grid .roster-portrait { width: 100%; height: 100%; border-right: 0; }
+.girl-roster.is-grid .roster-portrait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 8%; transform: none; }
+.girl-roster.is-grid .girl-roster-card:hover .roster-portrait img { transform: scale(1.05); }
+.girl-roster.is-grid .roster-info,
+.girl-roster.is-grid .drag-handle,
+.girl-roster.is-grid .roster-arrow { display: none; }
+.girl-roster.is-grid .roster-left,
+.girl-roster.is-grid .roster-empty-slot { grid-column: 1 / -1; }
+.girl-roster.is-grid .girl-tooltip { right: 0; left: auto; top: auto; bottom: calc(100% + 9px); width: min(220px, 70vw); transform: translateY(6px); }
+.girl-roster.is-grid .girl-roster-card:hover .girl-tooltip,
+.girl-roster.is-grid .girl-roster-card:focus-within .girl-tooltip { transform: translateY(0); }
+.girl-roster.is-grid .girl-tooltip:after { display: none; }
+
+@media (max-width: 800px) {
+  .roster-slot { display: block; }
+  .girl-roster-scroll { max-height: 70vh; }
+  .girl-roster.is-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

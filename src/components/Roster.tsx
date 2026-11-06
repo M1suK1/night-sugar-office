@@ -1,11 +1,22 @@
-import { Feather, GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3, Flame } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Feather, GripVertical, Heart, Sparkles, ArrowUpRight, BatteryMedium, Bandage, MoonStar, Syringe, Clock3, Flame, Rows3, LayoutGrid } from 'lucide-react';
 import type { GameState } from '../types';
 import { capacity, drugDaysLeft, inWithdrawal, relationshipStage, stageLabels, statusLabels } from '../game';
 import { corruptionLabels, corruptionStage, effectiveMaxHp, effectiveMaxSpirit, effectiveStats } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel } from '../factions';
 import { GirlPortrait } from './GirlPortrait';
 
+const ROSTER_VIEW_KEY = 'night-sugar:roster-view';
+type RosterView = 'list' | 'grid';
+function readRosterView(): RosterView {
+  try { return localStorage.getItem(ROSTER_VIEW_KEY) === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
+}
+
 export function Roster({ state, onGirl, onMarket, showPoints }: { state: GameState; onGirl: (id: string) => void; onMarket: () => void; showPoints?: (girl: { id: string; unspentPoints?: number }) => boolean }) {
+  const [view, setView] = useState<RosterView>(readRosterView);
+  useEffect(() => {
+    try { localStorage.setItem(ROSTER_VIEW_KEY, view); } catch { /* 偏好存不下也无所谓 */ }
+  }, [view]);
   const present = state.girls.filter(g => !g.retired && !g.left);
   const left = state.girls.filter(g => g.left && !g.dead).slice(0, 6);
   const idle = present.filter(g => g.status === 'idle').length;
@@ -18,8 +29,15 @@ export function Roster({ state, onGirl, onMarket, showPoints }: { state: GameSta
           <span><i />{idle} 人待命</span>
           <span>{present.filter(g => !g.dead).length} / {capacity(state)} 席位</span>
         </div>
+        <div className="roster-tools">
+          <div className="roster-view-toggle" role="group" aria-label="名册显示方式">
+            <button id="roster-view-list" type="button" className={view === 'list' ? 'selected' : ''} aria-pressed={view === 'list'} title="列表" onClick={() => setView('list')}><Rows3 size={12} /></button>
+            <button id="roster-view-grid" type="button" className={view === 'grid' ? 'selected' : ''} aria-pressed={view === 'grid'} title="只看头像" onClick={() => setView('grid')}><LayoutGrid size={12} /></button>
+          </div>
+        </div>
       </div>
-      <div className="girl-roster">
+      <div className="girl-roster-scroll">
+      <div className={`girl-roster ${view === 'grid' ? 'is-grid' : ''}`}>
         {present.map(g => {
           const stage = relationshipStage(g.bond);
           const cStage = corruptionStage(g.corruption ?? 0);
@@ -98,6 +116,7 @@ export function Roster({ state, onGirl, onMarket, showPoints }: { state: GameSta
           </div>
           <ArrowUpRight size={17} />
         </button>
+      </div>
       </div>
     </aside>
   );
