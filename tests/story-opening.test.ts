@@ -5,7 +5,7 @@ import type { CharacterEvent, FactionPair, GameState } from '../src/types.ts';
 import { customGirlOf, customLeaderOf, subjectOfCustom } from '../src/factions.ts';
 import { buildMeetEvent, buildSummonEvent, factionSceneCast } from '../src/rules/summon.ts';
 import { applySeedStorySession } from '../src/rules/storyOps.ts';
-import { storyOpeningContextForTest } from '../src/llm.ts';
+import { storyOpeningContextForTest, storyScenarioOf } from '../src/llm.ts';
 
 const leader = customLeaderOf('witch', subjectOfCustom({
   id: 'L1', name: '青灯', factionTag: 'witch', level: 10, color: '#8a7bd6',
@@ -150,4 +150,22 @@ test('v123 没写开场时提示词不出现空的开场块', () => {
   const event = sessionEvent(state);
   const context = storyOpeningContextForTest(state, event, '');
   assert.ok(!context.includes('【所长的开场】'), context);
+});
+
+test('v171 约谈/会议不会把 hook 当成 {{scenario}} 塞进【场景】', () => {
+  const state = stateWithRoster();
+  const meet = sessionEvent(state);
+  assert.equal(storyScenarioOf(meet), '', '约谈事件不该有场景变量');
+  assert.ok(!storyScenarioOf(meet).includes('递了帖子'));
+
+  const plain = { ...meet, hookInPrompt: undefined };
+  assert.equal(storyScenarioOf(plain), plain.hook, '普通剧情仍然带引子');
+
+  // 会议同理：hook 只给界面看。
+  const started = act({ ...state, gold: 5000 }, {
+    type: 'startMeeting',
+    plan: { title: '排班', placeId: 'lounge', placeName: '会客厅', attendeeIds: state.girls.slice(0, 2).map(girl => girl.id), buys: '' },
+  }).state;
+  const meeting = started.events.find(item => item.meeting)!;
+  assert.equal(storyScenarioOf(meeting), '');
 });

@@ -1962,6 +1962,20 @@ function storyCastBrief(girl: Girl): string {
 }
 
 /**
+
+/**
+ * 剧情里那个 `{{scenario}}` 变量（v171）。
+ *
+ * 之前把 `event.hook` 直接当 scenario 传下去，预设里的【场景】词条就会把
+ * 「你让人递了帖子。克拉拉回话：…」原样印进提示词 —— 约谈的开场又被定死了。
+ * 现在约谈 / 传唤 / 会议这类事件把 `hookInPrompt` 设成 false，这里就回空串。
+ */
+export function storyScenarioOf(event: Pick<CharacterEvent, 'hook' | 'hookInPrompt'>): string {
+  if (event.hookInPrompt === false) return '';
+  return event.hook ?? '';
+}
+
+/**
  * 会议场景的上下文（v168）。
  *
  * 会议不是"约谈"：它有一条明确的议程（标题）、一个地点、一屋子彼此认识的人，
@@ -2034,7 +2048,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const context = openingContext(state, event, (seed || event.playerSeed || '').trim());
   const body = arcOpeningContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
-    char: briefs, personality: '', scenario: event.hook, story: event.title, contractId: 'arc:opening',
+    char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:opening',
     }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
@@ -2085,7 +2099,7 @@ export async function generateStoryEnding(
     rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
   ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', arcEndingContract(), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
-    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:ending',
+    char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:ending',
   }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
@@ -2144,7 +2158,7 @@ export async function generateStoryTurn(
   ].filter(Boolean).join('\n');
   const body = arcTurnContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
-    char: briefs, personality: '', scenario: event.hook ?? '', story: event.title, contractId: 'arc:turn',
+    char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:turn',
   }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
