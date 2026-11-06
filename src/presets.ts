@@ -324,13 +324,21 @@ function withContractDefaults(entries: PromptEntry[]): PromptEntry[] {
   const out = entries.map(entry => {
     const spec = builtin.get(entry.id);
     if (!spec) return entry;
+    // v178：契约的出厂文本会随版本更新（新闻从「播报 1–3 条」改成访谈），
+    // 老预设里存的那份既不该一直显示旧文本，也不该在玩家动一下之后突然把
+    // 旧文本当成覆盖值发出去。所以：没动过的直接跟到新文本，动过的原样留着，
+    // defaultContent 永远对齐当前出厂值（「已改」标记与覆盖判断都靠它）。
+    const stored = entry.content;
+    const storedDefault = entry.defaultContent ?? spec.content;
+    const untouched = stored.trim() === storedDefault.trim();
     return {
       ...entry,
       contract: true,
       builtin: true,
       name: entry.name || spec.name,
       scope: spec.scope,
-      defaultContent: entry.defaultContent ?? spec.content,
+      defaultContent: spec.content,
+      content: untouched ? spec.content : stored,
     };
   });
   const ids = new Set(out.map(entry => entry.id));
@@ -1064,7 +1072,10 @@ export function importPresetObject(data: unknown): PresetImportResult {
     id: presetId(), name: String(name).slice(0, 40) || '导入的预设',
     description: typeof raw.description === 'string' ? raw.description.slice(0, 160) : `从 SillyTavern 预设导入（${Object.keys(settings).length} 个字段）`,
     settings, api: importedApi, prompts: importedPrompts, promptOrder,
-    regex: regex.length ? regex : undefined, schema: sourceSchema >= 4 ? 4 : 3,
+    regex: regex.length ? regex : undefined,
+    // v178：认识的预设自己带 schema（我们导出的写的是当前版本）；SillyTavern 的没这个字段，
+    // 按老规矩停在 4 让 ensurePromptScopes 去补齐 —— 别把新预设降级成旧的又补一遍词条。
+    schema: sourceSchema >= 4 ? Math.min(sourceSchema, PRESET_SCHEMA) : 3,
     createdAt: now(), updatedAt: now(),
   };
   // ST 文件没有 schema，导入时补齐全部任务词条；本作旧 schema 3 文件只补战斗札记；schema 4 原样保留。
@@ -1122,7 +1133,9 @@ export function importPresetObject(data: unknown): PresetImportResult {
 
 export function exportPresetJson(preset: ChatPreset): string {
   // 与 SillyTavern 的 importPreset 兼容：settings 平铺 + name/description + prompts[] + prompt_order。
-  const prompts = storedPrompts(preset).map(entry => ({
+  // v178：导出用「界面上看到的那一份」——包括自动补出来的结构契约，免得导出再导入后少词条。
+  const entries = presetPrompts(preset);
+  const prompts = entries.map(entry => ({
     identifier: entry.id,
     name: entry.name,
     content: entry.content,
@@ -1132,8 +1145,15 @@ export function exportPresetJson(preset: ChatPreset): string {
     marker: Boolean(entry.marker),
     disable: !entry.enabled,
   }));
-  const promptOrder = (preset.promptOrder ?? presetPrompts(preset).map(entry => ({ identifier: entry.id, enabled: entry.enabled })))
-    .map(item => ({ ...item }));
+  // 顺序表必须把每一条都列上：导入时不在 order 里的词条会被当成没启用。
+  const ordered = preset.promptOrder?.length
+    ? preset.promptOrder.map(item => ({ ...item }))
+    : entries.map(entry => ({ identifier: entry.id, enabled: entry.enabled }));
+  const known = new Set(ordered.map(item => item.identifier));
+  const promptOrder = [
+    ...ordered,
+    ...entries.filter(entry => !known.has(entry.id)).map(entry => ({ identifier: entry.id, enabled: entry.enabled })),
+  ];
   const extensions = preset.settings.extensions && typeof preset.settings.extensions === 'object'
     ? { ...(preset.settings.extensions as Record<string, unknown>) }
     : {};
@@ -1154,8 +1174,9 @@ export function exportPresetJson(preset: ChatPreset): string {
       location: preset.api?.location ?? '',
     };
   }
+  // schema 跟着代码走：写成老版本号，导入时会被当成旧预设又补一遍词条。
   return JSON.stringify({
-    schema: 4, ...settings, name: preset.name, description: preset.description ?? '',
+    schema: PRESET_SCHEMA, ...settings, name: preset.name, description: preset.description ?? '',
     prompt_order: [{ character_id: 100001, order: promptOrder }],
   }, null, 2);
 }

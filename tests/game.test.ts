@@ -2304,7 +2304,7 @@ test('预设接口选择：本地免密钥，远程缺密钥回退全局', () =>
   assert.match(result.warnings.join('\n'), /工具调用/);
 });
 
-test('预设导出带 schema 4 与用途，且剥离密钥', () => {
+test('预设导出带当前 schema 与用途，且剥离密钥', () => {
   const preset = importPresetObject({
     name: '导出测试',
     temperature: 0.7,
@@ -2314,7 +2314,8 @@ test('预设导出带 schema 4 与用途，且剥离密钥', () => {
   assert.equal(preset.ok, true);
   if (!preset.ok || !preset.preset) return;
   const exported = JSON.parse(exportPresetJson(preset.preset));
-  assert.equal(exported.schema, 4);
+  // v178：导出的 schema 跟着代码走（写老版本号会让导入时又把词条补一遍）。
+  assert.equal(exported.schema, PRESET_SCHEMA);
   assert.equal('apiKey' in (exported.api ?? {}), false);
   assert.equal(exported.api?.model, 'm1');
   assert.equal(exported.extensions.regex_scripts[0].findRegex, '/（[^）]*）/g');
