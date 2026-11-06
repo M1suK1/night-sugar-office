@@ -1961,6 +1961,39 @@ function storyCastBrief(girl: Girl): string {
   return `${girl.name}（${girl.id}）· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
 }
 
+/**
+ * 会议场景的上下文（v168）。
+ *
+ * 会议不是"约谈"：它有一条明确的议程（标题）、一个地点、一屋子彼此认识的人，
+ * 还有一笔已经花掉的经费。采购只是背景道具，不要让模型把它写成主题。
+ */
+function meetingContext(state: GameState, event: CharacterEvent): string {
+  const plan = event.meeting;
+  if (!plan) return '';
+  const people = plan.attendeeIds
+    .map(id => state.girls.find(girl => girl.id === id))
+    .filter((girl): girl is Girl => Boolean(girl))
+    .map(girl => `${girl.name}（${girl.title}，疲劳 ${girl.fatigue}）`);
+  const relations: string[] = [];
+  for (let i = 0; i < plan.attendeeIds.length; i += 1) {
+    for (let j = i + 1; j < plan.attendeeIds.length; j += 1) {
+      const a = state.girls.find(girl => girl.id === plan.attendeeIds[i]);
+      const b = state.girls.find(girl => girl.id === plan.attendeeIds[j]);
+      if (!a || !b) continue;
+      relations.push(`${a.name}×${b.name} ${a.relationships[b.id] ?? 40}`);
+    }
+  }
+  const host = state.girls.find(girl => girl.id === state.assistantId);
+  return [
+    `【这是一场事务所会议】「${plan.title}」，地点：${plan.placeName}，${plan.at}`,
+    `参会 ${people.length} 人：${people.join('、') || '（名单为空）'}`,
+    relations.length ? `彼此关系（0–100）：${relations.join(' · ')}` : '',
+    plan.buys ? `开会时买的东西：${plan.buys}（只是背景道具，最多在开头或中途各提一次，别当成会议主题）` : '开会没买什么，桌上只有水和纸。',
+    host ? `主持人是助手 ${host.name}，她负责推进议程。` : '没有助手，会议由所长自己主持。',
+    '这一段是内部会议：说话的是参会的人，不写旁白式的会议纪要；每人只代表自己的立场。',
+  ].filter(Boolean).join('\n');
+}
+
 /** 交互剧情的开场白：250–350 字，把在场的人与此刻的场面交代清楚，然后停住。 */
 /**
  * 开场提示词的上下文（v123）。
@@ -1978,6 +2011,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
     // v109：以前的剧情只以摘要形式出现，不回放原文。
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
+    meetingContext(state, event),
     seedText ? `【所长的开场】${seedText}\n这一段会作为这一段剧情的第一句，由所长先说。你只写她听见之后的反应、场面与台词：不要替所长补话，也不要抢先替她寒暄；沿用他给出的时间、地点与姿态，不要另起炉灶、不要换场景。` : '',
     '【在场的人】',
     briefs || '只有她和你',
@@ -2041,6 +2075,7 @@ export async function generateStoryEnding(
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
+    meetingContext(state, event),
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
@@ -2097,6 +2132,7 @@ export async function generateStoryTurn(
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
+    meetingContext(state, event),
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',

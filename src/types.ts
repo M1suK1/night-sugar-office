@@ -679,6 +679,8 @@ export interface CharacterEvent {
   playerSeed?: string;
   /** v169：引子只给界面看，不进提示词（首领约谈/传唤不该被一句固定引子定死）。 */
   hookInPrompt?: boolean;
+  /** v168：这是一场事务所会议 —— 有支出、有采购、结束时结算关系。 */
+  meeting?: MeetingPlan;
   sessionDone?: boolean;
   /** 这段剧情正卡在蓝图的选项上：等玩家选完才算结束。 */
   pendingChoice?: { storylineId: string; nodeId: string };
@@ -930,6 +932,36 @@ export interface Mission {
   scaledFrom?: string;
   /** 战斗模板只写要几只敌人，具体是哪些由 `rollEnemies` 按辖区与难度抽。 */
   enemyCount?: number;
+}
+/** 一场事务所会议（v168）：玩家填的标题、地点、参会者与采购，都是剧情设定。 */
+export interface MeetingPlan {
+  title: string;
+  placeId: string;
+  placeName: string;
+  /** 参会者（至少 2 人、最多 6 人，含助手）。 */
+  attendeeIds: string[];
+  /** 玩家自己写的采购，纯剧情设定：不改费用、不改关系。 */
+  buys: string;
+  /** 这一场实际扣掉的星砂。 */
+  fee: number;
+  day: number;
+  at: string;
+}
+
+/** 会议记录（v168）：事件被存档裁剪之后，这里仍然留着摘要。 */
+export interface MeetingRecord {
+  id: string;
+  eventId: string;
+  day: number;
+  at: string;
+  title: string;
+  placeName: string;
+  attendees: { id: string; name: string }[];
+  buys: string;
+  fee: number;
+  summary: string;
+  /** 每人之间涨了多少关系。 */
+  relationshipGain: number;
 }
 /** 一条城市新闻：势力 / 污染 / 安定度 / 街头，四类各管一种来源。 */
 export interface CityNewsItem {
@@ -1183,6 +1215,8 @@ export interface GameState {
   cityNews?: CityNews;
   /** v167：玩家指定的新闻主持人；缺省按日号从在场人物里定。 */
   newsHostId?: string;
+  /** v168：最近的会议记录（只留 30 场）。 */
+  meetings?: MeetingRecord[];
   /** 升级成长方式：手动发点 / 按职阶自动加点；旧档按 auto 读。 */
   levelUpMode?: 'auto' | 'manual';
   /** 委托完成与升级的提示；新的在前，只留最近 20 条。 */
@@ -1299,6 +1333,7 @@ export type GameAction =
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
+  | { type: 'startMeeting'; plan: Omit<MeetingPlan, 'fee' | 'day' | 'at'> }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
   /** 手动改一句：玩家自己修台词/旁白文本（不动 id 与轮次）。 */

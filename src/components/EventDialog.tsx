@@ -399,7 +399,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
             </div>
           </header>
           <section className="story-opening" id="story-opening">
-            <h3 className="story-opening-title">{busyNow ? '她在等你把话说完……' : rewriteOpen ? '把这一面重新说一遍' : '提出你的邀约请求'}</h3>
+            <h3 className="story-opening-title">{busyNow ? '她在等你把话说完……' : rewriteOpen ? '把这一面重新说一遍' : event.meeting ? '说说这一场要谈什么' : '提出你的邀约请求'}</h3>
             <p className="story-opening-note">
               {rewriteOpen
                 ? `重写会清掉这一段已有的 ${clearedRounds} 轮对话，回到开场之前。`
@@ -445,9 +445,14 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
       <div className="battle-note-shell">
         <header className="battle-note-head">
           <div className="battle-note-head-copy">
-            <span className="modal-eyebrow"><Sparkles size={13} />角色剧情 · 已走 {rounds} 轮</span>
+            <span className="modal-eyebrow"><Sparkles size={13} />{event.meeting ? `事务所会议 · ${event.meeting.placeName} · ${event.meeting.fee} 星砂` : `角色剧情 · 已走 ${rounds} 轮`}</span>
             <h2>{event.title}</h2>
             <p>{event.hook}</p>
+            {event.meeting && (
+              <p className="event-meeting-line" id="event-meeting-line">
+                {event.meeting.attendeeIds.length} 人参会{event.meeting.buys ? ` · 买了 ${event.meeting.buys}` : ' · 什么也没买'}
+              </p>
+            )}
           </div>
           <div className="battle-note-head-meta">
             <span className="battle-note-source llm">交互剧情</span>

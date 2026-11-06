@@ -37,6 +37,8 @@ import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { FactionDialog } from './components/FactionDialog';
 import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
+import { MeetingPlanDialog } from './components/MeetingPlanDialog';
+import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
 import { meetEventId } from './rules/summon';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
@@ -123,6 +125,8 @@ type Modal =
   | { type: 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' }
   | { type: 'faction'; id: FactionId }
   | { type: 'envoy'; id: FactionId }
+  | { type: 'meeting-plan' }
+  | { type: 'meeting-records' }
   | { type: 'office' };
 
 /** 开场相位：标题页 → 编成 → 序章 → 正片。 */
@@ -1736,7 +1740,7 @@ export default function App() {
           <WorldbookView onOpenOffice={() => setModal({ type: 'office' })} />
         </>
       ) : page === 'council' ? (
-        <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} />
+        <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} onMeeting={() => setModal({ type: 'meeting-plan' })} onMeetingRecords={() => setModal({ type: 'meeting-records' })} />
       ) : page === 'market' ? (
         <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => void advancedRecruit(level)} onFillFromLibrary={() => void fillFromLibrary(3)} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
       ) : (
@@ -1789,7 +1793,19 @@ export default function App() {
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
-      {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onMeet={() => { const faction = modal.id; const existing = state.events.find(event => event.id === meetEventId(state, faction)); if (existing) { setModal({ type: 'event', id: existing.id }); return; } if (perform({ type: 'meetLeader', faction })) setModal({ type: 'event', id: meetEventId(state, faction) }); }} onOpenEvent={eventId => setModal({ type: 'event', id: eventId })} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
+      {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
+        const before = new Set(state.events.map(event => event.id));
+        const applied = act(state, { type: 'startMeeting', plan });
+        if (!applied.ok) { notify(applied.message, false); return; }
+        setState(applied.state);
+        notify(applied.message, true);
+        const made = applied.state.events.find(event => event.meeting && !before.has(event.id));
+        setModal(made ? { type: 'event', id: made.id } : null);
+      }} onClose={() => setModal(null)} />}
+      {modal.type === 'meeting-records' && <MeetingRecordsDialog records={state.meetings ?? []} onReplay={eventId => {
+        if (!state.events.some(event => event.id === eventId)) { notify('这一段剧情已经被存档裁剪掉了，只剩下这里的摘要。', false); return; }
+        setModal({ type: 'event', id: eventId });
+      }} onClose={() => setModal(null)} />}      {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onMeet={() => { const faction = modal.id; const existing = state.events.find(event => event.id === meetEventId(state, faction)); if (existing) { setModal({ type: 'event', id: existing.id }); return; } if (perform({ type: 'meetLeader', faction })) setModal({ type: 'event', id: meetEventId(state, faction) }); }} onOpenEvent={eventId => setModal({ type: 'event', id: eventId })} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}
       {modal.type === 'memorial' && <MemorialDialog state={state} />}

@@ -10,6 +10,9 @@ type Props = {
   state: GameState;
   onDecide: (opinionId: string, optionId: 'accept' | 'defer' | 'reject') => void;
   onGirl: (id: string) => void;
+  /** v168：组织会议 / 查看会议记录。 */
+  onMeeting?: () => void;
+  onMeetingRecords?: () => void;
 };
 
 const optionMeta: Record<Opinion['options'][number]['id'], { label: string; icon: typeof Check }> = {
@@ -33,7 +36,7 @@ function CouncilBackdrop() {
   );
 }
 
-export function CouncilView({ state, onDecide, onGirl }: Props) {
+export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecords }: Props) {
   const limit = opinionLimit(state);
   const allPending = state.opinions.filter(opinion => opinion.status === 'pending');
   const pending = allPending.slice(0, limit);
@@ -226,6 +229,16 @@ export function CouncilView({ state, onDecide, onGirl }: Props) {
               <b>{assistant.name}</b>
               <p>{current?.assistantNote ?? '她把档案按顺序排好，等你开口。'}</p>
               {next && <small className="council-next">下一位：{state.girls.find(girl => girl.id === next.authorId)?.name ?? '—'}</small>}
+              {onMeeting && (
+                <div className="council-meeting-actions">
+                  <button id="council-organize-meeting" type="button" className="btn primary council-meeting-btn" onClick={onMeeting}>组织一场会议</button>
+                  {onMeetingRecords && (
+                    <button id="council-meeting-records" type="button" className="btn council-meeting-btn ghost" onClick={onMeetingRecords}>
+                      查看会议记录{(state.meetings?.length ?? 0) > 0 ? ` · ${state.meetings!.length}` : ''}
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           ) : <p className="muted">助手席还空着。</p>}
         </aside>

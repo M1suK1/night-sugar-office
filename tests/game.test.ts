@@ -1925,7 +1925,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 51, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项与 v167 的失败惩罚三项');
+  assert.equal(BALANCE_FIELDS.length, 58, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项、v167 的失败惩罚三项与 v168 的会议七项');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);

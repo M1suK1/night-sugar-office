@@ -5,6 +5,7 @@ import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } f
 import { ensureGraph, validateGraph } from '../storygraph.ts';
 import { STORY_SLOT_MAX, planForSlot, playableStoryPlan, sanitizeStoryPlan, setPlanForSlot } from '../storyplan.ts';
 import { archive, clone, dateLabel, findGirl } from '../rules/core.ts';
+import { settleMeeting } from './meetingSettle.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -304,6 +305,8 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       if (girl) { girl.eventBadge = undefined; girl.bond = Math.min(100, girl.bond + gain); }
       next.logs.unshift({ id: `log-story-session-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl?.name ?? '她'}的剧情「${event.title}」结束，走了 ${rounds} 轮${gain ? `，羁绊 +${gain}` : ''}。` });
       archive(next, '关系', event.title, `${girl?.name ?? '她'}的这段剧情收束了。`);
+      // v168：会议结束时结算参会者之间的关系，并留一条会议记录（事件被裁剪后摘要仍在）。
+      if (event.meeting) settleMeeting(next, event, action.summary?.trim() || event.summary || '');
       finishStoryEvent(next, event);
       return { state: next, ok: true, message: gain ? `事件结束，羁绊 +${gain}。` : '事件结束。' };
 }

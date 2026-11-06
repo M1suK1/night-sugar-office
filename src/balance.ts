@@ -34,6 +34,14 @@ export interface BalanceRules {
   missionFailurePenaltyMin: number;
   /** 势力代表委托失败时，额外扣多少该势力好感。 */
   envoyFailureExtraStandingLoss: number;
+  /** v168 事务所会议：场地费 + 每人单价，人数上下限，关系涨幅，时长与疲劳恢复。 */
+  meetingBaseCost: number;
+  meetingPerAttendee: number;
+  meetingMinAttendees: number;
+  meetingMaxAttendees: number;
+  meetingRelationBase: number;
+  meetingMinutes: number;
+  meetingFatigueRelief: number;
   /** 破坏：被破坏方扣多少好感、额外星砂百分比、基础火气、失败时的火气。 */
   envoyRaidTargetStandingLoss: number;
   envoyRaidRewardPct: number;
@@ -116,6 +124,13 @@ export const DEFAULT_BALANCE: BalanceRules = {
   missionFailurePenaltyPct: 20,
   missionFailurePenaltyMin: 50,
   envoyFailureExtraStandingLoss: 2,
+  meetingBaseCost: 200,
+  meetingPerAttendee: 120,
+  meetingMinAttendees: 2,
+  meetingMaxAttendees: 6,
+  meetingRelationBase: 2,
+  meetingMinutes: 60,
+  meetingFatigueRelief: 10,
   envoyRaidTargetStandingLoss: 3,
   envoyRaidRewardPct: 50,
   envoyRaidHostility: 8,
@@ -188,6 +203,13 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'missionFailurePenaltyPct', label: '失败违约金', hint: '委托失败时按报酬的百分比赔钱。', min: 0, max: 100, step: 5, unit: '%', group: '势力代表' },
   { key: 'missionFailurePenaltyMin', label: '违约金下限', hint: '违约金最少赔多少星砂（手头不够就赔到 0）。', min: 0, max: 2000, step: 50, unit: '星砂', group: '势力代表' },
   { key: 'envoyFailureExtraStandingLoss', label: '代表委托失败', hint: '势力代表委托失败时，额外扣多少该势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
+  { key: 'meetingBaseCost', label: '会议场地费', hint: '开一场会议的固定开销。', min: 0, max: 5000, step: 50, unit: '星砂', group: '事务所会议' },
+  { key: 'meetingPerAttendee', label: '会议每人', hint: '每多一位参会者加多少星砂。', min: 0, max: 2000, step: 20, unit: '星砂', group: '事务所会议' },
+  { key: 'meetingMinAttendees', label: '会议最少人', hint: '少于这个人数就开不成会。', min: 1, max: 6, step: 1, unit: '人', group: '事务所会议' },
+  { key: 'meetingMaxAttendees', label: '会议最多人', hint: '参会人数上限。', min: 2, max: 10, step: 1, unit: '人', group: '事务所会议' },
+  { key: 'meetingRelationBase', label: '会议关系', hint: '会后参会者两两上涨的关系值。', min: 0, max: 10, step: 1, unit: '', group: '事务所会议' },
+  { key: 'meetingMinutes', label: '会议时长', hint: '开一场会议消耗多少分钟。', min: 15, max: 240, step: 5, unit: '分钟', group: '事务所会议' },
+  { key: 'meetingFatigueRelief', label: '会议恢复疲劳', hint: '每位参会者会后恢复多少疲劳。', min: 0, max: 50, step: 1, unit: '', group: '事务所会议' },
   { key: 'envoyRaidTargetStandingLoss', label: '破坏扣好感', hint: '被破坏势力扣多少好感。', min: 0, max: 20, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyRaidRewardPct', label: '破坏额外星砂', hint: '破坏行动的星砂加成百分比。', min: 0, max: 300, step: 10, unit: '%', group: '势力代表' },
   { key: 'envoyRaidHostility', label: '破坏基础火气', hint: '破坏行动给两势力加多少火气（再按对方辖区污染与安定加权）。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },
