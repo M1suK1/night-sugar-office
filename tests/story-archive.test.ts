@@ -83,3 +83,19 @@ test('v177 回看：副本能还原成可演的事件（保留说话人 id 与�
   assert.equal(narrator.lines?.[1]?.mode, 'thought');
 });
 
+test('v177 回看：表情按句带回来，缺了就沿用这个人上一句', () => {
+  const event = replayEventOf({
+    id: 'story-e2', eventId: 'e2', title: '灯下', day: 3, savedAt: 1,
+    lead: { id: 'g1', name: '玛丽' },
+    participants: [{ id: 'g1', name: '玛丽' }],
+    summary: '',
+    turns: [
+      { role: 'narrator', text: '她抬眼。', lines: [{ speakerId: 'g1', speakerName: '玛丽', text: '嗯。', expression: 'smile' }] },
+      { role: 'narrator', text: '她又低下头。', lines: [{ speakerId: 'g1', speakerName: '玛丽', text: '……' }] },
+      { role: 'narrator', text: '她别过脸。', lines: [{ speakerId: 'g1', speakerName: '玛丽', text: '别看。', expression: 'shy' }] },
+    ],
+  });
+  const expressions = event.turns!.map(turn => turn.lines![0]!.expression);
+  assert.deepEqual(expressions, ['smile', 'smile', 'shy']);
+});
+

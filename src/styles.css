@@ -1575,7 +1575,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 /* v177：首页新闻卡上下滚动播放 —— 访谈十句也不会把面板撑长。 */
 .news-ticker {
   position: relative;
-  max-height: 172px;
+  max-height: 88px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -1587,6 +1587,11 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .news-ticker-line { padding: 1px 0; transition: opacity .3s ease; opacity: .55; }
 .news-ticker-line.is-current { opacity: 1; }
 .news-ticker-line p { margin: 0; }
+
+/* 卡片只有半截高：字号与行距一起收一点，一屏能看见两句。 */
+.news-ticker .news-lines { gap: 6px; }
+.news-ticker .news-speaker { font-size: 9.5px; letter-spacing: .05em; }
+.news-ticker .news-lines p { font-size: 11px; line-height: 1.7; }
 
 .archive-load { max-width: 460px; }
 .archive-load-track {

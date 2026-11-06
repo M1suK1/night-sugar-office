@@ -61,18 +61,26 @@ function compactLines(lines: StoryLine[] | undefined, names: Map<string, string>
  * 回看走的是同一套界面：原文与视觉小说两种模式都能用，立绘按在场的 id 取。
  */
 export function replayEventOf(story: ArchivedStory): CharacterEvent {
+  // 老副本没存表情：同一个人沿用她上一句的表情，至少不会整段定在同一张脸上。
+  const lastExpression = new Map<string, Expression>();
   const turns: StoryTurn[] = story.turns.map((turn, index) => ({
     id: `${story.eventId}-t${index}`,
     role: turn.role,
     text: turn.text,
-    lines: turn.lines.map((line, at) => ({
-      speakerId: line.speakerId ?? line.speakerName,
-      speakerName: line.speakerName,
-      expression: (line.expression ?? 'calm') as Expression,
-      text: line.text,
-      mode: line.mode,
-      after: at,
-    })),
+    lines: turn.lines.map((line, at) => {
+      const speakerId = line.speakerId ?? line.speakerName;
+      const stored = line.expression as Expression | undefined;
+      const expression = stored ?? lastExpression.get(speakerId) ?? 'calm';
+      lastExpression.set(speakerId, expression);
+      return {
+        speakerId,
+        speakerName: line.speakerName,
+        expression,
+        text: line.text,
+        mode: line.mode,
+        after: at,
+      };
+    }),
     options: turn.options?.length ? [...turn.options] : undefined,
   }));
   return {

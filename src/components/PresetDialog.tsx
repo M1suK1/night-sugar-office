@@ -396,6 +396,10 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
             <button type="button" id="preset-entry-add" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '新词条', content: '', role: 'system', enabled: true, scope: view === 'all' ? 'shared' : view }])}><Plus size={12}/>添加词条</button>
             <button type="button" id="preset-entry-add-marker" className="btn" disabled={!editable} onClick={() => patchEntries([...entries, { id: newEntryId(entries.length), name: '—— 分隔 ——', content: '', role: 'system', enabled: true, marker: true, scope: view === 'all' ? 'shared' : view }])}><Plus size={12}/>分隔标记</button>
             <span className="preset-scope-current">{viewLabel}</span>
+            {view !== 'all' && <button type="button" id="preset-entry-jump-contract" className="btn" title="这段文本永远追加在本任务最后；跳到它就能逐字改" onClick={() => {
+              const target = document.getElementById('preset-contract-anchor');
+              if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }}>结构契约</button>}
             <button type="button" id="preset-entry-reset" className="btn" disabled={!editable} onClick={() => { if (window.confirm(view === 'all' ? '恢复成默认词条？当前编辑会被覆盖。' : `恢复「${viewLabel}」的默认词条？该页的编辑会被覆盖。`)) resetScope(); }}><RotateCcw size={12}/>{view === 'all' ? '恢复全部默认' : view === 'shared' ? '恢复共用默认' : '恢复本任务'}</button>
             <span className="preset-order-note">注入 {activePrompts(preset, view === 'all' ? undefined : view).filter(entry => entry.enabled && !entry.marker).length} 条 · 顺序 {preset.promptOrder?.length ?? '未设置'}</span>
             <span className="preset-order-changed" title="与出厂文本不同的词条数，方便你逐条复核">已改 {entries.filter(changed).length} 条</span>
@@ -452,13 +456,15 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
                   <button type="button" id={`preset-entry-delete-${index}`} aria-label="删除词条" disabled={!editable} onClick={() => patchEntries(entries.filter(item => item.id !== entry.id))}><Trash2 size={12}/></button>
                 </div>
               </div>
-              {!entry.marker && <textarea id={`preset-entry-content-${index}`} className="preset-entry-content" rows={3} value={entry.content} readOnly={!editable} placeholder="词条内容；可以写 {{heroine}}、{{history.chat:20}}、{{girls}} 等宏。" onFocus={() => setActiveEntryId(entry.id)} onChange={event => patchEntry(entry.id, { content: event.target.value })} />}
+              {entry.contract && <span id="preset-contract-anchor" className="preset-contract-anchor" />}
+              {!entry.marker && <textarea id={`preset-entry-content-${index}`} className="preset-entry-content" rows={entry.contract ? Math.min(18, Math.max(6, Math.ceil(entry.content.length / 52))) : 3} value={entry.content} readOnly={!editable} placeholder="词条内容；可以写 {{heroine}}、{{history.chat:20}}、{{girls}} 等宏。" onFocus={() => setActiveEntryId(entry.id)} onChange={event => patchEntry(entry.id, { content: event.target.value })} />}
               {!entry.marker && promptHasMechanicBan(entry.content) && <div className="preset-entry-warning">
                 <span>这条要求会禁止模型写数值、奖励或规则，和夜班提案 v2 的完整生成冲突。</span>
                 <button type="button" id={`preset-entry-fix-ban-${index}`} disabled={!editable} onClick={() => patchEntry(entry.id, { content: stripMechanicBan(entry.content) })}>移除这一句</button>
               </div>}
             </li>)}
           </ol>
+          {!editable && <p className="small-note" id="preset-readonly-note">这份是出厂预设，能看不能改：点左下角「复制」得到一份副本，在副本里改词条（包括结构契约），再到上面的「此任务使用」改成副本即可。</p>}
           <p className="small-note">词条按顺序拼进系统提示词，再交给模型。空变量会被跳过；推理模型会把思维链计入输出额度，剧情类预设建议把「最大输出」设到 8000 以上（内置预设已在 6000–10000 之间）。</p>
         </div>}
       </div>}

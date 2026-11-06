@@ -695,7 +695,12 @@ export default function App() {
   const watchArchivedStory = async (story: ArchivedStory) => {
     setReplayLoad({ title: story.title, pct: 8, note: '解析保存的副本' });
     try {
-      const event = replayEventOf(story);
+      // 正篇存档里还留着这一段时优先用它：那里的每一句都带着当时的表情，
+      // 老副本只存了文字，回看会是一张定格的脸。
+      const live = state.events.find(item => item.id === story.eventId);
+      const event = live?.turns?.length && live.turns.length >= story.turns.length
+        ? { ...live, status: 'done' as const, mode: 'session' as const, pendingChoice: undefined }
+        : replayEventOf(story);
       const pool: StoryCastPerson[] = [...state.girls, ...state.candidates, ...(state.customFactionLeaders ?? []), ...(state.customFactionGirls ?? [])];
       const byName = new Map(pool.map(girl => [girl.name, girl.id]));
       // 老副本只存了名字：按名字把 id 补回来，舞台才取得到立绘。
