@@ -777,6 +777,8 @@ export interface Girl {
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   /** 立绘的 assets 键；有它就不必再背 dataURL。 */
   portraitAsset?: AssetId;
+  /** 表情差分的 assets 键：键与 `importedVariants` 相同，值只存资产 id（v153）。 */
+  variantAssets?: Record<string, AssetId>;
   /** 显示取景，缺省居中、zoom 1。 */
   portraitCrop?: CropBox;
   retired?: boolean; dead?: boolean; diedAt?: string; archetype?: Archetype; quote?: string;

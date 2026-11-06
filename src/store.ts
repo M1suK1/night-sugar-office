@@ -431,6 +431,12 @@ export async function assetUrl(id: AssetId): Promise<string | undefined> {
   return url;
 }
 
+/** 取回 data URL（导出/差分这类要写回存档的场景用；渲染用 assetUrl 更省）。 */
+export async function assetDataUrl(id: AssetId): Promise<string | undefined> {
+  const asset = await assetGet(id);
+  return asset ? blobToDataUrl(asset.blob) : undefined;
+}
+
 export function assetRelease(id: AssetId): void {
   const hit = urls.get(id);
   if (!hit) return;
