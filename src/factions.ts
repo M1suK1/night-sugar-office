@@ -11,6 +11,7 @@ import { factionInfo } from './content/items.ts';
 import { factionLeaders } from './content/factionLeaders.ts';
 import { factionGirls, girlsOfFaction } from './content/factionGirls.ts';
 import { factionAttitude } from './economy.ts';
+import { statsAtLevel } from './progression.ts';
 import { FACTION_ORDER } from './territories.ts';
 
 /** 完成委托时额外的净化量；唯一会被势力改变的污染参数。 */
@@ -175,6 +176,8 @@ export interface RosterSubject {
   origin: 'leader' | 'member' | 'custom';
   /** 自定义少女的原始数据，编成确认时要拿它做快照。 */
   stats?: Record<StatKey, number>;
+  /** 这份 stats 对应几级（v159）。 */
+  statsLevel?: number;
   skillIds?: string[];
   codename?: string;
   /** 来自契约卡库的卡编号。 */
@@ -194,7 +197,7 @@ export function subjectOfLeader(leader: FactionLeader): RosterSubject {
     level: leader.level, color: leader.color, portrait: leader.portrait,
     portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
     wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
-    stats: leader.stats, skillIds: leader.skillIds,
+    stats: leader.stats, statsLevel: leader.statsLevel, skillIds: leader.skillIds,
   };
 }
 
@@ -205,7 +208,7 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
     level: girl.level, color: girl.color, portrait: girl.portrait,
     portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
     wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
-    stats: girl.stats, skillIds: girl.skills, codename: girl.codename,
+    stats: girl.stats, statsLevel: girl.statsLevel, skillIds: girl.skills, codename: girl.codename,
   };
 }
 
@@ -220,7 +223,7 @@ export function subjectOfCustom(input: {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
     level: input.level, color: input.color, portrait: input.portrait,
     portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
-    origin: 'custom', stats: input.stats, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
+    origin: 'custom', stats: input.stats, statsLevel: input.level, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
     witch: input.witch, witchForm: input.witchForm,
     wardrobe: input.wardrobe, outfitId: input.outfitId, expression: input.expression,
   };
@@ -238,11 +241,13 @@ export function factionLeaderLevel(_level?: number): number {
 }
 
 export function customGirlOf(faction: FactionId, subject: RosterSubject): FactionGirl {
+  const level = factionMemberLevel(subject.level);
+  const stats = subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 };
   return {
     id: subject.id, faction, name: subject.name, codename: subject.codename ?? subject.name,
     title: subject.title, portrait: subject.portrait, portraitSpec: subject.portraitSpec,
-    color: subject.color, level: factionMemberLevel(subject.level),
-    stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
+    color: subject.color, level,
+    stats: statsAtLevel(stats, subject.statsLevel ?? 1, level, '输出'), statsLevel: level,
     skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
     cardId: subject.cardId,
     // v85：编进月蚀庭的人默认按魔女形态出场（玩家自己的角色不受影响，只在这里落到名册条目上）。
@@ -254,14 +259,16 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
 
 /** 把面板条目固化成某一方的首领。 */
 export function customLeaderOf(faction: FactionId, subject: RosterSubject): FactionLeader {
+  const level = factionLeaderLevel(subject.level);
+  const stats = subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 };
   return {
     id: subject.id, faction, name: subject.name, title: subject.title,
     portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
     quote: subject.quote, note: '由事务所编入名册的少女。',
     witch: subject.witch ?? (faction === 'witch' ? true : undefined), witchForm: subject.witchForm,
     wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
-    level: factionLeaderLevel(subject.level),
-    stats: subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 },
+    level,
+    stats: statsAtLevel(stats, subject.statsLevel ?? 1, level, '输出'), statsLevel: level,
     skillIds: subject.skillIds ?? [],
     archetype: '输出',
     origin: faction,

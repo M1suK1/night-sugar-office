@@ -4794,10 +4794,11 @@ test('v21 谎报首领会失败；名册里的首领走 10 级那套口径', () 
   assert.equal(leaderById('leader-witch'), undefined);
   assert.equal(act(state, { type: 'hireLeader', leaderId: 'leader-witch' }).ok, false);
 
-  // 名册条目（`customLeaderOf` 那条路径）：等级一律 10，属性来自她的快照。
+  // 名册条目（`customLeaderOf` 那条路径）：等级一律 10，数值按 9→10 那一级自动成长补上。
   const leader = makeLeader('witch', '净血派客卿', { level: 9, stats: { magic: 88, insight: 70, agility: 66, empathy: 50 } });
   assert.equal(leader.level, 10);
-  assert.deepEqual(leader.stats, { magic: 88, insight: 70, agility: 66, empathy: 50 });
+  assert.deepEqual(leader.stats, { magic: 94, insight: 70, agility: 70, empathy: 50 });
+  assert.equal(leader.statsLevel, 10);
 });
 
 test('v21 属性波动：总额仍 260、单值夹在 40–90，且同一 seed 可复现', () => {

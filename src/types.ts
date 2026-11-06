@@ -107,6 +107,8 @@ export interface FactionLeader {
   note: string;
   level: number;
   stats: Record<StatKey, number>;
+  /** 这份 `stats` 对应几级（v159）：读档时据此换算到当前等级。 */
+  statsLevel?: number;
   skillIds: string[];
   archetype: Archetype;
   /** 原属势力，只用于档案里的小字标注。 */
@@ -146,6 +148,8 @@ export interface FactionGirl {
   color: string;
   level: number;
   stats: Record<StatKey, number>;
+  /** 这份 `stats` 对应几级（v159）：读档时据此换算到当前等级。 */
+  statsLevel?: number;
   skills: string[];
   /** 必须与 `faction` 一致。 */
   tag: FactionId;

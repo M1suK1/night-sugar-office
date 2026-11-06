@@ -10,6 +10,7 @@ import { factionTagFor, leaderById, sanitizeGirlFaction } from '../factions.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { hashText } from '../rules/core.ts';
 import { sanitizeStoryPlan } from '../storyplan.ts';
+import { statsAtLevel } from '../progression.ts';
 import { FACTION_ORDER } from '../territories.ts';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlFaction, Outfit, StatKey , Expression} from '../types.ts';
 import { clone } from './core.ts';
@@ -51,6 +52,8 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
   const src = input as Partial<FactionLeader>;
   const name = typeof src.name === 'string' ? src.name.trim().slice(0, 40) : '';
   if (!name) return null;
+  const level = factionLeaderLevel(typeof src.level === 'number' ? src.level : undefined);
+  const statsFrom = typeof src.statsLevel === 'number' ? src.statsLevel : 1;
   return {
     id, faction, name,
     title: typeof src.title === 'string' && src.title.trim() ? src.title.trim().slice(0, 30) : '外来者',
@@ -59,8 +62,9 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
     note: '由事务所编入名册的少女。',
-    level: factionLeaderLevel(typeof src.level === 'number' ? src.level : undefined),
-    stats: sanitizeSubjectStats(src.stats),
+    level,
+    stats: statsAtLevel(sanitizeSubjectStats(src.stats), statsFrom, level, src.archetype ?? '输出'),
+    statsLevel: level,
     skillIds: Array.isArray(src.skillIds) ? src.skillIds.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
     archetype: src.archetype ?? '输出',
     // v85：原属势力是卡面带进来的信息，读档不要把它抹成现属席位。
@@ -84,6 +88,8 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
   const src = input as Partial<FactionGirl>;
   const name = typeof src.name === 'string' ? src.name.trim().slice(0, 40) : '';
   if (!name) return null;
+  const level = factionMemberLevel(typeof src.level === 'number' ? src.level : undefined);
+  const statsFrom = typeof src.statsLevel === 'number' ? src.statsLevel : 1;
   return {
     id, faction, name,
     codename: typeof src.codename === 'string' && src.codename.trim() ? src.codename.trim().slice(0, 20) : name,
@@ -91,8 +97,9 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     portrait: typeof src.portrait === 'string' ? src.portrait : '',
     portraitSpec: src.portraitSpec,
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
-    level: factionMemberLevel(typeof src.level === 'number' ? src.level : undefined),
-    stats: sanitizeSubjectStats(src.stats),
+    level,
+    stats: statsAtLevel(sanitizeSubjectStats(src.stats), statsFrom, level, '输出'),
+    statsLevel: level,
     skills: Array.isArray(src.skills) ? src.skills.filter((sid): sid is string => typeof sid === 'string').slice(0, 6) : [],
     tag: faction,
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',

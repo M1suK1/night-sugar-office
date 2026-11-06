@@ -69,6 +69,31 @@ export function baseStatsAt(stats: Record<StatKey, number>, level: number, arche
 }
 
 /**
+ * 把某份数值从 `fromLevel` 换算到 `toLevel`（v159）。
+ *
+ * 势力名册不跑 `grantExp`，只会改 level；这里负责把四维补到对应等级：
+ * 先回推到 1 级基准，再按自动升级（主 +6 / 副 +4，上限 120）加到目标级。
+ */
+export function statsAtLevel(
+  stats: Record<StatKey, number>,
+  fromLevel: number,
+  toLevel: number,
+  archetype?: Archetype,
+): Record<StatKey, number> {
+  const from = Math.max(1, Math.min(MAX_LEVEL, Math.round(fromLevel || 1)));
+  const to = Math.max(1, Math.min(MAX_LEVEL, Math.round(toLevel || 1)));
+  const [main, secondary] = growthFor(archetype);
+  // 自动升级的成长量是固定值（不是卡面的 2/1），回推和加成都用同一套系数，重复换算才不会膨胀。
+  const out = { ...stats };
+  out[main] = Math.max(20, out[main] - (from - 1) * AUTO_MAIN_POINTS);
+  out[secondary] = Math.max(20, out[secondary] - (from - 1) * AUTO_SECONDARY_POINTS);
+  const levels = Math.max(0, to - 1);
+  out[main] = Math.min(STAT_ALLOC_CAP, out[main] + levels * AUTO_MAIN_POINTS);
+  out[secondary] = Math.min(STAT_ALLOC_CAP, out[secondary] + levels * AUTO_SECONDARY_POINTS);
+  return out;
+}
+
+/**
  * 结算经验与升级。
  *
  * `manual` 只发点数，让玩家自己分配到四维；`auto` 按职阶直接加主/副属性。
