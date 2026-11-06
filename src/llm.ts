@@ -2290,7 +2290,13 @@ voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${pr
     const knownSkills = girlSkillPool();
     const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && knownSkills.some(s => s.id === id)) : [];
     const skillIds = [...new Set(pickedSkills)].slice(0, 3);
-    for (const skill of knownSkills) { if (skillIds.length >= 3) break; if (!skillIds.includes(skill.id)) skillIds.push(skill.id); }
+    // 模型给漏了或写错了，也按元素抽三条，而不是永远补池子开头那几条。
+    if (skillIds.length < 3) {
+      for (const id of pickCandidateSkills([...((raw.name as string) ?? '')].reduce((sum, ch) => sum + ch.charCodeAt(0), 0), str('element', '星光系', 12))) {
+        if (skillIds.length >= 3) break;
+        if (!skillIds.includes(id)) skillIds.push(id);
+      }
+    }
     const picked = Array.isArray(raw.traits) ? raw.traits.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
     const draftTraits: DraftTrait[] = picked.slice(0, 3).map((item, index) => ({
       name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 12) : `未命名特性${index + 1}`,
@@ -2327,7 +2333,7 @@ import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
 import { leaderById, EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
-import { girlSkillPool } from './skills.ts';
+import { girlSkillPool, pickCandidateSkills } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';

@@ -10,6 +10,7 @@ import { factionTagFor, leaderById, sanitizeGirlFaction } from '../factions.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { hashText } from '../rules/core.ts';
 import { sanitizeStoryPlan } from '../storyplan.ts';
+import { pickCandidateSkills } from '../skills.ts';
 import { statsAtLevel } from '../progression.ts';
 import { FACTION_ORDER } from '../territories.ts';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlFaction, Outfit, StatKey , Expression} from '../types.ts';
@@ -259,7 +260,7 @@ export function makeCandidate(state: GameState, level: number, salt = 0, tag?: G
   };
   const stats = { magic: stat(3), insight: stat(7), agility: stat(11), empathy: stat(15) };
   const color = candidateColors[seed % candidateColors.length];
-  const skills = archetype === '治愈' ? ['flower-thorn', 'flower-prescription', 'spring-growth'] : archetype === '控制' ? ['frequency-prick', 'silent-band', 'moon-phase'] : archetype === '守护' ? ['sugar-needle', 'goodnight-candy', 'white-night-frost'] : ['glimmer-spear', 'peach-ward', 'starlight-fall'];
+  const skills = pickCandidateSkills(seed, element);
   const baseMaxHp = Math.round(96 + stats.empathy * 0.3) + level * 4;
   return hydrate({
     id, name, codename: `${element.slice(0, 2)}协奏`, title: '刚刚递交契约的魔法少女', element, color, portrait: '',

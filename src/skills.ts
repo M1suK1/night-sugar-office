@@ -1,6 +1,7 @@
 import type { Skill, SkillTier } from './types';
 import { skills, skillById } from './content/skills.ts';
 import { bossSkillById, bossSkills } from './content/bossSkills.ts';
+import { mulberry32 } from './content/archetypes.ts';
 
 /**
  * 技能池的取用口。
@@ -59,4 +60,32 @@ export function isBossSkill(id: string | undefined): boolean {
 /** 公共池里是否有这个 id（用来判断自定义少女的三个技能是否合法）。 */
 export function isPoolSkill(id: string | undefined): boolean {
   return Boolean(id && skillById.has(id) && skillById.get(id)!.tier !== 'boss');
+}
+
+/**
+ * 给程序生成（非手写）的少女挑三条技能（v162）。
+ *
+ * 以前按职阶写死三套，同职阶的人拿到的技能一模一样。现在从整个公共池里抽：
+ * 一基础 / 一本职 / 一奥义，优先她的元素流派，但允许抽到「通用」与「魔物」技能。
+ * 用种子保证同一份候选刷新前后一致，不同候选之间又不会重样。
+ */
+export function pickCandidateSkills(seed: number, element?: string): string[] {
+  const pool = girlSkillPool();
+  const rng = mulberry32(seed >>> 0);
+  const tiers: SkillTier[] = ['basic', 'signature', 'ultimate'];
+  const picked: string[] = [];
+  for (const tier of tiers) {
+    const all = pool.filter(skill => skill.tier === tier);
+    if (!all.length) continue;
+    const themed = element ? all.filter(skill => skill.school === element) : [];
+    // 六成走元素流派，其余全池抽——「通用」「魔物」技能才有机会进来。
+    const source = themed.length && rng() < 0.6 ? themed : all;
+    const choice = source[Math.min(source.length - 1, Math.floor(rng() * source.length))]!;
+    if (!picked.includes(choice.id)) picked.push(choice.id);
+  }
+  for (const skill of pool) {
+    if (picked.length >= 3) break;
+    if (!picked.includes(skill.id)) picked.push(skill.id);
+  }
+  return picked.slice(0, 3);
 }

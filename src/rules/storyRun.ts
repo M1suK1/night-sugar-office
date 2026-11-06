@@ -10,6 +10,7 @@ import { buildNodeIncident, stampIncident } from './storyIncidents.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
 import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
 import { pickEquipmentOfTier, pickMissionTemplate } from '../nightPick.ts';
+import { pickCandidateSkills } from '../skills.ts';
 import type { CharacterEvent, GameState, Girl, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
 // v35 从 src/game.ts 拆出：故事蓝图的推进与故事委托（两者互相调用，合成一个模块）。
 
@@ -318,7 +319,7 @@ export function ensureStoryCompanion(state: GameState, story: Storyline, beat: S
     element: c.element, color: c.color ?? '#e6a8c8', portrait: '', level: 6,
     hp: baseMaxHp, maxHp: baseMaxHp, baseMaxHp, spirit: 0, maxSpirit: 0,
     fatigue: 0, bond: 12, exp: 0, stats, baseStats: { ...stats }, status: 'idle', roomId: 'lounge', remaining: 0,
-    skill: '', skills: ['glimmer-spear', 'peach-ward', 'starlight-fall'], description: c.appearance.slice(0, 160),
+    skill: '', skills: pickCandidateSkills(hashText(`${id}:skills`), c.element), description: c.appearance.slice(0, 160),
     cost: 2400, scars: [], relationships: {}, archetype: c.archetype, quote: c.quote ?? '……我跟着她来的。',
     goal: '弄清自己为什么会出现在这条故事里。', goalKind: '成长', traits: [], conditions: [],
     contractEndDay: 24, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0,
