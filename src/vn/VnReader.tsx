@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronsRight, FastForward, Rewind, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { castBucket, speakersBySegment, stageAfter } from './stage';
+import { castBucket, speakersBySegment, stageAfter, stageRows, swapSpeaker } from './stage';
+import type { StageRows } from './stage';
 import { vnAwaitingChoice, vnInitial, vnLastSayIndex, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
 import './vn.css';
@@ -209,6 +210,27 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     return () => window.clearTimeout(timer);
   }, [stage.entering, stage.leaving]);
 
+  // v152：四人以上分两排（前 3 / 后余）；后排开口时与同列前排互换，换段 / 换人时重置。
+  const shownIds = useMemo(() => {
+    const ids = [...stage.ids];
+    for (const id of stage.leaving) if (!ids.includes(id)) ids.push(id);
+    return ids.filter(id => cast.some(entry => entry.id === id));
+  }, [stage, cast]);
+  const rowsKey = shownIds.join('|');
+  const [rows, setRows] = useState<StageRows>({ front: [], back: [] });
+  const [rowsKeyState, setRowsKeyState] = useState('');
+  if (rowsKey !== rowsKeyState) {
+    // 换段（或换演出）时先摆回默认两排，避免旧换位残留。
+    setRowsKeyState(rowsKey);
+    setRows(stageRows(shownIds));
+  }
+  const speakingId = say && !isNarrator && !isPlayer ? say.speakerId : '';
+  useEffect(() => {
+    if (!speakingId) return;
+    setRows(current => swapSpeaker(current, speakingId));
+  }, [speakingId, rowsKey]);
+  const twoRows = rows.back.length > 0;
+
   const shownCast = useMemo(() => {
     const ids = [...stage.ids];
     for (const id of stage.leaving) if (!ids.includes(id)) ids.push(id);
@@ -224,17 +246,23 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     <section className="vn-stage" aria-label={title ?? '剧情演出'} style={{ backgroundImage: backdrop.gradient }}>
       {backdrop.image && <img className="vn-backdrop-art" src={backdrop.image} alt="" />}
       <div className="vn-vignette" aria-hidden="true" />
-      <div className="vn-cast" data-count={castBucket(shownCast.length)} aria-hidden="true">
+      <div className={`vn-cast ${twoRows ? 'two-row' : ''}`} data-count={castBucket(shownCast.length)} aria-hidden="true">
         {shownCast.map(({ id, member }, at) => {
           const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === id;
           const expression = (speaking ? say?.expression : undefined) ?? member.girl.expression ?? 'calm';
           const leaving = stage.leaving.includes(id);
           const entering = stage.entering.includes(id);
+          const frontAt = rows.front.indexOf(id);
+          const backAt = rows.back.indexOf(id);
+          const row = backAt >= 0 ? 'back' : 'front';
+          const col = frontAt >= 0 ? frontAt : backAt >= 0 ? backAt : at % 3;
           return (
             <div
               key={id}
               className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${speaking ? 'active' : 'dimmed'}`}
-              style={{ zIndex: speaking ? 40 : 10 + at }}
+              style={twoRows
+                ? { left: `${(col * 100) / 3}%`, bottom: row === 'back' ? '20%' : 0, zIndex: speaking ? 40 : row === 'front' ? 20 : 10 }
+                : { zIndex: speaking ? 40 : 10 + at }}
             >
               <GirlPortrait girl={{ ...member.girl, expression }} variant="full" bare />
             </div>

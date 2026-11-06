@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Feather, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { BattleNote, BattleNoteLine, BattleState, Expression, Girl } from '../types';
 import { battleActors, battleCast, battleOutcomeLabel, splitBattleCast, totalBattleRounds } from '../battleNote';
+import type { BattleActor } from '../battleNote';
+import { rotateSide } from '../storySlots';
 import { GirlPortrait } from './GirlPortrait';
 import { VnReader } from '../vn/VnReader';
 import { VnModeToggle } from '../vn/VnModeToggle';
@@ -35,6 +37,69 @@ function portraitSubject(actor: ReturnType<typeof battleActors>[number], express
   };
 }
 
+/** 单侧立绘栏：三人时前后三格（悬停后排会整体轮转），其余人数保持原来的单排。 */
+function SideCast({ side, list, activeLine, girlsById, hoverKey, resetKey }: {
+  side: 'left' | 'right';
+  list: BattleActor[];
+  activeLine: BattleNoteLine | null;
+  girlsById: Map<string, Girl>;
+  hoverKey: string;
+  resetKey: string;
+}) {
+  const idsKey = list.map(actor => actor.girlId ?? actor.uid).join('|');
+  const [order, setOrder] = useState<string[]>(() => list.map(actor => actor.girlId ?? actor.uid));
+  useEffect(() => {
+    setOrder(list.map(actor => actor.girlId ?? actor.uid));
+  }, [idsKey, resetKey]);
+
+  const hoveredId = hoverKey.startsWith(`${side}:`) ? hoverKey.slice(side.length + 1) : '';
+  // 只在悬停换人这一下轮转；order 用函数式更新，不放进依赖，免得轮转后自己再转一次。
+  useEffect(() => {
+    if (!hoveredId) return;
+    setOrder(current => {
+      const next = rotateSide(current, hoveredId);
+      return next === current ? current : [...next];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoveredId]);
+
+  const byId = new Map(list.map(actor => [actor.girlId ?? actor.uid, actor]));
+  const three = list.length === 3;
+  const slots = ['slot-front-left', 'slot-front-right', 'slot-back'];
+  const shown = three ? order.flatMap(id => { const actor = byId.get(id); return actor ? [actor] : []; }) : list;
+  const label = list.every(actor => actor.side === 'ally') ? '我方' : list.every(actor => actor.side === 'enemy') ? '敌方' : '战场';
+
+  return (
+    <aside className={`battle-note-side ${side} ${list.length ? '' : 'empty'} ${list.length >= 3 ? 'dense' : ''} ${three ? 'three-up' : ''}`} aria-label={side === 'left' ? '左侧角色' : '右侧角色'}>
+      {list.length > 0 && <span className="battle-note-side-label">{label}</span>}
+      {shown.map((actor, index) => {
+        const expression = activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId
+          ? activeLine.expression
+          : actor.expression;
+        const speaking = Boolean(activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId);
+        return (
+          <figure
+            key={actor.uid}
+            className={`battle-note-portrait ${actor.side} ${three ? slots[index] : ''} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`}
+            style={{ '--note-color': actor.color } as CSSProperties}
+          >
+            <div className="battle-note-portrait-art">
+              <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
+              <span className="battle-note-expression">{expressionLabel[expression]}</span>
+            </div>
+            <figcaption>
+              <b>{actor.name}</b>
+              <small>{actor.codename ?? (actor.side === 'enemy' ? '敌方' : '契约者')}</small>
+              {actor.side === 'enemy' && <em>敌方</em>}
+              {actor.down && <em className="down">倒下</em>}
+            </figcaption>
+          </figure>
+        );
+      })}
+    </aside>
+  );
+}
+
 export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate, onRegenerate, onClose, vnStory = false }: {
   battle: BattleState;
   note: BattleNote | null;
@@ -51,6 +116,15 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
   const sceneRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeKey, setActiveKey] = useState('');
   const [sceneIndex, setSceneIndex] = useState(0);
+  // v152：台词悬停 → 后排的人轮转到前排。
+  // 滚动时指针不动、台词从指针底下滑过也会触发 mouseenter，所以刚滚动过的这一下不算悬停。
+  const [hoverKey, setHoverKey] = useState('');
+  const scrolledAt = useRef(0);
+  useEffect(() => {
+    const onScroll = () => { scrolledAt.current = Date.now(); };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, []);
   const cast = useMemo(() => battleCast(battle), [battle]);
   const actors = useMemo(() => battleActors(battle), [battle]);
   const girlsById = useMemo(() => new Map(girls.map(girl => [girl.id, girl])), [girls]);
@@ -145,33 +219,20 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
 
   const speakerFor = (line: BattleNoteLine) => actorByKey.get(`${line.speakerSide}:${line.speakerId}`);
   const lineOnRight = (line: BattleNoteLine) => rightKeys.has(`${line.speakerSide}:${line.speakerId}`);
-  const activeExpression = (actor: ReturnType<typeof battleActors>[number]): Expression => {
-    if (activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId) return activeLine.expression;
-    return actor.expression;
+  // 悬停 / 键盘聚焦同一句台词 → 该侧的三人轮转。刚滚动过的这一下不算（内容从指针下滑过也会触发 mouseenter）。
+  const focusSpeaker = (line: BattleNoteLine) => {
+    if (Date.now() - scrolledAt.current < 150) return;
+    setHoverKey(`${lineOnRight(line) ? 'right' : 'left'}:${line.speakerId}`);
   };
-
-  const renderSide = (list: typeof leftCast, side: 'left' | 'right') => (
-    <aside className={`battle-note-side ${side} ${list.length ? '' : 'empty'} ${list.length >= 3 ? 'dense' : ''}`} aria-label={side === 'left' ? '左侧角色' : '右侧角色'}>
-      {list.length > 0 && <span className="battle-note-side-label">{list.every(actor => actor.side === 'ally') ? '我方' : list.every(actor => actor.side === 'enemy') ? '敌方' : '战场'}</span>}
-      {list.map(actor => {
-        const expression = activeExpression(actor);
-        const speaking = Boolean(activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId);
-        return (
-          <figure key={actor.uid} className={`battle-note-portrait ${actor.side} ${speaking ? 'speaking' : ''} ${actor.down ? 'down' : ''}`} style={{ '--note-color': actor.color } as CSSProperties}>
-            <div className="battle-note-portrait-art">
-              <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
-              <span className="battle-note-expression">{expressionLabel[expression]}</span>
-            </div>
-            <figcaption>
-              <b>{actor.name}</b>
-              <small>{actor.codename ?? (actor.side === 'enemy' ? '敌方' : '契约者')}</small>
-              {actor.side === 'enemy' && <em>敌方</em>}
-              {actor.down && <em className="down">倒下</em>}
-            </figcaption>
-          </figure>
-        );
-      })}
-    </aside>
+  const renderSide = (list: BattleActor[], side: 'left' | 'right') => (
+    <SideCast
+      side={side}
+      list={list}
+      activeLine={activeLine}
+      girlsById={girlsById}
+      hoverKey={hoverKey}
+      resetKey={note?.battleId ?? battle.id}
+    />
   );
 
   const scene = note?.scenes[sceneIndex];
@@ -196,7 +257,9 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
         {cast.length > 0 && (
           <div className="battle-note-mobile-cast" aria-label="参战角色">
             {cast.map(actor => {
-              const expression = activeExpression(actor);
+              const expression = activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId
+                ? activeLine.expression
+                : actor.expression;
               return (
                 <div key={actor.uid} className={`battle-note-mobile-face ${activeLine && activeLine.speakerSide === actor.side && activeLine.speakerId === actor.girlId ? 'active' : ''} ${actor.down ? 'down' : ''}`}>
                   <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="avatar" />
@@ -252,7 +315,12 @@ export function BattleNoteDialog({ battle, note, girls, busy, error, onGenerate,
                         const renderLine = (line: BattleNoteLine, at: number) => {
                           const speaker = speakerFor(line);
                           const key = lineKey(entry.id, at);
-                          return <button key={key} id={`battle-note-line-${entry.id}-${at}`} type="button" data-note-line={key} aria-label={speaker ? `${speaker.name}：${line.text}` : line.text} style={{ '--speaker-color': speaker?.color ?? '#f3aec9' } as CSSProperties} className={`battle-note-line ${lineOnRight(line) ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${activeKey === key ? 'active' : ''}`} onClick={() => setActiveKey(key)}>
+                          return <button key={key} id={`battle-note-line-${entry.id}-${at}`} type="button" data-note-line={key} aria-label={speaker ? `${speaker.name}：${line.text}` : line.text} style={{ '--speaker-color': speaker?.color ?? '#f3aec9' } as CSSProperties} className={`battle-note-line ${lineOnRight(line) ? 'right' : 'left'} ${line.mode === 'thought' ? 'thought' : ''} ${activeKey === key ? 'active' : ''}`}
+                            onMouseEnter={() => focusSpeaker(line)}
+                            onMouseLeave={() => setHoverKey('')}
+                            onFocus={() => focusSpeaker(line)}
+                            onBlur={() => setHoverKey('')}
+                            onClick={() => setActiveKey(key)}>
                             {speaker && <span className="battle-note-speaker">{speaker.name}{line.mode === 'thought' ? ' · 心声' : ''}</span>}
                             <span className="battle-note-bubble">{line.text}</span>
                           </button>;

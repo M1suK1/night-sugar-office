@@ -25,6 +25,41 @@ export function castBucket(count: number): CastBucket {
   return Math.min(6, Math.floor(count)) as 2 | 3 | 4 | 5 | 6;
 }
 
+/** 舞台上的一排：前排贴底，后排抬高一层。 */
+export interface StageRows {
+  front: string[];
+  back: string[];
+}
+
+/**
+ * 六人起把舞台分成两排（v152）：前 3 人前排，其余后排。
+ *
+ * 三人及以下仍是一排——原来的单排已经排得开，不需要把谁赶到后面去。
+ */
+export function stageRows(ids: readonly string[]): StageRows {
+  if (ids.length < 4) return { front: [...ids], back: [] };
+  return { front: ids.slice(0, 3), back: ids.slice(3) };
+}
+
+/**
+ * 后排的人开口 → 与同列前排互换（v152）。
+ *
+ * 换位只发生在「说话的人站在后排」时；前排的人说话保持原位。
+ * 返回同一引用表示没有变化，组件据此跳过重渲染。
+ */
+export function swapSpeaker(rows: StageRows, speakerId: string): StageRows {
+  const backIndex = rows.back.indexOf(speakerId);
+  if (backIndex < 0) return rows;
+  const frontIndex = backIndex % Math.max(1, rows.front.length);
+  if (!rows.front[frontIndex]) return rows;
+  const front = [...rows.front];
+  const back = [...rows.back];
+  const stepping = back[backIndex]!;
+  back[backIndex] = front[frontIndex]!;
+  front[frontIndex] = stepping;
+  return { front, back };
+}
+
 /** 旁白与所长不算「立绘角色」：他们开口不该改变舞台站位。 */
 const OFF_STAGE = new Set(['narrator', 'player']);
 
