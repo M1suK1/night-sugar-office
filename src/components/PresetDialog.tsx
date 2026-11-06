@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
   DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, defaultPromptContent, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
-  promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts,
+  promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts, savePresetsToStore,
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
 import { MACRO_GROUPS, type MacroGroup } from '../promptMacros';
@@ -244,6 +244,10 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
           <div className="preset-editor-actions">
             {!editable && <button type="button" id="preset-duplicate" className="btn" onClick={duplicate}><Save size={13}/>基于此预设新建副本</button>}
             {editable && <button type="button" id="preset-delete" className="btn danger" onClick={remove}><Trash2 size={13}/>删除</button>}
+            <button type="button" id="preset-save-local" className="btn" title="同时写浏览器与本地存档，换浏览器也拿得回来"
+              onClick={() => { void savePresetsToStore(presets).then(ok => onNotify(ok ? '已保存到本地存档（浏览器里那份也更新了）。' : '本地存档没写成功；浏览器里那份仍然保留。', ok)); }}>
+              <ShieldCheck size={13}/>保存到本地
+            </button>
             <button type="button" id="preset-export" className="btn" onClick={doExport}><Download size={13}/>导出</button>
           </div>
         </div>

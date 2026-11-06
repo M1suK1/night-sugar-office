@@ -9,6 +9,7 @@ import { contractPrompts } from './promptContracts.ts';
 import { SHIPPED_PRESETS } from './content/presets/shipped/index.ts';
 import { resolveMacros, type MacroContext } from './promptMacros.ts';
 import { promptTokens } from './tokens.ts';
+import { kvGet, kvSet } from './store.ts';
 
 export type PromptRole = 'system' | 'user' | 'assistant';
 
@@ -149,6 +150,9 @@ export interface PresetRuntime {
 export const PRESET_SCHEMA = 7;
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
+/** 本地存档里的同一份预设（v170）：换浏览器、清缓存之后还能拿回来。 */
+export const PRESET_STORE_KEY = 'presets/custom';
+export const PRESET_BINDING_STORE_KEY = 'presets/binding';
 /** 一次性把旧的三档/共用副本拆成每个任务一份的标记；v2 补上战斗札记。 */
 export const TASK_PRESET_MARKER = 'night-sugar:task-presets-v2';
 
@@ -639,6 +643,78 @@ export function savePresets(presets: ChatPreset[]): boolean {
   } catch {
     return false;
   }
+}
+
+/** 只有玩家自己那份（内置预设不进存档，换环境时按代码里的新版重建）。 */
+function customPresetsOf(presets: ChatPreset[]): ChatPreset[] {
+  return presets.filter(preset => !preset.builtin).map(preset => ({ ...preset, builtin: undefined })).slice(0, 40);
+}
+
+/** 把预设写进本地存档（v170）：换浏览器、清缓存之后还能拿回来。 */
+export async function savePresetsToStore(presets: ChatPreset[]): Promise<boolean> {
+  try {
+    await kvSet(PRESET_STORE_KEY, customPresetsOf(presets));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 读回存档里的预设；没有或读坏了返回 undefined。 */
+export async function loadPresetsFromStore(): Promise<ChatPreset[] | undefined> {
+  try {
+    const raw = await kvGet<unknown>(PRESET_STORE_KEY);
+    if (!Array.isArray(raw)) return undefined;
+    const custom = raw.map(sanitizePreset).filter((preset): preset is ChatPreset => Boolean(preset)).map(ensurePromptScopes);
+    return custom.length ? custom : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 把预设绑定（哪个任务用哪套）也镜像到存档。 */
+export async function savePresetBindingToStore(binding: PresetBinding): Promise<boolean> {
+  try {
+    await kvSet(PRESET_BINDING_STORE_KEY, binding);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadPresetBindingFromStore(): Promise<PresetBinding | undefined> {
+  try {
+    const raw = await kvGet<unknown>(PRESET_BINDING_STORE_KEY);
+    if (!raw || typeof raw !== 'object') return undefined;
+    const value = raw as Record<string, unknown>;
+    const binding: PresetBinding = { ...DEFAULT_PRESET_BINDING };
+    for (const task of Object.keys(DEFAULT_PRESET_BINDING) as PromptTask[]) {
+      const id = value[task];
+      if (typeof id === 'string' && id) binding[task] = id;
+    }
+    return binding;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 启动时对齐浏览器与存档（v170）。
+ *
+ * 存档里有就用存档（换浏览器/清缓存之后回到自己那套），
+ * 存档里没有就把浏览器里这份推上去（第一次开这个功能时不会丢东西）。
+ * 返回 true 表示本地被改过，调用方要重新读一遍。
+ */
+export async function hydratePresetsFromStore(): Promise<boolean> {
+  const stored = await loadPresetsFromStore();
+  if (stored) {
+    try { localStorage.setItem(PRESET_STORAGE, JSON.stringify(stored)); } catch { return false; }
+    return true;
+  }
+  const local = loadPresets().filter(preset => !preset.builtin);
+  if (!local.length) return false;
+  await savePresetsToStore(local);
+  return false;
 }
 
 export function createPreset(name = '新的预设'): ChatPreset {

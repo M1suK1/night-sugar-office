@@ -54,7 +54,7 @@ import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './
 import { activePersonality } from './personality';
 import { materializeNightProposal } from './llm-night';
 import { ProposalDialog, type PendingProposal } from './components/ProposalDialog';
-import { boundPreset, duplicatePreset, ensureTaskPresets, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresets, syncVnPrompts, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
+import { boundPreset, duplicatePreset, ensureTaskPresets, hydratePresetsFromStore, loadBinding, loadPresets, promptScopeLabel, saveBinding, savePresetBindingToStore, savePresets, savePresetsToStore, syncVnPrompts, PROMPT_TASK_SCOPES, TASK_PRESET_MARKER, type ChatPreset, type PresetBinding, type PromptScope, type PromptTask } from './presets';
 import { clockLabel, minutesToClose, phaseLabel, shiftPhase } from './shift';
 import { LlmConsole } from './components/LlmConsole';
 import { PresetDialog } from './components/PresetDialog';
@@ -237,10 +237,21 @@ export default function App() {
   const [newsBusy, setNewsBusy] = useState(false);
   const newsEnabled = loadBalance().cityNewsEnabled === 1;
 
-  useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } }, [presets]);
+  // v170：预设和世界书一样，浏览器与本地存档各存一份 —— 换浏览器不该把玩家调好的词条丢掉。
+  const presetSynced = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void hydratePresetsFromStore().then(restored => {
+      if (!alive) return;
+      if (restored) { setPresets(loadPresets()); setBinding(loadBinding()); }
+      presetSynced.current = true;
+    });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => { try { savePresets(presets); } catch { /* 预设只是本地偏好。 */ } void savePresetsToStore(presets); }, [presets]);
   // 视觉小说开关：同步两条内置词条（战斗札记 / 完整剧情），让模型多写对白少写旁白。
   useEffect(() => { setPresets(current => syncVnPrompts(current, vnStory === 'on')); }, [vnStory]);
-  useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } }, [binding]);
+  useEffect(() => { try { saveBinding(binding); } catch { /* 绑定失效时回落内置预设。 */ } void savePresetBindingToStore(binding); }, [binding]);
 
   const taskPresetsReady = useRef(false);
   useEffect(() => {
