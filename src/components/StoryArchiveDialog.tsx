@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Download, Trash2 } from 'lucide-react';
+import { BookOpen, Download, PlayCircle, Trash2 } from 'lucide-react';
 import { clearStoryArchive, deleteStoryFromArchive, loadStoryArchive, type ArchivedStory } from '../storyArchive';
 
 /**
@@ -8,7 +8,7 @@ import { clearStoryArchive, deleteStoryFromArchive, loadStoryArchive, type Archi
  * 开局界面就能打开，不需要读档：这里存的是可读副本（旁白 + 台词 + 摘要），
  * 谁在这段里出现过也一并记着，所以即使卡库里的卡被删了，文字也还在。
  */
-export function StoryArchiveDialog({ onClose }: { onClose: () => void }) {
+export function StoryArchiveDialog({ onClose, onWatch }: { onClose: () => void; /** v177：用原文 / 视觉小说两种模式重看这一段。 */ onWatch: (story: ArchivedStory) => void }) {
   const [list, setList] = useState<ArchivedStory[]>([]);
   const [activeId, setActiveId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -72,6 +72,7 @@ export function StoryArchiveDialog({ onClose }: { onClose: () => void }) {
               <header>
                 <h3>{active.title}</h3>
                 <small>第 {active.day} 日 · {active.participants.map(person => person.name).join('、')}</small>
+                <button type="button" id="story-archive-watch" className="vn-chip" onClick={() => onWatch(active)}><PlayCircle size={12} />观看这一段</button>
                 <button type="button" className="vn-chip" onClick={() => exportOne(active)}><Download size={12} />导出这一段</button>
               </header>
               {active.summary && <p className="story-archive-summary">{active.summary}</p>}

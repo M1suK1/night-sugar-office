@@ -1,4 +1,5 @@
 import { postLlmLog, setLlmLogSink } from './llmLog';
+import { assetUrl } from './store';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
 import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
@@ -40,8 +41,9 @@ import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
 import { MeetingPlanDialog } from './components/MeetingPlanDialog';
 import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
 import { NewsDialog } from './components/NewsDialog';
+import { NewsTicker } from './components/NewsTicker';
 import { StoryArchiveDialog } from './components/StoryArchiveDialog';
-import { saveStoryToArchive } from './storyArchive';
+import { replayEventOf, saveStoryToArchive, type ArchivedStory } from './storyArchive';
 import { meetEventId } from './rules/summon';
 import { diagnoseVariants, recoverVariants } from './variantRecovery';
 import { OfficeDialog } from './components/OfficeDialog';
@@ -77,7 +79,7 @@ import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } fro
 import { loadVnStory, saveVnStory, type VnStoryMode } from './vnPrefs';
 import { dismissToast, expireToasts, pushToast } from './toasts';
 import { hostilityOf } from './hostility';
-import { EventDialog } from './components/EventDialog';
+import { EventDialog, type StoryCastPerson } from './components/EventDialog';
 import { StoryPlayerDialog } from './components/StoryPlayerDialog';
 import { StoryGraphDialog } from './components/StoryGraphDialog';
 import { fallbackStoryPlan, storyPlanTemplate } from './storyplan';
@@ -156,6 +158,16 @@ function worldBrief(state: GameState) {
   const standings = factionOrder.map(id => `${factionInfo[id].name} ${state.factions[id].standing}`).join('，');
   const recent = state.chronicle.slice(0, 4).map(entry => entry.title).join('、') || '尚无';
   return `第 ${state.day} 日 ${clockLabel(state.minutes)}，星砂 ${state.gold}，城市安定度 ${state.reputation}。待处理委托 ${open.length} 条（高危 ${urgent} 条），${boss}势力声望：${standings}。最近编年史：${recent}。`;
+}
+
+/** 等一张图真的解码完，进度条才不会骗人。 */
+function preloadImage(url: string): Promise<void> {
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+  });
 }
 
 export default function App() {
@@ -539,6 +551,9 @@ export default function App() {
   }, [modal, state.events, arcBusy]);
 
   // v34：交互剧情的开场白。旧图没写开场白时也在这里补一次。
+  /** v177：回看已保存的剧情时，先把立绘读回来再开演，进度条按人头走。 */
+  const [storyReplay, setStoryReplay] = useState<{ event: CharacterEvent; castPool: StoryCastPerson[] } | null>(null);
+  const [replayLoad, setReplayLoad] = useState<{ title: string; pct: number; note: string } | null>(null);
   const [storyBusyTurn, setStoryBusyTurn] = useState(false);
   /** v123：玩家写下的开场。写进去之后再请叙事者起笔；空串表示「按引子开始」。 */
   const seedStoryOpening = (eventId: string, seed: string) => { perform({ type: 'seedStorySession', eventId, seed }); };
@@ -673,6 +688,40 @@ export default function App() {
    * 关掉界面交给玩家自己——他要看到这一段是怎么收的。
    */
   /** v177：手动把这一段收进「已保存的剧情」。按钮在剧情结尾，不再自动存。 */
+  /**
+   * 回看一段保存的剧情（v177）：还原成事件，把在场者的立绘先读回来，再交给同一套演出界面。
+   * 进度条按人头推进——这段过程跟读档一样要等资产，不给个进度就会以为是卡住了。
+   */
+  const watchArchivedStory = async (story: ArchivedStory) => {
+    setReplayLoad({ title: story.title, pct: 8, note: '解析保存的副本' });
+    try {
+      const event = replayEventOf(story);
+      const pool: StoryCastPerson[] = [...state.girls, ...state.candidates, ...(state.customFactionLeaders ?? []), ...(state.customFactionGirls ?? [])];
+      const byName = new Map(pool.map(girl => [girl.name, girl.id]));
+      // 老副本只存了名字：按名字把 id 补回来，舞台才取得到立绘。
+      for (const turn of event.turns ?? []) {
+        for (const line of turn.lines ?? []) {
+          if (!pool.some(girl => girl.id === line.speakerId) && byName.has(line.speakerName)) line.speakerId = byName.get(line.speakerName)!;
+        }
+      }
+      const people = [...new Set([event.girlId, ...(event.cast ?? [])])]
+        .map(id => pool.find(girl => girl.id === id))
+        .filter((girl): girl is StoryCastPerson => Boolean(girl));
+      const total = Math.max(1, people.length);
+      for (const [index, girl] of people.entries()) {
+        const asset = (girl as { portraitAsset?: string }).portraitAsset;
+        const url = girl.portrait || (asset ? (await assetUrl(asset)) ?? '' : '');
+        setReplayLoad({ title: story.title, pct: 25 + Math.round(((index + 1) / total) * 60), note: `取回 ${girl.name} 的立绘` });
+        if (url) await preloadImage(url);
+      }
+      setReplayLoad({ title: story.title, pct: 100, note: '准备好了' });
+      setStoryReplay({ event, castPool: pool });
+    } catch {
+      notify('这一段回看不了：副本可能不完整。', false);
+    } finally {
+      setReplayLoad(null);
+    }
+  };
   const archiveStoryNow = (eventId: string) => {
     const current = latestState.current ?? state;
     const event = current.events.find(item => item.id === eventId);
@@ -1654,14 +1703,7 @@ export default function App() {
                 </div>
               )}
               {state.cityNews?.lines?.length ? (
-                <ol className="news-lines">
-                  {state.cityNews.lines.slice(0, 4).map((line, index) => (
-                    <li key={`${line.speakerId}-${index}`} className={line.speakerId === state.cityNews?.host?.id ? 'is-host' : 'is-guest'}>
-                      <span className="news-speaker">{line.speakerName}</span>
-                      <p>{line.text}</p>
-                    </li>
-                  ))}
-                </ol>
+                <NewsTicker news={state.cityNews} />
               ) : (
                 <ul>
                   {(state.cityNews?.items ?? []).slice(0, 2).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
@@ -1846,7 +1888,33 @@ export default function App() {
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
       {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
-      {modal.type === 'stories' && <StoryArchiveDialog onClose={() => setModal(null)} />}
+      {modal.type === 'stories' && <StoryArchiveDialog onClose={() => setModal(null)} onWatch={story => void watchArchivedStory(story)} />}
+
+      {/* v177：回看已保存的剧情 —— 读回立绘时给进度条，读完就用同一套演出界面（原文 / 舞台都能看）。 */}
+      {replayLoad && <div className="story-overlay"><div className="standard-modal archive-load" id="story-replay-load" role="dialog" aria-modal="true" aria-label="正在读回这一段">
+        <div className="modal-eyebrow">回看 · 正在读回这一段</div>
+        <h2>{replayLoad.title}</h2>
+        <div className="archive-load-track" role="progressbar" aria-valuenow={replayLoad.pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${replayLoad.pct}%` }} /></div>
+        <p className="muted">{replayLoad.note} · {replayLoad.pct}%</p>
+        <div className="meeting-actions"><button id="story-replay-cancel" type="button" className="btn" onClick={() => setReplayLoad(null)}>取消</button></div>
+      </div></div>}
+
+      {storyReplay && <div className="story-overlay"><EventDialog
+        vnStory={vnStory === 'on'}
+        event={storyReplay.event}
+        girl={storyPersonOf(state, storyReplay.event.girlId)?.girl}
+        state={{ girls: state.girls, candidates: state.candidates }}
+        castPool={storyReplay.castPool}
+        readOnly
+        onAdvance={() => {}}
+        onChoose={() => {}}
+        onTurn={async () => false}
+        onRewrite={async () => false}
+        onEditTurn={() => {}}
+        onDeleteTurn={() => {}}
+        onEnd={() => {}}
+        onClose={() => setStoryReplay(null)}
+      /></div>}
       {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} presetName={boundPreset('news', presets, binding)?.name} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
       {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
         const before = new Set(state.events.map(event => event.id));

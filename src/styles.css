@@ -1572,6 +1572,39 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   border-radius: 999px;
 }
 
+/* v177：首页新闻卡上下滚动播放 —— 访谈十句也不会把面板撑长。 */
+.news-ticker {
+  position: relative;
+  max-height: 172px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), #000 14px, #000 calc(100% - 22px), transparent);
+}
+
+.news-ticker::-webkit-scrollbar { display: none; }
+.news-ticker-inner { position: relative; }
+.news-ticker-line { padding: 1px 0; transition: opacity .3s ease; opacity: .55; }
+.news-ticker-line.is-current { opacity: 1; }
+.news-ticker-line p { margin: 0; }
+
+.archive-load { max-width: 460px; }
+.archive-load-track {
+  height: 4px;
+  margin: 16px 0 10px;
+  border-radius: 999px;
+  background: rgba(247, 242, 245, 0.08);
+  overflow: hidden;
+}
+
+.archive-load-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f49abd, #c9a0ff);
+  transition: width .25s ease;
+}
+
 .news-lines {
   display: flex;
   flex-direction: column;

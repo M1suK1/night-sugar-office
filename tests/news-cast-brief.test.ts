@@ -5,7 +5,7 @@ import type { GameState, Girl } from '../src/types.ts';
 import { newsCastPool, newsSpeakerBrief } from '../src/cityNews.ts';
 import { newsContract, SECTION_PROMPTS } from '../src/promptSections.ts';
 import { requestSnapshot } from '../src/llm.ts';
-import { builtinPresets, presetPrompts, upgradeStaleNewsPrompt } from '../src/presets.ts';
+import { DEFAULT_PROMPTS, builtinPresets, presetPrompts, upgradeStaleNewsPrompt } from '../src/presets.ts';
 
 function stateWithGirl(): GameState {
   const base = createInitialState();
@@ -72,4 +72,21 @@ test('v177 旧预设：只把【写法】那一段换成访谈，前面改过的
   assert.doesNotMatch(entry.content, /这是本地电台的播报/);
   assert.match(entry.content, /【今晚的城市】/);
 });
+
+test('v177 那条 87 字的「城市新闻」词条也不再教模型写播报', () => {
+  const news = DEFAULT_PROMPTS.find(entry => entry.id === 'news')!;
+  assert.doesNotMatch(news.content, /夜间通讯员/);
+  assert.match(news.content, /深夜访谈/);
+
+  // 旧副本里那条也要跟着换。
+  const base = builtinPresets()[0]!;
+  const prompts = presetPrompts(base).map(entry => entry.id === 'news'
+    ? { ...entry, content: '你现在是樱雾市的夜间通讯员，为今晚的城市写一条播报。' }
+    : entry);
+  const [patched] = upgradeStaleNewsPrompt([{ ...base, id: 'preset-custom', builtin: false, prompts }]);
+  const fixed = presetPrompts(patched).find(item => item.id === 'news')!;
+  assert.doesNotMatch(fixed.content, /夜间通讯员/);
+  assert.match(fixed.content, /深夜访谈/);
+});
+
 

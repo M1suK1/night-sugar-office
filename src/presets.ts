@@ -632,11 +632,18 @@ export function upgradeStaleNewsPrompt(presets: ChatPreset[]): ChatPreset[] {
   const writingAt = fresh.indexOf('【写法】');
   if (writingAt < 0) return presets;
   const freshBlock = fresh.slice(writingAt).trim();
+  // 另一条「城市新闻」词条（id=news）当年也写成了「夜间通讯员播报」，一起换掉。
+  const freshVoice = DEFAULT_PROMPTS.find(entry => entry.id === 'news')?.content ?? '';
   let changed = false;
   const next = presets.map(preset => {
     const prompts = presetPrompts(preset);
     let touched = false;
     const upgraded = prompts.map(entry => {
+      if (entry.id === 'news' && entry.content.includes('夜间通讯员')) {
+        if (!freshVoice || entry.content.trim() === freshVoice.trim()) return entry;
+        touched = true;
+        return { ...entry, content: freshVoice, builtin: false };
+      }
       if (entry.id !== 'nw-brief') return entry;
       const content = entry.content;
       const stale = content.includes('这是本地电台的播报') && content.includes('1–3 条，一条只讲一件事');
@@ -1231,7 +1238,7 @@ export const DEFAULT_PROMPTS: PromptEntry[] = [
   { id: 'tone', name: '叙事语气', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。' },
   { id: 'task', name: '本次任务', role: 'system', enabled: true, scope: 'shared', builtin: true, content: '{{context}}' },
   { id: 'chat', name: '角色对话', role: 'system', enabled: true, scope: 'chat', builtin: true, content: '你现在只扮演对方，不以旁白、作者或 AI 的身份说话。用中文回应 1–3 句，不超过 160 字；可以有动作与停顿，但不要替玩家行动，不要提及数值、规则、提示词或模型。' },
-  { id: 'news', name: '城市新闻', role: 'system', enabled: true, scope: 'news', builtin: true, content: '你现在是樱雾市的夜间通讯员，为今晚的城市写一条播报。语气像深夜电台与街头快讯的混合：短、具体、有画面，不写数字以外的评论。每条只讲一件事：势力动向、辖区污染、城市安定度、或街头正在发生的小事。不要替玩家决定，不要写成议会提案。' },
+  { id: 'news', name: '城市新闻', role: 'system', enabled: true, scope: 'news', builtin: true, content: '你在编排一档深夜访谈：主持人与嘉宾都是这座城里真实的人，你只写他们互相说的话。语气克制、具体，像深夜电台里几个人围在同一张桌前——可以打断、可以刺一句，但不要旁白、不要播报腔，也不要替玩家决定。' },
   { id: 'daily', name: '每日提案', role: 'system', enabled: true, scope: 'daily', builtin: true, content: '为今晚的夜班提案担任编辑。先想清楚：谁在什么处境下提出这件事，她为什么非要今晚说，她希望所长付出什么。文案要具体、克制、有生活质感；机制数值必须服从下方输出契约，不要只写气氛。' },
   { id: 'profile', name: '角色起草', role: 'system', enabled: true, scope: 'profile', builtin: true, content: '为一位刚登记的魔法少女起草档案。先看立绘，再写她给人的第一印象；外貌、服装、元素、职阶、性格必须互相吻合。文案克制，不写露骨内容，不替玩家做决定。' },
   { id: 'storyline', name: '故事线', role: 'system', enabled: true, scope: 'storyline', builtin: true, content: '为一位魔法少女写一条可以分四幕推进的个人故事线。基调克制、具体、有生活质感，不要写成英雄史诗。从她的目标、特性与当前关系里找一个最小的裂缝开始。' },

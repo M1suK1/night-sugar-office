@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { __resetKvForTests } from '../src/store.ts';
-import { loadStoryArchive, saveStoryToArchive } from '../src/storyArchive.ts';
+import { loadStoryArchive, replayEventOf, saveStoryToArchive } from '../src/storyArchive.ts';
 
 function meetingState() {
   const state = createInitialState();
@@ -51,3 +51,35 @@ test('v176 剧情副本：同一段重复保存只留一份，删了存档也还
   // 副本存在自己的键里：换浏览器/换存档都还在。
   assert.equal((await loadStoryArchive()).length, 1);
 });
+
+test('v177 回看：副本能还原成可演的事件（保留说话人 id 与心声）', () => {
+  const event = replayEventOf({
+    id: 'story-e1', eventId: 'e1', title: '雨夜', day: 9, savedAt: 1,
+    lead: { id: 'g1', name: '玛丽' },
+    participants: [{ id: 'g1', name: '玛丽' }, { id: 'g2', name: '洛茜' }],
+    summary: '雨停了。',
+    turns: [
+      { role: 'player', text: '先说说旧城区。', lines: [] },
+      {
+        role: 'narrator',
+        text: '她把杯子放下。',
+        lines: [
+          { speakerId: 'g2', speakerName: '洛茜', text: '46 点。', expression: 'sad' },
+          { speakerName: '玛丽', text: '那就去清。', mode: 'thought' },
+        ],
+      },
+    ],
+  });
+  assert.equal(event.mode, 'session');
+  assert.equal(event.status, 'done');
+  assert.equal(event.girlId, 'g1');
+  assert.deepEqual(event.cast, ['g1', 'g2']);
+  const narrator = event.turns![1]!;
+  assert.equal(narrator.role, 'narrator');
+  assert.equal(narrator.lines?.[0]?.speakerId, 'g2');
+  assert.equal(narrator.lines?.[0]?.expression, 'sad');
+  // 老副本只存了名字：没有 id 时先用名字顶上，界面再按名字换回 id。
+  assert.equal(narrator.lines?.[1]?.speakerId, '玛丽');
+  assert.equal(narrator.lines?.[1]?.mode, 'thought');
+});
+

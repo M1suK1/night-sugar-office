@@ -6,7 +6,7 @@
  * 免得 60 MB 的 data URL 又被复制一遍。
  */
 import { kvDelete, kvGet, kvSet } from './store.ts';
-import type { CharacterEvent, GameState, StoryLine } from './types.ts';
+import type { CharacterEvent, Expression, GameState, StoryLine, StoryTurn } from './types.ts';
 
 export const STORY_ARCHIVE_KEY = 'stories/archive';
 export const STORY_ARCHIVE_MAX = 60;
@@ -14,7 +14,14 @@ export const STORY_ARCHIVE_MAX = 60;
 export interface ArchivedStoryTurn {
   role: 'player' | 'narrator';
   text: string;
-  lines: { speakerName: string; text: string; mode?: 'speech' | 'thought' }[];
+  lines: {
+    speakerName: string;
+    text: string;
+    mode?: 'speech' | 'thought';
+    /** v177：回看时按 id 取立绘；老副本没有这一项，就看名字对不对得上。 */
+    speakerId?: string;
+    expression?: string;
+  }[];
   options?: string[];
 }
 
@@ -40,10 +47,51 @@ function speakerNames(event: CharacterEvent, state?: GameState): Map<string, str
 
 function compactLines(lines: StoryLine[] | undefined, names: Map<string, string>): ArchivedStoryTurn['lines'] {
   return (lines ?? []).map(line => ({
+    speakerId: line.speakerId,
     speakerName: line.speakerId === 'player' ? '所长' : (names.get(line.speakerId) ?? line.speakerName),
     text: line.text,
     mode: line.mode,
+    expression: line.expression,
   }));
+}
+
+/**
+ * 把一份副本还原成可以「观看」的事件（v177）。
+ *
+ * 回看走的是同一套界面：原文与视觉小说两种模式都能用，立绘按在场的 id 取。
+ */
+export function replayEventOf(story: ArchivedStory): CharacterEvent {
+  const turns: StoryTurn[] = story.turns.map((turn, index) => ({
+    id: `${story.eventId}-t${index}`,
+    role: turn.role,
+    text: turn.text,
+    lines: turn.lines.map((line, at) => ({
+      speakerId: line.speakerId ?? line.speakerName,
+      speakerName: line.speakerName,
+      expression: (line.expression ?? 'calm') as Expression,
+      text: line.text,
+      mode: line.mode,
+      after: at,
+    })),
+    options: turn.options?.length ? [...turn.options] : undefined,
+  }));
+  return {
+    id: story.eventId,
+    girlId: story.lead?.id ?? '',
+    title: story.title,
+    hook: '',
+    scenes: [],
+    stage: 0,
+    status: 'done',
+    day: story.day,
+    source: 'llm',
+    badge: false,
+    mode: 'session',
+    turns,
+    cast: story.participants.map(person => person.id),
+    summary: story.summary,
+    sessionDone: true,
+  };
 }
 
 /** 把一段演完的剧情压成可读副本。 */
