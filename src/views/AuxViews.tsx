@@ -27,6 +27,8 @@ type BaseViewProps = {
   onRecallExpedition: (id: string) => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onAcceptTask: (faction: FactionId, girlId?: string, hours?: number, amount?: number) => void;
+  /** v167：打开委托预览（信息太少，接之前要先看清楚）。 */
+  onPreviewEnvoy?: (faction: FactionId) => void;
   /** v85：拿城市安定向势力换星砂。 */
   onBorrowStability?: (faction: FactionId, points: number) => void;
   onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
@@ -117,7 +119,7 @@ export function BaseView({
   onStartExpedition,
   onRecallExpedition,
   onDecide,
-  onAcceptTask, onBorrowStability,
+  onAcceptTask, onPreviewEnvoy, onBorrowStability,
   onClinic,
   onCare,
   onAssistant,
@@ -319,6 +321,9 @@ export function BaseView({
                     const rival = rivals[0];
                     return (
                       <div key={fid} className="av-envoy-row av-envoy-rich" id={`av-envoy-card-${fid}`} style={{ '--faction': info.color } as React.CSSProperties}>
+                        {onPreviewEnvoy && (
+                          <button id={`av-envoy-preview-${fid}`} type="button" className="av-envoy-preview" onClick={() => onPreviewEnvoy(fid)}>查看委托</button>
+                        )}
                         <span className="av-envoy-leader-face" title={`${info.name} · ${representative.name}`}>
                           <GirlPortrait
                             girl={{
@@ -333,7 +338,14 @@ export function BaseView({
                         <div className="av-envoy-copy">
                           <strong>{representative.name} <small>{representative.title} · {info.name}</small>{representative.witch && <em className="av-envoy-witch">魔女形态</em>}</strong>
                           <p className="av-envoy-mood">态度：<b>{att.label}</b>（声望 {standing}/100 · {att.discount}）{rival && <> · 与{pairLabel(rival[0] as never)}敌意 {rival[1].value}</>}</p>
-                          <div className="av-envoy-task">
+                          <div
+                            className="av-envoy-task av-envoy-task-clickable"
+                            role={onPreviewEnvoy ? 'button' : undefined}
+                            tabIndex={onPreviewEnvoy ? 0 : undefined}
+                            title={onPreviewEnvoy ? '查看这份委托的完整情报' : undefined}
+                            onClick={onPreviewEnvoy ? () => onPreviewEnvoy(fid) : undefined}
+                            onKeyDown={onPreviewEnvoy ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPreviewEnvoy(fid); } } : undefined}
+                          >
                             {representative.vacant ? (
                               <>
                                 <b id={`av-envoy-title-${fid}`}>席位空缺 · 需要导入契约卡</b>

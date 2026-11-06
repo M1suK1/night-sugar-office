@@ -1688,12 +1688,30 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) {
     return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   }
-  const result = await callJson(config, preset, 'news', newsContract(), `请为第 ${state.day} 日的夜晚写一条城市播报。播报是电台口吻，提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
+  // v167：一档夜间访谈 —— 主持人与嘉宾由本地先选好，模型只负责写他们说的话。
+  const host = pickNewsHost(state);
+  const guests = pickNewsGuests(state, host?.id);
+  const points = newsTalkingPoints(state);
+  const castLines = [host, ...guests]
+    .filter((person): person is NonNullable<typeof host> => Boolean(person))
+    .map(person => `- id=${person.id} · ${person.name} · ${person.title}${person.id === host?.id ? '（主持人）' : '（嘉宾）'}`)
+    .join('\n');
+  const hint = [
+    `请为第 ${state.day} 日的夜晚写这档访谈。提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`,
+    '【今晚台上的人】',
+    castLines || '（今晚没有人能上节目，写一段主持人独白）',
+    '【今晚要谈的事】',
+    `- 势力：${points.faction}`,
+    `- 污染：${points.pollution}`,
+    `- 安定：${points.stability}`,
+    `- 街头：${points.street}`,
+  ].join('\n');
+  const result = await callJson(config, preset, 'news', newsContract(), hint, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
   if (!result.ok) {
     recordLlmLog({ kind: '城市新闻', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
-  const news = sanitizeCityNews({ ...result.raw, day: state.day, generatedAt: new Date().toISOString(), source: 'llm' }, state.day);
+  const news = sanitizeCityNews({ ...result.raw, host, guests, day: state.day, generatedAt: new Date().toISOString(), source: 'llm' }, state.day);
   if (!news) {
     const message = '模型没有给出可用的播报，已改用本地快讯。';
     recordLlmLog({ kind: '城市新闻', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -2354,7 +2372,7 @@ import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
-import { sanitizeCityNews } from './cityNews.ts';
+import { newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';

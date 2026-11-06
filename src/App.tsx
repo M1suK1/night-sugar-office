@@ -36,6 +36,7 @@ import { BattleNoteDialog } from './components/BattleNoteDialog';
 import { buildBattleBrief } from './battleNote';
 import { CodexDialog, MemorialDialog } from './components/ArchiveDialogs';
 import { FactionDialog } from './components/FactionDialog';
+import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, optimizeCardImages, parseGirlCard } from './cards';
@@ -44,7 +45,8 @@ import { resizeImageFile, yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
 import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryEnding, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, localSessionSummary, type GirlResearch } from './llm';
-import { localCityNews, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
+import { newsCastPool, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
+import { localCityNews } from './cityNewsLocal';
 import { loadBalance } from './balance';
 import { loadPlayerProfile } from './player';
 import { loadResearchPrefs, normalizeResearchQuery, researchCharacter } from './research';
@@ -119,6 +121,7 @@ type Modal =
   | { type: 'settings'; boot?: boolean }
   | { type: 'help' | 'notifications' | 'reset' | 'memorial' | 'custom' | 'chronicle' | 'end-night' | 'workshop' }
   | { type: 'faction'; id: FactionId }
+  | { type: 'envoy'; id: FactionId }
   | { type: 'office' };
 
 /** 开场相位：标题页 → 编成 → 序章 → 正片。 */
@@ -401,6 +404,14 @@ export default function App() {
     void generateContent('auto');
   }, [state.day, state.generatedDay, autoGenerate, loaded, modal, state.prologueSeen, state.startersPicked, state.blank]);
   /** 播报一律走函数式更新：异步生成回来时，别拿旧快照把这一整份状态盖回去。 */
+  /** v167：换主持人——先把人写进存档，再按新主持重开今晚这档。 */
+  const changeNewsHost = (girlId: string) => {
+    const applied = act(latestState.current ?? state, { type: 'setNewsHost', girlId });
+    if (!applied.ok) { notify(applied.message, false); return; }
+    setState(applied.state);
+    notify(applied.message, true);
+    void refreshCityNews('manual', applied.state);
+  };
   const commitCityNews = (news: CityNews | null) => {
     let ok = false;
     setState(prev => {
@@ -410,8 +421,8 @@ export default function App() {
     });
     return ok;
   };
-  const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual') => {
-    const current = latestState.current ?? state;
+  const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual', override?: GameState) => {
+    const current = override ?? latestState.current ?? state;
     // 接手的第一夜固定播开场那一条，不请叙事者。
     if (current.day <= OPENING_NEWS_DAY) {
       const opening = openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name);
@@ -1527,15 +1538,42 @@ export default function App() {
               <aside className="dispatch-news" id="dispatch-news" aria-label="城市新闻">
                 <header>
                   <Radio size={12} />
-                  <b>城市播报</b>
-                  <span>{state.cityNews ? `第 ${state.cityNews.day} 日 · ${state.cityNews.source === 'llm' ? '叙事者' : '本地快讯'}` : '等待播报'}</span>
+                  <b>夜间访谈</b>
+                  <span>{state.cityNews ? `第 ${state.cityNews.day} 日 · ${state.cityNews.source === 'llm' ? '叙事者' : '本地快报'}` : '等待播报'}</span>
                   <button id="dispatch-news-refresh" type="button" disabled={newsBusy} onClick={() => void refreshCityNews('manual')}>{newsBusy ? '正在写' : '刷新'}</button>
                 </header>
-                <h3>{state.cityNews?.headline ?? '今晚的播报还在写。'}</h3>
-                <ul>
-                  {(state.cityNews?.items ?? []).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
-                  {!state.cityNews?.items.length && <li className="tone-street">通讯员还在路上，稍等一下，或者点右上角「刷新」。</li>}
-                </ul>
+                <h3>{state.cityNews?.headline ?? '今晚的节目还在准备。'}</h3>
+                {state.cityNews?.host && (
+                  <div className="news-host" id="dispatch-news-host-line">
+                    <span className="news-host-badge">主持人</span>
+                    <b>{state.cityNews.host.name}</b>
+                    <small>{state.cityNews.host.title}</small>
+                    <select
+                      id="dispatch-news-host"
+                      className="news-host-pick"
+                      aria-label="换主持人"
+                      value={state.cityNews.host.id}
+                      onChange={input => changeNewsHost(input.target.value)}
+                    >
+                      {newsCastPool(state).map(person => <option key={person.id} value={person.id}>{person.name} · {person.title}</option>)}
+                    </select>
+                  </div>
+                )}
+                {state.cityNews?.lines?.length ? (
+                  <ol className="news-lines">
+                    {state.cityNews.lines.map((line, index) => (
+                      <li key={`${line.speakerId}-${index}`} className={line.speakerId === state.cityNews?.host?.id ? 'is-host' : 'is-guest'}>
+                        <span className="news-speaker">{line.speakerName}</span>
+                        <p>{line.text}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <ul>
+                    {(state.cityNews?.items ?? []).map((item, index) => <li key={`${item.tone}-${index}`} className={`tone-${item.tone}`}>{item.text}</li>)}
+                    {!state.cityNews?.items.length && <li className="tone-street">节目还没开始，稍等一下，或者点右上角「刷新」。</li>}
+                  </ul>
+                )}
               </aside>
             )}
             <div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div>
@@ -1646,6 +1684,7 @@ export default function App() {
           onRecallExpedition={id => perform({ type: 'recallExpedition', expeditionId: id })}
           onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })}
           onAcceptTask={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })}
+          onPreviewEnvoy={faction => setModal({ type: 'envoy', id: faction })}
             onBorrowStability={(faction, points) => perform({ type: 'borrowStability', faction, points })}
           onClinic={(girlId, mode, kink) => perform({ type: 'clinic', girlId, mode, kink })}
           onCare={(girlId, mode) => perform({ type: 'care', girlId, mode })}
@@ -1713,6 +1752,7 @@ export default function App() {
       {starterLoad && <StarterLoading done={starterLoad.done} total={starterLoad.total} note={starterLoad.note} />}
       {modal.type === 'battle' && selectedBattle && <BattleReport key={selectedBattle.id} battle={selectedBattle} girls={[...state.girls, ...state.candidates]} hasNote={Boolean(state.battleNotes?.some(note => note.battleId === selectedBattle.id))} onNote={() => openBattleNote(selectedBattle.id)} onClose={() => setModal(null)} />}
       {modal.type === 'codex' && <CodexDialog initialId={modal.id} extra={state.customMonsters} />}
+      {modal.type === 'envoy' && <EnvoyPreviewDialog state={state} faction={modal.id} onAccept={(faction, girlId, hours, amount) => perform({ type: 'acceptFactionTask', faction, girlId, hours, amount })} onClose={() => setModal(null)} />}
       {modal.type === 'faction' && <FactionDialog state={state} faction={modal.id} onHire={leaderId => perform({ type: 'hireLeader', leaderId })} onMeet={() => { const faction = modal.id; if (perform({ type: 'meetLeader', faction })) setModal({ type: 'event', id: `meet-${state.day}-${faction}` }); }} onBase={() => { setModal(null); navigate('base'); }} onClose={() => setModal(null)} />}
       {modal.type === 'office' && <OfficeDialog profile={state.office} girls={state.girls} assistantId={state.assistantId} onSave={profile => { if (perform({ type: 'setOfficeProfile', profile })) setModal(null); }} onAssistant={girlId => perform({ type: 'setAssistant', girlId })} onClose={() => setModal(null)} />}
       {modal.type === 'chronicle' && <ChronicleDialog state={state} />}

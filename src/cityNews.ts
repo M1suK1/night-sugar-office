@@ -1,20 +1,34 @@
-import type { CityNews, CityNewsItem, GameState } from './types.ts';
+import type { CityNews, CityNewsItem, CityNewsSpeaker, FactionId, GameState } from './types.ts';
 import { districtOrder, districts } from './districts.ts';
 import { factionInfo } from './content/items.ts';
 import { FACTION_ORDER } from './territories.ts';
-import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel } from './hostility.ts';
+import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel, pairMembers } from './hostility.ts';
 import { pollutionTierLabel } from './pollution.ts';
+import { factionRepresentativeOf, rosterMembers } from './factions.ts';
+import { hashText } from './rules/core.ts';
 
 export const CITY_NEWS_MAX = 3;
 export const CITY_NEWS_MIN = 1;
 /** 玩家接手的第一夜：不请叙事者，只播这一条。 */
 export const OPENING_NEWS_DAY = 14;
+/** 访谈最多几句：够一轮来回，又不会把面板撑爆。 */
+export const CITY_NEWS_LINE_MAX = 10;
 
 const TONES: CityNewsItem['tone'][] = ['faction', 'pollution', 'stability', 'street'];
 
 function clip(text: string, limit: number): string {
   const value = (text ?? '').replace(/\s+/g, ' ').trim();
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function speakerOf(raw: unknown): CityNewsSpeaker | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as Record<string, unknown>;
+  const id = typeof value.id === 'string' ? value.id.trim() : '';
+  const name = typeof value.name === 'string' ? value.name.trim() : '';
+  if (!id || !name) return undefined;
+  const faction = FACTION_ORDER.includes(value.faction as FactionId) ? value.faction as FactionId : undefined;
+  return { id, name, title: typeof value.title === 'string' ? clip(value.title, 16) : '', ...(faction ? { faction } : {}) };
 }
 
 /** 读档 / 采纳模型结果时统一洗一遍：条数、长度、枚举、日期缺一不可。 */
@@ -31,70 +45,130 @@ export function sanitizeCityNews(raw: unknown, day: number): CityNews | undefine
     return [{ text, tone }];
   });
   const headline = typeof value.headline === 'string' ? clip(value.headline, 40) : '';
-  // 只有标题没有条目的播报没有意义：宁可当作没生成，让调用方回落到本地快讯。
-  if (!items.length) return undefined;
+
+  // 访谈部分：主持人必须存在，嘉宾随意；谁说的话必须能在名单里找到人。
+  const host = speakerOf(value.host);
+  const guests = Array.isArray(value.guests)
+    ? value.guests.flatMap(entry => {
+      const speaker = speakerOf(entry);
+      return speaker ? [speaker] : [];
+    }).slice(0, 2)
+    : [];
+  const roster = [host, ...guests].filter((entry): entry is CityNewsSpeaker => Boolean(entry));
+  const lines = Array.isArray(value.lines) && host
+    ? value.lines.slice(0, CITY_NEWS_LINE_MAX).flatMap(entry => {
+      if (!entry || typeof entry !== 'object') return [];
+      const line = entry as Record<string, unknown>;
+      const speakerId = typeof line.speakerId === 'string' ? line.speakerId.trim() : '';
+      const text = typeof line.text === 'string' ? clip(line.text, 90) : '';
+      if (!speakerId || !text) return [];
+      const person = roster.find(item => item.id === speakerId);
+      if (!person) return [];
+      return [{ speakerId, speakerName: person.name, text }];
+    })
+    : [];
+
+  // 只有标题、既没有条目也没有对话：当作没生成，让调用方回落到本地快讯。
+  if (!items.length && !lines.length) return undefined;
   return {
     day: Number.isFinite(value.day) ? Math.max(0, Math.round(Number(value.day))) : day,
     generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : new Date().toISOString(),
-    headline: headline || items[0]!.text.slice(0, 40),
+    headline: headline || items[0]?.text.slice(0, 40) || lines[0]!.text.slice(0, 40),
     items,
     source: value.source === 'llm' ? 'llm' : 'rule',
+    ...(host ? { host } : {}),
+    ...(guests.length ? { guests } : {}),
+    ...(lines.length ? { lines } : {}),
   };
 }
 
-/** 没有 API Key、或模型两次都不合格时的本地播报：全部由当前存档算出来。 */
-export function localCityNews(state: GameState, day = state.day): CityNews {
-  const items: CityNewsItem[] = [];
+/** 现场都有谁可以上台：契约者、候选，以及三方名册里的首领与随从。 */
+export function newsCastPool(state: GameState): CityNewsSpeaker[] {
+  const pool: CityNewsSpeaker[] = [];
+  for (const girl of state.girls ?? []) {
+    if (girl.dead || girl.retired || girl.left) continue;
+    pool.push({ id: girl.id, name: girl.name, title: girl.leader ? '一方出身的契约者' : girl.title || '契约者' });
+  }
+  for (const girl of state.candidates ?? []) {
+    if (girl.dead) continue;
+    pool.push({ id: girl.id, name: girl.name, title: '候选契约者' });
+  }
+  for (const faction of FACTION_ORDER) {
+    const representative = factionRepresentativeOf(state, faction);
+    if (representative && !representative.vacant) {
+      pool.push({ id: representative.id, name: representative.name, title: `${factionInfo[faction].name}首领`, faction });
+    }
+    for (const member of rosterMembers(state, faction)) {
+      pool.push({ id: member.id, name: member.name, title: `${factionInfo[faction].name}随从`, faction });
+    }
+  }
+  return pool;
+}
+
+/** 主持人：玩家指定的优先，其次按日号在在场人物里定一位（同一天固定，读档不换人）。 */
+export function pickNewsHost(state: GameState): CityNewsSpeaker | undefined {
+  const pool = newsCastPool(state);
+  if (!pool.length) return undefined;
+  const chosen = state.newsHostId ? pool.find(person => person.id === state.newsHostId) : undefined;
+  if (chosen) return chosen;
+  const seed = hashText(`news-host:${state.day}`);
+  return pool[seed % pool.length]!;
+}
+
+/** 嘉宾：火气最高那一对的另一方 + 污染最重辖区相关的代表；凑不齐就退回现场其他人。 */
+export function pickNewsGuests(state: GameState, hostId?: string): CityNewsSpeaker[] {
+  const pool = newsCastPool(state).filter(person => person.id !== hostId);
+  if (!pool.length) return [];
+  const picked: CityNewsSpeaker[] = [];
+  const take = (person: CityNewsSpeaker | undefined) => {
+    if (!person || person.id === hostId) return;
+    if (picked.length >= 2) return;
+    if (picked.some(entry => entry.id === person.id)) return;
+    picked.push(person);
+  };
+
+  const hottest = [...HOSTILITY_PAIRS]
+    .map(pair => ({ pair, value: hostilityValue(state, pair) }))
+    .sort((left, right) => right.value - left.value)[0];
+  if (hottest) {
+    const [a, b] = pairMembers(hottest.pair);
+    // 站到对立面的是「跟所长更疏远」的那一方：他更有话要说。
+    const rival = (state.factions[a]?.standing ?? 0) <= (state.factions[b]?.standing ?? 0) ? a : b;
+    take(pool.find(person => person.faction === rival));
+  }
+  const dirtiest = [...districtOrder].sort((a, b) => (state.pollution?.[b] ?? 0) - (state.pollution?.[a] ?? 0))[0];
+  if (dirtiest) take(pool.find(person => person.faction === state.territories?.[dirtiest]));
+  for (const person of pool) take(person);
+  return picked;
+}
+
+/** 一句话概括今晚的局面，本地兜底与提示词共用。 */
+export function newsTalkingPoints(state: GameState): { faction: string; pollution: string; stability: string; street: string } {
   const hottest = [...HOSTILITY_PAIRS]
     .map(pair => ({ pair, value: hostilityValue(state, pair) }))
     .sort((a, b) => b.value - a.value)[0];
-  if (hottest && hottest.value >= 40) {
-    items.push({
-      tone: 'faction',
-      text: `${pairLabel(hottest.pair)}的敌意升到 ${hottest.value}（${hostilityTierLabel(hottest.value)}）；通讯员说，两边的车队已经在辖区边界上互相别过灯。`,
-    });
-  } else {
-    const best = [...FACTION_ORDER].sort((a, b) => (state.factions[b]?.standing ?? 0) - (state.factions[a]?.standing ?? 0))[0];
-    if (best) {
-      const standing = state.factions[best]?.standing ?? 0;
-      items.push({ tone: 'faction', text: `${factionInfo[best].name}的态度是 ${standing}，他们的代表今晚照例在会客厅留了话。` });
-    }
-  }
-
+  const faction = hottest && hottest.value >= 40
+    ? `${pairLabel(hottest.pair)}的敌意 ${hottest.value}（${hostilityTierLabel(hottest.value)}）`
+    : (() => {
+      const best = [...FACTION_ORDER].sort((a, b) => (state.factions[b]?.standing ?? 0) - (state.factions[a]?.standing ?? 0))[0];
+      return best ? `${factionInfo[best].name}的态度 ${state.factions[best]?.standing ?? 0}` : '三方今晚都没什么表示';
+    })();
   const dirtiest = [...districtOrder]
     .map(id => ({ id, pollution: state.pollution?.[id] ?? 0 }))
     .sort((a, b) => b.pollution - a.pollution)[0];
-  if (dirtiest) {
-    items.push({
-      tone: 'pollution',
-      text: `${districts[dirtiest.id].name}的污染读数 ${dirtiest.pollution}（${pollutionTierLabel(dirtiest.pollution)}），巡守班建议今晚绕开那一侧的排水沟。`,
-    });
-  }
-
-  if (state.reputation <= 30) {
-    items.push({ tone: 'stability', text: `城市安定度只剩 ${state.reputation}，市政厅的灯亮得比平时早，街角的告示栏贴出了新的宵禁提醒。` });
-  } else if (state.reputation >= 70) {
-    items.push({ tone: 'stability', text: `安定度 ${state.reputation}，夜市的摊子重新支起来了，连回收车的司机都在车里哼歌。` });
-  } else {
-    items.push({ tone: 'stability', text: `安定度 ${state.reputation}，不好也不坏——够让便利店继续通宵，不够让家长放心。` });
-  }
-
-  const busiest = state.missions.filter(mission => mission.status !== 'done').slice(0, 1)[0];
-  items.push({
-    tone: 'street',
-    text: busiest
-      ? `派遣栏还挂着「${clip(busiest.title, 16)}」，据说是今晚最不好收尾的一桩。`
-      : '派遣栏今晚意外地干净，只剩几张没有人认领的旧告示在风里翻页。',
-  });
-
+  const pollution = dirtiest
+    ? `${districts[dirtiest.id].name}的污染 ${dirtiest.pollution}（${pollutionTierLabel(dirtiest.pollution)}）`
+    : '污染读数缺席';
+  const busiest = state.missions.filter(mission => mission.status !== 'done')[0];
   return {
-    day,
-    generatedAt: new Date().toISOString(),
-    headline: `${day} 日 · 夜色照样会准时到站`,
-    items: items.slice(0, CITY_NEWS_MAX),
-    source: 'rule',
+    faction,
+    pollution,
+    stability: `安定度 ${state.reputation}`,
+    street: busiest ? `派遣栏还挂着「${clip(busiest.title, 16)}」` : '派遣栏今晚空着',
   };
 }
+
+/** 没有 API Key、或模型两次都不合格时的本地访谈：全部由当前存档算出来。 */
 
 /** 玩家接手的第一夜：不生成，只播这一条。电台口吻，用名字称呼所长，不用「你」。 */
 export function openingCityNews(day = OPENING_NEWS_DAY, playerName = ''): CityNews {
@@ -114,5 +188,6 @@ export function openingCityNews(day = OPENING_NEWS_DAY, playerName = ''): CityNe
 /** 今天的播报有没有过期（换了业务日就要重写；第一夜固定用开场那一条）。 */
 export function newsIsStale(news: CityNews | undefined, day: number): boolean {
   if (day <= OPENING_NEWS_DAY) return false;
-  return !news || news.day !== day || !news.items.length;
+  if (!news || news.day !== day) return true;
+  return !news.items.length && !(news.lines?.length ?? 0);
 }

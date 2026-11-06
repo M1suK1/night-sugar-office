@@ -935,6 +935,22 @@ export interface CityNewsItem {
   tone: 'faction' | 'pollution' | 'stability' | 'street';
 }
 
+/** 访谈里的一个人：主持人或嘉宾。 */
+export interface CityNewsSpeaker {
+  id: string;
+  name: string;
+  /** 身份小字（「月蚀庭首领」「绯樱的契约者」）。 */
+  title: string;
+  faction?: FactionId;
+}
+
+/** 访谈里的一句。 */
+export interface CityNewsLine {
+  speakerId: string;
+  speakerName: string;
+  text: string;
+}
+
 /** 每天一条的城市播报；换成业务日后由叙事者或本地规则重写。 */
 export interface CityNews {
   day: number;
@@ -942,6 +958,10 @@ export interface CityNews {
   headline: string;
   items: CityNewsItem[];
   source: 'llm' | 'rule';
+  /** v167：夜间访谈 —— 主持人、嘉宾与他们的对话。旧档只有 items，没有这三项。 */
+  host?: CityNewsSpeaker;
+  guests?: CityNewsSpeaker[];
+  lines?: CityNewsLine[];
 }
 /** 每次委托结算留下的一条参与记录；旧存档可从 battles 补战斗部分。 */
 export interface MissionRun {
@@ -1159,6 +1179,8 @@ export interface GameState {
   missionRuns?: MissionRun[];
   /** 今日城市新闻；数值规则里关掉时不再生成。 */
   cityNews?: CityNews;
+  /** v167：玩家指定的新闻主持人；缺省按日号从在场人物里定。 */
+  newsHostId?: string;
   /** 升级成长方式：手动发点 / 按职阶自动加点；旧档按 auto 读。 */
   levelUpMode?: 'auto' | 'manual';
   /** 委托完成与升级的提示；新的在前，只留最近 20 条。 */
@@ -1274,6 +1296,7 @@ export type GameAction =
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
   | { type: 'seedStorySession'; eventId: string; seed: string }
+  | { type: 'setNewsHost'; girlId: string }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
   /** 手动改一句：玩家自己修台词/旁白文本（不动 id 与轮次）。 */

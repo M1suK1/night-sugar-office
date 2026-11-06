@@ -29,6 +29,11 @@ export interface BalanceRules {
   envoyCoopStandingGain: number;
   envoyCoopRewardPct: number;
   envoyCoopStandingLoss: number;
+  /** v167：委托失败的违约金 —— 报酬的百分比，以及最低金额。 */
+  missionFailurePenaltyPct: number;
+  missionFailurePenaltyMin: number;
+  /** 势力代表委托失败时，额外扣多少该势力好感。 */
+  envoyFailureExtraStandingLoss: number;
   /** 破坏：被破坏方扣多少好感、额外星砂百分比、基础火气、失败时的火气。 */
   envoyRaidTargetStandingLoss: number;
   envoyRaidRewardPct: number;
@@ -108,6 +113,9 @@ export const DEFAULT_BALANCE: BalanceRules = {
   envoyCoopStandingGain: 1,
   envoyCoopRewardPct: 10,
   envoyCoopStandingLoss: 1,
+  missionFailurePenaltyPct: 20,
+  missionFailurePenaltyMin: 50,
+  envoyFailureExtraStandingLoss: 2,
   envoyRaidTargetStandingLoss: 3,
   envoyRaidRewardPct: 50,
   envoyRaidHostility: 8,
@@ -177,6 +185,9 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'envoyCoopStandingGain', label: '共建好感', hint: '在自己辖区完成势力委托，涨多少势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyCoopRewardPct', label: '共建额外星砂', hint: '共建委托的星砂加成百分比。', min: 0, max: 200, step: 5, unit: '%', group: '势力代表' },
   { key: 'envoyCoopStandingLoss', label: '共建失败扣好感', hint: '共建委托失败时扣多少势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
+  { key: 'missionFailurePenaltyPct', label: '失败违约金', hint: '委托失败时按报酬的百分比赔钱。', min: 0, max: 100, step: 5, unit: '%', group: '势力代表' },
+  { key: 'missionFailurePenaltyMin', label: '违约金下限', hint: '违约金最少赔多少星砂（手头不够就赔到 0）。', min: 0, max: 2000, step: 50, unit: '星砂', group: '势力代表' },
+  { key: 'envoyFailureExtraStandingLoss', label: '代表委托失败', hint: '势力代表委托失败时，额外扣多少该势力好感。', min: 0, max: 10, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyRaidTargetStandingLoss', label: '破坏扣好感', hint: '被破坏势力扣多少好感。', min: 0, max: 20, step: 1, unit: '', group: '势力代表' },
   { key: 'envoyRaidRewardPct', label: '破坏额外星砂', hint: '破坏行动的星砂加成百分比。', min: 0, max: 300, step: 10, unit: '%', group: '势力代表' },
   { key: 'envoyRaidHostility', label: '破坏基础火气', hint: '破坏行动给两势力加多少火气（再按对方辖区污染与安定加权）。', min: 0, max: 40, step: 1, unit: '', group: '势力代表' },

@@ -368,12 +368,15 @@ export function battleContract(): string {
   ].join('\n');
 }
 
-/** 城市新闻的锁定契约：JSON 骨架 + 条数与枚举。 */
+/** 城市新闻的锁定契约：访谈的 JSON 骨架、句数与枚举。 */
 export function newsContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
-    '{"headline":"不超过 20 字的标题","items":[{"text":"一条播报","tone":"faction|pollution|stability|street"}]}',
-    'items 给 1–3 条，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。',
+    '{"headline":"不超过 20 字的标题","lines":[{"speakerId":"主持人或嘉宾的 id","text":"一句话"}],"items":[{"text":"一条要闻","tone":"faction|pollution|stability|street"}]}',
+    '今晚是一档夜间访谈：主持人开场，两位嘉宾各说 2–3 句，中间要有接话或反驳，最后主持人收束。lines 给 6–10 句，每句不超过 60 字。',
+    'speakerId 只能取用户消息里列出的那几个人；不要自己编人名，不要写旁白、括号动作或「（沉默）」这类舞台提示。',
+    '每一句都要落到具体数字或事实（火气、污染读数、安定度、事务所的星砂与人数），不要空泛抒情。',
+    'items 给 1–3 条，和访谈内容对得上，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。',
   ].join('\n');
 }
 

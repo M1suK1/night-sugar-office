@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { BALANCE_FIELDS, DEFAULT_BALANCE, sanitizeBalance } from '../src/balance.ts';
-import { localCityNews, newsIsStale, openingCityNews, sanitizeCityNews, OPENING_NEWS_DAY, CITY_NEWS_MAX } from '../src/cityNews.ts';
+import { newsIsStale, openingCityNews, sanitizeCityNews, OPENING_NEWS_DAY, CITY_NEWS_MAX } from '../src/cityNews.ts';
+import { localCityNews } from '../src/cityNewsLocal.ts';
 import { districts } from '../src/districts.ts';
 import { DEFAULT_PROMPTS, PROMPT_SCOPES, PROMPT_TASK_SCOPES } from '../src/presets.ts';
 import { SECTION_PROMPTS, newsContract } from '../src/promptSections.ts';
@@ -98,7 +99,7 @@ test('v50 换日就要重写：当日不算过期，隔夜或空播报算过期'
   assert.equal(newsIsStale(news, 20), false);
   assert.equal(newsIsStale(news, 21), true);
   assert.equal(newsIsStale(undefined, 20), true);
-  assert.equal(newsIsStale({ ...news, items: [] }, 20), true);
+  assert.equal(newsIsStale({ ...news, items: [], lines: [] }, 20), true, '要闻与访谈都空掉才算过期');
 });
 
 test('v50 播种报：存进存档、可清空，读档字段是可选的', () => {
@@ -112,7 +113,8 @@ test('v50 播种报：存进存档、可清空，读档字段是可选的', () =
   const cleared = act(saved.state, { type: 'setCityNews', news: null });
   assert.equal(cleared.ok, true);
   assert.equal(cleared.state.cityNews, undefined);
-  const dirty = act(saved.state, { type: 'setCityNews', news: { ...news, items: [{ text: '', tone: 'street' }] } });
+  // v167：访谈已经并进同一个结构，空内容要连 lines 一起空，才算「洗不出内容」。
+  const dirty = act(saved.state, { type: 'setCityNews', news: { ...news, items: [{ text: '', tone: 'street' }], lines: [] } });
   assert.equal(dirty.ok, false, '洗不出内容时明确失败');
   assert.equal(dirty.state.cityNews?.headline, news.headline, '洗不出内容时保留原来那条，界面不该闪一下就消失');
   assert.equal(act(saved.state, { type: 'setCityNews', news: null }).state.cityNews, undefined, '只有显式 null 才清空');

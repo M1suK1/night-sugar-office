@@ -6,7 +6,7 @@ import { districtOfMission } from './battle.ts';
 import { book, clone, dateLabel, findGirl } from './core.ts';
 import { relationshipStage, statusLabels, workLabels } from './labels.ts';
 import { inWithdrawal, squadLimit } from './roster.ts';
-import { sanitizeCityNews } from '../cityNews.ts';
+import { newsCastPool, sanitizeCityNews } from '../cityNews.ts';
 import { failStoryMission } from './storyRun.ts';
 // v35 从 src/game.ts 拆出：派遣、陪伴与聊天。
 
@@ -215,6 +215,16 @@ export function applySetCityNews(state: GameState, action: Extract<GameAction, {
       if (!news) return { state, ok: false, message: '这条播报没有可用的条目，保留原来的播报。' };
       next.cityNews = news;
       return { state: next, ok: true, message: '城市新闻已更新。' };
+}
+
+/** setNewsHost（v167）：换今晚的主持人。换了就把当晚那档作废，等下一次刷新按新主持重开。 */
+export function applySetNewsHost(state: GameState, action: Extract<GameAction, { type: 'setNewsHost' }>): ActionResult {
+  const next = clone(state);
+  const person = newsCastPool(next).find(entry => entry.id === action.girlId);
+  if (!person) return { state, ok: false, message: '这个人今晚不在现场，换不了主持。' };
+  next.newsHostId = person.id;
+  delete next.cityNews;
+  return { state: next, ok: true, message: `${person.name}接下今晚的主持。` };
 }
 
 /** addWhisper 的动作处理器（v35 从 act 拆出）。 */

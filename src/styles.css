@@ -1537,3 +1537,66 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-budget-hint{display:block;font-style:normal;font-size:8px;color:#6b5c74;margin-top:1px}
 .preset-entry-contract{font:500 8px/1 var(--font-body);letter-spacing:.04em;color:#f3aec9;background:#f3aec914;border:1px solid #f3aec933;border-radius:3px;padding:2px 5px;white-space:nowrap}
 .preset-entry-changed{font:500 8px/1 var(--font-body);letter-spacing:.04em;color:#f6d78f;background:#f6d78f14;border:1px solid #f6d78f33;border-radius:3px;padding:2px 5px;white-space:nowrap}
+
+/* ── v167 夜間訪談：主持人与对话 ─────────────────────────────────────── */
+.news-host {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+  font-size: 11.5px;
+  color: #cbb9d4;
+}
+
+.news-host-badge {
+  padding: 1px 6px;
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  color: #f3aec9;
+  border: 1px solid rgba(243, 174, 201, 0.4);
+  border-radius: 999px;
+}
+
+.news-host b { color: #f7f2f5; font-weight: 600; }
+.news-host small { color: #6f6878; }
+
+.news-host-pick {
+  margin-left: auto;
+  max-width: 132px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 10.5px;
+  color: #cbb9d4;
+  background: rgba(18, 14, 25, 0.78);
+  border: 1px solid rgba(243, 174, 201, 0.24);
+  border-radius: 999px;
+}
+
+.news-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.news-lines li { display: grid; gap: 2px; }
+
+.news-lines .news-speaker {
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  color: #8f8497;
+}
+
+.news-lines li.is-host .news-speaker { color: #f3aec9; }
+.news-lines li.is-guest .news-speaker { color: #a99fb2; }
+
+.news-lines p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #ded4dd;
+}
+
+.news-lines li.is-host p { color: #f7f2f5; }

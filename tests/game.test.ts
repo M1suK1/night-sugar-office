@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { WARDROBE_LIMIT, act, annotateMission, buildTemplateArc, capacity, chance, clinicQuote, completeStoryMission, createBlankState, createInitialState, customOutfitFor, dateLabel, deployIncidentCard, deployMissionTemplate, importState, inWithdrawal, applyIncidentEffect, interceptionFor, loadState, makeFactionStock, missionTemplates, missionVisibleOnMap, pickPoolIncidentCard, resolveStoryWait, seatsTaken, spawnStoryBeat, squadChance, squadLimit, treatmentFor } from '../src/game.ts';
 import { districtAt, districtOrder, districts, effectLines } from '../src/districts.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, SHIFT_END, SHIFT_START, WAVE_AT, clockLabel, deadlineFor, shiftPhase, shiftCloseAt } from '../src/shift.ts';
+import { failurePenaltyOf } from '../src/missionPenalty.ts';
 import { FACTION_ORDER, TERRITORY_LIMIT, assignTerritories, canClaim, effectiveDistrictEffect, factionEffect, ownedDistricts, repairTerritories, territoryCounts } from '../src/territories.ts';
 import { DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, PRESET_SCHEMA, PROMPT_TASK_SCOPES, activePrompts, applyFormat, applyRegexScripts, builtinPresets, composeTaskSystem, ensureTaskPresets, expandPresetMacros, pickRegexScripts, promptHasMechanicBan, promptScopeLabel, stripMechanicBan, resolvePresetConfig, exportPresetJson, importPresetJson, importPresetObject, loadPresets, normalizeBinding, presetPrompts, presetRuntime, promptScope, promptTokens, renderPresetSystem, withPresetPrompts, type ChatPreset } from '../src/presets.ts';
 import { playerSummary } from '../src/player.ts';
@@ -274,7 +275,11 @@ test('战斗失败保留事件、施加疤痕并降低血量上限', () => {
   const result = act(dispatched, { type: 'advance', minutes: 90 }).state;
   const battle = result.battles[0];
   assert.equal(battle.outcome, 'defeat');
-  assert.equal(result.gold, goldBefore);
+  // v167：失败要赔违约金（报酬 20%，最低 50），不再是一分不亏。
+  const mission = result.missions.find(m => m.id === 'arcade')!;
+  const penalty = failurePenaltyOf(mission, goldBefore, DEFAULT_BALANCE);
+  assert.ok(penalty.gold > 0, '失败应当有违约金');
+  assert.equal(result.gold, goldBefore - penalty.gold);
   assert.equal(result.missions.find(m => m.id === 'arcade')!.status, 'open');
   const girl = result.girls.find(g => g.id === 'yue')!;
   assert.equal(girl.scars.length, 1);
@@ -1920,7 +1925,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 48, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项与 v89 的休息两项');
+  assert.equal(BALANCE_FIELDS.length, 51, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项与 v167 的失败惩罚三项');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);

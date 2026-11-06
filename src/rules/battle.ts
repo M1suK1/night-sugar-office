@@ -19,7 +19,8 @@ import { addCondition, addCorruption, gainTrait } from './conditions.ts';
 import { book, clone, dateLabel, findGirl, grantExpWithNotice, hashText, pushNotice, shiftTerritory } from './core.ts';
 import { makeOpinion } from './opinion.ts';
 import { capacity, seatsTaken } from './roster.ts';
-import { completeStoryMission, failStoryMission } from './storyRun.ts';
+import { completeStoryMission } from './storyRun.ts';
+import { settleDefeat } from './missionDefeat.ts';
 // v35 从 src/game.ts 拆出：战斗与调查的结算（不是 combat.ts）。
 
 export function applyScar(state: GameState, girl: Girl, scar: Scar): void {
@@ -183,29 +184,8 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome, battle.partial === true)}：${mission.title}。${battle.partial ? '大部分魔物被清除，剩下的逃散了；事件同样移出委托池，报酬按 90% 结算。' : '魔物已被清除，事件移出委托池。'}${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
       pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `${battle.partial ? '委托达成' : '委托完成'} · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}${battle.partial ? '把大部分魔物清了出去' : '打赢了这一场'}，报酬 ${rewards.gold} 星砂${battle.partial ? '（不完全胜利 · 90%）' : ''}。` });
   } else if (battle.outcome === 'defeat') {
-    state.reputation = Math.max(0, state.reputation - 3);
-    const envoyBalance = loadBalance();
-    if (mission.envoyKind === 'coop' && mission.envoyFaction) {
-      state.factions[mission.envoyFaction].standing = Math.max(0, state.factions[mission.envoyFaction].standing - envoyBalance.envoyCoopStandingLoss);
-    } else if (mission.envoyKind === 'raid' && mission.envoyFaction) {
-      // 打输了：对方没吃亏，但两家的火气照样往上走，城市安定再掉一点。
-      const target = mission.envoyTarget;
-      const pair = target ? pairOf(mission.envoyFaction, target) : undefined;
-      if (pair) applyHostility(state, [{ pair, delta: envoyBalance.envoyRaidFailureHostility, reason: '他们查到了是谁动的手' }]);
-      state.reputation = Math.max(0, state.reputation - 1);
-    } else if (mission.faction) {
-      state.factions[mission.faction].standing = Math.max(0, state.factions[mission.faction].standing - 3);
-    }
-    book(state, at.day, 0);
-    mission.squad = [];
-    mission.girlId = undefined;
-    if (mission.storylineId) {
-      mission.status = 'expired';
-      failStoryMission(state, mission, '战斗失败');
-    } else {
-      mission.status = 'open';
-    }
-    state.logs.unshift({ id: `log-lose-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `战斗失败：${mission.title}。${mission.storylineId ? '故事线因此转向失败分支。' : '全员失去行动能力，委托仍留在事件池中。'}` });
+    // v167：失败代价（违约金 / 额外好感 / 当天停单）在 missionDefeat 里单独实现。
+    settleDefeat(state, mission, battle, at);
   } else {
     state.gold += rewards.gold;
     book(state, at.day, rewards.gold);
