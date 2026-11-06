@@ -20,11 +20,12 @@ import { fileDropProps } from '../drop';
 
 const dossierTabs = [
   { id: 'overview', label: '状态概览' },
-  { id: 'ability', label: '魔法能力' },
+  { id: 'ability', label: '战斗能力' },
   { id: 'relations', label: '关系网络' },
+  { id: 'story', label: '角色故事' },
   { id: 'growth', label: '契约成长' },
-  { id: 'appearance', label: '外观装备' },
-  { id: 'memory', label: '心愿与羁绊' },
+  { id: 'appearance', label: '人物描述' },
+  { id: 'memory', label: '她的心愿' },
 ];
 const expressions: { id: Expression; label: string; note: string }[] = EXPRESSIONS.map(id => ({ id, label: EXPRESSION_META[id].label, note: EXPRESSION_META[id].note }));
 const expressionIcons = { calm: Meh, smile: Smile, surprise: Sparkles, sad: Frown, angry: Angry, shy: Heart } as const;
@@ -230,9 +231,6 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <div className="corruption-facts"><span>魔女阈值<b>70</b></span><span>共情修正<b>−{corruptionTier === 2 ? 25 : corruptionTier === 1 ? 12 : 5}%</b></span><span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span></div>
               {girl.witch && <p className="corruption-note">{drug > 0 ? '抑制剂仍在起效。断药前记得补充。' : '断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。'}</p>}
             </div>
-            <div className="dossier-meter exp-meter"><div><Star size={14} /><span>成长经验</span><b>{progressLabel(girl)}<small> · Lv.{girl.level}</small></b></div><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i></div>
-            <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
-            <div className="trait-tags">{girl.traits.length ? girl.traits.map(trait => <span key={trait.id} className={`trait-tag ${trait.polarity}`} title={trait.description}>{trait.name}</span>) : <span className="trait-empty">还没有显露特性</span>}</div>
             {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
             <div className="scar-track">
               <div className="scar-track-head"><span><Bandage size={13} />疤痕</span><b>{girl.scars.length} / 5</b></div>
@@ -246,27 +244,106 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               </div>
               <p>{girl.scars.length >= 4 ? '第 5 道疤痕会带来不可逆的死亡。她仍可以申请退役，转任事务所文职。' : `每道疤痕让血量上限降低约 8%。当前上限 ${girl.maxHp} / 基础 ${girl.baseMaxHp}。`}</p>
             </div>
-            <p className="dossier-description">{girl.description}</p>
-            <section className={`personality-panel ${girl.witch ? 'witch' : ''}`} aria-labelledby="personality-title">
-              <div className="personality-head">
-                <h3 id="personality-title"><Brain size={14} />性格</h3>
-                <em>{girl.witch ? '魔女化记录 · 负面倾向增强' : '原本记录'}</em>
-                {!editingPersonality && <button id="dossier-personality-edit" type="button" className="llm-reset" onClick={beginPersonalityEdit}><Pencil size={12} />编辑</button>}
+            
+            
+            <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : girl.status === 'expedition' ? '星象台远行中 · 每 60 分钟回报一次' : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
+          </>}
+          {tab === 'ability' && <>
+            <div className="modal-section-heading"><h3>四维</h3><small>基础值</small></div>
+            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: girl.stats[k] + '%' }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
+            <div className="modal-section-heading"><h3>有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div>
+            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: Math.min(100, eff[k]) + '%' }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
+            <div className="modal-section-heading"><h3>技能</h3><small>出勤时自动使用</small></div>
+            <div className="skill-list">
+              {girl.skills.map(id => findSkill(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).map(skill => (
+                  <article key={skill.id} className={`skill-card tier-${skill.tier}`}>
+                    <div className="skill-card-head"><span className="skill-tier">{tierLabels[skill.tier]}</span><h3>{skill.name}</h3><em>{resourceLabels[skill.resource]} · 倍率 {skill.power.toFixed(2)}</em></div>
+                    <p>{skill.description}</p>
+                    <div className="skill-meta">
+                      <span><Cross size={11} />{resourceLabels[skill.resource]}</span>
+                      <span><Users size={11} />{skill.side === 'enemy' ? `敌 ${skill.targets}` : skill.side === 'ally' ? `友 ${skill.targets}` : '自身'}</span>
+                      <span><Timer size={11} />冷却 {skill.cooldown} 轮</span>
+                      <span className="skill-accuracy">基础命中 {skillAccuracy(skill)}%</span>
+                      {skill.selfCost && <span className="skill-cost">代价：{skill.selfCost.pct}% {resourceLabels[skill.selfCost.resource]}</span>}
+                      {skill.tier === 'ultimate' && <span className="ultimate-note">第 2 轮起可用</span>}
+                    </div>
+                    {skill.effects.length > 0 && <div className="skill-effects">{skill.effects.map((e, i) => <span key={i}>{effectText(e)}</span>)}</div>}
+                  </article>
+                ))}
+            </div>
+            <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small>{(girl.unspentPoints ?? 0) > 0 && onMutePoints && <button id="girl-points-mute" type="button" className="mini-action" onClick={onMutePoints}>不再提醒这几点</button>}</div>
+            <div className="allocate-block" id="girl-allocate">
+              {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => {
+                const free = girl.unspentPoints ?? 0;
+                const cap = Math.max(0, Math.min(free + pending[key], 120 - girl.stats[key]));
+                const locked = Boolean(girl.retired) || Boolean(girl.dead);
+                return <div key={key} className={`allocate-row slider${pending[key] ? ' is-pending' : ''}`}>
+                  <span>{statLabels[key]}<small>{statHint[key]}</small></span>
+                  <strong>{girl.stats[key]}{pending[key] ? <em className="allocate-delta"> +{pending[key]}</em> : null}</strong>
+                  <input
+                    id={`girl-allocate-${key}`}
+                    type="range" min={0} max={cap} step={1} value={Math.min(pending[key], cap)}
+                    disabled={locked || cap === 0}
+                    aria-label={`${statLabels[key]} 加点`}
+                    aria-valuetext={`${girl.stats[key] + pending[key]}（本次 + ${pending[key]}）`}
+                    onChange={event => setPendingFor(key, Number(event.target.value))}
+                  />
+                  <output htmlFor={`girl-allocate-${key}`}>{pending[key]}</output>
+                </div>;
+              })}
+              <div className="allocate-actions">
+                <button id="girl-allocate-reset" type="button" className="btn small" disabled={!pendingTotal} onClick={() => setPending({ ...NO_POINTS })}>重置</button>
+                <button id="girl-allocate-confirm" type="button" className="btn small primary" disabled={!pendingTotal} onClick={() => { if (pendingTotal) { onAllocateMany?.(pending); setPending({ ...NO_POINTS }); } }}>确认加点 · {pendingTotal} 点</button>
               </div>
-              {editingPersonality ? (
-                <div className="personality-editor">
-                  <textarea id="dossier-personality-input" className="av-input" rows={5} maxLength={600} value={personalityDraft} onChange={event => setPersonalityDraft(event.target.value)} autoFocus />
-                  <div className="personality-editor-actions">
-                    <span>{personalityDraft.trim().length} / 600</span>
-                    <button id="dossier-personality-cancel" type="button" className="btn" onClick={() => setEditingPersonality(false)}><X size={13} />取消</button>
-                    <button id="dossier-personality-save" type="button" className="btn primary" disabled={!personalityDraft.trim()} onClick={savePersonality}><Check size={13} />保存</button>
-                  </div>
+              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 && (['magic', 'insight', 'agility', 'empathy'] as const).every(key => girl.stats[key] >= 120) ? `四维都到上限了（120），这 ${girl.unspentPoints} 点暂时花不出去；点上面的「不再提醒这几点」可以先把角标收起来。` : (girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
+            </div>
+            <section className="appearance-section" aria-labelledby="equipment-title">
+                <div className="appearance-head"><div><h3 id="equipment-title"><Wand2 size={14} />装备</h3><small>法器与护符各一 · 从仓库拖入</small></div><em>{gear.length} 件在库</em></div>
+                <div className="equipment-slots">
+                  {(['weapon', 'charm'] as const).map((slot, index) => {
+                    const item = getItem(girl.equipment[slot]);
+                    return (
+                      <button key={slot} id={`dossier-equipment-${slot}`} type="button" className={`equipment-slot ${equipmentDrawer === slot ? 'active' : ''}`} onClick={() => { setEquipmentDrawer(slot); setDrawerMessage(''); }} aria-label={`打开${slotLabels[slot]}仓库，当前${item?.name ?? '空置'}`}>
+                        <span className="equipment-slot-top"><em>{slotLabels[slot]}</em><small>0{index + 1}</small></span>
+                        {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small></> : <><b className="empty">空置</b><small>点击打开仓库，拖入装备</small></>}
+                        <span className="equipment-open">打开仓库 <ChevronRight size={11} /></span>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : <p className="personality-text">{personality}</p>}
-              {girl.witch && <p className="personality-warning">显化夜之形将把她内心最深层的执念扭曲放大为偏执、占有与多疑；唯有褪下魔女礼装、重返平静日常，原本温和的人格记忆方能重新主导心智。</p>}
-            </section>
-            <section className="story-panel" aria-labelledby="story-title">
-              <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.slot ?? 1} 段 · 第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : slotPlan?.graph ? `第 ${nextSlot} 段 · ${slotPlan.graph.nodes.length} 节点` : `第 ${nextSlot} 段 · 待生成`}</em></div>
+                <div className="consumable-row">
+                  <span className="consumable-label"><Syringe size={12} />随身物资</span>
+                  {consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="consumable-chip" onClick={() => onUseItem(item.id)}>{item.name}<em>×{state.inventory[item.id]}</em></button>) : <p>仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}
+                </div>
+              </section>
+            <p className="small-note">魔力主导杀伤爆发；洞察洞悉破绽与命中精度；敏捷掌控身法闪避与行动先手；共情撑起抵御冲击的心防屏障。</p>
+            <p className="small-note">核心四维直接决定委托判定与实战交锋走势；深层疤痕会在灵魂上留下不可逆的钝性削减。</p>
+          </>}
+          {tab === 'relations' && <>
+            <div className="bond-hero">
+              <div className={`bond-ring stage-${stage}`} style={{ '--bond': `${girl.bond}%` } as React.CSSProperties}><Heart size={20} /><b>{girl.bond}</b></div>
+              <div><small>与你的关系</small><h3>{stageLabels[stage]}</h3><p>{stageHints[stage]}</p></div>
+            </div>
+            <div className="relation-legend">{stageLabels.map((label, index) => <span key={label} className={`stage-${index} ${index === stage ? 'current' : ''}`}>{label}</span>)}</div>
+            <div className="modal-section-heading"><h3>事务所内的关系</h3><small>同伴之间的看法</small></div>
+            <div className="peer-list">
+              {peers.map(({ girl: peer, score }) => {
+                const peerStage = relationshipStage(score);
+                return (
+                  <button id={`relation-${peer!.id}`} key={peer!.id} className="peer-row" onClick={() => document.dispatchEvent(new CustomEvent('nso:open-girl', { detail: peer!.id }))}>
+                    <img src={peer!.portrait} alt="" />                    <span><b>{peer!.name}</b><small>{peer!.codename}</small></span>
+                    <i><b style={{ width: `${score}%` }} /></i>
+                    <em className={`stage-${peerStage}`}>{stageLabels[peerStage]}<small>{score}</small></em>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="small-note">关系会随共同出勤、战斗胜负与告别而变化。数值不会直接显示在对话里。</p>
+            {girl.bond >= 60 && <div className="memory-item"><LockKeyhole size={16} /><span>被记住的片刻<small>深夜留在桌上的一杯热可可，杯沿有她的口红印。</small></span></div>}
+          </>}
+          {tab === 'story' && <>
+<section className="story-panel" aria-labelledby="story-title">
+              <div className="appearance-head"><div><h3 id="story-title"><Sparkles size={14} />故事线</h3><small>{storyBusy ? '叙事者正在把她的过去写成节点与分支…' : girl.storyPlan ? '蓝图已写入契约卡 · 开场后按节点推进' : '由叙事者直接写一张可编辑蓝图 · 也可以自己画'}</small></div><em>{storyline ? `第 ${storyline.slot ?? 1} 段 · 第 ${storyline.stage + 1} / ${Math.max(1, storyline.beats.length)} 幕` : slotPlan?.graph ? `第 ${nextSlot} 段 · ${slotPlan.graph.nodes.length} 节点` : `第 ${nextSlot} 段 · 待生成`}</em></div>
               <ol className="story-slots" id="dossier-story-slots">
                 {Array.from({ length: 3 }, (_, index) => {
                   const slot = index + 1;
@@ -362,82 +439,12 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 </>
               )}
             </section>
-            <div className="location-note"><Moon size={15} />{girl.status === 'mission' ? `执行委托中 · ${girl.remaining} 分钟后返回` : girl.status === 'expedition' ? '星象台远行中 · 每 60 分钟回报一次' : `当前位于${state.rooms.find(r => r.id === girl.roomId)?.name ?? '会客厅'}`}</div>
-          </>}
-          {tab === 'ability' && <>
-            <div className="skill-list">
-              {girl.skills.map(id => findSkill(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).map(skill => (
-                  <article key={skill.id} className={`skill-card tier-${skill.tier}`}>
-                    <div className="skill-card-head"><span className="skill-tier">{tierLabels[skill.tier]}</span><h3>{skill.name}</h3><em>{resourceLabels[skill.resource]} · 倍率 {skill.power.toFixed(2)}</em></div>
-                    <p>{skill.description}</p>
-                    <div className="skill-meta">
-                      <span><Cross size={11} />{resourceLabels[skill.resource]}</span>
-                      <span><Users size={11} />{skill.side === 'enemy' ? `敌 ${skill.targets}` : skill.side === 'ally' ? `友 ${skill.targets}` : '自身'}</span>
-                      <span><Timer size={11} />冷却 {skill.cooldown} 轮</span>
-                      <span className="skill-accuracy">基础命中 {skillAccuracy(skill)}%</span>
-                      {skill.selfCost && <span className="skill-cost">代价：{skill.selfCost.pct}% {resourceLabels[skill.selfCost.resource]}</span>}
-                      {skill.tier === 'ultimate' && <span className="ultimate-note">第 2 轮起可用</span>}
-                    </div>
-                    {skill.effects.length > 0 && <div className="skill-effects">{skill.effects.map((e, i) => <span key={i}>{effectText(e)}</span>)}</div>}
-                  </article>
-                ))}
-            </div>
-            <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${girl.stats[k]}%` }} /></i><strong>{girl.stats[k]}</strong></div>)}</div>
-            <p className="small-note">魔力主导杀伤爆发；洞察洞悉破绽与命中精度；敏捷掌控身法闪避与行动先手；共情撑起抵御冲击的心防屏障。</p>
-            <p className="small-note">核心四维直接决定委托判定与实战交锋走势；深层疤痕会在灵魂上留下不可逆的钝性削减。</p>
-          </>}
-          {tab === 'relations' && <>
-            <div className="bond-hero">
-              <div className={`bond-ring stage-${stage}`} style={{ '--bond': `${girl.bond}%` } as React.CSSProperties}><Heart size={20} /><b>{girl.bond}</b></div>
-              <div><small>与你的关系</small><h3>{stageLabels[stage]}</h3><p>{stageHints[stage]}</p></div>
-            </div>
-            <div className="relation-legend">{stageLabels.map((label, index) => <span key={label} className={`stage-${index} ${index === stage ? 'current' : ''}`}>{label}</span>)}</div>
-            <div className="modal-section-heading"><h3>事务所内的关系</h3><small>同伴之间的看法</small></div>
-            <div className="peer-list">
-              {peers.map(({ girl: peer, score }) => {
-                const peerStage = relationshipStage(score);
-                return (
-                  <button id={`relation-${peer!.id}`} key={peer!.id} className="peer-row" onClick={() => document.dispatchEvent(new CustomEvent('nso:open-girl', { detail: peer!.id }))}>
-                    <img src={peer!.portrait} alt="" />                    <span><b>{peer!.name}</b><small>{peer!.codename}</small></span>
-                    <i><b style={{ width: `${score}%` }} /></i>
-                    <em className={`stage-${peerStage}`}>{stageLabels[peerStage]}<small>{score}</small></em>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="small-note">关系会随共同出勤、战斗胜负与告别而变化。数值不会直接显示在对话里。</p>
           </>}
           {tab === 'growth' && <>
             <div className="growth-columns">
             <div className="growth-col">
-            <div className="growth-hero"><div><small>当前目标</small><strong>{girl.goal}</strong><span>{girl.goalKind}倾向 · Lv.{girl.level}</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : `Lv.${girl.level}`}</div></div>
+            <div className="growth-hero"><div><small>成长记录</small><strong>{girl.level >= 10 ? '已达上限' : 'Lv.' + girl.level + ' → Lv.' + (girl.level + 1)}</strong><span>{state.levelUpMode === 'manual' ? '手动分配 · 每次晋升 10 点' : '自动成长 · 主 +6 / 副 +4'} · 还需 {progressLabel(girl)} EXP</span></div><div className="growth-level">{girl.level >= 10 ? 'MAX' : 'Lv.' + girl.level}</div></div>
             <div className="exp-progress"><span>距离下一级</span><b>{progressLabel(girl)} EXP</b><i><b style={{ width: `${girl.level >= 10 ? 100 : girl.exp / Math.max(1, expNeeded(girl.level)) * 100}%` }} /></i><small>经验按委托推荐等级结算，但一次最多给到当前等级需求的 50%（调查 25%）：两次达标战斗或四次调查正好升一级。</small></div>
-            <div className="modal-section-heading"><h3>属性点</h3><small>{(girl.unspentPoints ?? 0) > 0 ? `还有 ${girl.unspentPoints} 点没分配` : '升级后在这里分配'}</small>{(girl.unspentPoints ?? 0) > 0 && onMutePoints && <button id="girl-points-mute" type="button" className="mini-action" onClick={onMutePoints}>不再提醒这几点</button>}</div>
-            <div className="allocate-block" id="girl-allocate">
-              {(['magic', 'insight', 'agility', 'empathy'] as const).map(key => {
-                const free = girl.unspentPoints ?? 0;
-                const cap = Math.max(0, Math.min(free + pending[key], 120 - girl.stats[key]));
-                const locked = Boolean(girl.retired) || Boolean(girl.dead);
-                return <div key={key} className={`allocate-row slider${pending[key] ? ' is-pending' : ''}`}>
-                  <span>{statLabels[key]}<small>{statHint[key]}</small></span>
-                  <strong>{girl.stats[key]}{pending[key] ? <em className="allocate-delta"> +{pending[key]}</em> : null}</strong>
-                  <input
-                    id={`girl-allocate-${key}`}
-                    type="range" min={0} max={cap} step={1} value={Math.min(pending[key], cap)}
-                    disabled={locked || cap === 0}
-                    aria-label={`${statLabels[key]} 加点`}
-                    aria-valuetext={`${girl.stats[key] + pending[key]}（本次 + ${pending[key]}）`}
-                    onChange={event => setPendingFor(key, Number(event.target.value))}
-                  />
-                  <output htmlFor={`girl-allocate-${key}`}>{pending[key]}</output>
-                </div>;
-              })}
-              <div className="allocate-actions">
-                <button id="girl-allocate-reset" type="button" className="btn small" disabled={!pendingTotal} onClick={() => setPending({ ...NO_POINTS })}>重置</button>
-                <button id="girl-allocate-confirm" type="button" className="btn small primary" disabled={!pendingTotal} onClick={() => { if (pendingTotal) { onAllocateMany?.(pending); setPending({ ...NO_POINTS }); } }}>确认加点 · {pendingTotal} 点</button>
-              </div>
-              <p className="small-note">{(girl.unspentPoints ?? 0) > 0 && (['magic', 'insight', 'agility', 'empathy'] as const).every(key => girl.stats[key] >= 120) ? `四维都到上限了（120），这 ${girl.unspentPoints} 点暂时花不出去；点上面的「不再提醒这几点」可以先把角标收起来。` : (girl.unspentPoints ?? 0) > 0 ? `尚有 ${girl.unspentPoints} 点成长潜力待分配；自由点数专精于四维强化，心防屏障将随共情投入实时重构。` : state.levelUpMode === 'manual' ? '当前处于手动分配模式：每次晋升将拨付 10 点自由潜力。' : '当前处于自动分配模式：四维随职业倾向自适应成长，亦可在系统设置中随时转为手动加点。'}</p>
-            </div>
             <div className="modal-section-heading"><h3>特性</h3><small>派遣后随机显露，长期保留</small></div>
             <div className="trait-grid">{girl.traits.length ? girl.traits.map(trait => <article key={trait.id} className={`trait-card ${trait.polarity}`}><b>{trait.name}</b><small>{trait.polarity === 'positive' ? '正面' : trait.polarity === 'negative' ? '负面' : '中性'} · {trait.tags.join(' / ')}</small><p>{trait.description}</p></article>) : <p className="small-note">还没有显露特性。完成派遣后，她可能会表现出新的习惯。</p>}</div>
             </div>
@@ -569,40 +576,33 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 </div>
               </section>
 
-              <section className="appearance-section" aria-labelledby="equipment-title">
-                <div className="appearance-head"><span className="appearance-index">04</span><div><h3 id="equipment-title"><Wand2 size={14} />装备</h3><small>法器与护符各一 · 从仓库拖入</small></div><em>{gear.length} 件在库</em></div>
-                <div className="equipment-slots">
-                  {(['weapon', 'charm'] as const).map((slot, index) => {
-                    const item = getItem(girl.equipment[slot]);
-                    return (
-                      <button key={slot} id={`dossier-equipment-${slot}`} type="button" className={`equipment-slot ${equipmentDrawer === slot ? 'active' : ''}`} onClick={() => { setEquipmentDrawer(slot); setDrawerMessage(''); }} aria-label={`打开${slotLabels[slot]}仓库，当前${item?.name ?? '空置'}`}>
-                        <span className="equipment-slot-top"><em>{slotLabels[slot]}</em><small>0{index + 1}</small></span>
-                        {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small></> : <><b className="empty">空置</b><small>点击打开仓库，拖入装备</small></>}
-                        <span className="equipment-open">打开仓库 <ChevronRight size={11} /></span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="consumable-row">
-                  <span className="consumable-label"><Syringe size={12} />随身物资</span>
-                  {consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="consumable-chip" onClick={() => onUseItem(item.id)}>{item.name}<em>×{state.inventory[item.id]}</em></button>) : <p>仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}
-                </div>
-              </section>
+              
 
-              <div className="appearance-stats">
-                <div className="appearance-head"><span className="appearance-index">05</span><div><h3><ShieldCheck size={14} />有效能力</h3><small>装备、侵蚀与服装被动已计入</small></div></div>
-                <div className="stat-bars">{keys.map(k => <div key={k}><span>{statLabels[k]}</span><i><b style={{ width: `${Math.min(100, eff[k])}%` }} /></i><strong className={eff[k] !== girl.stats[k] ? 'modified' : ''}>{eff[k]}</strong></div>)}</div>
-              </div>
+              
             </div>
           </>}
           {tab === 'memory' && <>
-            <div className="bond-emblem"><Heart size={28} /><div><small>与你的羁绊</small><strong>{girl.bond}<span>/100</span></strong></div></div>
-            <p className="dossier-description">{candidate ? '一个故事还没有开始。在签署契约之后，你会慢慢认识她不为人知的另一面。' : girl.bond >= 70 ? '「如果城市的灯都熄了，我也知道该往哪里走。因为你会在这里等我。」' : girl.bond >= 40 ? '「我不太擅长讲自己的事。不过，如果你愿意听……我们可以慢慢来。」' : '「工作之外的事，我还没有想好要不要告诉你。」'}</p>
-            <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}</span></div>
+            <p className="dossier-description">{candidate ? '一个故事还没有开始。在签署契约之后，你会慢慢认识她不为人知的另一面。' : girl.description}</p>
+            <div className="goal-line"><ClipboardList size={14} /><span><small>当前目标</small>{girl.goal}<small> · {girl.goalKind}倾向</small></span></div>
             <div className="memory-item"><BadgeCheck size={17} /><span>已知心愿<small>{girl.quote ?? '希望每一次出勤之后，大家都能平安回来。'}</small></span></div>
-            <div className="memory-item"><LockKeyhole size={16} /><span>{girl.bond >= 60 ? '被记住的片刻' : '未说出口的故事'}<small>{girl.bond >= 60 ? '深夜留在桌上的一杯热可可，杯沿有她的口红印。' : '多陪她聊聊，故事会在日常中慢慢展开。'}</small></span></div>
-            {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
-            {girl.scars.length > 0 && <div className="memory-scars">{girl.scars.map(scar => <div key={scar.id} className={`memory-scar ${scar.kind}`}><Bandage size={13} /><span><b>{scar.name}</b><small>{scar.condition} · {scar.gainedAt}</small></span></div>)}</div>}
+            <section className={`personality-panel ${girl.witch ? 'witch' : ''}`} aria-labelledby="personality-title">
+              <div className="personality-head">
+                <h3 id="personality-title"><Brain size={14} />性格</h3>
+                <em>{girl.witch ? '魔女化记录 · 负面倾向增强' : '原本记录'}</em>
+                {!editingPersonality && <button id="dossier-personality-edit" type="button" className="llm-reset" onClick={beginPersonalityEdit}><Pencil size={12} />编辑</button>}
+              </div>
+              {editingPersonality ? (
+                <div className="personality-editor">
+                  <textarea id="dossier-personality-input" className="av-input" rows={5} maxLength={600} value={personalityDraft} onChange={event => setPersonalityDraft(event.target.value)} autoFocus />
+                  <div className="personality-editor-actions">
+                    <span>{personalityDraft.trim().length} / 600</span>
+                    <button id="dossier-personality-cancel" type="button" className="btn" onClick={() => setEditingPersonality(false)}><X size={13} />取消</button>
+                    <button id="dossier-personality-save" type="button" className="btn primary" disabled={!personalityDraft.trim()} onClick={savePersonality}><Check size={13} />保存</button>
+                  </div>
+                </div>
+              ) : <p className="personality-text">{personality}</p>}
+              {girl.witch && <p className="personality-warning">显化夜之形将把她内心最深层的执念扭曲放大为偏执、占有与多疑；唯有褪下魔女礼装、重返平静日常，原本温和的人格记忆方能重新主导心智。</p>}
+            </section>
           </>}
         </div>
         {candidate ? <button id="candidate-hire-from-profile" className="btn primary full" onClick={onHire}>{girl.cost > 0 ? `缔结契约 · ${girl.cost.toLocaleString()} 星砂` : '免费缔结契约'}<ArrowUpRight size={16} /></button> : <>

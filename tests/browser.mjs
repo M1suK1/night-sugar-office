@@ -357,7 +357,7 @@ try {
     await page.locator('#dossier-tab-relations').click();
     await expect(page.locator('.relation-legend span')).toHaveCount(7);
     await expect(page.locator('.peer-row')).toHaveCount(4);
-    await page.locator('#dossier-tab-memory').click(); await expect(page.locator('.bond-emblem')).toContainText(/与你的羁绊\d+\/100/);
+    await page.locator('#dossier-tab-relations').click(); await expect(page.locator('.bond-ring')).toContainText(/\d+/);
     await page.locator('#dossier-tab-overview').click(); await layout('character dialog');
     await page.screenshot({ path: 'artifacts/character-dossier.png', fullPage: true, animations: 'disabled' });
     await page.keyboard.press('Escape'); await expect(page.locator('#roster-girl-yue')).toBeFocused();
@@ -617,7 +617,7 @@ try {
     await page.locator('#nav-dispatch').click();
     await page.locator('#roster-girl-yue').click();
     await page.locator('#dossier-tab-growth').click();
-    await expect(page.locator('.growth-hero')).toContainText(/当前目标/);
+    await expect(page.locator('.growth-hero')).toContainText(/成长记录/);
     await expect(page.locator('.contract-grid')).toContainText('退休金标准');
     await expect(page.locator('#girl-renew')).toBeEnabled();
     await expect(page.locator('#clinic-clone')).toBeDisabled();
@@ -768,6 +768,7 @@ try {
       const girl = (await stored()).girls.find(g => g.id === 'yue');
       return `${girl.outfitId}:${girl.expression}`;
     }).toBe('casual:shy');
+    await page.locator('#dossier-tab-ability').click();
     await page.locator('#dossier-equipment-weapon').click();
     await expect(page.locator('.equipment-drawer')).toBeVisible();
     await page.screenshot({ path: 'artifacts/armory-desktop.png', animations: 'disabled' });
@@ -2022,6 +2023,7 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-story').click();
     await page.locator('#dossier-story-start').click();
     await expect(page.locator('.story-mission')).toBeVisible();
     await expect(page.locator('.story-mission')).toContainText('夜巡河岸');
@@ -2095,6 +2097,7 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-story').click();
     await page.locator('#dossier-story-graph').click();
     await expect(page.locator('.story-graph-modal')).toBeVisible();
     const before = await page.locator('.graph-node').count();
@@ -2268,6 +2271,7 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-story').click();
     await page.locator('#dossier-story-graph').click();
     await expect(page.locator('.story-graph-modal')).toBeVisible();
     await page.locator('#story-graph-add-incident').click();
@@ -2300,6 +2304,7 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-story').click();
     await page.locator('#dossier-story-blueprint').click();
     await expect(page.locator('.story-graph-modal')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('.story-graph-notice')).toContainText('模板');
@@ -2496,7 +2501,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.locator('#dossier-outfit-casual').click({ force: true });
     await expect.poll(async () => (await stored()).girls.find(girl => girl.id === 'yue').witch).toBe(true);
 
-    await page.locator('#dossier-tab-overview').click();
+    await page.locator('#dossier-tab-memory').click();
     await expect(page.locator('.personality-panel')).toContainText('偏执');
     await page.locator('#dossier-personality-edit').click();
     await page.locator('#dossier-personality-input').fill('只想把所长留在身边，其他声音都该消失。');
@@ -2858,6 +2863,7 @@ await check('诊所治疗：按缺失血量收费、治疗中不能出勤、按�
     await page.reload({ waitUntil: 'networkidle' });
     await finishRoster();
     await page.locator('#roster-girl-yue').click();
+    await page.locator('#dossier-tab-story').click();
     const slots = page.locator('#dossier-story-slots .story-slot');
     await expect(slots).toHaveCount(3);
     await slots.first().scrollIntoViewIfNeeded();
