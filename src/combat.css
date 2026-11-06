@@ -51,6 +51,10 @@
 .dossier-tabs button[aria-selected="true"]{color:#f4e6ef}
 .dossier-tabs button[aria-selected="true"]:after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--pink)}
 .dossier-tab-body{min-height:268px;padding-top:16px}
+.dossier-identity{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
+.dossier-identity>span{display:flex;flex-direction:column;gap:5px;padding:9px 11px;border:1px solid #ffffff0b;border-radius:5px;background:#ffffff04}
+.dossier-identity small{font-size:7px;letter-spacing:.12em;color:#867291}
+.dossier-identity b{font-family:var(--font-display);font-size:14px;font-weight:500;letter-spacing:.06em;color:#e6d3e1}
 .dossier-meter.spirit i>b{background:linear-gradient(90deg,#9cc9d2,#d9eef2)}
 .dossier-meter.fatigue i>b{background:linear-gradient(90deg,#b69b7b,#e5d3b4)}
 .scar-track{margin:16px 0 4px;padding:11px 12px;border:1px solid #ffffff0b;border-radius:8px;background:#ffffff02}

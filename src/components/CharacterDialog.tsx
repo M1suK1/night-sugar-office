@@ -223,6 +223,10 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
         </div>
         <div id="dossier-tab-content" className="dossier-tab-body" role="tabpanel" aria-labelledby={`dossier-tab-${tab}`}>
           {tab === 'overview' && <>
+            <div className="dossier-identity">
+              <span><small>元素流派</small><b>{girl.element}</b></span>
+              <span><small>职阶</small><b>{girl.archetype ?? '未定职阶'}</b></span>
+            </div>
             <div className="dossier-meter"><div><Heart size={14} /><span>血量</span><b>{girl.hp}<small> / {effectiveMaxHp(girl)}</small></b></div><i><b style={{ width: `${girl.hp / effectiveMaxHp(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter spirit"><div><Sparkles size={15} /><span>心防</span><b id="girl-guard-value">{girl.spirit}<small> / {effectiveMaxSpirit(girl)}</small></b></div><i><b style={{ width: `${girl.spirit / effectiveMaxSpirit(girl) * 100}%` }} /></i></div>
             <div className="dossier-meter fatigue"><div><BatteryMedium size={15} /><span>疲劳值</span><b>{girl.fatigue}<small> / 100</small></b></div><i><b style={{ width: `${girl.fatigue}%` }} /></i></div>
