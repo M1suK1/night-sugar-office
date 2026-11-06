@@ -43,11 +43,13 @@ export interface EventDialogProps {
   onClose: () => void;
   /** 已经结束的剧情：只回看，不接任何输入。 */
   readOnly?: boolean;
-  /** 视觉小说模式（v93 全局开关）。 */
+  /** 视觉小说模式（v93 全局开关）：只决定默认打开舞台，不再决定能不能切。 */
   vnStory?: boolean;
+  /** v177：把这一段收进「已保存的剧情」（手动，不再自动存）。 */
+  onArchive?: (eventId: string) => void;
 }
 
-export function EventDialog({ event, girl, state, castPool, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false }: EventDialogProps) {
+export function EventDialog({ event, girl, state, castPool, busy = false, onAdvance, onChoose, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, vnStory = false, onArchive }: EventDialogProps) {
   // v176：演出场景随时可以切。设置里的「视觉小说」只决定提示词怎么写，
   // 不再决定玩家能不能用舞台 —— 以前关了开关，连「演出」按钮都不给。
   const [stageMode, setStageMode] = useState(Boolean(vnStory));
@@ -55,7 +57,7 @@ export function EventDialog({ event, girl, state, castPool, busy = false, onAdva
   const canStage = !stageMode;
   const shared = { stage, onText: () => setStageMode(false), onStage: canStage ? () => setStageMode(true) : undefined } as const;
   if (event.mode === 'session') {
-    return <StorySession event={event} girl={girl} state={state} castPool={castPool} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
+    return <StorySession event={event} girl={girl} state={state} castPool={castPool} busy={busy} onTurn={onTurn} onRewrite={onRewrite} onEditTurn={onEditTurn} onDeleteTurn={onDeleteTurn} onEnd={onEnd} onArchive={onArchive} branch={branch} onBranch={onBranch} onClose={onClose} readOnly={readOnly} onAdvance={onAdvance} onChoose={onChoose} {...shared} />;
   }
   return <SceneEvent event={event} girl={girl} onAdvance={onAdvance} onChoose={onChoose} onClose={onClose} {...shared} />;
 }
@@ -132,7 +134,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, onSeed, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
+function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, onSeed, onArchive, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? NO_TURNS;
   const [draft, setDraft] = useState('');
@@ -305,7 +307,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   ) : readOnly ? (
     <div className="vn-session-readonly">
       <span>这段剧情已经结束。{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '结局在最后一段。' : ''}</span>
-      <button id="story-close-vn" type="button" className="btn primary" onClick={onClose}>把这一段收进记忆</button>
+      <button id="story-close-vn" type="button" className="btn primary" onClick={() => { onArchive?.(event.id); onClose(); }}>把这一段收进记忆</button>
     </div>
   ) : null;
 
@@ -314,7 +316,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
       {readOnly && (
         <div className="session-readonly" id="session-readonly">
           <span>这段剧情已经结束。你现在只是在回看{event.turns?.some(turn => turn.id.startsWith('turn-end-')) ? '，结局在最后一段' : ''}。</span>
-          <button id="story-close" type="button" className="btn" onClick={onClose}>把这一段收进记忆</button>
+          <button id="story-close" type="button" className="btn" onClick={() => { onArchive?.(event.id); onClose(); }}>把这一段收进记忆</button>
         </div>
       )}
       {!readOnly && (
