@@ -28,3 +28,19 @@ test('v173 立绘表情：只有 uid 的敌方单位也能被认出来说话', (
   assert.equal(enemy.speaking, true);
   assert.equal(enemy.expression, 'angry');
 });
+
+test('v174 立绘数据：整份少女对象原样交给 GirlPortrait，表情差分不会被漏掉', async () => {
+  const { portraitSubjectOf } = await import('../src/castExpression.ts');
+  const girl = {
+    id: 'g1', name: '月见桃', color: '#f3aec9', portrait: '', portraitAsset: 'asset-9',
+    codename: '桃', title: '夜巡', outfitId: 'uniform', wardrobe: [], expression: 'calm',
+    importedVariants: { 'uniform:smile': 'data:image/png;base64,AAAA' },
+    variantAssets: { 'uniform:sad': 'asset-7' },
+  } as never;
+  const merged = portraitSubjectOf({ uid: 'g1', girlId: 'g1', name: '月见桃', portrait: '', color: '#f3aec9', expression: 'calm' }, 'smile', girl);
+  assert.equal(merged.expression, 'smile', '显示的表情要覆盖上去');
+  assert.deepEqual(merged.importedVariants, { 'uniform:smile': 'data:image/png;base64,AAAA' }, '表情差分必须还在');
+  assert.deepEqual(merged.variantAssets, { 'uniform:sad': 'asset-7' }, '资产引用也要带上，否则下次保存会丢');
+  assert.equal(merged.outfitId, 'uniform', '服装决定差分 key，不能丢');
+  assert.equal(merged.portraitAsset, 'asset-9');
+});

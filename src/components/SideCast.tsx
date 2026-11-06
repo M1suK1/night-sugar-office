@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import type { Expression, Girl, MonsterTemplate, PortraitSpec } from '../types';
 import { rotateSide } from '../storySlots';
 import { GirlPortrait } from './GirlPortrait';
-import { castExpressionOf } from '../castExpression';
+import { castExpressionOf, portraitSubjectOf } from '../castExpression';
 import type { SideCastActor, SideCastLine } from '../castExpression';
 
 const expressionLabel: Record<Expression, string> = {
@@ -16,24 +16,8 @@ interface CastFigure extends SideCastActor {
   portraitSpec?: PortraitSpec;
 }
 
-function portraitSubject(actor: CastFigure, expression: Expression, girl?: Girl) {
-  return {
-    id: actor.girlId ?? actor.uid,
-    name: actor.name,
-    color: actor.color,
-    // 单位快照可能只剩资产 id；存档里那位少女的立绘更完整，优先用她的。
-    portrait: girl?.portrait || actor.portrait,
-    portraitAsset: girl?.portraitAsset ?? actor.portraitAsset,
-    codename: actor.codename,
-    expression,
-    portraitSpec: actor.portraitSpec,
-    outfitId: girl?.outfitId,
-    wardrobe: girl?.wardrobe,
-    witch: girl?.witch,
-    witchForm: girl?.witchForm,
-    importedVariants: girl?.importedVariants,
-  };
-}
+// v174：整份少女对象交给 GirlPortrait（表情差分、衣柜、魔女形态都在），只覆盖表情；
+// 单位快照只剩资产引用时用它的立绘兜底。见 castExpression.portraitSubjectOf。
 
 /** 把焦点（说话 / 悬停的人）转到第一格，再取前三位；人不够就原样给。 */
 function windowOf(order: string[], focusId: string, size: number): string[] {
@@ -103,7 +87,7 @@ export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys,
             style={{ '--note-color': actor.color } as CSSProperties}
           >
             <div className="battle-note-portrait-art">
-              <GirlPortrait girl={portraitSubject(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
+              <GirlPortrait girl={portraitSubjectOf(actor, expression, girlsById.get(actor.girlId ?? ''))} variant="full" />
               <span className="battle-note-expression">{expressionLabel[expression]}</span>
             </div>
             <figcaption>
