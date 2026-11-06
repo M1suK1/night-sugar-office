@@ -421,7 +421,8 @@ export default function App() {
     });
     return ok;
   };
-  const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual', override?: GameState) => {
+  /** v167：返回这一档最终写入的内容（没生成出来就是 undefined），控制台的 news 命令要用它回话。 */
+  const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual', override?: GameState): Promise<CityNews | undefined> => {
     const current = override ?? latestState.current ?? state;
     // 接手的第一夜固定播开场那一条，不请叙事者。
     if (current.day <= OPENING_NEWS_DAY) {
@@ -1244,6 +1245,7 @@ export default function App() {
           '  page <dispatch|base|market|records>  切换页面',
           '  generate                          让叙事者补充今晚的内容',
           '  proposal                          每日提案立即补充（先补待用事件，再补议题）',
+          '  news [主持人]                     立即生成今晚的访谈（可选：指定主持人）',
           '  witch <名字>                      让指定少女立刻魔女化（调试）',
           '  reset <名字>                      把指定少女重置回初始状态（调试，不可撤销）',
           '  contract <卡名>                   从卡库直接契约一位少女（调试，免费、不看席位）',
@@ -1292,6 +1294,28 @@ export default function App() {
         if (gaps.opinions <= 0) return `${filled.message} 议题已经满了（还缺 ${gaps.opinions} 条）。`;
         const result = await generateContent();
         return `${filled.message} 议题还缺 ${gaps.opinions} 条 → ${result.message || (result.ok ? '叙事者补充完成。' : '生成失败。')}`;
+      }
+      case 'news': case '访谈': {
+        // v167：立刻把今晚这档访谈生成出来（不推进时间，也不看是不是到点）。
+        const current = latestState.current ?? state;
+        if (current.day <= OPENING_NEWS_DAY) return `第 ${current.day} 日还只用开场那一条播报，等过了第 ${OPENING_NEWS_DAY} 日再开节目。`;
+        if (loadBalance().cityNewsEnabled !== 1) return '城市新闻已在「世界书 → 数值」里关掉了。';
+        // 可选：news <名字> 先换主持人再开节目。
+        if (arg) {
+          const pool = newsCastPool(current);
+          const picked = pool.find(person => person.id === arg) ?? pool.find(person => person.name.includes(arg) || person.title.includes(arg));
+          if (!picked) return `现场没有「${arg}」。今晚能干活的：${pool.map(person => person.name).join('、') || '一个都没有'}`;
+          const applied = act(current, { type: 'setNewsHost', girlId: picked.id });
+          if (!applied.ok) return applied.message;
+          setState(applied.state);
+          const made = await refreshCityNews('manual', applied.state);
+          return `${picked.name}接下今晚的主持。${made ? `节目已重新生成（${made.lines?.length ?? 0} 句）。` : '节目没生成出来。'}`;
+        }
+        if (newsBusyRef.current) return '节目还在写，等这一档出来。';
+        const made = await refreshCityNews('manual', current);
+        return made
+          ? `第 ${made.day} 日的访谈已就绪：${made.headline}（${made.source === 'llm' ? '叙事者' : '本地快报'}，${made.lines?.length ?? 0} 句，主持人 ${made.host?.name ?? '无'}）`
+          : '节目没有生成出来，原因看上面的提示。';
       }
       case 'contract': case '契约': case '招收': {
         // 从卡库按名字/代号找一张卡，读原文后直接契约（不收费、不看席位）。
