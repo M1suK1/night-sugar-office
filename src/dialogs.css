@@ -1010,3 +1010,107 @@ body:has(dialog[open]){overflow:hidden}.game-dialog{padding:0;background:#18171f
 .girl-portrait.imported[data-expression="shy"]{outline-color:#e8a8c866}
 .conversation-expression{margin-left:8px;padding:3px 8px;border:1px solid #f3aec933;border-radius:999px;font-size:8px;letter-spacing:.08em;color:#d9aec7;background:#f3aec90a}
 .faction-meet-btn { margin-top: 12px; align-self: flex-start; }
+
+/* ── v123 开场：玩家先写一段，叙事者据此起笔 ─────────────────────────────── */
+.story-opening {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 26px 30px 30px;
+}
+
+.story-opening-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--white-lace, #f7f2f5);
+}
+
+.story-opening-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.95;
+  color: #9a939f;
+}
+
+.story-opening-input {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 16px 16px 28px 14px;
+  border: 1px solid rgba(243, 174, 201, 0.22);
+  border-radius: 10px;
+  background: rgba(16, 13, 21, 0.72);
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.story-opening-input:focus-within {
+  border-color: rgba(243, 174, 201, 0.52);
+  background: rgba(20, 16, 27, 0.86);
+}
+
+/* 签名元素：灯还没亮的那条竖线。写了字才亮起来。 */
+.story-opening-beam {
+  flex: 0 0 auto;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(247, 242, 245, 0.14);
+  transition: background 0.22s, box-shadow 0.22s;
+}
+
+.story-opening-beam.lit {
+  background: var(--pink, #f49abd);
+  box-shadow: 0 0 10px rgba(244, 154, 189, 0.55);
+}
+
+.story-opening-input textarea {
+  flex: 1 1 auto;
+  min-height: 112px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--white-lace, #f7f2f5);
+}
+
+.story-opening-input textarea::placeholder {
+  color: rgba(154, 147, 159, 0.72);
+}
+
+.story-opening-count {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #6f6878;
+}
+
+.story-opening-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.story-opening-actions .btn {
+  min-width: 96px;
+}
+
+@media (max-width: 640px) {
+  .story-opening { padding: 18px; }
+  .story-opening-actions { flex-wrap: wrap; }
+  .story-opening-actions .btn { flex: 1 1 auto; }
+}
+
+/* 头部那颗「重写开场」，跟 vn-chip 同一套语汇，但更窄一点 */
+button.vn-chip#story-opening-rewrite {
+  padding: 2px 10px;
+  font-size: 10.5px;
+}

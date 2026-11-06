@@ -4,7 +4,7 @@ import {
   applyAddCharacterEvent, applyAddStoryline, applyAdvanceEvent, applyAdvanceStoryline,
   applyAppendStoryTurn, applyBeginStoryEvent, applyChooseStoryPassage, applyChooseStoryPort,
   applyDecideStoryChoice, applyChooseStoryOption, applyDeleteStoryTurn, applyEditStoryTurn, applyFinishStorySession, applyReplaceStoryTurn, applyResolveEvent,
-  applySetStoryPlan, applyStartCharacterEvent, applyStartStorySession, applyStartStoryline,
+  applySeedStorySession, applySetStoryPlan, applyStartCharacterEvent, applyStartStorySession, applyStartStoryline,
 } from './storyOps.ts';
 import {
   applyAcceptFactionTask, applyAdvancedRecruit, applyBorrowStability, applyCreateGirl, applyImportCard,
@@ -122,6 +122,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'advanceEvent': return applyAdvanceEvent(state, action);
     case 'beginStoryEvent': return applyBeginStoryEvent(state, action);
     case 'startStorySession': return applyStartStorySession(state, action);
+  case 'seedStorySession': return applySeedStorySession(state, action);
     case 'appendStoryTurn': return applyAppendStoryTurn(state, action);
     case 'replaceStoryTurn': return applyReplaceStoryTurn(state, action);
     case 'editStoryTurn': return applyEditStoryTurn(state, action);

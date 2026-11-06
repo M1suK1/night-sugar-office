@@ -506,26 +506,36 @@ export default function App() {
 
   // v34：交互剧情的开场白。旧图没写开场白时也在这里补一次。
   const [storyBusyTurn, setStoryBusyTurn] = useState(false);
+  /** v123：玩家写下的开场。写进去之后再请叙事者起笔；空串表示「按引子开始」。 */
+  const seedStoryOpening = (eventId: string, seed: string) => { perform({ type: 'seedStorySession', eventId, seed }); };
   useEffect(() => {
     if (!modal || modal.type !== 'event') return;
     const event = state.events.find(item => item.id === modal.id);
     if (!event || event.status !== 'active') return;
     if (event.mode !== 'session' || (event.turns?.length ?? 0) > 0) return;
     if (arcBusy) return;
+    // v123：开场不再定死。等玩家先写一段（或明确点「按引子开始」）才去请叙事者。
+    if (event.playerSeed === undefined) return;
     setArcBusy(event.id);
     void (async () => {
       const config = loadLlmConfig();
-      const cast = (event.cast?.length ? event.cast : [event.girlId]).slice(0, 3);
+      const cast = (event.cast?.length ? event.cast : [event.girlId]).slice(0, 5);
+      const seed = event.playerSeed ?? '';
       let opening = event.opening?.trim() ?? '';
       let lines: StoryLine[] = [];
       let options: string[] = [];
       // 蓝图已经写好开场白就直接用，别让叙事者再覆盖一遍。
       if (config.apiKey && !opening) {
-        const result = await generateStoryOpening(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
+        const result = await generateStoryOpening(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), seed);
         if (result.ok) { opening = result.narration; lines = result.lines; options = result.options; }
-        else notify(result.message || '开场白没有写出来，先用引子顶着。', false);
+        else {
+          // 失败就停在这一步：玩家写的那段还留着，卡片会退回输入态。
+          notify(`${result.message || '开场白没有写出来'}这一句已经记下了，可以再试一次。`, false);
+          setArcBusy(null);
+          return;
+        }
       }
-      if (!opening) opening = event.hook || '她在这里等你开口。';
+      if (!opening) opening = seed ? `${seed}\n\n${event.hook}` : (event.hook || '她在这里等你开口。');
       if (!options.length) options = ['你先开口问她', '你看一眼她手边的东西', '你什么都不说，等她先讲'];
       setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options }); return applied.ok ? applied.state : prev; });
       setArcBusy(null);
@@ -1820,7 +1830,7 @@ export default function App() {
       const subject = storyPersonOf(state, target.girlId)?.girl;
       const castPool = [...state.girls, ...state.candidates, ...factionCast];
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog vnStory={vnStory === 'on'} event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
-      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} castPool={castPool} onEnd={eventId => void endStorySession(eventId)} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
+      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} castPool={castPool} onEnd={eventId => void endStorySession(eventId)} onSeed={seedStoryOpening} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}
     {modal?.type === 'end-night' && <Dialog label="打烊与交接" onClose={() => setModal(null)}>

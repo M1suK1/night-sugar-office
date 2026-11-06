@@ -1933,30 +1933,46 @@ function storyCastBrief(girl: Girl): string {
 }
 
 /** 交互剧情的开场白：250–350 字，把在场的人与此刻的场面交代清楚，然后停住。 */
-export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[] } | { ok: false; message: string }> {
-  const started = Date.now();
-  const meta: LlmCallMeta = {};
+/**
+ * 开场提示词的上下文（v123）。
+ *
+ * 玩家写的那段话原样进来，并且明确要求模型沿用他给出的时间、地点、姿态，
+ * 不另起炉灶——否则模型会把「我推门进去，外头在下雨」改写成另一种开场。
+ */
+export function openingContext(state: GameState, event: CharacterEvent, seed = ''): string {
   const cast = storyCast(state, event);
-  const people = cast.filter(person => person.id !== 'player');
-  const briefs = people.map(person => person.brief ?? person.name).join('\n');
-  // 契约单独给一份，正文另给 appendix：这样预设里改「蓝图开场 · 结构契约」才会生效，
-  // 而且改契约不会顺手删掉在场的人和这一场的场面。
-  const context = [
+  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
+  const seedText = seed.trim().slice(0, 300);
+  return [
     `【这一段剧情】${event.title}`,
     event.hook ? `引子：${event.hook}` : '',
     // v109：以前的剧情只以摘要形式出现，不回放原文。
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
+    seedText ? `【所长的开场】${seedText}\n请从这一段起笔：沿用他给出的时间、地点、姿态与他说的第一句话，不要另起炉灶、不要换场景。` : '',
     '【在场的人】',
     briefs || '只有她和你',
     '【你】所长（player），用「你」称呼，可以是说话人。',
-    '【这一次】写这一幕的开场白，把话头留给所长。',
+    seedText ? '【这一次】接着所长写的那一段往下写第一轮，把话头交回给他。' : '【这一次】写这一幕的开场白，把话头留给所长。',
   ].filter(Boolean).join('\n');
+}
+
+/** 测试用：只看开场上下文，不真的调用模型。 */
+export function storyOpeningContextForTest(state: GameState, event: CharacterEvent, seed = ''): string {
+  return openingContext(state, event, seed);
+}
+export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[] } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  const cast = storyCast(state, event);
+  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
+  // 契约单独给一份，正文另给 appendix：这样预设里改「蓝图开场 · 结构契约」才会生效，
+  // 而且改契约不会顺手删掉在场的人和这一场的场面。
+  const context = openingContext(state, event, (seed || event.playerSeed || '').trim());
   const body = arcOpeningContract();
-  const focusGirl = [...state.girls, ...state.candidates].find(item => item.id === people[0]?.id);
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.hook, story: event.title, contractId: 'arc:opening',
-    }, { state, focus: focusGirl, focusRole: focusRoleOf(state, event) }, 0, context);
+    }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;

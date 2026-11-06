@@ -38,6 +38,8 @@ export interface EventDialogProps {
   /** 删掉自己说的那一轮。 */
   onDeleteTurn: (eventId: string, turnId: string) => void;
   onEnd: (eventId: string) => void;
+  /** v123：玩家写下的开场（空串 = 按引子开始）。同一个入口也用于重写开场。 */
+  onSeed?: (eventId: string, seed: string) => void;
   /** 蓝图正卡在选项上时，这一段能走的分支（文案只来自蓝图，不由模型编）。 */
   branch?: { storylineId: string; options: { id: string; label: string }[] };
   onBranch?: (port: string) => void;
@@ -134,7 +136,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
 }
 
 /** 交互剧情：直接套用战斗札记的全屏版式——左侧在场角色、右侧所长、中间旁白与台词，底部留行动输入框。 */
-function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
+function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, onEditTurn, onDeleteTurn, onEnd, onSeed, branch, onBranch, onClose, readOnly = false, stage = false, onText, onStage }: EventDialogProps & { stage?: boolean; onText?: () => void; onStage?: () => void }) {
   const pending = event.pendingChoice ? branch : undefined;
   const turns = event.turns ?? NO_TURNS;
   const [draft, setDraft] = useState('');
@@ -143,6 +145,19 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   const [preview, setPreview] = useState<{ id: string; expression: Expression } | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [sending, setSending] = useState(false);
+  // v123：开场由玩家先写一段，叙事者再据此起笔。
+  const [seedDraft, setSeedDraft] = useState(event.playerSeed ?? '');
+  const [rewriting, setRewriting] = useState(false);
+  const sessionActive = event.mode === 'session' && event.status === 'active' && !readOnly;
+  const empty = !(event.turns?.length) && !event.opening?.trim();
+  const waitingSeed = sessionActive && empty && event.playerSeed === undefined;
+  const writingOpening = sessionActive && empty && event.playerSeed !== undefined;
+  const rewriteOpen = rewriting && sessionActive && !readOnly;
+  // 换了一段事件、或者开场被重写过：草稿要跟着事件走，别把上一段的文字带进来。
+  useEffect(() => {
+    setSeedDraft(event.playerSeed ?? '');
+    setRewriting(false);
+  }, [event.id, event.playerSeed]);
   const end = useRef<HTMLDivElement>(null);
   /** 每一轮的 DOM 位置：新内容出现时停在它的开头，而不是滚到结尾。 */
   const turnNodes = useRef(new Map<string, HTMLElement>());
@@ -366,6 +381,65 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
     </>
   );
 
+  // ── 开场：玩家先写一段，叙事者据此起笔（v123）─────────────────────────────
+  if ((waitingSeed || writingOpening || rewriteOpen) && onSeed) {
+    const busyNow = Boolean(busy || sending) && !rewriteOpen;
+    const clearedRounds = turns.filter(turn => turn.role === 'player').length;
+    return (
+      <div className="battle-note-overlay event-overlay" role="dialog" aria-modal="true" aria-label="开场">
+        <div className="battle-note-shell">
+          <header className="battle-note-head">
+            <div className="battle-note-head-copy">
+              <span className="modal-eyebrow"><Sparkles size={13} />{rewriteOpen ? '重写开场' : `开场 · 第 ${event.day} 日`}</span>
+              <h2>{event.title}</h2>
+              <p>{event.hook}</p>
+            </div>
+            <div className="battle-note-head-meta">
+              <button id="event-close" type="button" className="icon-btn" aria-label="关闭事件" onClick={onClose}><X size={18} /></button>
+            </div>
+          </header>
+          <section className="story-opening" id="story-opening">
+            <h3 className="story-opening-title">{busyNow ? '她在等你把话说完……' : rewriteOpen ? '把这一夜重新说一遍' : '这一夜是怎么开始的？'}</h3>
+            <p className="story-opening-note">
+              {rewriteOpen
+                ? `重写会清掉这一段已有的 ${clearedRounds} 轮对话，回到开场之前。`
+                : event.playerSeed !== undefined && !busyNow
+                  ? '上一次开场没有写出来。改一改再试一次，或者按引子开始。'
+                  : '写下你进门的样子、外头的天气，或者你说的第一句。叙事者会接着这一段写开场；不写也行，那就按引子开始。'}
+            </p>
+            <div className="story-opening-input">
+              <span className={`story-opening-beam${seedDraft.trim() ? ' lit' : ''}`} aria-hidden="true" />
+              <label className="sr-only" htmlFor="story-opening-seed">你想怎么开始这一夜</label>
+              <textarea
+                id="story-opening-seed"
+                rows={5}
+                maxLength={300}
+                value={seedDraft}
+                disabled={busyNow}
+                placeholder={event.hook}
+                onChange={input => setSeedDraft(input.target.value)}
+              />
+              <span className="story-opening-count">{seedDraft.length}/300</span>
+            </div>
+            <div className="story-opening-actions">
+              <button id="story-opening-cancel" type="button" className="btn" onClick={() => { if (rewriteOpen) { setRewriting(false); setSeedDraft(event.playerSeed ?? ''); } else onClose(); }}>
+                {rewriteOpen ? '不改了' : '先不进去'}
+              </button>
+              {!rewriteOpen && (
+                <button id="story-opening-default" type="button" className="btn" disabled={busyNow} onClick={() => onSeed(event.id, '')}>
+                  按引子开始
+                </button>
+              )}
+              <button id="story-opening-start" type="button" className="btn primary" disabled={busyNow || !seedDraft.trim()} onClick={() => { setRewriting(false); onSeed(event.id, seedDraft); }}>
+                {rewriteOpen ? '清空并重写' : event.playerSeed !== undefined ? '重试开场' : '开始这一夜'}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="battle-note-overlay event-overlay" role="dialog" aria-modal="true" aria-label="角色事件">
       <div className="battle-note-shell">
@@ -377,6 +451,9 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
           </div>
           <div className="battle-note-head-meta">
             <span className="battle-note-source llm">交互剧情</span>
+            {onSeed && !readOnly && event.status === 'active' && (
+              <button id="story-opening-rewrite" type="button" className="vn-chip" onClick={() => { setSeedDraft(event.playerSeed ?? ''); setRewriting(true); }}>重写开场</button>
+            )}
             {onStage && <VnModeToggle id="session-vn-enter" onSwitch={onStage} />}
             <button id="event-close" type="button" className="icon-btn" aria-label="关闭事件" onClick={onClose}><X size={18} /></button>
           </div>

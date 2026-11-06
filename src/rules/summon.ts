@@ -1,5 +1,6 @@
 import { loadBalance } from '../balance.ts';
-import { FACTION_PURIFICATION, rosterLeader } from '../factions.ts';
+import { FACTION_PURIFICATION, rosterLeader, rosterMembers } from '../factions.ts';
+import { hostilityOf } from '../hostility.ts';
 import { clone, dateLabel } from './core.ts';
 import type { ActionResult, CharacterEvent, FactionId, GameState } from '../types.ts';
 
@@ -25,8 +26,35 @@ export function summonFactionToday(day: number): FactionId {
   return SUMMON_FACTIONS[((day % size) + size) % size] ?? SUMMON_FACTIONS[0]!;
 }
 
+/** 对立势力到场的火气门槛（v123）：到 50，对方才会派一个人过来盯着。 */
+export const RIVAL_HOSTILITY_FLOOR = 50;
+
 /**
- * 召见这件事本身：一个只出场首领的交互事件。
+ * 势力场面里的出场阵容：首领 + 一位随从，火气到门槛时再叫上对立势力的一位。
+ *
+ * v123：以前只有首领一个人站在那儿，随从明明在名册里却从不出现；
+ * 提示词里也没有谁在场，模型就自己编几个人（或者干脆写成独白）。
+ * cast 同时是说话人白名单与舞台的立绘来源，所以必须在这里定下来。
+ */
+export function factionSceneCast(state: GameState, faction: FactionId): string[] {
+  const cast: string[] = [];
+  const leader = rosterLeader(state, faction);
+  if (leader && !leader.vacant) cast.push(leader.id);
+  const mate = rosterMembers(state, faction).find(person => !cast.includes(person.id));
+  if (mate) cast.push(mate.id);
+  const hottest = hostilityOf(state, faction)[0];
+  if (hottest && hottest.track.value >= RIVAL_HOSTILITY_FLOOR) {
+    const rivalLeader = rosterLeader(state, hottest.other);
+    if (rivalLeader && !rivalLeader.vacant && !cast.includes(rivalLeader.id)) cast.push(rivalLeader.id);
+    else {
+      const rivalMate = rosterMembers(state, hottest.other).find(person => !cast.includes(person.id));
+      if (rivalMate) cast.push(rivalMate.id);
+    }
+  }
+  return cast;
+}
+/**
+ * 召见这件事本身：一个出场首领与一位随从的交互事件。
  *
  * v160：首领必须取自当前编成（`rosterLeader`），不能用静态占位；
  * 席位空缺时返回 undefined，不制造「席位空缺的传唤」。
@@ -41,7 +69,7 @@ export function buildSummonEvent(state: GameState, faction: FactionId): Characte
     hook: `${leader.name}的人把一张只写了时间的纸条压在柜台上：「今晚请所长过来一趟。」`,
     scenes: [],
     mode: 'session',
-    cast: [leader.id],
+    cast: factionSceneCast(state, faction),
     stage: 1,
     status: 'active',
     day: state.day,
@@ -84,7 +112,7 @@ export function buildMeetEvent(state: GameState, faction: FactionId, leaderName:
     hook: `你让人递了帖子。${leaderName}回话：「今晚门不锁，来的时候别带公务。」`,
     scenes: [],
     mode: 'session',
-    cast: [leaderId],
+    cast: factionSceneCast(state, faction),
     stage: 1,
     status: 'active',
     day: state.day,

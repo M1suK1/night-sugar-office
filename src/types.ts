@@ -675,6 +675,8 @@ export interface CharacterEvent {
   /** 交互剧情允许出场的人（不含玩家）。 */
   cast?: string[];
   opening?: string;
+  /** v123：玩家写下的那段开场（叙事者据此写开场白；重写时清空 opening 与 turns）。 */
+  playerSeed?: string;
   sessionDone?: boolean;
   /** 这段剧情正卡在蓝图的选项上：等玩家选完才算结束。 */
   pendingChoice?: { storylineId: string; nodeId: string };
@@ -1271,6 +1273,7 @@ export type GameAction =
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[] }
+  | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
   /** 手动改一句：玩家自己修台词/旁白文本（不动 id 与轮次）。 */

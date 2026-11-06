@@ -167,7 +167,7 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event) return { state, ok: false, message: '找不到这段剧情。' };
       if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
-      const cast = (action.cast?.length ? action.cast : event.cast?.length ? event.cast : [event.girlId]).slice(0, 3);
+      const cast = (action.cast?.length ? action.cast : event.cast?.length ? event.cast : [event.girlId]).slice(0, 5);
       const opening = (action.opening ?? event.opening ?? event.hook ?? '').trim().slice(0, 600) || event.hook;
       event.mode = 'session';
       event.cast = cast;
@@ -179,6 +179,26 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       const girl = findGirl(next, event.girlId);
       if (girl) girl.eventBadge = '!';
       return { state: next, ok: true, message: '剧情开始。' };
+}
+
+/**
+ * seedStorySession（v123）：玩家先写下这一夜怎么开始。
+ *
+ * 写入 `playerSeed` 之后 App 才会去请叙事者写开场白；同一个动作也承担「重写开场」——
+ * 把已有的 opening 与对白一起清掉，回到等玩家开口的那一步。
+ */
+export function applySeedStorySession(state: GameState, action: Extract<GameAction, { type: 'seedStorySession' }>): ActionResult {
+  const next = clone(state);
+  const event = next.events.find(item => item.id === action.eventId);
+  if (!event) return { state, ok: false, message: '找不到这段剧情。' };
+  if (event.mode && event.mode !== 'session') return { state, ok: false, message: '这一段不是交互剧情，没有开场要写。' };
+  if (event.status !== 'active') return { state, ok: false, message: '这段事件已经结束了。' };
+  event.playerSeed = action.seed.trim().slice(0, 300);
+  event.mode = 'session';
+  event.opening = undefined;
+  event.turns = undefined;
+  event.sessionDone = false;
+  return { state: next, ok: true, message: event.playerSeed ? '开场记下了。' : '按引子开场。' };
 }
 
 /** appendStoryTurn 的动作处理器（v35 从 act 拆出）。 */
