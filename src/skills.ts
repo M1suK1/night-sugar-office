@@ -62,30 +62,75 @@ export function isPoolSkill(id: string | undefined): boolean {
   return Boolean(id && skillById.has(id) && skillById.get(id)!.tier !== 'boss');
 }
 
+/** 某条技能是不是被动。 */
+export function isPassiveSkill(id: string | undefined): boolean {
+  return Boolean(id && skillById.get(id)?.tier === 'passive');
+}
+
+/** 保留第一条被动，丢掉后面的；其余技能原样保留。 */
+export function takeOnePassive(ids: readonly string[]): string[] {
+  let kept = false;
+  return ids.filter(id => {
+    if (!isPassiveSkill(id)) return true;
+    if (kept) return false;
+    kept = true;
+    return true;
+  });
+}
+
 /**
- * 给程序生成（非手写）的少女挑三条技能（v162）。
+ * 给程序生成（非手写）的少女挑三条技能（v164）。
  *
- * 以前按职阶写死三套，同职阶的人拿到的技能一模一样。现在从整个公共池里抽：
- * 一基础 / 一本职 / 一奥义，优先她的元素流派，但允许抽到「通用」与「魔物」技能。
- * 用种子保证同一份候选刷新前后一致，不同候选之间又不会重样。
+ * - 三成概率带一条被动，本流派优先，其次通用；
+ * - 其余位置从主动里按阶级权重抽（基础 55 / 本职 30 / 奥义 15），六成优先本流派；
+ * - 最多 1 条被动，且不会抽成三条同阶级；
+ * - 种子确定：同一份候选刷新前后一致，不同候选之间又不会重样。
  */
 export function pickCandidateSkills(seed: number, element?: string): string[] {
   const pool = girlSkillPool();
+  const actives = pool.filter(skill => skill.tier !== 'passive');
+  const passives = pool.filter(skill => skill.tier === 'passive');
   const rng = mulberry32(seed >>> 0);
-  const tiers: SkillTier[] = ['basic', 'signature', 'ultimate'];
   const picked: string[] = [];
-  for (const tier of tiers) {
-    const all = pool.filter(skill => skill.tier === tier);
-    if (!all.length) continue;
-    const themed = element ? all.filter(skill => skill.school === element) : [];
-    // 六成走元素流派，其余全池抽——「通用」「魔物」技能才有机会进来。
-    const source = themed.length && rng() < 0.6 ? themed : all;
-    const choice = source[Math.min(source.length - 1, Math.floor(rng() * source.length))]!;
-    if (!picked.includes(choice.id)) picked.push(choice.id);
+  const push = (id: string) => {
+    if (picked.length >= 3 || picked.includes(id)) return;
+    if (isPassiveSkill(id) && picked.some(isPassiveSkill)) return;
+    picked.push(id);
+  };
+
+  if (rng() < 0.3) {
+    const themed = element ? passives.filter(skill => skill.school === element) : [];
+    const generic = passives.filter(skill => skill.school === '通用');
+    // 六成走本流派被动，其余从通用里挑；元素没有专属被动时也落到通用。
+    const source = themed.length && rng() < 0.6 ? themed : (generic.length ? generic : passives);
+    if (source.length) push(source[Math.min(source.length - 1, Math.floor(rng() * source.length))]!.id);
   }
-  for (const skill of pool) {
+
+  let guard = 0;
+  while (picked.length < 3 && guard < 40) {
+    guard += 1;
+    const tiers = picked.map(id => skillById.get(id)?.tier);
+    const tooMany = tiers.filter(tier => tier === 'ultimate').length >= 2
+      ? 'ultimate'
+      : tiers.filter(tier => tier === 'basic').length >= 2 ? 'basic' : undefined;
+    const themed = element ? actives.filter(skill => skill.school === element) : [];
+    const source = (themed.length && rng() < 0.6 ? themed : actives)
+      .filter(skill => !picked.includes(skill.id) && skill.tier !== tooMany);
+    if (!source.length) break;
+    const weights = source.map(skill => (skill.tier === 'basic' ? 55 : skill.tier === 'signature' ? 30 : 15));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let roll = rng() * total;
+    let choice = source[source.length - 1]!;
+    for (let index = 0; index < source.length; index += 1) {
+      roll -= weights[index]!;
+      if (roll <= 0) { choice = source[index]!; break; }
+    }
+    push(choice.id);
+  }
+
+  for (const skill of [...actives, ...pool]) {
     if (picked.length >= 3) break;
-    if (!picked.includes(skill.id)) picked.push(skill.id);
+    push(skill.id);
   }
   return picked.slice(0, 3);
 }

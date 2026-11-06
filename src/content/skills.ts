@@ -1,4 +1,4 @@
-import type { Skill, SkillEffect, SkillResource, SkillSide, SkillTier } from '../types';
+import type { PassiveSpec, Skill, SkillEffect, SkillResource, SkillSide, SkillTier } from '../types';
 
 /** 技能的附加字段：命中率、施放代价、自挂效果。 */
 interface Extra {
@@ -14,7 +14,7 @@ type Seed = [
 ];
 
 /**
- * 技能池：50 条，魔法少女与魔物共用同一张表。
+ * 技能池：52 条主动 + 18 条被动，魔法少女与魔物共用同一张表。
  *
  * - `school` 只是流派标签（也是筛选条件），不是「谁能用」的开关；魔物抢到星光系技能、
  *   少女打出魔物系技能都合法，只看 `side` 对不对得上。
@@ -92,13 +92,72 @@ const seed: Seed[] = [
   ['verdict-seal', '一纸裁决', '通用', 'hp', 1.15, 1, 'enemy', 4, 'ultimate', [{ kind: 'debuff', stat: 'hit', amount: 14, duration: 2 }], '念毕整段冰冷审判文书后将印信重重按在虚空之中，强行以此纸裁决将面前强敌的攻势因果逆向抹除，大幅封杀其命中准星。', { accuracy: 72 }],
 ];
 
-export const skills: Skill[] = seed.map(([id, name, school, resource, power, targets, side, cooldown, tier, effects, description, extra]) => {
+/**
+ * v164 被动技能：和主动共用一张表、一个选择器。
+ *
+ * 条目本身不参与出招，power / targets / cooldown 全是占位；
+ * 真正的行为在 passive 字段里，由战斗层读取。
+ */
+type PassiveSeed = [id: string, name: string, school: string, description: string, passive: PassiveSpec];
+const passiveSeed: PassiveSeed[] = [
+  // ── 星光系 ────────────────────────────────────────────────────────────────
+  ['passive-star-calibration', '星轨校准', '星光系', '她把每一次抬手都先在心里走一遍星图。', { always: { hit: 7 } }],
+  ['passive-constellation-watch', '星座守夜', '星光系', '最先亮的那颗星替所有人挡了一下。', {
+    trigger: { on: 'battleStart', target: 'allies', effect: { kind: 'shield', amount: 6, duration: 2 } },
+  }],
+  // ── 糖霜系 ────────────────────────────────────────────────────────────────
+  ['passive-sugar-shell', '糖壳护心', '糖霜系', '硬糖壳裂开之前，里面的人不会碎。', { always: { guardPct: 12 } }],
+  ['passive-sweet-aftertaste', '回甘', '糖霜系', '苦味过去之后，甜才慢慢返上来。', {
+    trigger: { on: 'roundStart', target: 'self', effect: { kind: 'regen', amount: 5, duration: 1 }, belowHpPct: 0.6, maxUses: 3 },
+  }],
+  // ── 月影系 ────────────────────────────────────────────────────────────────
+  ['passive-moon-first-step', '月相先手', '月影系', '月亮升到哪个位置，她就该在哪个位置。', { always: { initiative: 5 } }],
+  ['passive-silent-coda', '静默尾音', '月影系', '声音撤走之后，动作会慢半拍。', {
+    trigger: { on: 'onHit', target: 'target', effect: { kind: 'debuff', stat: 'agility', amount: 8, duration: 2 }, oncePerRound: true },
+  }],
+  // ── 梦境系 ────────────────────────────────────────────────────────────────
+  ['passive-empathic-circuit', '共感回路', '梦境系', '她能听见别人没说出口的那半句。', { always: { stats: { empathy: 6 } } }],
+  ['passive-drift-off', '入梦', '梦境系', '只失神一拍，足够改写整场夜班。', {
+    trigger: { on: 'onHit', target: 'target', effect: { kind: 'stun', amount: 1, duration: 1 }, maxUses: 1 },
+  }],
+  // ── 自然系 ────────────────────────────────────────────────────────────────
+  ['passive-overgrowth', '蔓生', '自然系', '伤口边缘长出细小的白花。', {
+    trigger: { on: 'roundStart', target: 'self', effect: { kind: 'regen', amount: 3, duration: 1 } },
+  }],
+  ['passive-thorn-return', '荆棘回礼', '自然系', '碰过她的人，手上会留下刺。', {
+    trigger: { on: 'onHurt', target: 'attacker', effect: { kind: 'dot', amount: 4, duration: 2 }, oncePerRound: true },
+  }],
+  // ── 赤焰系 ────────────────────────────────────────────────────────────────
+  ['passive-ember', '余烬', '赤焰系', '火熄了，灰还是烫的。', { always: { damageBonus: 9 } }],
+  ['passive-wildfire', '燎原', '赤焰系', '倒下一个，火就往前挪一步。', {
+    trigger: { on: 'onKill', target: 'self', effect: { kind: 'regen', amount: 8, duration: 1 }, maxUses: 2 },
+  }],
+  // ── 魔物 ──────────────────────────────────────────────────────────────────
+  ['passive-cornered-beast', '困兽', '魔物', '被逼到墙角的东西最不该被低估。', { always: { damageBonus: 15, belowHpPct: 0.5 } }],
+  ['passive-echo-return', '残响', '魔物', '打它的人会听见自己的手在抖。', {
+    trigger: { on: 'onHurt', target: 'attacker', effect: { kind: 'debuff', stat: 'hit', amount: 6, duration: 2 }, oncePerRound: true },
+  }],
+  // ── 通用 ──────────────────────────────────────────────────────────────────
+  ['passive-night-shift-kid', '夜班底子', '通用', '熬过太多夜的人，比看起来能扛。', { always: { maxHpPct: 10 } }],
+  ['passive-plain-steady', '稳手', '通用', '手不抖，是因为已经没什么好怕的了。', { always: { hit: 4 } }],
+  ['passive-quick-step', '快一步', '通用', '她总比麻烦早到半步。', { always: { initiative: 4 } }],
+  ['passive-unbroken', '不熄', '通用', '灯灭之前，她还会再亮一次。', {
+    trigger: { on: 'onHurt', target: 'self', effect: { kind: 'regen', amount: 10, duration: 1 }, belowHpPct: 0.3, maxUses: 1 },
+  }],
+];
+
+const activeSkills: Skill[] = seed.map(([id, name, school, resource, power, targets, side, cooldown, tier, effects, description, extra]) => {
   const skill: Skill = { id, name, school, resource, power, targets, side, cooldown, tier, effects, description };
   if (extra?.accuracy !== undefined) skill.accuracy = extra.accuracy;
   if (extra?.selfCost) skill.selfCost = extra.selfCost;
   if (extra?.selfEffects) skill.selfEffects = extra.selfEffects;
   return skill;
 });
+const passiveSkills: Skill[] = passiveSeed.map(([id, name, school, description, passive]) => ({
+  id, name, school, resource: 'spirit', power: 0, targets: 0, side: 'self', cooldown: 0,
+  tier: 'passive', effects: [], description, passive,
+}));
+export const skills: Skill[] = [...activeSkills, ...passiveSkills];
 export const skillById = new Map(skills.map(s => [s.id, s]));
 /** 严格查询：找不到就返回 undefined，调用方决定如何提示，不再假装它是第一个技能。 */
 export function findSkill(id: string | undefined): Skill | undefined {
@@ -107,7 +166,7 @@ export function findSkill(id: string | undefined): Skill | undefined {
 export function getSkill(id: string): Skill {
   return findSkill(id) ?? skills[0];
 }
-export const tierLabels: Record<SkillTier, string> = { basic: '基础', signature: '本职', ultimate: '奥义', boss: 'Boss' };
+export const tierLabels: Record<SkillTier, string> = { basic: '基础', signature: '本职', ultimate: '奥义', passive: '被动', boss: 'Boss' };
 export const resourceLabels: Record<SkillResource, string> = { hp: '血量', spirit: '共情值' };
 export const effectKindLabels: Record<SkillEffect['kind'], string> = {
   dot: '持续伤害', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '持续恢复', drain: '吸血', purify: '净化',

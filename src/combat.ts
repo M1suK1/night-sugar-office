@@ -1,8 +1,9 @@
 import { witchAwarePortrait } from './factions.ts';
 import { loadBalance } from './balance.ts';
-import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, Scar, Skill, StatKey } from './types';
+import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, PassiveTrigger, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, getSkill } from './content/skills.ts';
 import { findAnySkill } from './skills.ts';
+import { attachPassive, passiveDamageBonus, passiveDamageReduction, passiveHitBonus, passiveInitiativeBonus } from './passives.ts';
 import { findMonster } from './content/monsters.ts';
 import { applyEliteBuff, eliteBuffById } from './content/eliteBuffs.ts';
 import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
@@ -70,7 +71,7 @@ function statOf(unit: BattleUnit, key: StatKey): number {
   return clamp(0, 220, value);
 }
 function hitBonus(unit: BattleUnit): number {
-  return unit.scarHit + unit.effects.reduce((sum, e) => sum + (e.stat === 'hit' && e.kind === 'buff' ? e.amount : 0) - (e.stat === 'hit' && e.kind === 'debuff' ? e.amount : 0), 0);
+  return unit.scarHit + passiveHitBonus(unit) + unit.effects.reduce((sum, e) => sum + (e.stat === 'hit' && e.kind === 'buff' ? e.amount : 0) - (e.stat === 'hit' && e.kind === 'debuff' ? e.amount : 0), 0);
 }
 /**
  * 命中率：技能基础值 + (攻方洞察 − 守方敏捷) × 0.5 + 命中修正，最低 15%、最高 95%。
@@ -93,7 +94,7 @@ export function hitChanceOf(attacker: BattleUnit, target: BattleUnit, skill: Ski
 /** 速度值：敏捷决定先手；洞察不再参与排序。 */
 export function speedOf(unit: BattleUnit): number {
   const bonus = unit.effects.reduce((sum, e) => sum + (e.stat === 'initiative' ? (e.kind === 'buff' ? e.amount : e.kind === 'debuff' ? -e.amount : 0) : 0), 0);
-  return clamp(0, 400, statOf(unit, 'agility') + bonus + (unit.initiativeBonus ?? 0));
+  return clamp(0, 400, statOf(unit, 'agility') + bonus + (unit.initiativeBonus ?? 0) + passiveInitiativeBonus(unit));
 }
 export function initiativeOf(unit: BattleUnit, roll: number): number {
   return speedOf(unit) + roll;
@@ -102,7 +103,7 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   const maxSpirit = effectiveMaxSpirit(girl);
   const gear = equipmentOf(girl);
   const extraSkills = gear.map(item => item.skillId).filter((id): id is string => Boolean(id));
-  return {
+  const unit: BattleUnit = {
     uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, expression: girl.expression, portraitSpec: girl.portraitSpec,
     hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
@@ -112,6 +113,8 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     damageBonus: gear.reduce((sum, item) => sum + (item.damageBonus ?? 0), 0),
     initiativeBonus: gear.reduce((sum, item) => sum + (item.initiativeBonus ?? 0), 0),
   };
+  attachPassive(unit, unit.skills);
+  return unit;
 }
 function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0, powerPct = 0, buffId?: string | null, hpOverride?: number): BattleUnit {
   const plain = pool.find(m => m.id === id) ?? findMonster(id);
@@ -136,11 +139,13 @@ function unitFromMonster(id: string, index: number, wounded: boolean, pool: Mons
   const stats = { magic: Math.round(monster.stats.magic * power), insight: Math.round(monster.stats.insight * power), agility: Math.round(monster.stats.agility * power), empathy: Math.round(monster.stats.empathy * power) };
   // 魔物的心防不再手写：它等于自己的共情 × 2，和血量各自独立。
   const guard = guardMax({ stats });
-  return {
+  const unit: BattleUnit = {
     uid: `enemy-${index}-${monster.id}`, side: 'enemy', name: monster.name, portrait: monster.id, color: monster.color,
     hp: startHp, maxHp, spirit: guard, maxSpirit: guard, stats, skills: [...monster.skillIds], cooldown: {}, effects: [], down: false, phase: 1,
     insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0, monster,
   };
+  attachPassive(unit, unit.skills);
+  return unit;
 }
 function alive(units: BattleUnit[], side: 'ally' | 'enemy'): BattleUnit[] {
   // 心防被打穿只会让她踉跄，不会让她退场：退场条件回到血量。
@@ -155,10 +160,10 @@ function breakGuard(unit: BattleUnit): void {
   addEffect(unit, { kind: 'stun', amount: 1, duration: GUARD_STUN_ROUNDS, source: '心防耗尽' });
 }
 function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
-  const known = unit.skills.map(findAnySkill).filter((skill): skill is Skill => Boolean(skill));
+  const known = unit.skills.map(findAnySkill).filter((skill): skill is Skill => skill !== undefined && skill.tier !== 'passive');
   const usable = known.filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || round >= 2));
   const pool = usable.length ? usable : known.filter(s => s.tier !== 'ultimate');
-  const finalPool = pool.length ? pool : [known[0] ?? getSkill(unit.skills[0] ?? 'monster-claw')];
+  const finalPool = pool.length ? pool : [known[0] ?? getSkill('plain-strike')];
   const weights = finalPool.map(s => s.tier === 'basic' ? 55 : s.tier === 'signature' ? 30 : 15);
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = rng() * total;
@@ -253,7 +258,7 @@ function damageReduction(unit: BattleUnit): number {
   const pct = rulesOf(unit)
     .filter(rule => rule.trigger === 'always' && rule.effect === 'damageReduce')
     .reduce((sum, rule) => sum + (rule.amount ?? 0), 0);
-  return clamp(0, 0.9, pct / 100);
+  return clamp(0, 0.9, pct / 100 + passiveDamageReduction(unit));
 }
 export const scarCatalog: Omit<Scar, 'id' | 'gainedAt' | 'missionId' | 'maxHpLoss' | 'fatal'>[] = [
   { name: '创伤后夜惊', kind: 'mental', condition: '每晚惊醒三次以上', description: '她不再关灯睡觉。城市的任何一声汽笛，都会让她先摸向枕边的武器。', effect: { kind: 'fatigueRecovery', amount: -8 } },
@@ -305,13 +310,15 @@ function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: n
   const scale = clamp(0.9, 1.1, 1 + (recommendedLevel - girl.level) * 0.05);
   const maxHp = Math.round((60 + girl.level * 14) * scale);
   const maxSpirit = guardMax({ stats: girl.stats });
-  return {
+  const unit: BattleUnit = {
     uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: witchAwarePortrait(girl), color: girl.color,
     girlId: girl.id, codename: girl.codename, portraitSpec: girl.portraitSpec,
     hp: maxHp, maxHp, spirit: maxSpirit, maxSpirit,
     stats: { ...girl.stats }, skills: [...girl.skills], cooldown: {}, effects: [], down: false,
     insightRoll: 0, scarHit: 0, dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
   };
+  attachPassive(unit, unit.skills);
+  return unit;
 }
 /** 战斗委托的「多怪奖励倍率」：每多一只魔物，报酬再抬一档（默认 +15%/只）。 */
 export function monsterRewardMultiplier(monsters: number, perMonsterPct = loadBalance().rewardPerExtraMonster): number {
@@ -354,6 +361,48 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       units: units.map(u => ({ ...u, stats: { ...u.stats }, skills: [...u.skills], cooldown: { ...u.cooldown }, effects: u.effects.map(e => ({ ...e })) })),
     });
   };
+  /**
+   * v164 被动触发：只认单位身上那一条被动，不递归。
+   * regen 在这里是即时回复；shield / dot / buff / debuff / stun 走 addEffect。
+   */
+  const firePassive = (unit: BattleUnit, on: PassiveTrigger, ctx: { round: number; attacker?: BattleUnit; target?: BattleUnit }) => {
+    const skill = unit.passive;
+    const trigger = skill?.passive?.trigger;
+    if (!skill || !trigger || trigger.on !== on || unit.down || unit.hp <= 0) return;
+    if (trigger.belowHpPct !== undefined && unit.hp >= unit.maxHp * trigger.belowHpPct) return;
+    const used = unit.passiveUsed?.[skill.id] ?? 0;
+    if (trigger.maxUses !== undefined && used >= trigger.maxUses) return;
+    if (trigger.oncePerRound && unit.passiveRound?.[skill.id] === ctx.round) return;
+    const targets = trigger.target === 'self' ? [unit]
+      : trigger.target === 'allies' ? units.filter(entry => entry.side === unit.side && !entry.down)
+      : trigger.target === 'attacker' ? (ctx.attacker ? [ctx.attacker] : [])
+      : (ctx.target ? [ctx.target] : []);
+    if (!targets.length) return;
+    const effect = trigger.effect;
+    let changed = false;
+    for (const target of targets) {
+      if (!target || target.down || target.hp <= 0) continue;
+      if (effect.kind === 'regen') {
+        const amount = Math.min(effect.amount ?? 0, target.maxHp - target.hp);
+        if (amount > 0) {
+          target.hp += amount;
+          target.healed += amount;
+          changed = true;
+        }
+      } else {
+        addEffect(target, { ...effect, source: skill.name });
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    if (trigger.maxUses !== undefined) unit.passiveUsed = { ...unit.passiveUsed, [skill.id]: used + 1 };
+    if (trigger.oncePerRound) unit.passiveRound = { ...(unit.passiveRound ?? {}), [skill.id]: ctx.round };
+    log({
+      round: ctx.round, actor: unit.name, skillId: skill.id, skillName: `被动 · ${skill.name}`,
+      targets: targets.map(target => target.name), hit: true,
+      note: `${effectKindLabels[effect.kind]} ${effect.amount ?? 0}${effect.duration ? ` · ${effect.duration} 轮` : ''}`,
+    });
+  };
   const outOfAction = (u: BattleUnit) =>
     u.down || u.hp <= 0 || u.effects.some(e => e.kind === 'stun' && e.remaining > 0);
   const outcomeNow = (roundEnd = false): BattleState['outcome'] | undefined => {
@@ -370,6 +419,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   let empathyPrev = new Set<string>();
   let empathyThisRound = new Set<string>();
   const brokenThisRound = new Set<string>();
+  for (const unit of units) firePassive(unit, 'battleStart', { round: 1 });
   for (let round = 1; round <= rounds; round++) {
     state.round = round;
     for (const unit of units) {
@@ -438,6 +488,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           unit.stats.agility += rule.amount ?? 0;
         }
       }
+      firePassive(unit, 'roundStart', { round });
       for (const effect of unit.effects) if (effect.kind !== 'stun') effect.remaining -= 1;
       unit.effects = unit.effects.filter(e => e.kind === 'stun' || e.remaining > 0);
       if (unit.hp <= 0) unit.down = true;
@@ -485,7 +536,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           const mitigation = 1 - damageReduction(target);
           // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
-          const gear = 1 + Math.max(-50, Math.min(200, unit.damageBonus ?? 0)) / 100;
+          const gear = 1 + Math.max(-50, Math.min(200, (unit.damageBonus ?? 0) + passiveDamageBonus(unit))) / 100;
           const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain * gear));
           let dealt = 0;
           let shield = 0;
@@ -528,9 +579,14 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             if (rule.effect === 'debuffAttacker') addEffect(unit, { kind: 'debuff', stat: rule.stat ?? 'hit', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
             if (rule.effect === 'dot') addEffect(unit, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
           }
+          if (target.hp > 0) {
+            firePassive(unit, 'onHit', { round, target });
+            firePassive(target, 'onHurt', { round, attacker: unit });
+          }
           if (target.hp <= 0) {
             target.down = true;
             unit.kills += 1;
+            firePassive(unit, 'onKill', { round });
           }
           const pct = drainPct(skill);
           if (pct > 0 && dealt > 0) {

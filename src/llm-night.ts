@@ -18,7 +18,7 @@ import { findSkill } from './content/skills.ts';
 import { factionRepresentativeOf, type FactionRepresentative } from './factions.ts';
 import { HOSTILITY_PAIRS } from './hostility.ts';
 import { FACTION_ORDER } from './territories.ts';
-import { findAnySkill, isBossSkill } from './skills.ts';
+import { findAnySkill, isBossSkill, takeOnePassive } from './skills.ts';
 import { findMonster, monsters } from './content/monsters.ts';
 import { createSeedPack } from './content/seed-pack.ts';
 import { factionBrief, factionTagLabel } from './factions.ts';
@@ -668,7 +668,7 @@ export function parseMonster(ctx: Ctx, value: unknown): NightMonsterSpec {
   const path = 'monster';
   const body = record(ctx, value, path);
   const stats = parseStats(ctx, body.stats, `${path}.stats`, 30, 110, 60);
-  const skillIds = stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 4);
+  const skillIds = takeOnePassive(stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 4));
   for (const id of skillIds) {
     if (!findAnySkill(id)) { error(ctx, `${path}.skillIds`, `技能「${id}」不在技能目录里`); continue; }
     // Boss 技能只挂在 Boss 身上：这一夜的魔物如果被写成王座/灾厄，允许它带一组。
@@ -712,7 +712,7 @@ function parseCandidate(ctx: Ctx, value: unknown): NightCandidateSpec {
       total += 1;
     }
   }
-  const skillIds = stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 3);
+  const skillIds = takeOnePassive(stringArray(ctx, body.skillIds, `${path}.skillIds`, 1, 3));
   for (const id of skillIds) if (!findSkill(id)) error(ctx, `${path}.skillIds`, `技能「${id}」不在技能目录里`);
   const traitsRaw = body.traits;
   const candidateTraits: NightCandidateSpec['traits'] = [];

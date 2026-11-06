@@ -37,7 +37,7 @@ export type MissionStatus = 'open' | 'active' | 'done' | 'expired';
 export type GoalKind = '战斗' | '调查' | '社交' | '生活' | '成长';
 export type SkillResource = 'hp' | 'spirit';
 export type SkillSide = 'enemy' | 'ally' | 'self';
-export type SkillTier = 'basic' | 'signature' | 'ultimate' | 'boss';
+export type SkillTier = 'basic' | 'signature' | 'ultimate' | 'passive' | 'boss';
 export type EffectKind = 'dot' | 'stun' | 'shield' | 'buff' | 'debuff' | 'regen' | 'drain' | 'purify';
 export type TraitPolarity = 'positive' | 'negative' | 'neutral';
 export type Expression = 'calm' | 'smile' | 'surprise' | 'sad' | 'angry' | 'shy';
@@ -702,6 +702,38 @@ export interface SkillEffect {
   /** 状态模板的种类，用于技能编辑器的筛选。 */
   category?: EffectCategory;
 }
+export type PassiveTrigger = 'battleStart' | 'roundStart' | 'onHit' | 'onHurt' | 'onKill';
+
+/** v164：被动技能的常驻修正与触发效果；只挂在 tier === 'passive' 的技能上。 */
+export interface PassiveSpec {
+  always?: {
+    hit?: number;
+    initiative?: number;
+    /** 百分比整数：9 就是 +9%。 */
+    damageBonus?: number;
+    /** 百分比整数，最多 20。 */
+    damageReduce?: number;
+    /** 百分比整数，最多 15。 */
+    maxHpPct?: number;
+    /** 心防上限百分比，最多 15。 */
+    guardPct?: number;
+    stats?: Partial<Record<StatKey, number>>;
+    /** 满足血量条件时常驻生效；不写就是一直生效。 */
+    belowHpPct?: number;
+  };
+  trigger?: {
+    on: PassiveTrigger;
+    target: 'self' | 'allies' | 'attacker' | 'target';
+    effect: SkillEffect;
+    /** 只有回合开始 / 受击时用：血量低于该比例才触发。 */
+    belowHpPct?: number;
+    /** 每场最多触发几次；1 等同「每场一次」。 */
+    maxUses?: number;
+    /** 每轮最多触发一次，用来卡多目标技能。 */
+    oncePerRound?: boolean;
+  };
+}
+
 export interface Skill {
   id: string; name: string; school: string; resource: SkillResource; power: number;
   targets: number; side: SkillSide; cooldown: number; tier: SkillTier;
@@ -712,6 +744,8 @@ export interface Skill {
   selfCost?: { resource: SkillResource; pct: number } | null;
   /** 施放成功后挂到自己身上的效果，绕过命中判定。 */
   selfEffects?: SkillEffect[] | null;
+  /** 被动技能行为；只有 tier === 'passive' 的条目会读它。 */
+  passive?: PassiveSpec;
 }
 export interface ActiveEffect extends SkillEffect {
   source: string; remaining: number;
@@ -999,6 +1033,12 @@ export interface BattleUnit {
   portraitSpec?: PortraitSpec;
   /** 心防已被打穿：本场不再恢复，共情伤害转成血量伤害。 */
   spiritBroken?: boolean;
+  /** v164：本场携带的被动技能（最多 1 条）。 */
+  passive?: Skill;
+  /** 每场触发次数，按被动 id 计数。 */
+  passiveUsed?: Record<string, number>;
+  /** 每轮触发记录，按被动 id 记最后一次触发的轮次。 */
+  passiveRound?: Record<string, number>;
 }
 export interface BattleCalc {
   /** v33 起命中由洞察对敏捷计算；`agility` 只留给旧战报回放。 */

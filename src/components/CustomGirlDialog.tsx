@@ -6,7 +6,8 @@ import { STAT_MAX, STAT_MIN, rollStats, statsForArchetype, type PlayableArchetyp
 import { tierLabels } from '../content/skills';
 import { sanitizeVoice } from '../voice';
 import { defaultSkillAccuracy } from '../combat';
-import { filterSkills, girlSkillPool } from '../skills';
+import { filterSkills, girlSkillPool, isPassiveSkill } from '../skills';
+import { passiveText } from '../passives';
 import { traits, traitPolarityLabel } from '../content/traits';
 import { statLabels } from '../game';
 import { factionTagFor, factionTagLabel, girlFactionColors, girlFactionLabels } from '../factions';
@@ -75,7 +76,7 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
   const [skillIds, setSkillIds] = useState<string[]>([]);
   /** 技能池筛选：流派 + 阶级，只影响列表，不影响已选。 */
   const [skillSchool, setSkillSchool] = useState('全部');
-  const [skillTier, setSkillTier] = useState<'all' | 'basic' | 'signature' | 'ultimate'>('all');
+  const [skillTier, setSkillTier] = useState<'all' | 'basic' | 'signature' | 'ultimate' | 'passive'>('all');
   const [draftTraits, setDraftTraits] = useState<DraftTrait[]>(() => emptyDraftTraits());  const [appearance, setAppearance] = useState('短发，发梢有一缕不合规矩的挑染。'); const [personality, setPersonality] = useState('嘴硬心软，习惯把紧张藏进玩笑里。'); const [outfitDescription, setOutfitDescription] = useState('自己改短的制服外套，袖口缝着一颗星形扣子。');
   const [voiceTone, setVoiceTone] = useState('');
   const [voiceHabits, setVoiceHabits] = useState('');
@@ -166,7 +167,12 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
 
   const adjust = (key: StatKey, delta: number) => setStats(prev => ({ ...prev, [key]: Math.max(STAT_MIN, Math.min(STAT_MAX, prev[key] + delta)) }));
   const chooseArchetype = (next: PlayableArchetype) => { setArchetype(next); setStats(statsForArchetype(next)); };
-  const toggleSkill = (id: string) => setSkillIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : prev.length >= 3 ? prev : [...prev, id]);
+  const toggleSkill = (id: string) => {
+    if (skillIds.includes(id)) { setSkillIds(skillIds.filter(s => s !== id)); return; }
+    if (skillIds.length >= 3) return;
+    if (isPassiveSkill(id) && skillIds.some(isPassiveSkill)) { setMessage('最多只能带 1 个被动技能。'); return; }
+    setSkillIds([...skillIds, id]);
+  };
   const fillTrait = (trait: { name: string; description: string; polarity: TraitPolarity }) => setDraftTraits(prev => {
     const copy = [...prev];
     const blank = copy.findIndex(item => !item.name.trim());
@@ -350,13 +356,13 @@ export function CustomGirlDialog({ onCreate, onGenerate }: { onCreate: (draft: G
     </div>}
 
     {step === 2 && <div className="custom-step-body">
-      <h2>留下三种施法方式。</h2><p className="muted">少女与魔物共用同一个技能池，按流派和阶级挑就行；建议一基础、一本职、一奥义。已选 {skillIds.length}/3。</p>
+      <h2>留下三种施法方式。</h2><p className="muted">少女与魔物共用同一个技能池，按流派和阶级挑就行；最多带 1 条被动。已选 {skillIds.length}/3。</p>
       <div className="custom-skill-filter">
         <label className="field"><span>流派</span><select id="custom-skill-school" value={skillSchool} onChange={event => setSkillSchool(event.target.value)}>{['全部', ...skillSchools].map(school => <option key={school} value={school}>{school}</option>)}</select></label>
-        <label className="field"><span>阶级</span><select id="custom-skill-tier" value={skillTier} onChange={event => setSkillTier(event.target.value as 'all' | 'basic' | 'signature' | 'ultimate')}>{(['all', 'basic', 'signature', 'ultimate'] as const).map(tier => <option key={tier} value={tier}>{tier === 'all' ? '全部' : tierLabels[tier]}</option>)}</select></label>
+        <label className="field"><span>阶级</span><select id="custom-skill-tier" value={skillTier} onChange={event => setSkillTier(event.target.value as 'all' | 'basic' | 'signature' | 'ultimate' | 'passive')}>{(['all', 'basic', 'signature', 'ultimate', 'passive'] as const).map(tier => <option key={tier} value={tier}>{tier === 'all' ? '全部' : tierLabels[tier]}</option>)}</select></label>
         <span className="custom-skill-count">筛出 {pickerSkills.length} 条</span>
       </div>
-      <div className="custom-pick-list">{pickerSkills.map(skill => <button key={skill.id} id={`custom-skill-${skill.id}`} type="button" className={`custom-pick ${skillIds.includes(skill.id) ? 'picked' : ''}`} aria-pressed={skillIds.includes(skill.id)} onClick={() => toggleSkill(skill.id)}><span className={`tier tier-${skill.tier}`}>{tierLabels[skill.tier]}</span><b>{skill.name}</b><small>{skill.school} · {skill.power}% · {skill.targets} 体 · 命中 {skill.accuracy ?? defaultSkillAccuracy(skill.targets)}% · {skill.description}</small>{skillIds.includes(skill.id) && <Check size={14} />}</button>)}</div>
+      <div className="custom-pick-list">{pickerSkills.map(skill => <button key={skill.id} id={`custom-skill-${skill.id}`} type="button" className={`custom-pick ${skillIds.includes(skill.id) ? 'picked' : ''}`} aria-pressed={skillIds.includes(skill.id)} onClick={() => toggleSkill(skill.id)}><span className={`tier tier-${skill.tier}`}>{tierLabels[skill.tier]}</span><b>{skill.name}</b><small>{skill.tier === 'passive' ? `${skill.school} · ${passiveText(skill)}` : `${skill.school} · ${skill.power}% · ${skill.targets} 体 · 命中 ${skill.accuracy ?? defaultSkillAccuracy(skill.targets)}% · ${skill.description}`}</small>{skillIds.includes(skill.id) && <Check size={14} />}</button>)}</div>
     </div>}
 
     {step === 3 && <div className="custom-step-body">

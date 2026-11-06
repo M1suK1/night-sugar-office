@@ -3712,12 +3712,13 @@ test('显式 accuracy 优先，并夹在 20–95 之间', () => {
 });
 
 test('技能池守则：群体写满 6 目标、倍率摊薄，奥义最多 3 个目标', () => {
-  for (const skill of skills) {
+  const actives = skills.filter(skill => skill.tier !== 'passive');
+  for (const skill of actives) {
     assert.ok(skill.targets >= 1 && skill.targets <= MAX_SKILL_TARGETS, `${skill.id} 的目标数 ${skill.targets} 越界`);
     if (skill.targets >= 4) assert.ok(skill.power <= 0.6, `${skill.id} 打 ${skill.targets} 个目标却还有 ${skill.power} 倍率`);
     if (skill.tier === 'ultimate') assert.ok(skill.targets <= 3, `${skill.id} 是奥义却有 ${skill.targets} 个目标`);
   }
-  assert.ok(skills.some(skill => skill.targets === MAX_SKILL_TARGETS), '池子里至少要有一条写满 6 目标的群体技能');
+  assert.ok(actives.some(skill => skill.targets === MAX_SKILL_TARGETS), '池子里至少要有一条写满 6 目标的群体技能');
 });
 
 test('委托里的魔物超过 6 只会被夹到 6 只', () => {
@@ -3730,10 +3731,11 @@ test('委托里的魔物超过 6 只会被夹到 6 只', () => {
 
 // ── v20 §1：一个技能池，少女与魔物共用；Boss 另起一组 ─────────────────────
 
-test('技能池只有一个：52 条公共池，少女和魔物拿到的是同一份', () => {
+test('技能池只有一个：52 条主动 + 18 条被动，少女和魔物拿到的是同一份', () => {
   const girlPool = girlSkillPool();
   const monsterPool = monsterSkillPool();
-  assert.equal(girlPool.length, 52);
+  assert.equal(girlPool.filter(skill => skill.tier !== 'passive').length, 52);
+  assert.equal(girlPool.length, 70);
   assert.deepEqual(monsterPool.map(skill => skill.id), girlPool.map(skill => skill.id));
   assert.ok(girlPool.every(skill => skill.tier !== 'boss'), '公共池里不能混进 Boss 技能');
   for (const tier of ['basic', 'signature', 'ultimate'] as const) {

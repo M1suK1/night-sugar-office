@@ -5,6 +5,7 @@ import { cardboxReport } from '../cardbox.ts';
 import { customOutfitFor } from '../rules/outfits.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
 import { getSkill } from '../content/skills.ts';
+import { isPassiveSkill } from '../skills.ts';
 import { representativeNameOf, sanitizeGirlFaction } from '../factions.ts';
 import { traitById } from '../content/traits.ts';
 import { girlCardHash } from '../cards.ts';
@@ -222,6 +223,7 @@ export function importCardInto(next: GameState, card: GirlCard): { ok: true; nam
   }
   if (next.candidates.length >= next.poolLimits.candidates) return { ok: false, message: `候选名册已满（${next.poolLimits.candidates} 位），请先移除一位候选或到设置中调高上限。` };
   if (!g.name || !Array.isArray(g.skillIds) || g.skillIds.length !== 3) return { ok: false, message: '契约卡资料不完整。' };
+  if (g.skillIds.filter(isPassiveSkill).length > 1) return { ok: false, message: '最多只能带 1 个被动技能。' };
   const stats = { ...g.stats };
   const baseMaxHp = Math.round(96 + stats.empathy * 0.3);
   // 卡片自带定义的特性（自定义特性）优先；旧卡只写了 id，就只能靠全局目录。
@@ -326,6 +328,7 @@ export function applyCreateGirl(state: GameState, action: Extract<GameAction, { 
       const sum = stats.magic + stats.insight + stats.agility + stats.empathy;
       if (Object.values(stats).some(v => !Number.isFinite(v) || v < 40 || v > 90) || sum !== 260) return { state, ok: false, message: '四维每项需在 40–90，且总和必须为 260。' };
       if (draft.skillIds.length !== 3 || new Set(draft.skillIds).size !== 3) return { state, ok: false, message: '请选择三个不同的技能。' };
+      if (draft.skillIds.filter(isPassiveSkill).length > 1) return { state, ok: false, message: '最多只能带 1 个被动技能。' };
       if (draft.traits.length > 3) return { state, ok: false, message: '最多填写三个特性。' };
       const traits: Trait[] = draft.traits.filter(trait => trait.name.trim()).slice(0, 3).map(trait => ({
         id: `custom-trait-${hashText(`${trait.name}:${draft.name}`).toString(16)}`,

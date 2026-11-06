@@ -9,6 +9,7 @@ import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } f
 import { clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
+import { passiveText } from '../passives';
 import { skillAccuracy } from '../combat';
 import { contractLabel, pensionArrears, pensionFor, renewalCost } from '../contracts';
 import { expNeeded, progressLabel, statHint } from '../progression';
@@ -257,16 +258,16 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
             <div className="skill-list">
               {girl.skills.map(id => findSkill(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill)).map(skill => (
                   <article key={skill.id} className={`skill-card tier-${skill.tier}`}>
-                    <div className="skill-card-head"><span className="skill-tier">{tierLabels[skill.tier]}</span><h3>{skill.name}</h3><em>{resourceLabels[skill.resource]} · 倍率 {skill.power.toFixed(2)}</em></div>
+                    <div className="skill-card-head"><span className="skill-tier">{tierLabels[skill.tier]}</span><h3>{skill.name}</h3><em>{skill.tier === 'passive' ? '常驻 / 触发' : `${resourceLabels[skill.resource]} · 倍率 ${skill.power.toFixed(2)}`}</em></div>
                     <p>{skill.description}</p>
-                    <div className="skill-meta">
+                    {skill.tier === 'passive' ? <div className="skill-meta"><span>{passiveText(skill)}</span></div> : <div className="skill-meta">
                       <span><Cross size={11} />{resourceLabels[skill.resource]}</span>
                       <span><Users size={11} />{skill.side === 'enemy' ? `敌 ${skill.targets}` : skill.side === 'ally' ? `友 ${skill.targets}` : '自身'}</span>
                       <span><Timer size={11} />冷却 {skill.cooldown} 轮</span>
                       <span className="skill-accuracy">基础命中 {skillAccuracy(skill)}%</span>
                       {skill.selfCost && <span className="skill-cost">代价：{skill.selfCost.pct}% {resourceLabels[skill.selfCost.resource]}</span>}
                       {skill.tier === 'ultimate' && <span className="ultimate-note">第 2 轮起可用</span>}
-                    </div>
+                    </div>}
                     {skill.effects.length > 0 && <div className="skill-effects">{skill.effects.map((e, i) => <span key={i}>{effectText(e)}</span>)}</div>}
                   </article>
                 ))}

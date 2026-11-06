@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { girlSkillPool, isPoolSkill, pickCandidateSkills } from '../src/skills.ts';
+import { girlSkillPool, isPassiveSkill, isPoolSkill, pickCandidateSkills } from '../src/skills.ts';
 import { findSkill } from '../src/content/skills.ts';
 import { makeCandidate } from '../src/rules/candidate.ts';
 import { createInitialState } from '../src/game.ts';
 
-test('v162 程序生成的少女：一基础 / 一本职 / 一奥义，且不重复', () => {
+test('v164 程序生成的少女：三条不重复，最多一条被动', () => {
   for (let seed = 1; seed <= 30; seed += 1) {
     const ids = pickCandidateSkills(seed, '星光系');
     assert.equal(ids.length, 3);
     assert.equal(new Set(ids).size, 3);
     for (const id of ids) assert.ok(isPoolSkill(id), id);
-    const tiers = ids.map(id => findSkill(id)?.tier).sort();
-    assert.deepEqual(tiers, ['basic', 'signature', 'ultimate']);
+    assert.ok(ids.filter(isPassiveSkill).length <= 1, '最多 1 条被动');
+    assert.ok(ids.filter(id => findSkill(id)?.tier === 'ultimate').length <= 2, '不能三条全是奥义');
   }
 });
 
@@ -48,6 +48,7 @@ test('v162 makeCandidate 不再按职阶发同一套技能', () => {
     assert.equal(ids.length, 3);
     assert.equal(new Set(ids).size, 3);
     for (const id of ids) assert.ok(isPoolSkill(id), id);
+    assert.ok(ids.filter(isPassiveSkill).length <= 1, '最多 1 条被动');
   }
   assert.ok(!combos.has('glimmer-spear,peach-ward,starlight-fall') || combos.size > 1);
 });

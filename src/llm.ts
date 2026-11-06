@@ -2262,7 +2262,7 @@ async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hin
   const skillList = girlSkillPool().map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
-skillIds 只能从以下 ID 中选三个：${skillList}
+skillIds 只能从以下 ID 中选三个，且最多 1 条被动（阶级写作「被动」）：${skillList}
 traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
 voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
   const visualRule = portrait
@@ -2289,12 +2289,15 @@ voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${pr
     const str = (key: string, fallback: string, limit = 160) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, limit) : fallback;
     const knownSkills = girlSkillPool();
     const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && knownSkills.some(s => s.id === id)) : [];
-    const skillIds = [...new Set(pickedSkills)].slice(0, 3);
+    const skillIds = takeOnePassive([...new Set(pickedSkills)].slice(0, 3));
+    const hasPassive = skillIds.some(isPassiveSkill);
     // 模型给漏了或写错了，也按元素抽三条，而不是永远补池子开头那几条。
     if (skillIds.length < 3) {
       for (const id of pickCandidateSkills([...((raw.name as string) ?? '')].reduce((sum, ch) => sum + ch.charCodeAt(0), 0), str('element', '星光系', 12))) {
         if (skillIds.length >= 3) break;
-        if (!skillIds.includes(id)) skillIds.push(id);
+        if (skillIds.includes(id)) continue;
+        if (hasPassive && isPassiveSkill(id)) continue;
+        skillIds.push(id);
       }
     }
     const picked = Array.isArray(raw.traits) ? raw.traits.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
@@ -2333,7 +2336,7 @@ import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
 import { leaderById, EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
-import { girlSkillPool, pickCandidateSkills } from './skills.ts';
+import { girlSkillPool, isPassiveSkill, pickCandidateSkills, takeOnePassive } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';

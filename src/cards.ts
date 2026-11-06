@@ -116,6 +116,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
     if (!Number.isFinite(value) || (value as number) < 40 || (value as number) > 150) return { ok: false, message: `能力值 ${key} 超出 40–150。` };
   }
   if (!Array.isArray(g.skillIds) || g.skillIds.length !== 3 || new Set(g.skillIds).size !== 3 || g.skillIds.some(id => !skillById.has(id))) return { ok: false, message: '技能必须是三个不同的已知技能。' };
+  if (g.skillIds.filter(id => skillById.get(id)?.tier === 'passive').length > 1) return { ok: false, message: '最多只能带 1 个被动技能。' };
   if (!Array.isArray(g.traitIds)) return { ok: false, message: '特性数量或标识无效。' };
   const traits = resolveCardTraits(g.traitIds, (g as Record<string, unknown>).traits);
   const declaredTraits = new Set(g.traitIds.filter((id): id is string => typeof id === 'string')).size;

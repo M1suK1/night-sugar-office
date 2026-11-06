@@ -10,7 +10,7 @@ import { factionTagFor, leaderById, sanitizeGirlFaction } from '../factions.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { hashText } from '../rules/core.ts';
 import { sanitizeStoryPlan } from '../storyplan.ts';
-import { isBossSkill, pickCandidateSkills } from '../skills.ts';
+import { isBossSkill, pickCandidateSkills, takeOnePassive } from '../skills.ts';
 import { statsAtLevel } from '../progression.ts';
 import { FACTION_ORDER } from '../territories.ts';
 import type { FactionGirl, FactionId, FactionLeader, FactionRoster, GameState, Girl, GirlFaction, Outfit, StatKey , Expression} from '../types.ts';
@@ -66,7 +66,7 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     level,
     stats: statsAtLevel(sanitizeSubjectStats(src.stats), statsFrom, level, src.archetype ?? '输出'),
     statsLevel: level,
-    skillIds: Array.isArray(src.skillIds) ? src.skillIds.filter((sid): sid is string => typeof sid === 'string' && !isBossSkill(sid)).slice(0, 6) : [],
+    skillIds: Array.isArray(src.skillIds) ? takeOnePassive(src.skillIds.filter((sid): sid is string => typeof sid === 'string' && !isBossSkill(sid))).slice(0, 6) : [],
     archetype: src.archetype ?? '输出',
     // v85：原属势力是卡面带进来的信息，读档不要把它抹成现属席位。
     origin: src.origin === 'association' || src.origin === 'government' || src.origin === 'witch' ? src.origin : faction,
@@ -101,7 +101,7 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     level,
     stats: statsAtLevel(sanitizeSubjectStats(src.stats), statsFrom, level, '输出'),
     statsLevel: level,
-    skills: Array.isArray(src.skills) ? src.skills.filter((sid): sid is string => typeof sid === 'string' && !isBossSkill(sid)).slice(0, 6) : [],
+    skills: Array.isArray(src.skills) ? takeOnePassive(src.skills.filter((sid): sid is string => typeof sid === 'string' && !isBossSkill(sid))).slice(0, 6) : [],
     tag: faction,
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
     note: '由事务所编入名册的少女。',

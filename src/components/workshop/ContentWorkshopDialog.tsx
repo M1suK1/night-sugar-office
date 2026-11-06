@@ -6,6 +6,7 @@ import { representativeNameOf } from '../../factions';
 import { suggestedLevel } from '../../missionLevel';
 import { monsters as monsterRegistry, rankOrder } from '../../content/monsters';
 import { effectText, resourceLabels, skills as skillRegistry, tierLabels } from '../../content/skills';
+import { isPassiveSkill } from '../../skills';
 import { EFFECT_CATEGORIES, EFFECT_CATEGORY_LABELS, findEffectPreset, skillEffectPresets } from '../../content/effectPresets';
 import { districts } from '../../districts';
 import { missionTemplates } from '../../game';
@@ -707,7 +708,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                 <div className="workshop-grid">
                   <label className="field"><span>名称</span><input id="workshop-name" value={skill.name} disabled={!editable} onChange={event => patchSkill({ name: event.target.value })} /></label>
                   <label className="field"><span>流派</span><input id="workshop-school" value={skill.school} disabled={!editable} onChange={event => patchSkill({ school: event.target.value })} /></label>
-                  <label className="field"><span>阶级</span><select id="workshop-tier" value={skill.tier} disabled={!editable} onChange={event => patchSkill({ tier: event.target.value as Skill['tier'] })}>{Object.entries(tierLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label className="field"><span>阶级</span><select id="workshop-tier" value={skill.tier} disabled={!editable} onChange={event => patchSkill({ tier: event.target.value as Skill['tier'] })}>{Object.entries(tierLabels).filter(([value]) => value !== 'passive').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label className="field"><span>消耗</span><select id="workshop-resource" value={skill.resource} disabled={!editable} onChange={event => patchSkill({ resource: event.target.value as Skill['resource'] })}>{Object.entries(resourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label className="field"><span>作用对象</span><select id="workshop-side" value={skill.side} disabled={!editable} onChange={event => patchSkill({ side: event.target.value as Skill['side'] })}><option value="enemy">敌方单体</option><option value="ally">友方</option><option value="self">自身</option></select></label>
                   <label className="field"><span>威力</span><input id="workshop-power" type="number" step="0.1" value={skill.power} disabled={!editable} onChange={event => patchSkill({ power: num(event.target.value) })} /></label>
@@ -753,7 +754,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                   <label className="field"><span>阶级</span><select id="workshop-item-tier" value={tierOf(item)} disabled={!editable} onChange={event => patchItem({ tier: Number(event.target.value) as Equipment['tier'] })}>{TIER_ORDER.map(value => <option key={value} value={value}>{TIER_LABEL[value]}</option>)}</select></label>
                   <label className="field"><span>价格</span><input id="workshop-price" type="number" value={item.price} disabled={!editable} onChange={event => patchItem({ price: Math.max(0, num(event.target.value)) })} /></label>
                   <label className="field"><span>声望要求</span><input id="workshop-standing" type="number" value={item.standingReq} disabled={!editable} onChange={event => patchItem({ standingReq: Math.max(0, num(event.target.value)) })} /></label>
-                  <label className="field"><span>附带技能</span><select id="workshop-skill" value={item.skillId ?? ''} disabled={!editable} onChange={event => patchItem({ skillId: event.target.value || undefined })}><option value="">无</option>{skillRegistry.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                  <label className="field"><span>附带技能</span><select id="workshop-skill" value={item.skillId ?? ''} disabled={!editable} onChange={event => patchItem({ skillId: event.target.value || undefined })}><option value="">无</option>{skillRegistry.filter(entry => entry.tier !== 'passive').map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
                   <label className="field"><span>被动</span><input id="workshop-passive" value={item.passive ?? ''} disabled={!editable} onChange={event => patchItem({ passive: event.target.value || undefined })} /></label>
                   <label className="field"><span>消耗品效果</span><select id="workshop-consumable" value={item.effect ?? ''} disabled={!editable} onChange={event => patchItem({ effect: (event.target.value || undefined) as Equipment['effect'] })}><option value="">无</option>{CONSUMABLES.map(value => <option key={value} value={value}>{CONSUMABLE_LABELS[value]}</option>)}</select></label>
                   <label className="field"><span>效果数值</span><input id="workshop-amount" type="number" value={item.amount ?? 0} disabled={!editable} onChange={event => patchItem({ amount: num(event.target.value) })} /></label>
@@ -831,12 +832,12 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                         key={`${monster.id}-skill-${index}`}
                         idPrefix="workshop-monster-skill"
                         index={index}
-                        options={allSkills.map(entry => ({ value: entry.id, label: entry.name, note: `${tierLabels[entry.tier]} · ${resourceLabels[entry.resource]}`, group: tierLabels[entry.tier] }))}
+                        options={allSkills.filter(entry => !(skillSlots.some((slot, at) => at !== index && isPassiveSkill(slot)) && entry.tier === 'passive')).map(entry => ({ value: entry.id, label: entry.name, note: `${tierLabels[entry.tier]} · ${entry.tier === 'passive' ? '常驻 / 触发' : resourceLabels[entry.resource]}`, group: tierLabels[entry.tier] }))}
                         value={value}
                         disabled={!editable}
                         placeholder="选择技能"
                         filterLabel="全部阶级"
-                        groupOrder={[tierLabels.basic, tierLabels.signature, tierLabels.ultimate]}
+                        groupOrder={[tierLabels.basic, tierLabels.signature, tierLabels.ultimate, tierLabels.passive]}
                         taken={new Set(skillSlots.filter((entry, at) => Boolean(entry) && at !== index))}
                         onChange={next => setSkillAt(index, next)}
                         onRemove={skillSlots.length > 1 ? () => removeSkillSlot(index) : undefined}
@@ -928,7 +929,7 @@ export function ContentWorkshopDialog({ state, library, onCommit, onDeployMissio
                       {phase.skillIds.map((skillId, at) => (
                         <div className="workshop-row" key={`${index}-${at}`}>
                           <select id={`workshop-boss-phase-${index + 1}-skill-${at}`} value={skillId} disabled={!editable} onChange={event => patchBossPhase(index, { skillIds: phase.skillIds.map((id, pos) => pos === at ? event.target.value : id) })}>
-                            {skillRegistry.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+                            {skillRegistry.filter(entry => entry.tier !== 'passive').map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
                           </select>
                           <button id={`workshop-boss-phase-${index + 1}-skill-remove-${at}`} className="icon-btn" disabled={!editable || phase.skillIds.length <= 1} aria-label="移除技能" onClick={() => patchBossPhase(index, { skillIds: phase.skillIds.filter((_, pos) => pos !== at) })}><Trash2 size={12} /></button>
                         </div>

@@ -194,6 +194,21 @@ export function sanitizeSkill(raw: unknown): Skill | undefined {
   return skill;
 }
 
+function isPassiveId(id: string | undefined): boolean {
+  return Boolean(id && skillById.get(id)?.tier === 'passive');
+}
+
+/** 一组技能里最多留 1 条被动；其余原样保留。 */
+function keepOnePassive(ids: string[]): string[] {
+  let kept = false;
+  return ids.filter(id => {
+    if (!isPassiveId(id)) return true;
+    if (kept) return false;
+    kept = true;
+    return true;
+  });
+}
+
 export function sanitizeItem(raw: unknown, skillPool: Set<string> = new Set(skillById.keys())): Equipment | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const value = raw as Record<string, unknown>;
@@ -218,7 +233,7 @@ export function sanitizeItem(raw: unknown, skillPool: Set<string> = new Set(skil
   };
   if (value.passive) item.passive = text(value.passive, 120);
   if (Object.keys(stats).length) item.stats = stats;
-  if (typeof value.skillId === 'string' && skillPool.has(value.skillId)) item.skillId = value.skillId;
+  if (typeof value.skillId === 'string' && skillPool.has(value.skillId) && !isPassiveId(value.skillId)) item.skillId = value.skillId;
   if (value.corruptionPerBattle !== undefined) item.corruptionPerBattle = Math.round(number(value.corruptionPerBattle, 0, -20, 20));
   if (value.maxHpBonus !== undefined) item.maxHpBonus = Math.round(number(value.maxHpBonus, 0, 0, 300));
   delete item.spiritBonus;
@@ -258,9 +273,11 @@ export function sanitizeMonster(raw: unknown, skillPool: Set<string> = new Set(s
   const specRaw = (value.spec && typeof value.spec === 'object' ? value.spec : {}) as Record<string, unknown>;
   const paletteRaw = (specRaw.palette && typeof specRaw.palette === 'object' ? specRaw.palette : {}) as Record<string, unknown>;
   const codexRaw = (value.codex && typeof value.codex === 'object' ? value.codex : {}) as Record<string, unknown>;
-  const skillIds = Array.isArray(value.skillIds)
-    ? [...new Set(value.skillIds.filter((entry): entry is string => typeof entry === 'string' && skillPool.has(entry)))].slice(0, 6)
-    : [];
+  const limitedSkills = keepOnePassive(Array.isArray(value.skillIds)
+    ? [...new Set(value.skillIds.filter((entry): entry is string => typeof entry === 'string' && skillPool.has(entry)))]
+    : []).slice(0, 6);
+  // 魔物至少要留一条主动，否则战斗里只能回落素手。
+  const skillIds = limitedSkills.some(id => !isPassiveId(id)) ? limitedSkills : [...limitedSkills, 'monster-claw'].slice(0, 6);
   const rules = Array.isArray(value.rules) ? value.rules.map(sanitizeRule).filter((rule): rule is MonsterRule => Boolean(rule)).slice(0, 6) : [];
   return {
     id, name,
@@ -441,7 +458,7 @@ export function sanitizeBoss(raw: unknown, monsterPool: Set<string>, skillPool: 
     previous = atHpPct;
     const skillIds = (Array.isArray(phase.skillIds) ? phase.skillIds : [])
       .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
-      .filter(skill => skill && skillPool.has(skill));
+      .filter(skill => skill && skillPool.has(skill) && !isPassiveId(skill));
     if (!skillIds.length) return undefined;
     const addIds = (Array.isArray(phase.addIds) ? phase.addIds : [])
       .map(monster => (typeof monster === 'string' ? monster.trim() : ''))
