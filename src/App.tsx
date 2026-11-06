@@ -40,6 +40,7 @@ import { EnvoyPreviewDialog } from './components/EnvoyPreviewDialog';
 import { MeetingPlanDialog } from './components/MeetingPlanDialog';
 import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
 import { meetEventId } from './rules/summon';
+import { diagnoseVariants, recoverVariants } from './variantRecovery';
 import { OfficeDialog } from './components/OfficeDialog';
 import { ChronicleDialog } from './components/ChronicleDialog';
 import { buildGirlCard, girlCardFileName, optimizeCardImages, parseGirlCard } from './cards';
@@ -1262,6 +1263,7 @@ export default function App() {
           '  generate                          让叙事者补充今晚的内容',
           '  proposal                          每日提案立即补充（先补待用事件，再补议题）',
           '  news [主持人]                     立即生成今晚的访谈（可选：指定主持人）',
+          '  variants [restore]                检查 / 补回表情差分（资产库与卡面原文两条路）',
           '  witch <名字>                      让指定少女立刻魔女化（调试）',
           '  reset <名字>                      把指定少女重置回初始状态（调试，不可撤销）',
           '  contract <卡名>                   从卡库直接契约一位少女（调试，免费、不看席位）',
@@ -1332,6 +1334,22 @@ export default function App() {
         return made
           ? `第 ${made.day} 日的访谈已就绪：${made.headline}（${made.source === 'llm' ? '叙事者' : '本地快报'}，${made.lines?.length ?? 0} 句，主持人 ${made.host?.name ?? '无'}）`
           : '节目没有生成出来，原因看上面的提示。';
+      }
+      case 'variants': case '表情': {
+        // v175：差分不见了先别开新档 —— 先看它躺在资产库还是卡面原文里。
+        const current = latestState.current ?? state;
+        if (arg === 'restore' || arg === '恢复') {
+          const result = await recoverVariants(current);
+          const fixed = result.reports.filter(report => report.total > report.inline);
+          if (!fixed.length) return '没有可补的差分：资产库读不回、卡面原文里也没有。';
+          setState(result.state);
+          const lines = fixed.map(report => `${report.name} +${report.total - report.inline}（资产 ${report.resolvable} / 卡面 ${report.fromCard}）`);
+          return `补回 ${fixed.length} 人的表情差分：\n${lines.join('\n')}`;
+        }
+        const reports = await diagnoseVariants(current);
+        if (!reports.length) return '名册里还没有人。';
+        const lines = reports.map(report => `${report.name}：内联 ${report.inline} · 资产 ${report.assets}（可读 ${report.resolvable}）${report.cardId ? ` · 卡 ${report.cardId.slice(0, 8)}` : ' · 没有卡号'}`);
+        return ['差分体检（`variants restore` 可尝试补回）：', ...lines].join('\n');
       }
       case 'contract': case '契约': case '招收': {
         // 从卡库按名字/代号找一张卡，读原文后直接契约（不收费、不看席位）。
