@@ -10,9 +10,10 @@ type Props = {
   state: GameState;
   onDecide: (opinionId: string, optionId: 'accept' | 'defer' | 'reject') => void;
   onGirl: (id: string) => void;
-  /** v168：组织会议 / 查看会议记录。 */
+  /** v168：组织会议 / 查看会议记录 / 继续没开完的那一场。 */
   onMeeting?: () => void;
   onMeetingRecords?: () => void;
+  onOpenMeeting?: (eventId: string) => void;
 };
 
 const optionMeta: Record<Opinion['options'][number]['id'], { label: string; icon: typeof Check }> = {
@@ -36,7 +37,9 @@ function CouncilBackdrop() {
   );
 }
 
-export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecords }: Props) {
+export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecords, onOpenMeeting }: Props) {
+  // v172：会议只有点「结束会议」才算散会；关掉界面时它还开着，这里给一个回来的入口。
+  const runningMeeting = state.events.find(event => event.meeting && event.status === 'active');
   const limit = opinionLimit(state);
   const allPending = state.opinions.filter(opinion => opinion.status === 'pending');
   const pending = allPending.slice(0, limit);
@@ -231,6 +234,11 @@ export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecor
               {next && <small className="council-next">下一位：{state.girls.find(girl => girl.id === next.authorId)?.name ?? '—'}</small>}
               {onMeeting && (
                 <div className="council-meeting-actions">
+                  {runningMeeting && onOpenMeeting && (
+                    <button id="council-resume-meeting" type="button" className="btn council-meeting-btn" onClick={() => onOpenMeeting(runningMeeting.id)}>
+                      继续「{runningMeeting.meeting!.title}」
+                    </button>
+                  )}
                   <button id="council-organize-meeting" type="button" className="btn primary council-meeting-btn" onClick={onMeeting}>组织一场会议</button>
                   {onMeetingRecords && (
                     <button id="council-meeting-records" type="button" className="btn council-meeting-btn ghost" onClick={onMeetingRecords}>

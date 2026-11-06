@@ -1155,7 +1155,7 @@ button.vn-chip#story-opening-rewrite {
 }
 
 .meeting-plan,
-.meeting-records { width: min(620px, 94vw); }
+.meeting-records { width: 100%; max-width: 100%; }
 
 .meeting-lead {
   margin: 4px 0 16px;

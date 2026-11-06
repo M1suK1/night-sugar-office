@@ -1740,7 +1740,7 @@ export default function App() {
           <WorldbookView onOpenOffice={() => setModal({ type: 'office' })} />
         </>
       ) : page === 'council' ? (
-        <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} onMeeting={() => setModal({ type: 'meeting-plan' })} onMeetingRecords={() => setModal({ type: 'meeting-records' })} />
+        <CouncilView state={state} onDecide={(opinionId, decision) => perform({ type: 'decideOpinion', opinionId, decision })} onGirl={girl} onMeeting={() => setModal({ type: 'meeting-plan' })} onMeetingRecords={() => setModal({ type: 'meeting-records' })} onOpenMeeting={eventId => setModal({ type: 'event', id: eventId })} />
       ) : page === 'market' ? (
         <MarketView state={state} onGirl={girl} onHire={id => setModal({ type: 'hire', id })} onRemote={id => talk(id, true)} onImportCard={importCard} onRehire={id => perform({ type: 'rehire', girlId: id })} onBuyItem={(itemId, stockId) => perform({ type: 'buyItem', itemId, stockId })} onRenew={id => perform({ type: 'renewContract', girlId: id })} onUpgradeMarket={() => perform({ type: 'upgradeMarket' })} onAdvancedRecruit={level => void advancedRecruit(level)} onFillFromLibrary={() => void fillFromLibrary(3)} onCustom={() => setModal({ type: 'custom' })} onCardbox={() => setModal({ type: 'cardbox' })} />
       ) : (

@@ -505,7 +505,7 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .fatal-card small{color:#7d6c87;font-size:11px;line-height:1.7}
 
 /* ── 叙事引擎：底部可折叠浮窗 ───────────────────────────── */
-.llm-console{position:fixed;right:20px;bottom:70px;z-index:900;width:min(560px,calc(100vw - 118px));max-height:min(72vh,640px);display:flex;flex-direction:column;background:#111116f7;border:1px solid #ffffff14;border-radius:10px;box-shadow:0 18px 60px #000a;backdrop-filter:blur(18px);color:#cfc6d2;font-size:10px;overflow:hidden}
+.llm-console{position:fixed;right:20px;bottom:70px;z-index:1300;width:min(560px,calc(100vw - 118px));max-height:min(72vh,640px);display:flex;flex-direction:column;background:#111116f7;border:1px solid #ffffff14;border-radius:10px;box-shadow:0 18px 60px #000a;backdrop-filter:blur(18px);color:#cfc6d2;font-size:10px;overflow:hidden}
 .llm-console-head{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;text-align:left;color:#cfc6d2;border-bottom:1px solid transparent}
 .llm-console.open .llm-console-head{border-bottom-color:#ffffff0a}
 .llm-console-head>svg{color:#f3aec9;flex-shrink:0}

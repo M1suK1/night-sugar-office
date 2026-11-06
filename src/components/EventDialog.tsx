@@ -299,7 +299,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
         </span>
       ) : (
         <button id="story-end-vn" type="button" className="btn" onClick={() => setConfirmEnd(true)}>
-          {branch && !event.pendingChoice ? '导向结局' : '结束事件'}
+          {branch && !event.pendingChoice ? '导向结局' : event.meeting ? '结束会议' : '结束事件'}
         </button>
       )}
     </div>
@@ -372,7 +372,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
                 </span>
               ) : (
                 <button id="story-end" type="button" className="btn" onClick={() => setConfirmEnd(true)}>
-                  {branch && !event.pendingChoice ? '导向结局' : '结束事件'}
+                  {branch && !event.pendingChoice ? '导向结局' : event.meeting ? '结束会议' : '结束事件'}
                 </button>
               )}
             </div>
