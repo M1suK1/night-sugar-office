@@ -3,7 +3,6 @@ import { districtOrder, districts } from './districts.ts';
 import { factionInfo } from './content/items.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel } from './hostility.ts';
-import { pollutionTierLabel } from './pollution.ts';
 import { CITY_NEWS_MAX, newsTalkingPoints, pickNewsGuests, pickNewsHost } from './cityNews.ts';
 /**
  * 本地快报 / 本地访谈的文案原料。
@@ -31,14 +30,14 @@ function localNewsItems(state: GameState): CityNewsItem[] {
     .map(id => ({ id, pollution: state.pollution?.[id] ?? 0 }))
     .sort((a, b) => b.pollution - a.pollution)[0];
   const pollutionItem = dirtiest
-    ? `${districts[dirtiest.id].name}的污染读数 ${dirtiest.pollution}（${pollutionTierLabel(dirtiest.pollution)}），巡守班建议今晚绕开那一侧的排水沟。`
-    : '污染读数今晚缺席，巡守班说仪器又坏了。';
+    ? `${districts[dirtiest.id].name}的水沟里浮起一层冷光，巡守班建议今晚绕开那一侧。`
+    : '仪器今晚又坏了，巡守班说读数先空着。';
 
   const stabilityItem = state.reputation <= 30
-    ? `城市安定度只剩 ${state.reputation}，市政厅的灯亮得比平时早，街角的告示栏贴出了新的宵禁提醒。`
+    ? `市政厅的灯亮得比平时早，街角的告示栏贴出了新的宵禁提醒。`
     : state.reputation >= 70
-      ? `安定度 ${state.reputation}，夜市的摊子重新支起来了，连回收车的司机都在车里哼歌。`
-      : `安定度 ${state.reputation}，不好也不坏——够让便利店继续通宵，不够让家长放心。`;
+      ? `夜市的摊子重新支起来了，连回收车的司机都在车里哼歌。`
+      : `不好也不坏——够让便利店继续通宵，不够让家长放心。`;
 
   const busiest = state.missions.filter(mission => mission.status !== 'done')[0];
   const streetItem = busiest

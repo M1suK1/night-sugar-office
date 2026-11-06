@@ -34,9 +34,9 @@ test('v50 本地快讯：只讲当前存档里真的发生的事', () => {
   }
   const pollutionLine = news.items.find(item => item.tone === 'pollution');
   assert.ok(pollutionLine?.text.includes(districts.candy.name), '要写出最脏的辖区');
-  assert.ok(pollutionLine?.text.includes('88'), '要写出现场读数');
+  assert.ok(pollutionLine?.text.includes('排水沟') || pollutionLine?.text.includes('水沟'), '要写出具体地方发生的事，而不是读数');
   const stabilityLine = news.items.find(item => item.tone === 'stability');
-  assert.ok(stabilityLine?.text.includes('24'), '要写当前安定度');
+  assert.equal(/\d/.test(stabilityLine?.text ?? ''), false, '不报读数');
   assert.ok(stabilityLine?.text.includes('宵禁') || stabilityLine?.text.includes('告示'), '低安定度要写出城市的反应');
 });
 

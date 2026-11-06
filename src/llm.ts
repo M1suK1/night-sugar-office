@@ -1713,6 +1713,7 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
     `- 安定：${points.stability}`,
     `- 街头：${points.street}`,
     '每个人说话都要像她自己：照上面写的性格与说话方式，三个人不要一个腔调，也不要写成汇报或通报。',
+    '上面的数字只是给你判断形势用的：台词里不要报数字、不要念读数，把它们变成具体的人、事、动作和情绪。',
   ].join('\n');
   const result = await callJson(config, preset, 'news', newsContract(), hint, ['共用词条 + 城市新闻词条 + 结构契约', '今晚的城市'], meta, { context: '城市新闻' }, { state });
   if (!result.ok) {
