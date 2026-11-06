@@ -3,34 +3,20 @@ import type { CSSProperties } from 'react';
 import type { Expression, Girl, MonsterTemplate, PortraitSpec } from '../types';
 import { rotateSide } from '../storySlots';
 import { GirlPortrait } from './GirlPortrait';
+import { castExpressionOf } from '../castExpression';
+import type { SideCastActor, SideCastLine } from '../castExpression';
 
 const expressionLabel: Record<Expression, string> = {
   calm: '平静', smile: '微笑', surprise: '惊讶', sad: '难过', angry: '生气', shy: '害羞',
 };
 
-/** 立绘栏能用的人：战斗札记与会议剧情共用这一份形状。 */
-export interface SideCastActor {
-  uid: string;
-  side: 'ally' | 'enemy';
-  girlId?: string;
-  name: string;
-  codename?: string;
-  portrait: string;
-  portraitAsset?: string;
-  color: string;
-  expression: Expression;
-  down?: boolean;
+/** 立绘栏的人比纯逻辑多几个只会用在画面上的字段。 */
+interface CastFigure extends SideCastActor {
   monster?: MonsterTemplate;
   portraitSpec?: PortraitSpec;
 }
 
-export interface SideCastLine {
-  speakerId?: string;
-  speakerSide?: 'ally' | 'enemy';
-  expression: Expression;
-}
-
-function portraitSubject(actor: SideCastActor, expression: Expression, girl?: Girl) {
+function portraitSubject(actor: CastFigure, expression: Expression, girl?: Girl) {
   return {
     id: actor.girlId ?? actor.uid,
     name: actor.name,
@@ -65,7 +51,7 @@ function windowOf(order: string[], focusId: string, size: number): string[] {
  */
 export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys, resetKey }: {
   side: 'left' | 'right';
-  list: SideCastActor[];
+  list: CastFigure[];
   activeLine: SideCastLine | null;
   girlsById: Map<string, Girl>;
   hoverKey: string;
@@ -109,8 +95,7 @@ export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys,
     <aside className={`battle-note-side ${side} ${list.length ? '' : 'empty'} ${list.length >= 3 ? 'dense' : ''} ${three ? 'three-up' : ''}`} aria-label={side === 'left' ? '左侧角色' : '右侧角色'}>
       {list.length > 0 && <span className="battle-note-side-label">{label}</span>}
       {shown.map((actor, index) => {
-        const speaking = Boolean(activeLine && (activeLine.speakerSide ?? 'ally') === actor.side && activeLine.speakerId === actor.girlId);
-        const expression = speaking ? activeLine!.expression : actor.expression;
+        const { expression, speaking } = castExpressionOf(actor, activeLine);
         return (
           <figure
             key={actor.uid}

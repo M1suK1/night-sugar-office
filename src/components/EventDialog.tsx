@@ -498,7 +498,13 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
                 monster: undefined,
                 portraitSpec: person.portraitSpec,
               }))}
-              activeLine={latest ? { speakerId: latest.id, speakerSide: 'ally', expression: latest.expression } : null}
+              // v173：悬停某句台词时，那个人先亮起来并换成那句的表情；没有悬停就跟着最近一句说话的人。
+              // （上次抽共用组件时把这层丢了，表现就是「表情不再变化」。）
+              activeLine={preview
+                ? { speakerId: preview.id, speakerSide: 'ally', expression: preview.expression }
+                : latest
+                  ? { speakerId: latest.id, speakerSide: 'ally', expression: latest.expression }
+                  : null}
               girlsById={castGirls}
               hoverKey={hoveredCastKey}
               litKeys={litCastKeys}
