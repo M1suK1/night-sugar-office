@@ -8,6 +8,7 @@ import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
 import { shouldAutoGenerate } from './autoGenerate';
 import { planForSlot } from './storyplan';
+import { shouldAutoOpenStory } from './storySession';
 import { loadProposalCheck, saveProposalCheck, type ProposalCheckMode } from './proposalCheck';
 import { portraitMissing } from './portraitReload';
 import { loadLlmLog, onLlmFinished, type LlmLogEntry } from './llm';
@@ -584,11 +585,10 @@ export default function App() {
   useEffect(() => {
     if (!modal || modal.type !== 'event') return;
     const event = state.events.find(item => item.id === modal.id);
-    if (!event || event.status !== 'active') return;
-    if (event.mode !== 'session' || (event.turns?.length ?? 0) > 0) return;
+    if (!event) return;
     if (arcBusy) return;
-    // v123：开场不再定死。等玩家先写一段（或明确点「按引子开始」）才去请叙事者。
-    if (event.playerSeed === undefined) return;
+    // v186：蓝图自带的开场白也算已就绪；约谈 / 会议没有开场白，仍等玩家先写。
+    if (!shouldAutoOpenStory(event)) return;
     setArcBusy(event.id);
     void (async () => {
       const config = loadLlmConfig();

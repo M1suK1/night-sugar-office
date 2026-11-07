@@ -977,3 +977,9 @@
 - [x] `rollPassiveSkill`：三条主动里三成概率换一条被动，本流派优先、其次通用，先换基础位；最多 1 条。
 - [x] `pickCandidateSkills` 加 `withPassive` 开关，缺技能补位时只抽主动，不再把被动混进来。
 - [x] `tests/v169` 四条；全量 842 通过。
+
+## v186：蓝图开场白回归修复（`tasks/plan-v186.md`）
+- [x] 抽出 `shouldAutoOpenStory`：蓝图 opening 非空也算可开场，不再干等 playerSeed。
+- [x] App 自动开场门槛改用该函数；约谈 / 会议无 opening 的流程保持不变。
+- [x] `tests/v186` 五条；全量 849 通过，`check:rules` 与 `tsc -b` 通过。
+- [ ] 后续：若希望蓝图事件也先让玩家写开场，再单独改 EventDialog 的 empty 口径。
