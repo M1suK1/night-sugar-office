@@ -4,8 +4,11 @@ import type { Girl } from './types';
 export const CONTRACT_DAYS = 10;
 export const REMOTE_CALL_COST = 40;
 
+/** 退休金整体倍率：v185 从 1 下调到 0.5，日划拨、欠缴与续签共用这一个口径。 */
+const PENSION_SCALE = 0.5;
+
 export function pensionFor(girl: Girl): number {
-  return Math.round(240 + girl.level * 160);
+  return Math.round((240 + girl.level * 160) * PENSION_SCALE);
 }
 /**
  * 续约价：契约总价的一半（含技能溢价），下限 150 星砂。
