@@ -103,6 +103,9 @@
   /* 均分：每人一格，人多了自动变窄，不会挤成一团也不会排到画面外 */
   flex: 1 1 0;
   min-width: 0;
+  /* 统一按三人并排时的格宽：人少也只占三分之一，立绘不会被放大。
+     三人时立绘本来就受列宽限制，这就是玩家认可的那一档大小。 */
+  max-width: calc(100% / 3);
   height: 96%;
   transition: opacity .3s ease, filter .3s ease;
 }
@@ -144,7 +147,8 @@
 .vn-cast.two-row { display: block; }
 .vn-cast.two-row .vn-actor {
   position: absolute;
-  width: 33.333%;
+  /* 与单排的三分之一格同宽：扣掉 `.vn-cast` 左右各 1.5% 的内边距。 */
+  width: calc((100% - 3%) / 3);
   height: 76%;
   margin: 0;
   bottom: 0;
