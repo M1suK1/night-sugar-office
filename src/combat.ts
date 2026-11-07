@@ -1,4 +1,3 @@
-import { witchAwarePortrait } from './factions.ts';
 import { loadBalance } from './balance.ts';
 import type { ActiveEffect, BattleEvent, BattleState, BattleUnit, FactionGirl, Girl, Mission, MonsterRule, MonsterTemplate, PassiveTrigger, Scar, Skill, StatKey } from './types';
 import { effectKindLabels, getSkill } from './content/skills.ts';
@@ -109,7 +108,9 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     return sum + (item.affixes ?? []).reduce((a, aff) => a + (aff.kind === 'damageReduce' ? aff.amount : 0), 0);
   }, 0);
   const unit: BattleUnit = {
-    uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, portraitAsset: girl.portraitAsset, color: girl.color,
+    // v195：战报快照里有立绘就抄一份、还按帧复制，存档会涨到几十兆。
+    // 单位只留资产引用，界面找不到时按 girlId 回查当前存档。
+    uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: '', portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, expression: girl.expression, portraitSpec: girl.portraitSpec,
     hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
     stats: effectiveStats(girl), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,
@@ -320,7 +321,7 @@ function unitFromEnemyGirl(girl: FactionGirl, index: number, recommendedLevel: n
   const maxHp = Math.round((60 + girl.level * 14) * scale);
   const maxSpirit = guardMax({ stats: girl.stats });
   const unit: BattleUnit = {
-    uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: witchAwarePortrait(girl), color: girl.color,
+    uid: `enemy-${index}-${girl.id}`, side: 'enemy', name: girl.name, portrait: '', portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, portraitSpec: girl.portraitSpec,
     hp: maxHp, maxHp, spirit: maxSpirit, maxSpirit,
     stats: { ...girl.stats }, skills: [...girl.skills], cooldown: {}, effects: [], down: false,

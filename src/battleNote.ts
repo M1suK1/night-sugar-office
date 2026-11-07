@@ -51,8 +51,9 @@ function downRoundMap(battle: BattleState): Map<string, number> {
 export function battleActors(battle: BattleState): BattleActor[] {
   const downs = downRoundMap(battle);
   return battle.units.map(unit => {
-    // 立绘搬进资产库之后 portrait 会是空串，只剩 portraitAsset；只认 portrait 会把整队人都判成「不能说话」。
-    const speakable = Boolean(unit.girlId && (unit.portrait || unit.portraitAsset));
+    // 能不能说话看的是「她是不是个有名有姓的人」：立绘可能只剩资产引用，
+    // 也可能要为存档瘦身干脆不存（v195 起战报单位不再背 data URL），不能拿图当门槛。
+    const speakable = Boolean(unit.girlId);
     return {
       uid: unit.uid,
       side: unit.side,

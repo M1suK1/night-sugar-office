@@ -101,6 +101,8 @@ export interface FactionLeader {
   name: string;
   title: string;
   portrait: string;
+  /** v195：立绘在资产库时只有这个 id。 */
+  portraitAsset?: AssetId;
   portraitSpec?: PortraitSpec;
   color: string;
   quote: string;
@@ -147,6 +149,8 @@ export interface FactionGirl {
   codename: string;
   title: string;
   portrait: string;
+  /** v195：立绘在资产库时只有这个 id，存档里不再背 data URL。 */
+  portraitAsset?: AssetId;
   portraitSpec?: PortraitSpec;
   color: string;
   level: number;
