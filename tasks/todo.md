@@ -977,3 +977,9 @@
 - [x] `rollPassiveSkill`：三条主动里三成概率换一条被动，本流派优先、其次通用，先换基础位；最多 1 条。
 - [x] `pickCandidateSkills` 加 `withPassive` 开关，缺技能补位时只抽主动，不再把被动混进来。
 - [x] `tests/v169` 四条；全量 842 通过。
+
+## v185：退休金倍率下调 50%（`tasks/plan-v185.md`）
+- [x] `contracts.ts` 引入 `PENSION_SCALE = 0.5`，`pensionFor` 按新倍率计算。
+- [x] 日划拨、欠缴累计、续签补缴与档案显示共用同一函数，一处改完全链路生效。
+- [x] `tests/v185` 两条；全量 846 通过，`check:rules` 与 `tsc -b` 通过。
+- [ ] 后续：观察 30 日经济曲线，必要时再调整底薪与每级价。
