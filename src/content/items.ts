@@ -12,7 +12,10 @@ export const factionInfo: Record<FactionId, { name: string; short: string; color
   government: { name: '樱雾市役所', short: '市役所', color: '#9CC9D2', motto: '秩序是城市最慢、也最稳的魔法。', envoy: '雨宫澄', title: '夜间事务专员' },
 };
 
-export const items: Equipment[] = [...tier1, ...tier2, ...tier3, ...tier4, ...tier5].map(withItemSet);
+/** 内置内容里的装备（已挂上套装）：只有这一批会被控制台直接发放。 */
+export const baseItems: Equipment[] = [...tier1, ...tier2, ...tier3, ...tier4, ...tier5].map(withItemSet);
+/** 当前注册表：内置 + 运行时登记的炼制 / 故事专属装备。 */
+export const items: Equipment[] = [...baseItems];
 
 export const itemById = new Map(items.map(i => [i.id, i]));
 export function findItem(id: string | undefined): Equipment | undefined {

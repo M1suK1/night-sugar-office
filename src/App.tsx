@@ -2,7 +2,7 @@ import { postLlmLog, setLlmLogSink } from './llmLog';
 import { assetUrl } from './store';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
+import type { BattleState, CharacterEvent, CityNews, Equipment, EquipmentSetId, EquipmentTier, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
@@ -170,6 +170,28 @@ function preloadImage(url: string): Promise<void> {
     image.src = url;
   });
 }
+
+/** v184 控制台 gear 命令的别名表。 */
+const GEAR_SLOTS: Record<string, Equipment['slot']> = {
+  weapon: 'weapon', 法器: 'weapon', 武器: 'weapon',
+  charm: 'charm', 护符: 'charm',
+  consumable: 'consumable', 消耗品: 'consumable', 道具: 'consumable',
+};
+const GEAR_TIERS: Record<string, EquipmentTier> = {
+  '1': 1, 一: 1, 一阶: 1,
+  '2': 2, 二: 2, 二阶: 2,
+  '3': 3, 三: 3, 三阶: 3,
+  '4': 4, 四: 4, 四阶: 4,
+  '5': 5, 五: 5, 五阶: 5,
+};
+const GEAR_SETS: Record<string, EquipmentSetId> = {
+  'set-starlight': 'set-starlight', starlight: 'set-starlight', 星辉: 'set-starlight', 星光: 'set-starlight',
+  'set-frosting': 'set-frosting', frosting: 'set-frosting', 甜晶: 'set-frosting', 糖霜: 'set-frosting',
+  'set-moonlight': 'set-moonlight', moonlight: 'set-moonlight', 幽月: 'set-moonlight', 月影: 'set-moonlight',
+  'set-dream': 'set-dream', dream: 'set-dream', 织梦: 'set-dream', 梦境: 'set-dream',
+  'set-nature': 'set-nature', nature: 'set-nature', 常磐: 'set-nature', 自然: 'set-nature',
+  'set-cinder': 'set-cinder', cinder: 'set-cinder', 焚烬: 'set-cinder', 赤焰: 'set-cinder',
+};
 
 export default function App() {
   // 初始先给一份空档占位，真正的进度在挂载后从 IndexedDB 读出来。
@@ -1359,6 +1381,7 @@ export default function App() {
           '  witch <名字>                      让指定少女立刻魔女化（调试）',
           '  reset <名字>                      把指定少女重置回初始状态（调试，不可撤销）',
           '  contract <卡名>                   从卡库直接契约一位少女（调试，免费、不看席位）',
+          '  gear <槽位> <阶级> [套装]         立刻入库一件装备（调试，免费、不看声望）',
           '  remove <名字>                     移除一位已契约的少女（调试，连带清理派遣/关系/故事线）',
           '  preset [list]                     查看对话补全预设',
           '  preset use <名称>                 绑定生成用预设',
@@ -1475,6 +1498,21 @@ export default function App() {
         const target = state.girls.find(girl => girl.id === arg || girl.name === arg || girl.codename === arg || (arg && girl.name.includes(arg)));
         if (!target) return `名册里没有「${arg}」（这条命令只移除已契约的少女）。`;
         const result = act(state, { type: 'debugRemoveGirl', girlId: target.id });
+        if (!result.ok) return result.message;
+        setState(result.state);
+        return result.message;
+      }
+      case 'gear': case '装备': {
+        // v184：按槽位 + 阶级（可选套装）直接从内置内容里拿一件，不扣钱、不看声望、不动货架。
+        const [slotText, tierText, setText, ...extra] = rest;
+        if (!slotText || !tierText || extra.length) return '用法：gear <槽位> <阶级> [套装]，例如 gear 法器 3 星辉。';
+        const slot = GEAR_SLOTS[slotText.toLowerCase()];
+        if (!slot) return `无法识别槽位「${slotText}」：写法器 / 护符 / 消耗品，或 weapon / charm / consumable。`;
+        const tier = GEAR_TIERS[tierText.toLowerCase()];
+        if (!tier) return `无法识别阶级「${tierText}」：写 1–5 或 一阶–五阶。`;
+        const setId = setText ? GEAR_SETS[setText.toLowerCase()] : undefined;
+        if (setText && !setId) return `无法识别套装「${setText}」：写星辉 / 甜晶 / 幽月 / 织梦 / 常磐 / 焚烬。`;
+        const result = act(state, { type: 'debugGrantEquipment', slot, tier, setId });
         if (!result.ok) return result.message;
         setState(result.state);
         return result.message;
