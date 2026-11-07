@@ -35,7 +35,8 @@ export interface EventDialogProps {
   onEditTurn: (eventId: string, turnId: string, text: string) => void;
   /** 删掉自己说的那一轮。 */
   onDeleteTurn: (eventId: string, turnId: string) => void;
-  onEnd: (eventId: string) => void;
+  /** v188：`lead` 是所长停在输入框里、还没发出去的那一句，收尾时当作引子。 */
+  onEnd: (eventId: string, lead?: string) => void;
   /** v123：玩家写下的开场（空串 = 按引子开始）。同一个入口也用于重写开场。 */
   onSeed?: (eventId: string, seed: string) => void;
   /** 蓝图正卡在选项上时，这一段能走的分支（文案只来自蓝图，不由模型编）。 */
@@ -292,7 +293,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
       )}
       {confirmEnd ? (
         <span className="session-end-confirm">
-          <button id="story-end-confirm-vn" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>
+          <button id="story-end-confirm-vn" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id, draft.trim()); }}>
             {busy ? '正在收尾…' : '确认结束'}
           </button>
           <button id="story-end-cancel-vn" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>
@@ -365,7 +366,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
               </button>
               {confirmEnd ? (
                 <span className="session-end-confirm">
-                  <button id="story-end-confirm" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id); }}>
+                  <button id="story-end-confirm" type="button" className="btn danger" disabled={busy} onClick={() => { setConfirmEnd(false); onEnd(event.id, draft.trim()); }}>
                     {busy ? '正在收尾…' : '确认结束'}
                   </button>
                   <button id="story-end-cancel" type="button" className="btn" disabled={busy} onClick={() => setConfirmEnd(false)}>
