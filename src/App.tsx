@@ -2,7 +2,7 @@ import { postLlmLog, setLlmLogSink } from './llmLog';
 import { assetUrl } from './store';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FastForward, Feather, Pause, Play, Radio, TriangleAlert, X, Info, Moon, ChevronRight, ShieldCheck, ChevronsRight } from 'lucide-react';
-import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, StoryTurn } from './types';
+import type { BattleState, CharacterEvent, CityNews, FactionId, GameAction, GameState, Girl, GirlCard, StoryLine, StoryPassage, StoryPlan, Storyline, StoryTurn } from './types';
 import { act, buildTemplateArc, canAcceptGeneratedContent, dateLabel, deployIncidentCard, deployMissionTemplate, importState, loadState } from './game';
 import { kvSet, storeAvailable } from './store';
 import { loadChimeEnabled, playChime, resolveChime, saveChimeEnabled } from './audio';
@@ -45,6 +45,8 @@ import { NewsDialog } from './components/NewsDialog';
 import { NewsTicker } from './components/NewsTicker';
 import { StoryArchiveDialog } from './components/StoryArchiveDialog';
 import { replayEventOf, saveStoryToArchive, type ArchivedStory } from './storyArchive';
+import { EndingDialog } from './components/EndingDialog';
+import { newlyFinishedStories, storylineStatuses, type EndingNotice } from './storylineEnding';
 import { meetEventId } from './rules/summon';
 import { diagnoseVariants, recoverVariants } from './variantRecovery';
 import { OfficeDialog } from './components/OfficeDialog';
@@ -244,6 +246,9 @@ export default function App() {
   };
   const [generating, setGenerating] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
+  /** v193：刚走到结局的故事线排队弹窗；读档时本来就结束的不补弹。 */
+  const [endingQueue, setEndingQueue] = useState<EndingNotice[]>([]);
+  const endingSeen = useRef<Map<string, Storyline['status']>>(new Map());
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState<string | undefined>(undefined);
   const [storyBusy, setStoryBusy] = useState<string | null>(null);
@@ -431,6 +436,11 @@ export default function App() {
   }, [auto]);
   useEffect(() => { try { localStorage.setItem('night-sugar:auto-generate', autoGenerate ? 'on' : 'off'); } catch { /* Optional preference. */ } }, [autoGenerate]);
   useEffect(() => { saveProposalCheck(proposalCheck); }, [proposalCheck]);
+  useEffect(() => {
+    const fresh = newlyFinishedStories(endingSeen.current, state.storylines);
+    endingSeen.current = storylineStatuses(state.storylines);
+    if (fresh.length) setEndingQueue(queue => [...queue, ...fresh]);
+  }, [state.storylines]);
   // 叙事引擎日志落盘：只有本地接口（npm run dev / start.cmd）能写，静态部署时 fetch 会失败并被忽略。
   useEffect(() => { setLlmLogSink(postLlmLog); return () => setLlmLogSink(null); }, []);
   useEffect(() => {
@@ -2116,5 +2126,10 @@ export default function App() {
         </div>
       </div>
     </Dialog>}
+    {endingQueue[0] && <EndingDialog
+      notice={endingQueue[0]}
+      girlName={[...state.girls, ...state.candidates].find(girl => girl.id === endingQueue[0]!.girlId)?.name ?? '她'}
+      onClose={() => setEndingQueue(queue => queue.slice(1))}
+    />}
   </div>;
 }
