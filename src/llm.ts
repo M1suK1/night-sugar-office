@@ -1365,7 +1365,7 @@ export interface GeneratedStorylineBeat {
 }
 export interface GeneratedStoryline { title: string; premise: string; tone: string; beats: GeneratedStorylineBeat[] }
 export interface GeneratedIncident { title: string; body: string; options: { label: string; hint: string; effect: IncidentEffect }[] }
-export interface GeneratedEvent { title: string; hook: string; scenes: { title: string; narration: string; lines: { speaker: string; tone: string; text: string; after?: number }[] }[] }
+export interface GeneratedEvent { title: string; hook: string; backdrop?: string; scenes: { title: string; narration: string; lines: { speaker: string; tone: string; text: string; after?: number }[] }[] }
 
 function girlBrief(girl: Girl): string {
   const traitText = girl.traits.map(trait => `${trait.name}（${trait.polarity}）`).join('、') || '暂无';
@@ -1749,8 +1749,8 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
   const body = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
 ${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\n${pastEvents}` : ''}
 只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
-要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
+{"title":"","hook":"","backdrop":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
+要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面；backdrop 只能取：{{backdrops}}，必须和两场写的地点一致。`;
   const result = await callJson(config, preset, 'event', body, eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
@@ -1771,6 +1771,7 @@ ${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\
   const data: GeneratedEvent = {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 22) : `${girl.name}的一个晚上`,
     hook: typeof raw.hook === 'string' ? raw.hook.trim().slice(0, 100) : '',
+    backdrop: isBackdropId(raw.backdrop) ? raw.backdrop : undefined,
     scenes: scenes.map((scene, index) => {
       const lines = Array.isArray(scene.lines) ? scene.lines.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 5) : [];
       return {
@@ -1800,6 +1801,7 @@ export interface GeneratedStoryArc {
   title: string;
   hook: string;
   summary: string;
+  backdrop?: string;
   passages: GeneratedArcPassage[];
 }
 
@@ -1866,6 +1868,7 @@ export async function generateStoryArc(config: LlmConfig, girl: Girl, input: Sto
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 24) : input.beatTitle || `${girl.name}的一晚`,
     hook: typeof raw.hook === 'string' ? raw.hook.trim().slice(0, 120) : input.beatHook ?? '',
     summary: typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary.trim().slice(0, 300) : passages.map(passage => passage.title).join(' · '),
+    backdrop: isBackdropId(raw.backdrop) ? raw.backdrop : undefined,
     passages,
   };
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情生成成功：${data.title}（${total} 字 / ${passages.length} 段）`, request: meta.request, response: meta.response });
@@ -2077,7 +2080,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
 export function storyOpeningContextForTest(state: GameState, event: CharacterEvent, seed = ''): string {
   return openingContext(state, event, seed);
 }
-export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[] } | { ok: false; message: string }> {
+export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2104,7 +2107,8 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 24)).filter(Boolean).slice(0, 3);
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
-  return { ok: true, narration, lines, options };
+  // v191：叙事者写这一段时顺手选的背景；认不出来就不用，交给辖区/房间的旧规则。
+  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
 }
 
 /**
@@ -2473,6 +2477,7 @@ import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
+import { isBackdropId } from './vn/backdrops.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
 import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';

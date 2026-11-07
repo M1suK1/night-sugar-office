@@ -536,7 +536,7 @@ export type StoryNodeData =
   | { kind: 'mission'; spec: StoryMissionSpec }
   | { kind: 'incident'; spec: StoryIncidentSpec }
   | { kind: 'opinion'; spec: StoryOpinionSpec }
-  | { kind: 'event'; title: string; hook: string; cast?: string[]; opening?: string }
+  | { kind: 'event'; title: string; hook: string; cast?: string[]; opening?: string; /** 视觉小说的背景 id；见 vn/backdrops。 */ backdrop?: string }
   /** v46：装备只给阶级，具体哪一件由程序按阶级抽；技能不再由奖励节点发放。 */
   | { kind: 'reward'; effect: StoryEffect; equipmentTier?: number; trait?: { name: string; description: string } }
   | { kind: 'wait'; days?: number; minutes?: number }
@@ -736,6 +736,8 @@ export interface CharacterEvent {
   turns?: StoryTurn[];
   /** 交互剧情允许出场的人（不含玩家）。 */
   cast?: string[];
+  /** v191：这一段剧情发生在哪张背景上；由叙事者在写这一段时选，认不出就不使用。 */
+  backdrop?: string;
   opening?: string;
   /** v123：玩家写下的那段开场（叙事者据此写开场白；重写时清空 opening 与 turns）。 */
   playerSeed?: string;
@@ -1403,7 +1405,7 @@ export type GameAction =
   /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
-  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string }
+  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string; backdrop?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
   | { type: 'rollNewsCast' }
@@ -1475,7 +1477,7 @@ export type GameAction =
   | { type: 'addCharacterEvent'; event: CharacterEvent }
   | { type: 'startCharacterEvent'; eventId: string }
   | { type: 'advanceEvent'; eventId: string }
-  | { type: 'beginStoryEvent'; eventId: string; passages: StoryPassage[]; summary?: string }
+  | { type: 'beginStoryEvent'; eventId: string; passages: StoryPassage[]; summary?: string; backdrop?: string }
   | { type: 'chooseStoryPassage'; eventId: string; choiceId: string }
   | { type: 'chooseStoryPort'; storylineId: string; port: string }
   | { type: 'resolveEvent'; eventId: string; choiceId: string }

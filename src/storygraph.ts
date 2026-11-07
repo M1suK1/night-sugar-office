@@ -5,6 +5,7 @@ import type {
 import type { DistrictId } from './districts.ts';
 import { getItem } from './content/items.ts';
 import { tierOf } from './items.ts';
+import { isBackdropId } from './vn/backdrops.ts';
 
 export const GRAPH_MAX_NODES = 80;
 export const GRAPH_MAX_EDGES = 160;
@@ -269,7 +270,11 @@ function sanitizeData(kind: StoryNodeKind, raw: unknown): StoryNodeData {
       const cast = Array.isArray(value.cast)
         ? value.cast.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()).slice(0, 3)
         : [];
-      return { kind, title: str(value.title, 30), hook: str(value.hook, 160), cast, opening: str(value.opening, 600) };
+      return {
+        kind, title: str(value.title, 30), hook: str(value.hook, 160), cast, opening: str(value.opening, 600),
+        // v191：背景只收认得的 id；写错就当没写，回落到辖区/房间的旧规则。
+        ...(isBackdropId(value.backdrop) ? { backdrop: value.backdrop } : {}),
+      };
     }
     case 'reward': {
       const effect = sanitizeEffect(value.effect) ?? {};

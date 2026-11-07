@@ -294,6 +294,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'factionIds', label: '势力 id', hint: '三方 id', budget: 10 },
       { key: 'slots', label: '槽位', hint: 'weapon / charm / consumable', budget: 10 },
       { key: 'tiers', label: '阶级', hint: '1–5', budget: 8 },
+      { key: 'backdrops', label: '可用背景', hint: '九块辖区 + 四个房间的背景 id 与中文名', budget: 120 },
     ],
   },
 ];

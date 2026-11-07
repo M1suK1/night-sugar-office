@@ -4,6 +4,7 @@ import { registerItem } from '../content/items.ts';
 import { MAX_ENEMIES, ROUND_MINUTES } from '../combat.ts';
 import { districtPin } from '../rules/missions.ts';
 import { applyPct, districtAt, districts } from '../districts.ts';
+import { isBackdropId } from '../vn/backdrops.ts';
 import { endingLabel, ensureGraph, graphBeats } from '../storygraph.ts';
 import { absoluteMinutes, deadlineFor } from '../shift.ts';
 import { buildNodeIncident, stampIncident } from './storyIncidents.ts';
@@ -145,6 +146,7 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
         event.mode = 'session';
         event.cast = (node.data.cast?.length ? node.data.cast : [girl.id]).slice(0, 3);
         event.opening = node.data.opening?.slice(0, 600);
+        if (isBackdropId(node.data.backdrop)) event.backdrop = node.data.backdrop;
         event.turns = [];
         event.sessionDone = false;
       }
