@@ -767,7 +767,7 @@ export default function App() {
     // 没有配叙事者、或者正卡在蓝图岔路口：只能本地收尾（没有模型可重试）。
     // 收尾时仍然留一份本地摘要，之后的历史只引用它。
     if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
-      return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
+      return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, ''), lead });
     }
     setStoryBusyTurn(true);
     try {
@@ -778,7 +778,7 @@ export default function App() {
         notify(`收尾没有写出来：${result.message}剧情还开着，可以再点一次「结束事件」。`, false);
         return false;
       }
-      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary });
+      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary, lead });
     } finally {
       setStoryBusyTurn(false);
     }

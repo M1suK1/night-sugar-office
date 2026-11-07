@@ -267,6 +267,18 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event) return { state, ok: false, message: '找不到这段剧情。' };
       if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      // v189：点结束时还留在输入框里的那一句，作为玩家最后一轮记下来。
+      // 它没有真的发出去，所以只入档、不计入轮数，也不参与羁绊结算。
+      const lead = (action.lead ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+      if (lead) {
+        event.turns = [...(event.turns ?? []), {
+          id: `turn-say-${Date.now().toString(36)}`,
+          role: 'player' as const,
+          text: lead,
+          at: Date.now(),
+        }];
+      }
       // 蓝图正卡在选项上：这一下不该收尾，而是把剧情引到门口、把选项摆出来。
       const branch = pendingChoiceOf(next, event.girlId);
       if (branch && !event.pendingChoice) {
@@ -300,7 +312,6 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       const summary = action.summary?.trim();
       if (summary) event.summary = summary.slice(0, 800);
       const girl = findGirl(next, event.girlId);
-      const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
       const gain = Math.min(4, Math.max(0, Math.round(rounds * 0.8)));
       if (girl) { girl.eventBadge = undefined; girl.bond = Math.min(100, girl.bond + gain); }
       next.logs.unshift({ id: `log-story-session-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: `${girl?.name ?? '她'}的剧情「${event.title}」结束，走了 ${rounds} 轮${gain ? `，羁绊 +${gain}` : ''}。` });
