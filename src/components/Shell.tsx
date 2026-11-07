@@ -1,8 +1,9 @@
-import { Map, House, Gem, ScrollText, Landmark, Settings2, CircleHelp, Moon, CloudFog, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass, Terminal, Library, Hammer } from 'lucide-react';
+import { Map, House, Gem, ScrollText, Landmark, Settings2, CircleHelp, Moon, CloudFog, CloudRain, CloudLightning, Snowflake, Wind, Sparkles, ShieldCheck, Bell, ChevronRight, Cat, Star, BookOpen, Flower2, Siren, Compass, Terminal, Library, Hammer } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
 import { clock } from '../game';
 import { cityStage, factionAttitude } from '../economy';
 import { factionInfo } from '../content/items';
+import { WEATHERS, nextWeather, waveOf, weatherNow, type WeatherId } from '../weather';
 import { representativeNameOf } from '../factions';
 import { currentBoss } from '../content/bosses';
 
@@ -38,8 +39,21 @@ export function Navigation({ page, onPage, onHelp, onSettings, onCodex, onMemori
   </aside>;
 }
 
+function WeatherGlyph({ id, size = 15 }: { id: WeatherId; size?: number }) {
+  if (id === 'rain') return <CloudRain size={size} />;
+  if (id === 'fog') return <CloudFog size={size} />;
+  if (id === 'snow') return <Snowflake size={size} />;
+  if (id === 'storm') return <CloudLightning size={size} />;
+  if (id === 'wind') return <Wind size={size} />;
+  return <Moon size={size} />;
+}
+
 export function Topbar({ state, onNotifications, onCommand, saved, filling }: { state: GameState; onNotifications: () => void; onCommand: () => void; saved: boolean; filling?: boolean }) {
   const stage = cityStage(state.reputation);
+  const weather = weatherNow(state);
+  const wave = waveOf(state.minutes);
+  const next = nextWeather(state);
+  const weatherNote = `${WEATHERS[weather].hint}${wave < 2 ? `｜下一段：${WEATHERS[next].name}` : '｜今夜最后一段'}`;
   return <header className="topbar">
     <div className="wordmark">
       <strong>夜糖事务所<span className="logo-dot">.</span></strong>
@@ -51,9 +65,9 @@ export function Topbar({ state, onNotifications, onCommand, saved, filling }: { 
         <span className="eyebrow">第 {state.day} 日 · 午夜值班</span>
         <strong>{clock(state.minutes)}</strong>
       </div>
-      <div className="weather">
-        <CloudFog size={15} />
-        <span>樱雾市<br /><b>薄雾 · 结界观测中</b></span>
+      <div className={`weather weather-${weather}`} title={weatherNote}>
+        <WeatherGlyph id={weather} />
+        <span>樱雾市<br /><b>{WEATHERS[weather].name} · 第 {wave + 1} 段{wave < 2 ? ` → ${WEATHERS[next].name}` : ''}</b></span>
       </div>
     </div>
     <div className="top-resources">

@@ -1638,3 +1638,10 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 }
 
 .news-lines li.is-host p { color: #f7f2f5; }
+/* v187 天气：顶栏图标跟着天气换色。 */
+.weather>svg{color:#93909c;transition:color .3s}
+.weather.weather-rain>svg{color:#a3bcd0}
+.weather.weather-fog>svg{color:#b6bcc4}
+.weather.weather-snow>svg{color:#c7d6e6}
+.weather.weather-storm>svg{color:#c4a8c6}
+.weather.weather-wind>svg{color:#b3c0b6}

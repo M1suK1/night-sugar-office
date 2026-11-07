@@ -16,6 +16,7 @@ import type { CommissionWindow } from '../shift.ts';
 import { LONG_MAX_DAYS, LONG_MIN_DAYS, WAVE_AT, absoluteMinutes, deadlineFor, remainingLabel, shiftStartAt } from '../shift.ts';
 import { FACTION_ORDER, factionEffect } from '../territories.ts';
 import type { BossTemplate, FactionId, GameState, Mission, MissionTemplate, MonsterTemplate, StatKey } from '../types.ts';
+import { weatherAt, weatherEffect } from '../weather.ts';
 import { clone, hashText } from './core.ts';
 import { rollEnemies } from './encounters.ts';
 // v35 从 src/game.ts 拆出：委托生成、模板与投放。
@@ -113,7 +114,9 @@ export function annotateMission(state: GameState, mission: Mission, wave = 0): M
 export function missionSnapshot(state: GameState, district: DistrictId, target: number, reward: number): Pick<Mission, 'environment' | 'pollutionAtSpawn' | 'ownerAtSpawn' | 'target' | 'reward'> {
   const owner = state.territories?.[district] ?? FACTION_ORDER[0];
   const level = pollutionForecast(state, district).level;
-  const environment = mergeDistrictEffects(districts[district].effect, factionEffect[owner], pollutionEffect(level));
+  // 天气和辖区、污染一样，在发出的那一刻冻进快照：之后的雨不该改写这一单。
+  const weather = weatherAt(state.day, state.minutes);
+  const environment = mergeDistrictEffects(districts[district].effect, factionEffect[owner], pollutionEffect(level), weatherEffect(weather));
   return {
     environment,
     pollutionAtSpawn: level,

@@ -1659,7 +1659,7 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
 要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–120 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
   const result = await callJson(config, preset, 'incident', body, '请把这件事放到我的桌上。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，事务所营业中`,
-  });
+  }, { state });
   if (!result.ok) {
     recordLlmLog({ kind: '强制事件', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2532,7 +2532,7 @@ export async function generateIncidentBatch(config: LlmConfig, state: GameState,
 ${incidentBatchContract()}`;
   const result = await callJson(config, preset, 'incident', body, '请把这几件事攒下来，留给以后的夜晚。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，补充待用事件池`,
-  }, undefined, 3000);
+  }, { state }, 3000);
   if (!result.ok) {
     recordLlmLog({ kind: '突发事件', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;

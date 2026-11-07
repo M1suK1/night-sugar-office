@@ -101,6 +101,8 @@ export interface BalanceRules {
   whisperDailyCap: number;
   /** 城市新闻开关：1 = 每天生成一条播报，0 = 关掉。 */
   cityNewsEnabled: number;
+  /** 天气修正的强度百分比：100 = 原值，0 = 天气只影响文案。 */
+  weatherIntensity: number;
 }
 
 export const BALANCE_KEY = 'night-sugar:balance';
@@ -166,6 +168,7 @@ export const DEFAULT_BALANCE: BalanceRules = {
   whisperMaxPct: 85,
   whisperDailyCap: 3,
   cityNewsEnabled: 1,
+  weatherIntensity: 100,
 };
 
 export interface BalanceField {
@@ -243,6 +246,7 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'whisperMaxPct', label: '概率封顶', hint: '算上加成之后允许的最高概率。', min: 10, max: 100, step: 5, unit: '%', group: '灯下私语' },
   { key: 'whisperDailyCap', label: '每晚上限', hint: '一晚最多入队几条，避免一次刷满。', min: 1, max: 6, step: 1, unit: '条', group: '灯下私语' },
   { key: 'cityNewsEnabled', label: '每日城市新闻', hint: '每天换日时让叙事者按势力、污染与安定度写一条播报；关掉后派遣页不再显示这一块。', min: 0, max: 1, step: 1, group: '城市新闻', kind: 'toggle' },
+  { key: 'weatherIntensity', label: '天气影响强度', hint: '天气对委托与战斗的修正按这个比例缩放；100 为原值，0 时天气只影响文案。', min: 0, max: 200, step: 10, unit: '%', group: '污染与难度' },
 ];
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

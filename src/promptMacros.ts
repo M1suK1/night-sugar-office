@@ -15,6 +15,7 @@ import { traits } from './content/traits.ts';
 import { battleHistoryText, chatHistoryText, dossierOf, missionHistoryText, storylineHistoryText } from './girlDossier.ts';
 import { ENUM_TEXT, limitsText } from './promptSections.ts';
 import { promptTokens } from './tokens.ts';
+import { weatherPrompt } from './weather.ts';
 
 /** 宏解析上下文：本次请求的存档与「这一场写的是谁」。 */
 export interface MacroContext {
@@ -206,6 +207,7 @@ type Resolver = (ctx: MacroContext, arg?: string) => string;
 
 const RESOLVERS: Record<string, Resolver> = {
   night: ctx => nightText(ctx.state),
+  weather: ctx => ctx.state ? weatherPrompt(ctx.state) : '今夜没有指定天气；写到室外时按薄雾写——潮湿、看不清远处，不要自行加雨雪。',
   girls: (ctx, arg) => girlsText(ctx.state, arg),
   heroine: (ctx, arg) => heroineText(ctx, arg),
   opinions: (ctx, arg) => ctx.state ? opinionHistoryText(ctx.state, Number(arg) || undefined) : '',
@@ -259,6 +261,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
     id: 'city', label: '事务所与城市', hint: '随存档实时计算',
     items: [
       { key: 'night', label: '今夜概览', hint: '日期、时间、星砂、安定度、污染', budget: 60 },
+      { key: 'weather', label: '今夜天气', hint: '当段天气、下一段预告与写法约束；天气是系统给定的事实', budget: 120 },
       { key: 'girls', label: '在册名册', hint: '可点名的人（id + 关系 + 状态）', budget: 900 },
       { key: 'factions', label: '三方势力', hint: '态度、现任首领、辖区、立场', budget: 300 },
       { key: 'leaders', label: '三方首领 id', hint: 'authorId 白名单', budget: 120 },
