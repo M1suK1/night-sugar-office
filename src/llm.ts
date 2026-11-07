@@ -2389,10 +2389,11 @@ export interface GeneratedGirlProfile {
 
 async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, meta?: LlmCallMeta, research?: GirlResearch): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
-  const skillList = girlSkillPool().map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
+  // 只把主动列给模型：被动带不带由本地掷骰决定，不写在提示词里。
+  const skillList = girlSkillPool().filter(skill => skill.tier !== 'passive').map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
   const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
-skillIds 只能从以下 ID 中选三个，且最多 1 条被动（阶级写作「被动」）：${skillList}
+skillIds 只能从以下 ID 中选三个主动技能（不要选被动）：${skillList}
 traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
 voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
   const visualRule = portrait
@@ -2417,19 +2418,20 @@ voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${pr
   try {
     const raw = outcome.raw;
     const str = (key: string, fallback: string, limit = 160) => typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim().slice(0, limit) : fallback;
-    const knownSkills = girlSkillPool();
-    const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && knownSkills.some(s => s.id === id)) : [];
-    const skillIds = takeOnePassive([...new Set(pickedSkills)].slice(0, 3));
-    const hasPassive = skillIds.some(isPassiveSkill);
-    // 模型给漏了或写错了，也按元素抽三条，而不是永远补池子开头那几条。
+    const elementHint = str('element', '星光系', 12);
+    const activePool = girlSkillPool().filter(skill => skill.tier !== 'passive');
+    const pickedSkills = Array.isArray(raw.skillIds) ? raw.skillIds.filter((id): id is string => typeof id === 'string' && activePool.some(s => s.id === id)) : [];
+    const skillIds = [...new Set(pickedSkills)].slice(0, 3);
+    // 模型给漏了或写错了，也按元素抽三条主动，而不是永远补池子开头那几条。
     if (skillIds.length < 3) {
-      for (const id of pickCandidateSkills([...((raw.name as string) ?? '')].reduce((sum, ch) => sum + ch.charCodeAt(0), 0), str('element', '星光系', 12))) {
+      for (const id of pickCandidateSkills([...((raw.name as string) ?? '')].reduce((sum, ch) => sum + ch.charCodeAt(0), 0), elementHint, false)) {
         if (skillIds.length >= 3) break;
         if (skillIds.includes(id)) continue;
-        if (hasPassive && isPassiveSkill(id)) continue;
         skillIds.push(id);
       }
     }
+    // 带不带被动由本地掷骰决定，不跟着模型每次都给一条。
+    const draftedSkills = rollPassiveSkill(skillIds, elementHint, Math.random);
     const picked = Array.isArray(raw.traits) ? raw.traits.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
     const draftTraits: DraftTrait[] = picked.slice(0, 3).map((item, index) => ({
       name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 12) : `未命名特性${index + 1}`,
@@ -2448,7 +2450,7 @@ voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${pr
       element: element === ('魔物' as Element) ? '星光系' : element, archetype: archetype === ('魔物' as Archetype) ? '治愈' : archetype,
       quote: str('quote', '请多指教。'), goal: str('goal', '想找到一个可以回去的地方。'),
       appearance: str('appearance', '短发，发梢有一缕不合规矩的挑染。', 200), personality: str('personality', '安静，习惯先观察再开口。'),
-      outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), voice: sanitizeVoice(raw.voice), focus, skillIds, traits: draftTraits,
+      outfitDescription: str('outfitDescription', '事务所配发的值夜制服，袖口略长。'), voice: sanitizeVoice(raw.voice), focus, skillIds: draftedSkills, traits: draftTraits,
       color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color.trim()) ? raw.color.trim() : undefined,
     } };
   } catch {
@@ -2466,7 +2468,7 @@ import { loadPlayerProfile, playerSummary } from './player.ts';
 import { worldbookContext } from './worldbook.ts';
 import { EMPLOYER_LABEL, factionTagLabel, representativeNameOf } from './factions.ts';
 import { tierLabels } from './content/skills.ts';
-import { girlSkillPool, isPassiveSkill, pickCandidateSkills, takeOnePassive } from './skills.ts';
+import { girlSkillPool, pickCandidateSkills, rollPassiveSkill } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
