@@ -200,10 +200,16 @@
   pointer-events: none;
 }
 
-/* 立绘整体放大 1.2 倍。顶边钉住、只向下长，多出来的部分是腿脚，
-   本来就会落在对话框后面；反过来从底部放大会切到头。 */
+/* 立绘整体放大 1.2 倍，底边钉在舞台底部：脚不会被推出画面，对话框是半透明的，
+   透过它仍能看到腿脚。放大后多出来的高度往头顶方向长，舞台顶部会裁掉一小截。 */
 .vn-actor .girl-portrait {
   transform: scale(1.2);
+  transform-origin: 50% 100%;
+}
+
+/* 两排时后排本来就不露脚：底边对齐会把头推出画面，改回顶边对齐，
+   多出来的腿脚藏在前排与对话框后面。 */
+.vn-cast.two-row .vn-actor[data-row="back"] .girl-portrait {
   transform-origin: 50% 0;
 }
 

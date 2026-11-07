@@ -264,6 +264,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
           return (
             <div
               key={id}
+              data-row={twoRows ? row : undefined}
               className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${lit ? 'active' : lastSpeakerId ? 'dimmed' : ''}`}
               style={twoRows
                 ? { left: `${(col * 100) / 3}%`, bottom: row === 'back' ? '20%' : 0, zIndex: speaking ? 40 : row === 'front' ? 20 : 10 }
