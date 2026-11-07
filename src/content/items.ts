@@ -4,6 +4,7 @@ import { tier2 } from './equipment/tier2.ts';
 import { tier3 } from './equipment/tier3.ts';
 import { tier4 } from './equipment/tier4.ts';
 import { tier5 } from './equipment/tier5.ts';
+import { withItemSet } from './sets.ts';
 
 export const factionInfo: Record<FactionId, { name: string; short: string; color: string; motto: string; envoy: string; title: string }> = {
   witch: { name: '月蚀庭', short: '月蚀', color: '#B98AD9', motto: '禁忌不是警告，是价格。', envoy: '黑川眠', title: '月蚀庭夜祷使' },
@@ -11,7 +12,7 @@ export const factionInfo: Record<FactionId, { name: string; short: string; color
   government: { name: '樱雾市役所', short: '市役所', color: '#9CC9D2', motto: '秩序是城市最慢、也最稳的魔法。', envoy: '雨宫澄', title: '夜间事务专员' },
 };
 
-export const items: Equipment[] = [...tier1, ...tier2, ...tier3, ...tier4, ...tier5];
+export const items: Equipment[] = [...tier1, ...tier2, ...tier3, ...tier4, ...tier5].map(withItemSet);
 
 export const itemById = new Map(items.map(i => [i.id, i]));
 export function findItem(id: string | undefined): Equipment | undefined {
@@ -26,9 +27,13 @@ export function getItem(id: string | undefined): Equipment | undefined {
 }
 /** 故事线奖励的专属装备：登记后 getItem / 装备栏 / 背包都能直接识别。 */
 export function registerItem(item: Equipment): Equipment {
-  const existing = itemById.get(item.id);
-  if (existing) return existing;
-  items.push(item);
-  itemById.set(item.id, item);
-  return item;
+  const decorated = withItemSet(item);
+  const existing = itemById.get(decorated.id);
+  if (existing) {
+    Object.assign(existing, decorated);
+    return existing;
+  }
+  items.push(decorated);
+  itemById.set(decorated.id, decorated);
+  return decorated;
 }

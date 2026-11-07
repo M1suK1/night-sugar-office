@@ -1,4 +1,4 @@
-import type { Equipment, GameState, Girl, StatKey } from './types';
+import type { Equipment, EquipmentSetId, GameState, Girl, StatKey } from './types';
 import { getItem } from './content/items.ts';
 import { guardMax } from './spirit.ts';
 
@@ -28,6 +28,16 @@ export function corruptionMultipliers(value: number): { empathy: number; other: 
 
 export function equipmentOf(girl: Girl): Equipment[] {
   return [getItem(girl.equipment?.weapon), getItem(girl.equipment?.charm)].filter((item): item is Equipment => Boolean(item));
+}
+
+/** 检查少女是否同时装备了同套装的法器与护符（v183）。 */
+export function activeSetOf(girl: Girl): EquipmentSetId | undefined {
+  const weapon = getItem(girl.equipment?.weapon);
+  const charm = getItem(girl.equipment?.charm);
+  if (weapon?.setId && charm?.setId && weapon.setId === charm.setId) {
+    return weapon.setId;
+  }
+  return undefined;
 }
 
 export function effectiveStats(girl: Girl, state?: GameState): Record<StatKey, number> {

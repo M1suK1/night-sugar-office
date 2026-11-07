@@ -7,7 +7,7 @@ import { missionBaseExp } from './missionReward.ts';
 import { attachPassive, passiveDamageBonus, passiveDamageReduction, passiveHitBonus, passiveInitiativeBonus } from './passives.ts';
 import { findMonster } from './content/monsters.ts';
 import { applyEliteBuff, eliteBuffById } from './content/eliteBuffs.ts';
-import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
+import { activeSetOf, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, equipmentOf } from './economy.ts';
 import { BROKEN_TAKEN_MUL, GUARD_STUN_ROUNDS, brokenSpiritDamage, guardHpMul, guardMax, isGuarded } from './spirit.ts';
 import { factionInfo } from './content/items.ts';
 import { districtAt, districts } from './districts.ts';
@@ -104,6 +104,10 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   const maxSpirit = effectiveMaxSpirit(girl);
   const gear = equipmentOf(girl);
   const extraSkills = gear.map(item => item.skillId).filter((id): id is string => Boolean(id));
+  const activeSet = activeSetOf(girl);
+  const damageReduce = gear.reduce((sum, item) => {
+    return sum + (item.affixes ?? []).reduce((a, aff) => a + (aff.kind === 'damageReduce' ? aff.amount : 0), 0);
+  }, 0);
   const unit: BattleUnit = {
     uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: girl.portrait, portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, expression: girl.expression, portraitSpec: girl.portraitSpec,
@@ -113,6 +117,8 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
     damageBonus: gear.reduce((sum, item) => sum + (item.damageBonus ?? 0), 0),
     initiativeBonus: gear.reduce((sum, item) => sum + (item.initiativeBonus ?? 0), 0),
+    activeSet,
+    damageReduce,
   };
   attachPassive(unit, unit.skills);
   return unit;
@@ -160,14 +166,16 @@ function breakGuard(unit: BattleUnit): void {
   unit.spiritBroken = true;
   addEffect(unit, { kind: 'stun', amount: 1, duration: GUARD_STUN_ROUNDS, source: '心防耗尽' });
 }
-function pickSkill(unit: BattleUnit, round: number, rng: () => number): Skill {
+export function pickSkill(unit: BattleUnit, round: number, rng: (() => number) | number): Skill {
   const known = unit.skills.map(findAnySkill).filter((skill): skill is Skill => skill !== undefined && skill.tier !== 'passive');
-  const usable = known.filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || round >= 2));
-  const pool = usable.length ? usable : known.filter(s => s.tier !== 'ultimate');
+  const canUltimate = round >= 2 || unit.activeSet === 'set-starlight';
+  const usable = known.filter(s => (unit.cooldown[s.id] ?? 0) <= 0 && (s.tier !== 'ultimate' || canUltimate));
+  const pool = usable.length ? usable : known.filter(s => s.tier !== 'ultimate' || canUltimate);
   const finalPool = pool.length ? pool : [known[0] ?? getSkill('plain-strike')];
   const weights = finalPool.map(s => s.tier === 'basic' ? 55 : s.tier === 'signature' ? 30 : 15);
   const total = weights.reduce((a, b) => a + b, 0);
-  let roll = rng() * total;
+  const rand = typeof rng === 'function' ? rng() : rng;
+  let roll = rand * total;
   for (let i = 0; i < finalPool.length; i++) {
     roll -= weights[i];
     if (roll <= 0) return finalPool[i];
@@ -421,10 +429,28 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   let empathyThisRound = new Set<string>();
   const brokenThisRound = new Set<string>();
   for (const unit of units) firePassive(unit, 'battleStart', { round: 1 });
+  for (const unit of units) {
+    if (unit.side === 'ally' && unit.activeSet) {
+      if (unit.activeSet === 'set-starlight') {
+        addEffect(unit, { kind: 'buff', stat: 'agility', amount: 8, duration: 1, source: '极光序曲' });
+        log({ round: 1, actor: unit.name, skillId: 'set-starlight', skillName: '极光序曲', targets: [unit.name], hit: true, note: `${unit.name}激活极光序曲，首轮速度提升！` });
+      } else if (unit.activeSet === 'set-frosting') {
+        const shieldAmount = Math.max(10, Math.round(unit.maxHp * 0.2));
+        addEffect(unit, { kind: 'shield', amount: shieldAmount, duration: 2, source: '甘饴庇护' });
+        log({ round: 1, actor: unit.name, skillId: 'set-frosting', skillName: '甘饴庇护', targets: [unit.name], hit: true, note: `${unit.name}唤起甘饴护盾（护盾 ${shieldAmount}）！` });
+      }
+    }
+  }
   for (let round = 1; round <= rounds; round++) {
     state.round = round;
     for (const unit of units) {
       if (unit.down) continue;
+      if (round > 1 && unit.activeSet === 'set-nature' && unit.hp < unit.maxHp) {
+        const heal = Math.max(1, Math.round((unit.maxHp - unit.hp) * 0.1));
+        unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+        unit.healed += heal;
+        log({ round, actor: unit.name, skillId: 'set-nature-heal', skillName: '常磐自愈', targets: [unit.name], hit: true, resource: 'hp', amount: heal, note: `${unit.name}生机流转，恢复了 ${heal} 点血量` });
+      }
       // Boss 换组：血量按绝对比例掉到某个阶段线就整套换招式，每换一次播一次。
       const phases = unit.monster?.bossPhases;
       if (phases?.length) {
@@ -521,8 +547,24 @@ export function simulateBattle(setup: BattleSetup): BattleState {
       const effectNotes: string[] = [];
       // 攻击技双方都掷骰；治疗与增益不掷，避免奶妈空手。
       const offensive = skill.side === 'enemy';
-      for (const target of targets) {
+      for (const origTarget of targets) {
+        let target = origTarget;
         if (target.down && skill.side === 'enemy') continue;
+        // 常磐套装：每场战斗 1 次替友方承受伤害
+        if (target.side === 'ally' && skill.side === 'enemy') {
+          const coverer = units.find(u => u.side === 'ally' && !u.down && u.uid !== target.uid && u.activeSet === 'set-nature' && !u.coveredOnce);
+          if (coverer) {
+            coverer.coveredOnce = true;
+            log({ round, actor: coverer.name, skillId: 'set-nature-cover', skillName: '常磐护卫', targets: [target.name], hit: true, note: `${coverer.name}挺身而出，替${target.name}承受了此次攻击！` });
+            target = coverer;
+          }
+        }
+        // 织梦套装：首轮首个受击绝对偏折 Miss
+        if (target.activeSet === 'set-dream' && round === 1 && !target.evadedFirstHit && skill.side === 'enemy') {
+          target.evadedFirstHit = true;
+          log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: `${target.name}织梦幻影偏折，攻击落空` });
+          continue;
+        }
         const hitRoll = hitChanceOf(unit, target, skill);
         const roll = offensive ? rng() * 100 : 0;
         const hit = !offensive || roll <= hitRoll.chance;
@@ -534,10 +576,15 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         if (skill.side === 'enemy') {
           const magic = statOf(unit, 'magic');
           const variance = 0.9 + rng() * 0.2;
-          const mitigation = 1 - damageReduction(target);
+          const affixMitigation = Math.max(0, Math.min(60, target.damageReduce ?? 0)) / 100;
+          const mitigation = (1 - damageReduction(target)) * (1 - affixMitigation);
+          // 焚烬套装：半血以下全伤害激增 25%
+          const cinderBonus = unit.activeSet === 'set-cinder' && unit.hp <= unit.maxHp * 0.5 ? 25 : 0;
+          // 幽月套装：法术伤害附带 20% 穿透
+          const moonBonus = unit.activeSet === 'set-moonlight' ? 20 : 0;
           // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
-          const gear = 1 + Math.max(-50, Math.min(200, (unit.damageBonus ?? 0) + passiveDamageBonus(unit))) / 100;
+          const gear = 1 + Math.max(-50, Math.min(200, (unit.damageBonus ?? 0) + passiveDamageBonus(unit) + cinderBonus + moonBonus)) / 100;
           const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain * gear));
           let dealt = 0;
           let shield = 0;
@@ -569,6 +616,11 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             const scaled = Math.max(1, Math.round(raw * guardHpMul(target) * (target.spiritBroken ? BROKEN_TAKEN_MUL : 1)));
             shield = Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), scaled);
             dealt = Math.min(target.hp, absorb(target, scaled));
+            if (target.activeSet === 'set-frosting' && !target.survivedLethalOnce && target.hp - dealt <= 0) {
+              target.survivedLethalOnce = true;
+              dealt = Math.max(0, target.hp - 1);
+              log({ round, actor: target.name, skillId: 'set-frosting-survive', skillName: '甘饴庇护', targets: [target.name], hit: true, note: `${target.name}甘饴守护触发，免死保留了最后 1 点生命！` });
+            }
             target.hp -= dealt;
             target.taken += dealt;
             unit.dealt += dealt;
@@ -579,6 +631,12 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             if (rule.trigger !== 'hit') continue;
             if (rule.effect === 'debuffAttacker') addEffect(unit, { kind: 'debuff', stat: rule.stat ?? 'hit', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
             if (rule.effect === 'dot') addEffect(unit, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
+          }
+          if (unit.activeSet === 'set-cinder' && offensive && hit && !target.down) {
+            addEffect(target, { kind: 'dot', amount: Math.max(4, Math.round(magic * 0.15)), duration: 2, source: unit.name, label: '烈火灼伤' });
+          }
+          if (target.activeSet === 'set-moonlight' && offensive && hit && !unit.down) {
+            addEffect(unit, { kind: 'debuff', stat: 'magic', amount: 15, duration: 2, source: target.name, label: '暗蚀虚弱' });
           }
           if (target.hp > 0) {
             firePassive(unit, 'onHit', { round, target });

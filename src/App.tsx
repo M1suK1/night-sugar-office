@@ -1856,6 +1856,8 @@ export default function App() {
           onUseItem={(girlId, itemId) => perform({ type: 'useItem', girlId, itemId })}
           onCouncil={() => navigate('council')}
           onOffice={() => setModal({ type: 'office' })}
+          onCraft={materials => perform({ type: 'craftEquipment', materials })}
+          onRefine={target => perform({ type: 'refineEquipment', target })}
         />
         </>
       ) : page === 'worldbook' ? (

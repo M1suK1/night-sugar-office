@@ -1,4 +1,6 @@
 import { outcomeLabel, rewardRate, simulateBattle } from '../combat.ts';
+import { findMonster } from '../content/monsters.ts';
+import { grantBattleDrops } from '../materials.ts';
 import { currentBoss, pickBoss } from '../content/bosses.ts';
 import { items } from '../content/items.ts';
 import { CONTRACT_DAYS } from '../contracts.ts';
@@ -13,7 +15,7 @@ import { recomputeMaxHp, missionExp } from '../progression.ts';
 import { effectiveDistrictEffect, factionName } from '../territories.ts';
 import { loadBalance } from '../balance.ts';
 import { applyHostility, pairOf } from '../hostility.ts';
-import type { BattleState, GameState, Girl, Interception, Mission, Scar, StatKey } from '../types.ts';
+import type { BattleState, GameState, Girl, Interception, Mission, Monster, Scar, StatKey } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
 import { addCondition, addCorruption, gainTrait } from './conditions.ts';
 import { book, clone, dateLabel, findGirl, grantExpWithNotice, hashText, pushNotice, shiftTerritory } from './core.ts';
@@ -187,6 +189,8 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
       if (mission.faction === 'witch') applyWitchBounty(state);
     }
     if (mission.boss && state.boss) defeatBoss(state, at.day);
+    const dropEnemies = (mission.enemyIds ?? []).map(id => state.customMonsters?.find(m => m.id === id) ?? findMonster(id)).filter((m): m is Monster => Boolean(m));
+    if (dropEnemies.length) grantBattleDrops(state, mission, dropEnemies, squad, battle.outcome);
     state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome, battle.partial === true)}：${mission.title}。${battle.partial ? '大部分魔物被清除，剩下的逃散了；事件同样移出委托池，报酬按 90% 结算。' : '魔物已被清除，事件移出委托池。'}${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
       pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `${battle.partial ? '委托达成' : '委托完成'} · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}${battle.partial ? '把大部分魔物清了出去' : '打赢了这一场'}，报酬 ${rewards.gold} 星砂${battle.partial ? '（不完全胜利 · 90%）' : ''}。` });
   } else if (battle.outcome === 'defeat') {

@@ -1,7 +1,7 @@
 import { GirlThumb } from '../components/GirlThumb';
 import { useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
-import type { FactionId, GameState, Girl, Room } from '../types';
+import type { FactionId, GameState, Girl, MaterialId, Room } from '../types';
 import { factionInfo, items } from '../content/items';
 import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
 import { envoyOfferOf } from '../rules/envoy';
@@ -12,6 +12,7 @@ import { PrologueDialog } from '../components/PrologueDialog';
 import { prologueFor } from '../prologue.ts';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { ClinicPanel } from '../components/ClinicPanel';
+import { ObservatoryWorkshop } from '../components/ObservatoryWorkshop';
 import { currentBoss } from '../content/bosses';
 import { districts } from '../districts.ts';
 import { pairLabel } from '../hostility.ts';
@@ -37,6 +38,8 @@ type BaseViewProps = {
   onUseItem?: (girlId: string, itemId: string) => void;
   onCouncil?: () => void;
   onOffice?: () => void;
+  onCraft?: (materials: Partial<Record<MaterialId, number>>) => void;
+  onRefine?: (target: { kind: 'inventory'; itemId: string } | { kind: 'girl'; girlId: string; slot: 'weapon' | 'charm' }) => void;
 };
 type RecordsViewProps = { state: GameState; onBattle: (id: string) => void; onBattleNote?: (id: string) => void; onCodex: () => void; onChronicle: () => void; onGirl?: (id: string) => void };
 type Metric = 'income' | 'expense' | 'reputation';
@@ -126,12 +129,14 @@ export function BaseView({
   onUseItem,
   onCouncil,
   onOffice,
+  onCraft,
+  onRefine,
 }: BaseViewProps) {
   const [selectedId, setSelectedId] = useState(state.rooms[0]?.id ?? 'lounge');
   const [loungeTab, setLoungeTab] = useState<'pending' | 'envoys' | 'resolved' | 'minutes'>('pending');
   const [clinicTab, setClinicTab] = useState<'care' | 'surgery' | 'supplies'>('care');
   const [dormTab, setDormTab] = useState<'rest' | 'capacity'>('rest');
-  const [obsTab, setObsTab] = useState<'expedition' | 'logs'>('expedition');
+  const [obsTab, setObsTab] = useState<'expedition' | 'warehouse' | 'workshop' | 'logs'>('expedition');
   const [expeditionSquad, setExpeditionSquad] = useState<string[]>([]);
 
   const present = state.girls.filter(girl => !girl.dead && !girl.retired && girl.status !== 'mission' && girl.status !== 'expedition');
@@ -635,10 +640,27 @@ export function BaseView({
               <button id="av-obs-tab-expedition" type="button" role="tab" aria-selected={obsTab === 'expedition'} className={obsTab === 'expedition' ? 'active' : ''} onClick={() => setObsTab('expedition')}>
                 远行观测 ({expedition ? '进行中' : '可出发'})
               </button>
+              <button id="av-obs-tab-warehouse" type="button" role="tab" aria-selected={obsTab === 'warehouse'} className={obsTab === 'warehouse' ? 'active' : ''} onClick={() => setObsTab('warehouse')}>
+                装备仓库
+              </button>
+              <button id="av-obs-tab-workshop" type="button" role="tab" aria-selected={obsTab === 'workshop'} className={obsTab === 'workshop' ? 'active' : ''} onClick={() => setObsTab('workshop')}>
+                星象工坊 (炼制/精炼)
+              </button>
               <button id="av-obs-tab-logs" type="button" role="tab" aria-selected={obsTab === 'logs'} className={obsTab === 'logs' ? 'active' : ''} onClick={() => setObsTab('logs')}>
                 星象记录
               </button>
             </div>
+
+            {(obsTab === 'warehouse' || obsTab === 'workshop') && (
+              <ObservatoryWorkshop
+                state={state}
+                subTab={obsTab}
+                onSubTab={setObsTab}
+                onCraft={onCraft}
+                onRefine={onRefine}
+                onGirl={onGirl}
+              />
+            )}
 
             {obsTab === 'expedition' && (
               <div className="av-module-panel">

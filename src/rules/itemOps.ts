@@ -2,6 +2,8 @@ import { effectiveMaxHp, effectiveMaxSpirit } from '../economy.ts';
 import { factionStanding, itemPrice } from '../rules/market.ts';
 import { factionInfo, getItem } from '../content/items.ts';
 import { book, clone, dateLabel, findGirl } from '../rules/core.ts';
+import { executeCraft } from '../crafting.ts';
+import { executeRefine } from '../refine.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -89,4 +91,28 @@ export function applyUseItem(state: GameState, action: Extract<GameAction, { typ
         return { state: next, ok: true, message: '执勤许可已激活，下一次签约金降低 10%。' };
       }
       return { state, ok: false, message: '这件物资需要在对应界面使用。' };
+}
+
+/** craftEquipment 的动作处理器（v181）。 */
+export function applyCraftEquipment(state: GameState, action: Extract<GameAction, { type: 'craftEquipment' }>): ActionResult {
+  const next = clone(state);
+  const outcome = executeCraft(next, action.materials);
+  if (!outcome.ok) return { state, ok: false, message: outcome.message };
+  return {
+    state: next,
+    ok: true,
+    message: `炼制成功！获得「${outcome.item.name}」（阶级 ${outcome.tier}）。`,
+  };
+}
+
+/** refineEquipment 的动作处理器（v182）。 */
+export function applyRefineEquipment(state: GameState, action: Extract<GameAction, { type: 'refineEquipment' }>): ActionResult {
+  const next = clone(state);
+  const outcome = executeRefine(next, action.target);
+  if (!outcome.ok) return { state, ok: false, message: outcome.message };
+  return {
+    state: next,
+    ok: true,
+    message: `精炼成功！「${outcome.item.name}」获得了【${outcome.affix.name}】。`,
+  };
 }

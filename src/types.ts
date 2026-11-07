@@ -193,11 +193,73 @@ export interface Outfit {
 /** 装备阶级：1 最低、5 最高，越高越少，换更高的声望门槛。 */
 export type EquipmentTier = 1 | 2 | 3 | 4 | 5;
 
+/** 装备所属六大套装（v180）：对应六大元素与六系材料。 */
+export type EquipmentSetId =
+  | 'set-starlight'
+  | 'set-frosting'
+  | 'set-moonlight'
+  | 'set-dream'
+  | 'set-nature'
+  | 'set-cinder';
+
+/** 炼制与掉落的六系基础材料（v180）。 */
+export type MaterialId =
+  | 'mat-stardust'
+  | 'mat-frosting'
+  | 'mat-moonlight'
+  | 'mat-dream'
+  | 'mat-nature'
+  | 'mat-cinder';
+
+export interface Material {
+  id: MaterialId;
+  name: string;
+  element: Element;
+  setId: EquipmentSetId;
+  description: string;
+  color: string;
+}
+
+export interface EquipmentSet {
+  id: EquipmentSetId;
+  name: string;
+  element: Element;
+  materialId: MaterialId;
+  skillName: string;
+  skillDescription: string;
+  color: string;
+}
+
+/** 精炼词条阶级与方向（v180）。阶级上限受装备 Tier 限制。 */
+export type AffixTier = 1 | 2 | 3 | 4 | 5;
+export type AffixKind =
+  | 'magic'
+  | 'insight'
+  | 'agility'
+  | 'empathy'
+  | 'damageReduce'
+  | 'maxHp'
+  | 'initiative'
+  | 'damageBonus';
+
+export interface Affix {
+  id: string;
+  name: string;
+  kind: AffixKind;
+  tier: AffixTier;
+  amount: number;
+  description: string;
+}
+
 export interface Equipment {
   id: string; name: string; faction: FactionId; slot: 'weapon' | 'charm' | 'consumable';
   price: number; standingReq: number; description: string;
   /** 阶级；旧数据、内容包与 LLM 装备可能没有，读入时由 `tierOf()` 按价格推断。 */
   tier?: EquipmentTier;
+  /** 所属套装（v180）：穿戴同套装法器+护符激活专属被动机制。 */
+  setId?: EquipmentSetId;
+  /** 精炼赋予的额外词条（v180）：最多 3 条，上限受 tier 约束。 */
+  affixes?: Affix[];
   stats?: Partial<Record<StatKey, number>>;
   passive?: string; skillId?: string; corruptionPerBattle?: number;
   maxHpBonus?: number; /** 旧字段：绝对心防加成，读入时折算成百分比后不再使用。 */ spiritBonus?: number;
@@ -803,6 +865,7 @@ export interface MonsterTemplate {
   /** 完整的多阶段技能组（Boss 副本专用，战斗日志读阶段台词）。 */
   bossPhases?: BossPhase[];
 }
+export type Monster = MonsterTemplate;
 export interface PortraitSpec {
   palette: { hair: string; hairShade: string; eye: string; cloth: string; clothShade: string; accent: string };
   hair: { style: number; length: 'short' | 'medium' | 'long'; bangs: number; ahoge: boolean; sideLocks: boolean };
@@ -1099,6 +1162,12 @@ export interface BattleUnit {
   passive?: Skill;
   /** 每场触发次数，按被动 id 计数。 */
   passiveUsed?: Record<string, number>;
+  /** 激活的六大套装被动机制（v183）。 */
+  activeSet?: EquipmentSetId;
+  coveredOnce?: boolean;
+  survivedLethalOnce?: boolean;
+  evadedFirstHit?: boolean;
+  damageReduce?: number;
   /** 每轮触发记录，按被动 id 记最后一次触发的轮次。 */
   passiveRound?: Record<string, number>;
 }
@@ -1113,6 +1182,8 @@ export interface BattleEvent {
   round: number; at: { day: number; minutes: number }; actor: string; skillId: string; skillName: string;
   targets: string[]; hit: boolean; resource?: SkillResource; amount?: number; effects?: string[]; note?: string; calc?: BattleCalc;
 }
+export type BattleOutcome = 'victory' | 'repelled' | 'defeat' | 'draw' | 'failure';
+
 export interface BattleState {
   id: string; missionId: string; missionTitle: string; seed: number;
   startedAt: { day: number; minutes: number };
@@ -1336,6 +1407,15 @@ export type GameAction =
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
   | { type: 'rollNewsCast' }
+  /** 星象台工坊：混合材料炼制装备（v180）。 */
+  | { type: 'craftEquipment'; materials: Partial<Record<MaterialId, number>> }
+  /** 星象台工坊：消耗同套材料与星砂精炼装备词条（v180）。 */
+  | {
+      type: 'refineEquipment';
+      target:
+        | { kind: 'inventory'; itemId: string }
+        | { kind: 'girl'; girlId: string; slot: 'weapon' | 'charm' };
+    }
   | { type: 'startMeeting'; plan: Omit<MeetingPlan, 'fee' | 'day' | 'at'> }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
