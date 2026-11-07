@@ -988,3 +988,7 @@
 - [x] App 自动开场门槛改用该函数；约谈 / 会议无 opening 的流程保持不变。
 - [x] `tests/v186` 五条；全量 849 通过，`check:rules` 与 `tsc -b` 通过。
 - [ ] 后续：若希望蓝图事件也先让玩家写开场，再单独改 EventDialog 的 empty 口径。
+## v190：回看时表情跟着读到的那一轮（`tasks/plan-v190.md`）
+- [x] 原文视图按阅读位置取表情，不再一打开就是结局的脸。
+- [x] 抽 `expressionAtTurn` 纯函数；滚动用 rAF 节流，首帧与新一轮落地各重算一次。
+- [x] `tests/v190` 四条；全量 853 通过，`check:rules` 与 `tsc -b` 通过。
