@@ -78,3 +78,29 @@ test('v179 刷新换一批嘉宾：事务所的少女也能上节目，记忆里
   assert.ok(first.some(person => girls.includes(person.id)), '至少一位事务所的少女上节目');
   assert.ok(JSON.stringify(first.map(p => p.id)) !== JSON.stringify(second.map(p => p.id)) || first.length === 1, '刷新一次换一批人');
 });
+
+test('v179 名册里的嘉宾也要有档案：没有性格与外形时，把代号、称号、她自己的话和备注递进去', () => {
+  const base = createInitialState();
+  const mate = {
+    id: 'g_card_mate01', faction: 'association', name: '珐露珊', codename: '星矩', title: '古星轨解构导师',
+    portrait: '', color: '#8a7bd6', level: 8, stats: { magic: 50, insight: 60, agility: 55, empathy: 58 },
+    statsLevel: {}, skills: [], tag: '', quote: '先把敬称带上，尊称我一声前辈。', note: '由事务所编入名册的少女。',
+    cardId: 'mate01', wardrobe: [], outfitId: '', expression: 'calm',
+  };
+  const state = {
+    ...base,
+    customFactionGirls: [mate],
+    factionRoster: {
+      association: { leaderId: '', memberIds: [mate.id] },
+      government: { leaderId: '', memberIds: [] },
+      witch: { leaderId: '', memberIds: [] },
+    },
+  };
+  const speaker = newsCastPool(state).find(person => person.id === mate.id)!;
+  const brief = newsSpeakerBrief(state, speaker);
+  assert.notEqual(brief, '', '不能只剩一行 ID');
+  assert.match(brief, /星矩/);
+  assert.match(brief, /古星轨解构导师/);
+  assert.match(brief, /前辈/);
+  assert.match(brief, /编入名册/);
+});

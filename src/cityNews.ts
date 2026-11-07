@@ -130,14 +130,27 @@ export function newsSpeakerBrief(state: GameState, speaker: CityNewsSpeaker): st
   }
   if (!speaker.faction) return '';
   const representative = factionRepresentativeOf(state, speaker.faction);
-  const member = representative.id === speaker.id && !representative.vacant
+  const member = (representative.id === speaker.id && !representative.vacant
     ? representative
-    : rosterMembers(state, speaker.faction).find(item => item.id === speaker.id);
-  const personality = (member as { personality?: string } | undefined)?.personality?.trim() ?? '';
-  const appearance = (member as { appearance?: string } | undefined)?.appearance?.trim() ?? '';
+    : rosterMembers(state, speaker.faction).find(item => item.id === speaker.id)) as
+    { personality?: string; appearance?: string; quote?: string; note?: string; codename?: string } | undefined;
+  const personality = member?.personality?.trim() ?? '';
+  const appearance = member?.appearance?.trim() ?? '';
   const parts: string[] = [];
   if (personality) parts.push(`性格：${personality.slice(0, 160)}`);
   if (appearance) parts.push(`外形：${appearance.slice(0, 80)}`);
+  // 名册里的人是按卡面登记的：性格与外形常常空着，但名字、代号、头衔、
+  // 她自己的那句话和编入备注一定有——这些也要递给模型，否则第三位嘉宾
+  // 在提示词里就只剩一行 ID，等于没有档案。
+  const codename = member?.codename?.trim() ?? '';
+  if (codename) parts.push(`代号 ${codename}`);
+  const memberTitle = (member as { title?: string } | undefined)?.title?.trim() ?? '';
+  if (memberTitle) parts.push(`称号 ${memberTitle}`);
+  const quote = member?.quote?.trim() ?? '';
+  if (quote) parts.push(`她自己的口气：「${quote.slice(0, 90)}」`);
+  const note = member?.note?.trim() ?? '';
+  if (note) parts.push(`备注：${note.slice(0, 60)}`);
+  if (!parts.length) parts.push('档案里没填性情与外形：按她的身份、信条与此刻的处境说话，不要替她编造经历。');
   return parts.join('；');
 }
 
