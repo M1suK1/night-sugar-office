@@ -43,7 +43,7 @@ export function migrate(raw: Record<string, unknown>): GameState | null {
       const old = (raw.missions as Mission[] | undefined)?.find(x => x.id === m.id);
       return old ? { ...m, status: old.status, girlId: old.girlId, squad: old.girlId ? [old.girlId] : [], attempts: old.status === 'done' ? 1 : 0 } : m;
     });
-    return { ...base, day: Number(raw.day) || 14, minutes: Number(raw.minutes) || 0, gold: Number(raw.gold) || 0, reputation: Number(raw.reputation) || 50, girls, missions, logs: Array.isArray(raw.logs) ? raw.logs.slice(0, 300) : base.logs, completed: Array.isArray(raw.completed) ? raw.completed.filter(x => typeof x === 'string') : [], samples: Array.isArray(raw.samples) ? raw.samples.slice(-60) : base.samples, messages: {}, memorial: [], battles: [] };
+    return { ...base, day: Number(raw.day) || 14, minutes: Number(raw.minutes) || 0, gold: Number(raw.gold) || 0, reputation: Number(raw.reputation) || 50, girls, missions, logs: Array.isArray(raw.logs) ? raw.logs : base.logs, completed: Array.isArray(raw.completed) ? raw.completed.filter(x => typeof x === 'string') : [], samples: Array.isArray(raw.samples) ? raw.samples : base.samples, messages: {}, memorial: [], battles: [] };
   } catch { return null; }
 }
 export function loadState(raw: string | null): GameState {
@@ -77,15 +77,17 @@ export function loadState(raw: string | null): GameState {
         }
       }
     }
-    if (!Array.isArray(value.logs) || value.logs.length > 300) return createInitialState();
-    if (!Array.isArray(value.samples) || value.samples.length > 60) return createInitialState();
+    if (!Array.isArray(value.logs)) return createInitialState();
+    if (!Array.isArray(value.samples)) return createInitialState();
     const messages = value.messages && typeof value.messages === 'object' && !Array.isArray(value.messages) ? value.messages as Record<string, unknown> : {};
     for (const [key, list] of Object.entries(messages)) {
       if (!ids.has(key)) return createInitialState();
-      if (!Object.hasOwn(messages, key) || !Array.isArray(list) || list.length > 60) return createInitialState();
+      if (!Object.hasOwn(messages, key) || !Array.isArray(list)) return createInitialState();
       for (const m of list) if (!m || typeof m !== 'object' || !['girl', 'player', 'system'].includes((m as { role: string }).role) || typeof (m as { text: unknown }).text !== 'string') return createInitialState();
     }
     const state = clone(value) as unknown as GameState;
+    // v194：数量不再当坏档，也不再裁剪——日志与日结是这局的历史，全部留着。
+    // 以前超过 300 条就整份退回新开局，存档会显示成「未编成」、读回来还是第 14 日。
     const previousVersion = Number(value.version);
     state.version = 20;
     // 老存档不该被开场打断：只有本版之后新建的档才可能没看过。

@@ -48,7 +48,6 @@ export function sampleFor(state: GameState, day: number): Sample {
     sample = { day, income: 0, expense: 0, reputation: state.reputation };
     state.samples.push(sample);
     state.samples.sort((a, b) => a.day - b.day);
-    if (state.samples.length > 60) state.samples.shift();
   }
   return sample;
 }
