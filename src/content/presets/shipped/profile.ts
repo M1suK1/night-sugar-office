@@ -1,4 +1,4 @@
-/** 出厂预设：角色起草（由本地调好的那份导出，v178）。 */
+/** 出厂预设（v178，由本地调好的那份导出）。 */
 export const PRESET = {
  "schema": 7,
  "temp_openai": 0.35,
@@ -27,16 +27,6 @@ export const PRESET = {
    "role": "system",
    "scope": "shared",
    "system_prompt": "{{player}}",
-   "marker": false,
-   "disable": true
-  },
-  {
-   "identifier": "tone",
-   "name": "叙事语气",
-   "content": "用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。",
-   "role": "system",
-   "scope": "shared",
-   "system_prompt": "用克制、具体的笔触叙述。多写动作、环境与停顿，少解释心理；不要替玩家做决定。",
    "marker": false,
    "disable": true
   },
@@ -473,10 +463,6 @@ export const PRESET = {
     },
     {
      "identifier": "player",
-     "enabled": false
-    },
-    {
-     "identifier": "tone",
      "enabled": false
     },
     {

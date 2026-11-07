@@ -22,7 +22,7 @@ test('v49 分区：十六条新词条都在默认词条里，且不会误报「�
     assert.equal(found?.scope, section.scope);
     assert.equal(promptHasMechanicBan(section.content), false, `${section.id} 被误判成禁止数值`);
   }
-  assert.equal(DEFAULT_PROMPTS.length, 39);
+  assert.equal(DEFAULT_PROMPTS.length, 38);
 });
 
 test('v49 迁移：旧预设补到最新 schema，只补缺、不覆盖同 id 的自定义词条', () => {
