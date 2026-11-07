@@ -988,3 +988,8 @@
 - [x] App 自动开场门槛改用该函数；约谈 / 会议无 opening 的流程保持不变。
 - [x] `tests/v186` 五条；全量 849 通过，`check:rules` 与 `tsc -b` 通过。
 - [ ] 后续：若希望蓝图事件也先让玩家写开场，再单独改 EventDialog 的 empty 口径。
+## v196：角色档案显示套装与词条（`tasks/plan-v196.md`）
+- [x] 装备槽 / 仓库槽位 / 持有卡片都显示阶级、套装、基础加成与精炼词条。
+- [x] 两件同套时显示「套装已激活」条：套装名、被动名与效果。
+- [x] 抽 `equipmentFacts` 纯函数；删掉旧的单行 `gearSummary`。
+- [x] `tests/v196` 四条；全量 855 通过，`check:rules` 与 `tsc -b` 通过。

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
-import type { Equipment, Expression, GameState, Girl, StatKey } from '../types';
+import type { Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionOutfits, expressionVariantKey } from '../expressions';
 import { planForSlot } from '../storyplan';
 import { activePersonality } from '../personality';
-import { effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
+import { activeSetOf, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
+import { findEquipmentSet } from '../content/sets';
+import { EquipmentFacts } from './EquipmentFacts';
 import { clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -31,11 +33,6 @@ const dossierTabs = [
 const expressions: { id: Expression; label: string; note: string }[] = EXPRESSIONS.map(id => ({ id, label: EXPRESSION_META[id].label, note: EXPRESSION_META[id].note }));
 const expressionIcons = { calm: Meh, smile: Smile, surprise: Sparkles, sad: Frown, angry: Angry, shy: Heart } as const;
 const slotLabels = { weapon: '法器', charm: '护符' } as const;
-
-function gearSummary(item: Equipment) {
-  const stats = Object.entries(item.stats ?? {}).map(([key, value]) => `${statLabels[key as StatKey]}+${value}`).join(' · ');
-  return item.passive ?? (stats || item.description);
-}
 
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
@@ -136,6 +133,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const drug = drugDaysLeft(girl, state.day);
   const consumables = items.filter(item => item.slot === 'consumable' && (state.inventory[item.id] ?? 0) > 0);
   const gear = items.filter(item => (item.slot === 'weapon' || item.slot === 'charm') && (state.inventory[item.id] ?? 0) > 0);
+  /** 两件同套才激活：法器 + 护符。 */
+  const activeSet = findEquipmentSet(activeSetOf(girl));
   const corruptionLabel = girl.witch ? '魔女化' : corruptionTier === 2 ? '第三阶段' : corruptionTier === 1 ? '第二阶段' : '第一阶段';
   const variantOutfitId = currentExpressionOutfitId(girl);
   const importedVariantCount = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, id)])).length;
@@ -327,12 +326,18 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                     return (
                       <button key={slot} id={`dossier-equipment-${slot}`} type="button" className={`equipment-slot ${equipmentDrawer === slot ? 'active' : ''}`} onClick={() => { setEquipmentDrawer(slot); setDrawerMessage(''); }} aria-label={`打开${slotLabels[slot]}仓库，当前${item?.name ?? '空置'}`}>
                         <span className="equipment-slot-top"><em>{slotLabels[slot]}</em><small>0{index + 1}</small></span>
-                        {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small></> : <><b className="empty">空置</b><small>点击打开仓库，拖入装备</small></>}
+                        {item ? <><b>{item.name}</b><EquipmentFacts item={item} /></> : <><b className="empty">空置</b><small>点击打开仓库，拖入装备</small></>}
                         <span className="equipment-open">打开仓库 <ChevronRight size={11} /></span>
                       </button>
                     );
                   })}
                 </div>
+                {activeSet && (
+                  <div className="equipment-set-active" style={{ '--set-color': activeSet.color } as React.CSSProperties}>
+                    <span><b>{activeSet.name}</b><em>{activeSet.skillName}</em></span>
+                    <small>{activeSet.skillDescription}</small>
+                  </div>
+                )}
                 <div className="consumable-row">
                   <span className="consumable-label"><Syringe size={12} />随身物资</span>
                   {consumables.length ? consumables.map(item => <button key={item.id} id={`dossier-use-${item.id}`} type="button" className="consumable-chip" onClick={() => onUseItem(item.id)}>{item.name}<em>×{state.inventory[item.id]}</em></button>) : <p>仓库里没有可用物资。去市场采购，或从势力货架补充。</p>}
@@ -688,7 +693,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                   onDragLeave={() => setDragOver(current => current === slot ? null : current)}
                   onDrop={event => dropOnSlot(event, slot)}>
                   <span className="drawer-slot-label">{slotLabels[slot]}<small>DROP HERE</small></span>
-                  {item ? <><b>{item.name}</b><small>{gearSummary(item)}</small><button type="button" id={`dossier-unequip-${slot}`} className="drawer-unequip" onClick={() => { setDrawerMessage(''); onUnequip(slot); }}>卸下</button></> : <><b className="empty">拖入{slotLabels[slot]}</b><small>空置槽位</small></>}
+                  {item ? <><b>{item.name}</b><EquipmentFacts item={item} /><button type="button" id={`dossier-unequip-${slot}`} className="drawer-unequip" onClick={() => { setDrawerMessage(''); onUnequip(slot); }}>卸下</button></> : <><b className="empty">拖入{slotLabels[slot]}</b><small>空置槽位</small></>}
                 </div>
               );
             })}
@@ -700,7 +705,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 onDragStart={event => { event.dataTransfer.setData('text/equipment-id', item.id); event.dataTransfer.effectAllowed = 'move'; }}
                 onClick={() => { if (item.slot === 'weapon' || item.slot === 'charm') equipFromInventory(item.id, item.slot); }}>
                 <span className={`gear-glyph ${item.slot}`}>{item.slot === 'weapon' ? <Wand2 size={15} /> : <ShieldCheck size={15} />}</span>
-                <span className="gear-copy"><b>{item.name}</b><small>{gearSummary(item)}</small></span>
+                <span className="gear-copy"><b>{item.name}</b><EquipmentFacts item={item} showPassive /></span>
                 <em>×{state.inventory[item.id]}</em>
               </button>
             )) : <div className="drawer-empty"><PackageOpen size={22} /><p>仓库里还没有装备。<br />去市场或势力货架采购。</p></div>}
