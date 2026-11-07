@@ -988,3 +988,7 @@
 - [x] App 自动开场门槛改用该函数；约谈 / 会议无 opening 的流程保持不变。
 - [x] `tests/v186` 五条；全量 849 通过，`check:rules` 与 `tsc -b` 通过。
 - [ ] 后续：若希望蓝图事件也先让玩家写开场，再单独改 EventDialog 的 empty 口径。
+## v192：宽松模式漏修单数 opinion（`tasks/plan-v192.md`）
+- [x] 宽松修复同时覆盖 `opinions` 数组与旧的单数 `opinion`，裁定为「只掉提出者羁绊」。
+- [x] 三条严格口径用例显式钉成 strict，不再靠默认模式侥幸通过。
+- [x] `tests/v192` 五条（含 strict / lenient 对照）；全量 854 通过，`tsc -b` 通过。
