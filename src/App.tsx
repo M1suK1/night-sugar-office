@@ -100,6 +100,7 @@ import { backfillPortraits } from './portraitBackfill';
 import { cardboxCards, loadCardBox, readCardRaw, saveCardBox } from './cardbox';
 import { LIBRARY_START_ROSTER, normalizeToLevel, readLibraryCards } from './cardLibrary';
 import { STARTER_COUNT, factionSnapshotFromCards } from './roster';
+import { backfillFactionDescriptions, rosterDescriptionsMissing } from './rosterBackfill';
 import { factionSeatsMissing } from './factions';
 import { StarterDialog } from './components/StarterDialog';
 import { StarterLoading } from './components/StarterLoading';
@@ -261,6 +262,18 @@ export default function App() {
 
   // v170：预设和世界书一样，浏览器与本地存档各存一份 —— 换浏览器不该把玩家调好的词条丢掉。
   const presetSynced = useRef(false);
+  /** v179：名册里缺性格与外形的人，启动时按 cardId 补读一次卡面（只补空的字段）。 */
+  const rosterDescribed = useRef(false);
+  useEffect(() => {
+    if (rosterDescribed.current) return;
+    if (!rosterDescriptionsMissing(state).length) return;
+    rosterDescribed.current = true;
+    void backfillFactionDescriptions(state).then(result => {
+      if (!result) return;
+      setState(result.state);
+      notify(`名册补全：${result.filled.length} 位从卡面补上了性格与外形。`);
+    });
+  }, [state]);
   useEffect(() => {
     let alive = true;
     void (async () => {
