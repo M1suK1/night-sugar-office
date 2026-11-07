@@ -25,7 +25,20 @@ if (!fs.existsSync(source)) {
   process.exit(1);
 }
 
+/** 本地是否已有这条分支；`rev-parse --verify` 在没有时会直接失败。 */
+const hasBranch = (name) => {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { cwd: root, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 if (fs.existsSync(work)) git(['worktree', 'remove', '--force', work]);
+// 每次同步都重建：上一轮留下的 cards-sync 会让 `checkout --orphan` 撞名失败。
+// 分支只在本脚本里当发布载体，远端 origin/cards 才是要保留的那一份。
+if (hasBranch(localBranch)) git(['branch', '-D', localBranch]);
 git(['worktree', 'add', '--detach', work]);
 
 try {
