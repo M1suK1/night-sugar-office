@@ -1215,6 +1215,8 @@ export interface GameState {
   cityNews?: CityNews;
   /** v167：玩家指定的新闻主持人；缺省按日号从在场人物里定。 */
   newsHostId?: string;
+  /** v179：每次手动刷新都往后挪一格——嘉宾、辖区、要谈的事跟着换一批。 */
+  newsRoll?: number;
   /** v168：最近的会议记录（只留 30 场）。 */
   meetings?: MeetingRecord[];
   /** 升级成长方式：手动发点 / 按职阶自动加点；旧档按 auto 读。 */
@@ -1333,6 +1335,7 @@ export type GameAction =
   | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
+  | { type: 'rollNewsCast' }
   | { type: 'startMeeting'; plan: Omit<MeetingPlan, 'fee' | 'day' | 'at'> }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }

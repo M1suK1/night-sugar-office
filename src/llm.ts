@@ -1703,6 +1703,16 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
       return brief ? `${head}\n  ${brief}` : head;
     })
     .join('\n');
+  const castIds = [host, ...guests].filter((person): person is NonNullable<typeof host> => Boolean(person)).map(person => person.id);
+  const memoryLines = castIds
+    .map(id => {
+      const girl = [...(state.girls ?? []), ...(state.candidates ?? [])].find(item => item.id === id);
+      if (!girl) return '';
+      const memory = newsGuestMemory(state, id);
+      return memory ? `${girl.name}：\n${memory}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
   const hint = [
     `请为第 ${state.day} 日的夜晚写这档访谈。提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`,
     '【今晚台上的人】',
@@ -1712,6 +1722,8 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
     `- 污染：${points.pollution}`,
     `- 安定：${points.stability}`,
     `- 街头：${points.street}`,
+    '【她们最近做过的事】这是她们自己的经历；聊到时用她自己的口吻带一句，不要念数字、不要整段复述。',
+    memoryLines || '（最近没有特别的事，聊眼前就好）',
     '每个人说话都要像她自己：照上面写的性格与说话方式，三个人不要一个腔调，也不要写成汇报或通报。',
     '上面的数字只是给你判断形势用的：台词里不要报数字、不要念读数，把它们变成具体的人、事、动作和情绪。',
   ].join('\n');
@@ -1969,6 +1981,20 @@ function recentEventSummaries(state: GameState, girlId: string, limit = 4): stri
     .join('\n');
 }
 
+/**
+ * 台上的人最近真的做过什么（v179）：委托结果 + 已结束的剧情与会议。
+ * 访谈要让人觉得她们在聊自己的事，就得把这段记忆一起递进去。
+ */
+function newsGuestMemory(state: GameState, girlId: string): string {
+  const outcome: Record<string, string> = { victory: '打赢了', defeat: '没打下来', repelled: '被挡了回去', draw: '两败', success: '办成了', failure: '办砸了' };
+  const runs = (state.missionRuns ?? [])
+    .filter(run => run.girlIds.includes(girlId))
+    .slice(-2)
+    .reverse()
+    .map(run => `· 第 ${run.day} 日「${run.title}」${run.district ? `（${districts[run.district].name}）` : ''}：${outcome[run.outcome] ?? run.outcome}`);
+  const events = recentEventSummaries(state, girlId, 2).split('\n').filter(Boolean);
+  return [...runs, ...events].slice(0, 4).join('\n');
+}
 function storyCastBrief(girl: Girl, isAssistant = false): string {
   // v176：助手在提示词里要有身份，不然模型只把她当普通契约者。
   return `${girl.name}（${girl.id}）${isAssistant ? ' · 所长的助手' : ''} · ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;

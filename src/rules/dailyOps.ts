@@ -227,6 +227,13 @@ export function applySetNewsHost(state: GameState, action: Extract<GameAction, {
   return { state: next, ok: true, message: `${person.name}接下今晚的主持。` };
 }
 
+/** rollNewsCast（v179）：手动刷新时换一批嘉宾、换一块辖区、换要谈的事。 */
+export function applyRollNewsCast(state: GameState): ActionResult {
+  const next = clone(state);
+  next.newsRoll = ((next.newsRoll ?? 0) + 1) % 100000;
+  return { state: next, ok: true, message: `节目单翻到第 ${next.newsRoll + 1} 版。` };
+}
+
 /** addWhisper 的动作处理器（v35 从 act 拆出）。 */
 export function applyAddWhisper(state: GameState, action: Extract<GameAction, { type: 'addWhisper' }>): ActionResult {
       const job = state.whisperQueue?.find(entry => entry.id === action.jobId);

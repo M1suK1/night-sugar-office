@@ -32,7 +32,7 @@ import {
   applyStartExpedition,
 } from './rosterOps.ts';
 import {
-  applyAddWhisper, applyDropWhisper, applyMarkWhispersRead, applySetCityNews, applySetNewsHost, care,
+  applyAddWhisper, applyDropWhisper, applyMarkWhispersRead, applySetCityNews, applyRollNewsCast, applySetNewsHost, care,
   dispatch, talk,
 } from './dailyOps.ts';
 import {
@@ -137,6 +137,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'setPoolLimit': return applySetPoolLimit(state, action);
     case 'setCityNews': return applySetCityNews(state, action);
   case 'setNewsHost': return applySetNewsHost(state, action);
+  case 'rollNewsCast': return applyRollNewsCast(state);
     case 'deleteMission': return applyDeleteMission(state, action);
     case 'deleteCandidate': return applyDeleteCandidate(state, action);
     case 'deleteMonster': return applyDeleteMonster(state, action);

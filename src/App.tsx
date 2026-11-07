@@ -459,7 +459,7 @@ export default function App() {
   };
   /** v167：返回这一档最终写入的内容（没生成出来就是 undefined），控制台的 news 命令要用它回话。 */
   const refreshCityNews = async (mode: 'auto' | 'manual' = 'manual', override?: GameState): Promise<CityNews | undefined> => {
-    const current = override ?? latestState.current ?? state;
+    let current = override ?? latestState.current ?? state;
     // 接手的第一夜自动播开场那一条；手动刷新（含 news 命令）照常请叙事者。
     if (current.day <= OPENING_NEWS_DAY && mode === 'auto') {
       const opening = openingCityNews(OPENING_NEWS_DAY, loadPlayerProfile().name);
@@ -467,6 +467,15 @@ export default function App() {
         commitCityNews(opening);
       }
       return;
+    }
+    // v179：手动刷新先翻一版节目单 —— 换个嘉宾、换块辖区、换要谈的事，
+    // 不翻的话同一档节目每次生成出来都是同一批人问同一件事。
+    if (mode === 'manual') {
+      const rolled = act(current, { type: 'rollNewsCast' });
+      if (rolled.ok) {
+        current = rolled.state;
+        setState(rolled.state);
+      }
     }
     if (newsBusyRef.current) return;
     if (loadBalance().cityNewsEnabled !== 1) {

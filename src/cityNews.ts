@@ -1,5 +1,5 @@
 import type { CityNews, CityNewsItem, CityNewsSpeaker, FactionId, GameState } from './types.ts';
-import { districtOrder, districts } from './districts.ts';
+import { districtOrder, districts, type DistrictId } from './districts.ts';
 import { factionInfo } from './content/items.ts';
 import { FACTION_ORDER } from './territories.ts';
 import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel, pairMembers } from './hostility.ts';
@@ -151,7 +151,34 @@ export function pickNewsHost(state: GameState): CityNewsSpeaker | undefined {
 }
 
 /** 嘉宾：火气最高那一对的另一方 + 污染最重辖区相关的代表；凑不齐就退回现场其他人。 */
-export function pickNewsGuests(state: GameState, hostId?: string): CityNewsSpeaker[] {
+/** 今晚这一档的版本号：手动刷新一次就往后挪一格。 */
+export function newsRollOf(state: GameState): number {
+  return state.newsRoll ?? 0;
+}
+
+/** 事务所里最近真的做过事的人（按最近一次委托排），roll 用来轮换着上节目。 */
+function activeGirls(state: GameState, roll: number, hostId?: string): CityNewsSpeaker[] {
+  const girls = (state.girls ?? []).filter(girl => !girl.dead && !girl.retired && !girl.left && girl.id !== hostId);
+  if (!girls.length) return [];
+  const rank = new Map<string, number>();
+  [...(state.missionRuns ?? [])]
+    .sort((left, right) => (right.day ?? 0) - (left.day ?? 0))
+    .forEach((run, index) => {
+      for (const id of run.girlIds) if (!rank.has(id)) rank.set(id, index);
+    });
+  const ordered = [...girls].sort((left, right) => (rank.get(left.id) ?? 999) - (rank.get(right.id) ?? 999));
+  const shift = roll % ordered.length;
+  return [...ordered.slice(shift), ...ordered.slice(0, shift)]
+    .map(girl => ({ id: girl.id, name: girl.name, title: girl.title || '事务所的契约者' }));
+}
+
+/**
+ * 嘉宾（v179）：事务所的人先占一个席位，剩下的给今晚最有话说的势力。
+ *
+ * roll 每刷新一次加一，同一个主持人也会换一批嘉宾、换一块辖区——以前每次刷新
+ * 抽到的人都一样，看起来像重播。
+ */
+export function pickNewsGuests(state: GameState, hostId?: string, roll = newsRollOf(state)): CityNewsSpeaker[] {
   const pool = newsCastPool(state).filter(person => person.id !== hostId);
   if (!pool.length) return [];
   const picked: CityNewsSpeaker[] = [];
@@ -162,23 +189,42 @@ export function pickNewsGuests(state: GameState, hostId?: string): CityNewsSpeak
     picked.push(person);
   };
 
+  // ① 事务所的人：她们才聊得出「自己做过的事」。
+  take(activeGirls(state, roll, hostId)[0]);
+
+  // ② 火气最高那一对里，跟所长更疏远的一方。
   const hottest = [...HOSTILITY_PAIRS]
     .map(pair => ({ pair, value: hostilityValue(state, pair) }))
     .sort((left, right) => right.value - left.value)[0];
   if (hottest) {
     const [a, b] = pairMembers(hottest.pair);
-    // 站到对立面的是「跟所长更疏远」的那一方：他更有话要说。
     const rival = (state.factions[a]?.standing ?? 0) <= (state.factions[b]?.standing ?? 0) ? a : b;
-    take(pool.find(person => person.faction === rival));
+    const rivals = pool.filter(person => person.faction === rival);
+    take(rivals.length ? rivals[roll % rivals.length] : undefined);
   }
-  const dirtiest = [...districtOrder].sort((a, b) => (state.pollution?.[b] ?? 0) - (state.pollution?.[a] ?? 0))[0];
-  if (dirtiest) take(pool.find(person => person.faction === state.territories?.[dirtiest]));
+  // ③ 辖区当主；辖区本身也跟着 roll 换。
+  const district = rolledDistrict(state, roll);
+  if (district) {
+    const owners = pool.filter(person => person.faction === state.territories?.[district]);
+    take(owners.length ? owners[roll % owners.length] : undefined);
+  }
   for (const person of pool) take(person);
   return picked;
 }
 
+/** 今晚聊哪块辖区：污染最重的前四块里按 roll 轮换。 */
+function rolledDistrict(state: GameState, roll: number): DistrictId | undefined {
+  const ranked = [...districtOrder]
+    .map(id => ({ id, pollution: state.pollution?.[id] ?? 0 }))
+    .sort((left, right) => right.pollution - left.pollution)
+    .slice(0, 4)
+    .map(item => item.id as DistrictId);
+  if (!ranked.length) return undefined;
+  return ranked[roll % ranked.length];
+}
+
 /** 一句话概括今晚的局面，本地兜底与提示词共用。 */
-export function newsTalkingPoints(state: GameState): { faction: string; pollution: string; stability: string; street: string } {
+export function newsTalkingPoints(state: GameState, roll = newsRollOf(state)): { faction: string; pollution: string; stability: string; street: string } {
   const hottest = [...HOSTILITY_PAIRS]
     .map(pair => ({ pair, value: hostilityValue(state, pair) }))
     .sort((a, b) => b.value - a.value)[0];
@@ -188,9 +234,8 @@ export function newsTalkingPoints(state: GameState): { faction: string; pollutio
       const best = [...FACTION_ORDER].sort((a, b) => (state.factions[b]?.standing ?? 0) - (state.factions[a]?.standing ?? 0))[0];
       return best ? `${factionInfo[best].name}的态度 ${state.factions[best]?.standing ?? 0}` : '三方今晚都没什么表示';
     })();
-  const dirtiest = [...districtOrder]
-    .map(id => ({ id, pollution: state.pollution?.[id] ?? 0 }))
-    .sort((a, b) => b.pollution - a.pollution)[0];
+  const dirtiestId = rolledDistrict(state, roll);
+  const dirtiest = dirtiestId ? { id: dirtiestId, pollution: state.pollution?.[dirtiestId] ?? 0 } : undefined;
   const pollution = dirtiest
     ? `${districts[dirtiest.id].name}的污染 ${dirtiest.pollution}（${pollutionTierLabel(dirtiest.pollution)}）`
     : '污染读数缺席';
