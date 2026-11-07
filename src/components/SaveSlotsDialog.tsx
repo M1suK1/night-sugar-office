@@ -3,7 +3,8 @@ import { AlertTriangle, HardDriveDownload, HardDriveUpload, FolderOpen, RotateCc
 import {
   SAVE_SLOT_IDS, formatSlotTime, slotLabel, slotSummaries, slotsUsedBytes, type SaveSlotId, type SaveSlotSummary,
 } from '../saves.ts';
-import { listLocalFiles, localPaths, shortPath, type LocalFile } from '../localfiles.ts';
+import { downloadFile, listLocalFiles, localPaths, shortPath, type LocalFile } from '../localfiles.ts';
+import { loadRecoveredSaves, type RecoveredSave } from '../migrate.ts';
 
 type SlotAction = (id: SaveSlotId) => void | Promise<void>;
 
@@ -23,6 +24,8 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
   startersPicked?: boolean;
 }) {
   const [slots, setSlots] = useState<(SaveSlotSummary | null)[]>([]);
+  /** v197：读不出来、但原件已保留下来的自动存档。 */
+  const [recovered, setRecovered] = useState<RecoveredSave[]>([]);
   const [used, setUsed] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [savesDir, setSavesDir] = useState('');
@@ -33,6 +36,7 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
     setUsed(await slotsUsedBytes());
   };
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void loadRecoveredSaves().then(setRecovered); }, []);
   useEffect(() => {
     void (async () => {
       const paths = await localPaths();
@@ -59,6 +63,21 @@ export function SaveSlotsDialog({ onSave, onLoad, onDelete, onRestart, onLoadFil
       <button id="slot-current-load" type="button" className="btn" disabled={typeof day !== 'number' || !onContinue} onClick={onContinue}>
         <HardDriveDownload size={14} />接着上一夜
       </button>
+    </section>}
+
+    {boot && recovered.length > 0 && <section className="slot-local" id="slot-recovered">
+      <div className="slot-local-head">
+        <span><AlertTriangle size={12} />有一份读不出来的自动存档（原件已保留）</span>
+        <small>没有被覆盖</small>
+      </div>
+      <p className="muted">导出后可以再导入，或发来排查。它不会自动参与读档。</p>
+      <div className="slot-actions">
+        {recovered.map((item, index) => (
+          <button key={item.savedAt} id={`slot-recovered-export-${index}`} type="button" className="btn" onClick={() => downloadFile(`recovered-save-${item.savedAt}.json`, JSON.stringify(item.raw))}>
+            <HardDriveDownload size={14} />导出 · {formatSlotTime(item.savedAt)}
+          </button>
+        ))}
+      </div>
     </section>}
 
     {savesDir && onLoadFile && <section className="slot-local" id="slot-local">

@@ -310,6 +310,8 @@ export default function App() {
       if (!alive) return;
       setState(boot.state);
       setHadSave(boot.hadSave);
+      // v197：读档失败时原件已另存；这里只说清楚发生了什么。
+      if (boot.recovered) notify('原来的自动存档读不出来，已把原件保留在本地（读档界面可以导出）。这一次先按新的一局打开。', false);
       slimLoadedImages(boot.state);
       // 有存档也停在标题页：老板该先决定是接着那一夜还是重开一场。
       // 但会话里已经进过正片、读到的又是一份没编成过的旧档时，先补编成。

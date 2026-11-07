@@ -11,9 +11,23 @@
 
 import type { AssetId, GameState, Girl, Outfit } from './types.ts';
 import { SAVE_KEY, loadState } from './game.ts';
+import { loadStateStrict } from './rules/persistence.ts';
 import { assetPut, dataUrlToBlob, kvGet, kvSet } from './store.ts';
 
 export const SAVE_CURRENT_KEY = 'save/current';
+/** v197：读不出来的自动存档原样留在这里，绝不让新开局盖掉。 */
+export const RECOVERED_SAVE_KEY = 'save/recovered';
+export interface RecoveredSave { savedAt: number; raw: unknown }
+export async function loadRecoveredSaves(): Promise<RecoveredSave[]> {
+  try {
+    const list = await kvGet<unknown>(RECOVERED_SAVE_KEY);
+    return Array.isArray(list)
+      ? list.filter((item): item is RecoveredSave => Boolean(item) && typeof item === 'object' && 'raw' in (item as object))
+      : [];
+  } catch {
+    return [];
+  }
+}
 export const MIGRATION_KEY = 'meta/migrated';
 export const MIGRATION_VERSION = 2;
 
@@ -117,9 +131,15 @@ export async function migrateLegacyStorage(options: { keepInline?: boolean } = {
  * `loadState` 仍走 JSON 校验（它只认字符串），所以这里把对象串回去再交给它——
  * 校验逻辑不动，省得两套。
  */
-export async function bootState(options: { keepInline?: boolean } = {}): Promise<{ state: GameState; hadSave: boolean }> {
+export async function bootState(options: { keepInline?: boolean } = {}): Promise<{ state: GameState; hadSave: boolean; recovered?: boolean }> {
   await migrateLegacyStorage(options);
   const stored = await kvGet<GameState>(SAVE_CURRENT_KEY);
-  const state = loadState(stored ? JSON.stringify(stored) : null);
-  return { state, hadSave: Boolean(stored) };
+  if (!stored) return { state: loadState(null), hadSave: false };
+  const strict = loadStateStrict(JSON.stringify(stored));
+  if (strict) return { state: strict, hadSave: true };
+  // v197：自动存档读不出来时，先原样留一份，再退回新开局。
+  // 以前这里直接返回新开局，随后自动存档把原件盖掉——一次误判就等于删档。
+  const kept = await loadRecoveredSaves();
+  await kvSet(RECOVERED_SAVE_KEY, [{ savedAt: Date.now(), raw: stored }, ...kept].slice(0, 3)).catch(() => undefined);
+  return { state: loadState(null), hadSave: false, recovered: true };
 }

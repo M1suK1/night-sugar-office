@@ -46,44 +46,44 @@ export function migrate(raw: Record<string, unknown>): GameState | null {
     return { ...base, day: Number(raw.day) || 14, minutes: Number(raw.minutes) || 0, gold: Number(raw.gold) || 0, reputation: Number(raw.reputation) || 50, girls, missions, logs: Array.isArray(raw.logs) ? raw.logs : base.logs, completed: Array.isArray(raw.completed) ? raw.completed.filter(x => typeof x === 'string') : [], samples: Array.isArray(raw.samples) ? raw.samples : base.samples, messages: {}, memorial: [], battles: [] };
   } catch { return null; }
 }
-export function loadState(raw: string | null): GameState {
-  if (!raw) return createInitialState();
+function normalizeState(raw: string | null): GameState | null {
+  if (!raw) return null;
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); } catch { return createInitialState(); }
-  if (!parsed || typeof parsed !== 'object') return createInitialState();
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (!parsed || typeof parsed !== 'object') return null;
   const value = parsed as Record<string, unknown>;
   if (value.version === 1) return migrate(value) ?? createInitialState();
-  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(value.version as number)) return createInitialState();
+  if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(value.version as number)) return null;
   try {
     const blankSave = value.blank === true;
-    if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return createInitialState();
+    if (!Array.isArray(value.girls) || (!value.girls.length && !blankSave) || !value.girls.every(validGirl)) return null;
     const ids = new Set<string>();
     for (const girl of value.girls) {
-      if (ids.has(girl.id)) return createInitialState();
+      if (ids.has(girl.id)) return null;
       ids.add(girl.id);
-      if (girl.scars && !Array.isArray(girl.scars)) return createInitialState();
-      if (girl.relationships && (typeof girl.relationships !== 'object' || Array.isArray(girl.relationships))) return createInitialState();
+      if (girl.scars && !Array.isArray(girl.scars)) return null;
+      if (girl.relationships && (typeof girl.relationships !== 'object' || Array.isArray(girl.relationships))) return null;
     }
-    if (!Array.isArray(value.rooms) || value.rooms.length < 1 || value.rooms.length > 4) return createInitialState();
-    if (!Array.isArray(value.missions)) return createInitialState();
+    if (!Array.isArray(value.rooms) || value.rooms.length < 1 || value.rooms.length > 4) return null;
+    if (!Array.isArray(value.missions)) return null;
     for (const mission of value.missions as Mission[]) {
-      if (!mission || typeof mission.id !== 'string' || !['open', 'active', 'done', 'expired'].includes(mission.status)) return createInitialState();
-      if (!Array.isArray(mission.squad)) return createInitialState();
+      if (!mission || typeof mission.id !== 'string' || !['open', 'active', 'done', 'expired'].includes(mission.status)) return null;
+      if (!Array.isArray(mission.squad)) return null;
       if (mission.status === 'active') {
-        if (!mission.squad.length) return createInitialState();
+        if (!mission.squad.length) return null;
         for (const id of mission.squad) {
           const girl = (value.girls as Girl[]).find(g => g.id === id);
-          if (!girl || girl.status !== 'mission' || girl.missionId !== mission.id) return createInitialState();
+          if (!girl || girl.status !== 'mission' || girl.missionId !== mission.id) return null;
         }
       }
     }
-    if (!Array.isArray(value.logs)) return createInitialState();
-    if (!Array.isArray(value.samples)) return createInitialState();
+    if (!Array.isArray(value.logs)) return null;
+    if (!Array.isArray(value.samples)) return null;
     const messages = value.messages && typeof value.messages === 'object' && !Array.isArray(value.messages) ? value.messages as Record<string, unknown> : {};
     for (const [key, list] of Object.entries(messages)) {
-      if (!ids.has(key)) return createInitialState();
-      if (!Object.hasOwn(messages, key) || !Array.isArray(list)) return createInitialState();
-      for (const m of list) if (!m || typeof m !== 'object' || !['girl', 'player', 'system'].includes((m as { role: string }).role) || typeof (m as { text: unknown }).text !== 'string') return createInitialState();
+      if (!ids.has(key)) return null;
+      if (!Object.hasOwn(messages, key) || !Array.isArray(list)) return null;
+      for (const m of list) if (!m || typeof m !== 'object' || !['girl', 'player', 'system'].includes((m as { role: string }).role) || typeof (m as { text: unknown }).text !== 'string') return null;
     }
     const state = clone(value) as unknown as GameState;
     // v194：数量不再当坏档，也不再裁剪——日志与日结是这局的历史，全部留着。
@@ -280,8 +280,14 @@ export function loadState(raw: string | null): GameState {
       ? state.chronicle.filter((entry): entry is ChronicleEntry => Boolean(entry) && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && Number.isFinite(entry.day)).slice(0, 200)
       : [];
     return state;
-  } catch { return createInitialState(); }
+  } catch { return null; }
 }
+
+/** 读档：读不出来就退回新开局（旧调用方依赖这个行为）。 */
+export function loadState(raw: string | null): GameState { return normalizeState(raw) ?? createInitialState(); }
+
+/** 严格读档：读不出来返回 null，调用方自己决定怎么保住原件。 */
+export function loadStateStrict(raw: string | null): GameState | null { return normalizeState(raw); }
 
 /**
  * v25 迁移：共情值从「第二条血条」变成「心防」。

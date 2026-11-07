@@ -999,3 +999,9 @@
 - [x] 读档对称还原；札记说话者判定改为 girlId。
 - [x] `tests/v195` 四条；全量 856 通过，`check:rules` 与 `tsc -b` 通过。
 - [ ] 后续：导出文件仍自包含 data URL，体积较大属预期。
+## v197：读档失败保护（`tasks/plan-v197.md`）
+- [x] `loadStateStrict`：读不出来返回 null，启动流程据此判断，不再直接吞掉。
+- [x] 坏档原件写进 `save/recovered`（最多 3 份），启动时明确提示。
+- [x] 读档界面列出保留的旧档，可导出原始 JSON。
+- [x] `tests/v197` 两条；全量 860 通过，`check:rules` 与 `tsc -b` 通过。
+- [ ] 后续：坏档的字段级修复 / 自动迁移。
