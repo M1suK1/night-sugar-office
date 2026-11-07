@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { beatsFromBattleNote, beatsFromPassage, beatsFromTurns, NARRATOR_ID } from '../src/vn/beats.ts';
 import { vnInitial, vnRebase, vnReducer, vnAwaitingChoice } from '../src/vn/reducer.ts';
 import { resolveBackdrop } from '../src/vn/backdrops.ts';
-import { speakersBySegment, stageAfter } from '../src/vn/stage.ts';
+import { expressionsAt, lastSpeakerAt, speakersBySegment, stageAfter } from '../src/vn/stage.ts';
 import { placeLines, spreadAfter } from '../src/storyLines.ts';
 import type { VnBeat } from '../src/vn/types.ts';
 
@@ -393,4 +393,32 @@ test('v95 视觉小说开关会同步两条内置词条', async () => {
   for (const spec of VN_PROMPT_ENTRIES) {
     assert.equal(presetPrompts(off).find(item => item.id === spec.id)!.enabled, false, '关掉只停用不删');
   }
+});
+
+test('视觉小说 说完话保持点亮：旁白与所长发言不换人，只有下一个角色开口才换', () => {
+  const beats: VnBeat[] = [
+    { kind: 'say', speakerId: 'yue', name: '月见桃', text: '一', expression: 'smile', segment: 1 },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '二', segment: 1 },
+    { kind: 'say', speakerId: 'player', name: '所长', text: '三', segment: 1 },
+    { kind: 'say', speakerId: 'tang', name: '唐可可', text: '四', segment: 1 },
+  ];
+  assert.equal(lastSpeakerAt(beats, 0, ['yue', 'tang']), 'yue');
+  assert.equal(lastSpeakerAt(beats, 1, ['yue', 'tang']), 'yue', '旁白不抢焦点');
+  assert.equal(lastSpeakerAt(beats, 2, ['yue', 'tang']), 'yue', '所长发言不抢焦点');
+  assert.equal(lastSpeakerAt(beats, 3, ['yue', 'tang']), 'tang');
+  assert.equal(lastSpeakerAt(beats, 3, ['tang']), 'tang');
+  assert.equal(lastSpeakerAt(beats, 0, ['tang']), '', '不在台上的角色不算');
+});
+
+test('视觉小说 表情按人保留：没写表情沿用上一次，不被旁白重置', () => {
+  const beats: VnBeat[] = [
+    { kind: 'say', speakerId: 'yue', name: '月见桃', text: '一', expression: 'sad' },
+    { kind: 'say', speakerId: NARRATOR_ID, name: '旁白', text: '二' },
+    { kind: 'say', speakerId: 'yue', name: '月见桃', text: '三' },
+    { kind: 'say', speakerId: 'yue', name: '月见桃', text: '四', expression: 'angry' },
+  ];
+  assert.equal(expressionsAt(beats, 1).get('yue'), 'sad');
+  assert.equal(expressionsAt(beats, 2).get('yue'), 'sad', '没写表情的台词沿用上一次');
+  assert.equal(expressionsAt(beats, 3).get('yue'), 'angry', '下一次给表情才换');
+  assert.equal(expressionsAt(beats, 0).size, 1, '旁白不进表情表');
 });

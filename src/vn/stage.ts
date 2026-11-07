@@ -8,6 +8,7 @@
  *
  * 纯函数，方便直接测「谁进谁出」。
  */
+import type { Expression } from '../types.ts';
 import type { VnBeat } from './types.ts';
 
 /** 舞台档位：1–6 各占一档，7 人以上合成 "many"。CSS 按 data-count 取高度。 */
@@ -101,4 +102,37 @@ export function stageAfter(current: readonly string[], wanted: readonly string[]
     entering: newcomers,
     leaving: current.filter(id => !wanted.includes(id)),
   };
+}
+
+/**
+ * 舞台上的「谁还亮着」：最近一个真正开口的角色。
+ *
+ * 旁白与所长发言不换人——上一位角色保持亮着，直到下一个角色开口；
+ * 新一段还没人说话时也沿用上一段的最后发言人。
+ */
+export function lastSpeakerAt(beats: readonly VnBeat[], index: number, castIds: readonly string[]): string {
+  for (let at = Math.min(index, beats.length - 1); at >= 0; at -= 1) {
+    const item = beats[at];
+    if (item?.kind !== 'say') continue;
+    if (!item.speakerId || item.speakerId === 'narrator' || item.speakerId === 'player') continue;
+    if (castIds.includes(item.speakerId)) return item.speakerId;
+  }
+  return '';
+}
+
+/**
+ * 每个人截至当前节拍的最后一次表情。
+ *
+ * 台词没写表情就沿用上一次的值，不退回演员的默认表情；
+ * 换一段演出时 beats 重置，历史自然从新的一段重新算。
+ */
+export function expressionsAt(beats: readonly VnBeat[], index: number): Map<string, Expression> {
+  const map = new Map<string, Expression>();
+  for (let at = 0; at <= Math.min(index, beats.length - 1); at += 1) {
+    const item = beats[at];
+    if (item?.kind !== 'say' || !item.speakerId || !item.expression) continue;
+    if (item.speakerId === 'narrator' || item.speakerId === 'player') continue;
+    map.set(item.speakerId, item.expression);
+  }
+  return map;
 }

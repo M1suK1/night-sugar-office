@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronsRight, FastForward, Rewind, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { castBucket, speakersBySegment, stageAfter, stageRows, swapSpeaker } from './stage';
+import { castBucket, expressionsAt, lastSpeakerAt, speakersBySegment, stageAfter, stageRows, swapSpeaker } from './stage';
 import type { StageRows } from './stage';
 import { vnAwaitingChoice, vnInitial, vnLastSayIndex, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
@@ -185,6 +185,10 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
   const speakerColor = isPlayer ? '#f3aec9' : speaker?.girl.color || focus?.girl.color || '#f3aec9';
 
   const castIds = useMemo(() => cast.map(member => member.id), [cast]);
+  // 说完一句不急着暗下去，也不把表情打回默认：舞台记住最后开口的人与每个人最后一次表情，
+  // 直到下一个角色开口、或下一次台词给出新表情。
+  const lastSpeakerId = useMemo(() => lastSpeakerAt(state.beats, state.index, castIds), [state.beats, state.index, castIds]);
+  const lastExpressions = useMemo(() => expressionsAt(state.beats, state.index), [state.beats, state.index]);
   // 每一段（一幕剧情 / 一轮交互 / 一场战斗）里有谁开过口 —— 舞台只留这一段在场的人。
   const segmentSpeakers = useMemo(() => speakersBySegment(state.beats), [state.beats]);
 
@@ -249,7 +253,8 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
       <div className={`vn-cast ${twoRows ? 'two-row' : ''}`} data-count={castBucket(shownCast.length)} aria-hidden="true">
         {shownCast.map(({ id, member }, at) => {
           const speaking = isSay && !isNarrator && !isPlayer && say!.speakerId === id;
-          const expression = (speaking ? say?.expression : undefined) ?? member.girl.expression ?? 'calm';
+          const lit = lastSpeakerId === id;
+          const expression = lastExpressions.get(id) ?? member.girl.expression ?? 'calm';
           const leaving = stage.leaving.includes(id);
           const entering = stage.entering.includes(id);
           const frontAt = rows.front.indexOf(id);
@@ -259,7 +264,7 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
           return (
             <div
               key={id}
-              className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${speaking ? 'active' : 'dimmed'}`}
+              className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${lit ? 'active' : lastSpeakerId ? 'dimmed' : ''}`}
               style={twoRows
                 ? { left: `${(col * 100) / 3}%`, bottom: row === 'back' ? '20%' : 0, zIndex: speaking ? 40 : row === 'front' ? 20 : 10 }
                 : { zIndex: speaking ? 40 : 10 + at }}
