@@ -79,14 +79,40 @@ export function takeOnePassive(ids: readonly string[]): string[] {
 }
 
 /**
+ * v169：起草完的三条主动里，掷一次骰子决定要不要换一条被动（三成带、七成不带）。
+ *
+ * 只用在「模型挑技能」的入口：模型只负责挑主动，带不带被动由本地决定，
+ * 免得提示词里一提被动，模型每次都会顺手带一条。换的时候优先换基础，
+ * 其次本职，最后才动奥义；来源本流派优先，其次通用。
+ */
+export function rollPassiveSkill(ids: readonly string[], element: string | undefined, rng: () => number): string[] {
+  const picked = [...ids];
+  if (!picked.length || picked.some(isPassiveSkill)) return picked;
+  if (rng() >= 0.3) return picked;
+  const passives = girlSkillPool().filter(skill => skill.tier === 'passive');
+  const themed = element ? passives.filter(skill => skill.school === element) : [];
+  const generic = passives.filter(skill => skill.school === '通用');
+  // 六成走本流派被动，其余从通用里挑；元素没有专属被动时也落到通用。
+  const source = themed.length && rng() < 0.6 ? themed : (generic.length ? generic : passives);
+  if (!source.length) return picked;
+  const passive = source[Math.min(source.length - 1, Math.floor(rng() * source.length))]!;
+  const tiers = picked.map(id => skillById.get(id)?.tier);
+  const basic = tiers.indexOf('basic');
+  const at = basic >= 0 ? basic : Math.max(0, tiers.indexOf('signature'));
+  picked[at] = passive.id;
+  return picked;
+}
+
+/**
  * 给程序生成（非手写）的少女挑三条技能（v164）。
  *
  * - 三成概率带一条被动，本流派优先，其次通用；
  * - 其余位置从主动里按阶级权重抽（基础 55 / 本职 30 / 奥义 15），六成优先本流派；
  * - 最多 1 条被动，且不会抽成三条同阶级；
- * - 种子确定：同一份候选刷新前后一致，不同候选之间又不会重样。
+ * - 种子确定：同一份候选刷新前后一致，不同候选之间又不会重样；
+ * - `withPassive` 传 false 时只抽主动，给「被动另外掷骰」的起草路径用。
  */
-export function pickCandidateSkills(seed: number, element?: string): string[] {
+export function pickCandidateSkills(seed: number, element?: string, withPassive = true): string[] {
   const pool = girlSkillPool();
   const actives = pool.filter(skill => skill.tier !== 'passive');
   const passives = pool.filter(skill => skill.tier === 'passive');
@@ -98,7 +124,7 @@ export function pickCandidateSkills(seed: number, element?: string): string[] {
     picked.push(id);
   };
 
-  if (rng() < 0.3) {
+  if (withPassive && rng() < 0.3) {
     const themed = element ? passives.filter(skill => skill.school === element) : [];
     const generic = passives.filter(skill => skill.school === '通用');
     // 六成走本流派被动，其余从通用里挑；元素没有专属被动时也落到通用。
@@ -128,7 +154,7 @@ export function pickCandidateSkills(seed: number, element?: string): string[] {
     push(choice.id);
   }
 
-  for (const skill of [...actives, ...pool]) {
+  for (const skill of (withPassive ? [...actives, ...pool] : actives)) {
     if (picked.length >= 3) break;
     push(skill.id);
   }
