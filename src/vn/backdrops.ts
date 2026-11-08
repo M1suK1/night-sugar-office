@@ -5,6 +5,7 @@
  * 以后要接真图时，只改这个文件：`image` 填上资产 id 或 data URL，
  * 组件会按 `image ? img : gradient` 渲染，剧本与适配器一行都不用动。
  */
+import { districts, type DistrictId } from '../districts.ts';
 import type { VnBackdrop } from './types.ts';
 
 export interface ResolvedBackdrop {
@@ -47,6 +48,24 @@ const IMAGES: Record<string, string> = {
 
 export const DISTRICT_BACKDROP_IDS = ['candy', 'station', 'plaza', 'greenhouse', 'cathedral', 'crossroad', 'oldtown', 'clocktower', 'docks'] as const;
 
+/** 室内背景：会客厅、诊所、宿舍、星象台。 */
+export const ROOM_BACKDROP_IDS = ['room:lounge', 'room:clinic', 'room:dorm', 'room:observatory'] as const;
+
+/** 剧情能选的背景 id：九块辖区 + 四个房间。 */
+export const BACKDROP_IDS: readonly string[] = [...DISTRICT_BACKDROP_IDS, ...ROOM_BACKDROP_IDS];
+
+export function isBackdropId(value: unknown): value is string {
+  return typeof value === 'string' && BACKDROP_IDS.includes(value);
+}
+
+/** 提示词里的可选背景清单：id + 中文名，模型照着选。 */
+export function backdropChoicesText(): string {
+  const rooms: Record<string, string> = {
+    'room:lounge': '会客厅', 'room:clinic': '月光诊所', 'room:dorm': '晚安宿舍', 'room:observatory': '星象台',
+  };
+  return BACKDROP_IDS.map(id => `${id}（${rooms[id] ?? districts[id as DistrictId]?.name ?? id}）`).join('、');
+}
+
 /** 同样的种子永远落回同一块辖区：这一段重开也不会换地方。 */
 function districtBySeed(seed: string): string {
   let sum = 7;
@@ -62,16 +81,20 @@ function districtBySeed(seed: string): string {
  */
 export function storyBackdropOf(event: {
   id: string;
+  /** v191：模型在写这一段时选的背景；认不出来就退回下面的旧规则。 */
+  backdrop?: string;
   meeting?: { placeId?: string };
   /** 事件场景各有各的形状，这里只认里面可能有的 scene 字段。 */
   scenes?: readonly unknown[];
   stage?: number;
 }): VnBackdrop {
   const place = event.meeting?.placeId ?? '';
+  // 会议地点是系统写死的事实，比叙事者选的背景更硬。
   if (place.startsWith('district:')) {
     const id = place.slice('district:'.length);
     if ((DISTRICT_BACKDROP_IDS as readonly string[]).includes(id)) return { id };
   }
+  if (isBackdropId(event.backdrop)) return { id: event.backdrop };
   const scene = (event.scenes?.[event.stage ?? 0] as { scene?: unknown } | undefined)?.scene;
   if (typeof scene === 'string' && IMAGES[scene]) return { id: scene };
   if (place && IMAGES[place]) return { id: place };

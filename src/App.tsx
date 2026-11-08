@@ -594,7 +594,7 @@ export default function App() {
         ? result.data.passages.map((passage, index) => ({ id: `p${index + 1}`, title: passage.title, narration: passage.narration, lines: passage.lines, choices: passage.choices.map((choice, at) => ({ id: `c${index + 1}-${at + 1}`, label: choice.label, intent: choice.intent, effect: choice.effect })) }))
         : buildTemplateArc(target, story?.premise ?? '', event.hook);
       const summary = result.ok ? result.data.summary : `「${event.title}」：${target.name}把没说完的话说完了。`;
-      setState(prev => { const applied = act(prev, { type: 'beginStoryEvent', eventId: event.id, passages, summary }); return applied.ok ? applied.state : prev; });
+      setState(prev => { const applied = act(prev, { type: 'beginStoryEvent', eventId: event.id, passages, summary, backdrop: result.ok ? result.data.backdrop : undefined }); return applied.ok ? applied.state : prev; });
       setArcBusy(null);
     })();
   }, [modal, state.events, arcBusy]);
@@ -621,10 +621,11 @@ export default function App() {
       let opening = event.opening?.trim() ?? '';
       let lines: StoryLine[] = [];
       let options: string[] = [];
+      let backdrop: string | undefined = event.backdrop;
       // 蓝图已经写好开场白就直接用，别让叙事者再覆盖一遍。
       if (config.apiKey && !opening) {
         const result = await generateStoryOpening(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), seed);
-        if (result.ok) { opening = result.narration; lines = result.lines; options = result.options; }
+        if (result.ok) { opening = result.narration; lines = result.lines; options = result.options; backdrop = result.backdrop ?? event.backdrop; }
         else {
           // 失败就停在这一步：玩家写的那段还留着，卡片会退回输入态。
           notify(`${result.message || '开场白没有写出来'}这一句已经记下了，可以再试一次。`, false);
@@ -634,7 +635,7 @@ export default function App() {
       }
       if (!opening) opening = seed ? `${seed}\n\n${event.hook}` : (event.hook || '她在这里等你开口。');
       if (!options.length) options = ['你先开口问她', '你看一眼她手边的东西', '你什么都不说，等她先讲'];
-      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options, seed }); return applied.ok ? applied.state : prev; });
+      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options, seed, backdrop }); return applied.ok ? applied.state : prev; });
       setArcBusy(null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1651,6 +1652,7 @@ export default function App() {
       opening: '',
       turns: [],
       sessionDone: false,
+      backdrop: data?.backdrop,
       stage: 0, status: 'active', day: state.day, source: data ? 'llm' : 'template', badge: true,
     };
     // 生成事件时可能已经过去几十秒：写回时以最新状态为准，别把期间的剧情回合覆盖掉。

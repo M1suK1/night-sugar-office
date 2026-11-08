@@ -3,6 +3,7 @@ import { applyStoryEffect } from '../rules/storyCore.ts';
 import { buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
 import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } from '../rules/storyRun.ts';
 import { ensureGraph, validateGraph } from '../storygraph.ts';
+import { isBackdropId } from '../vn/backdrops.ts';
 import { STORY_SLOT_MAX, planForSlot, playableStoryPlan, sanitizeStoryPlan, setPlanForSlot } from '../storyplan.ts';
 import { archive, clone, dateLabel, findGirl } from '../rules/core.ts';
 import { settleMeeting } from './meetingSettle.ts';
@@ -155,6 +156,7 @@ export function applyBeginStoryEvent(state: GameState, action: Extract<GameActio
       if (!action.passages.length) return { state, ok: false, message: '这段剧情还没有内容。' };
       event.mode = 'story';
       event.passages = action.passages;
+      if (isBackdropId(action.backdrop)) event.backdrop = action.backdrop;
       event.passageIndex = 0;
       event.chosen = [];
       event.summary = action.summary;
@@ -173,6 +175,7 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       event.mode = 'session';
       event.cast = cast;
       event.opening = opening;
+      if (isBackdropId(action.backdrop)) event.backdrop = action.backdrop;
       event.sessionDone = false;
       event.status = 'active';
       event.badge = false;

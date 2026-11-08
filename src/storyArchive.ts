@@ -35,6 +35,8 @@ export interface ArchivedStory {
   lead?: { id: string; name: string; cardId?: string };
   participants: { id: string; name: string }[];
   summary: string;
+  /** v191：这一段当时用的背景；老副本没有这一项，回看时按辖区规则兜底。 */
+  backdrop?: string;
   turns: ArchivedStoryTurn[];
 }
 
@@ -97,6 +99,7 @@ export function replayEventOf(story: ArchivedStory): CharacterEvent {
     mode: 'session',
     turns,
     cast: story.participants.map(person => person.id),
+    backdrop: story.backdrop,
     summary: story.summary,
     sessionDone: true,
   };
@@ -128,6 +131,7 @@ export function archiveStoryRecord(event: CharacterEvent, state?: GameState): Ar
     lead: event.girlId ? { id: event.girlId, name: names.get(event.girlId) ?? leadGirl?.name ?? event.girlId, cardId: leadGirl?.cardId } : undefined,
     participants,
     summary: (event.summary ?? '').trim(),
+    backdrop: event.backdrop,
     turns: (event.turns ?? []).map(turn => ({
       role: turn.role,
       text: turn.text,
