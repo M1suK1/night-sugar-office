@@ -792,7 +792,7 @@
 - [x] `sanitizeGeneratedIncident` 补齐触发器与类别：`trigger` 缺省按类别推导（report→dayStart、decision→wave 1、scene→missionDone），`kind` 与 `girlId` 不一致时降级成环境事件，`ttlMinutes` 夹在 60–480，`faction` / `district` 一起洗。
 - [x] 新增 `incidentBatchContract()`：把突发事件的 JSON 形状、trigger 三选一、kind 三选一、出场角色白名单、效果幅度表、存活时长写进提示词（原来是硬编码字符串，且完全没有这些字段）。
 - [x] 测试：新增 `tests/v63.test.ts` 七条（营业日只在 20:00 翻、跨午夜不刷新、开门刷新、午夜后打烊进下一天、池子条目按 trigger 投放、内置优先、触发器推导与降级）；顺手修 `game.test.ts` / `v24.test.ts` 里「把 report 也当有选项」的旧测试助手。
-- [ ] 待做：v63-3（6 个结构契约 + 生成器字面量全部进预设、`PRESET_SCHEMA 7`、`prompt-lint` 测试）、v63-4（提示词全量视图 UI + 导入导出）。
+- [x] v63-3 / v63-4 已由 v198 收尾：生成器里的提示词字面量全部搬进预设，`PRESET_SCHEMA 8`，`prompt-lint` 闸门归零。
 ## v63-3a：结构契约也进预设（可见、可改）
 
 - [x] 新增 `src/promptContracts.ts`：10 条 `contract: true` 词条（daily / news / incident / battle / storyline / arc / arc:opening / arc:turn / chat / whisper），带 `defaultContent`（出厂文本）。
@@ -802,14 +802,14 @@
 - [x] `dialogueContract()` 进 `promptSections.ts`，`llm.ts` 的 `DIALOGUE_FORMAT_HINT` 改为调用它；`dailyContract` 由 `llm-night` 注册进契约表（避免 presets ⇄ llm-night 成环）。
 - [x] 预设界面的契约词条带「结构契约 · 最后注入」角标，改了就按你写的走。
 - [x] 测试：新增 `tests/v64.test.ts` 五条（契约词条齐备、改了就用预设、正文不重复、内置与 schema 7、迁移幂等不覆盖）；`game.test.ts` 三处计数断言改成「正文词条数不变 + 契约另算」。
-- [ ] 待做：v63-3b（剩余生成器字面量：单条突发事件模板、storyline/arc 的 user 句、profile/outfit 契约；以及 `prompt-lint` 测试）、v63-4（提示词全量视图：按任务分组 + 改动标记 + 导入导出）。
+- [x] v63-3b / v63-4 已由 v198 收尾：剩余字面量全部进 `promptSections.ts`；提示词全量视图的「全部用途」页签本来就是平铺，不用再做分组折叠。
 ## v63-3b / v63-4：字面量搬迁 + 已改标记 + 只减不增闸门
 
 - [x] 又搬了 5 段进 `promptSections.ts`：`whisperUserHint()`、`outfitContract()`、`eventUserHint()`、`arcUserHint(kind)`，`llm.ts` 里对应调用改成函数。
 - [x] 预设界面：普通词条与契约词条都带「已改」角标（契约比 `defaultContent`，普通词条比 `DEFAULT_PROMPTS` / `SECTION_PROMPTS` 的出厂文本），工具栏显示「已改 N 条」，一眼看出哪些被你自己动过。
 - [x] 新增 `tests/prompt-lint.test.ts`：`src/llm.ts` / `llm-night.ts` / `nightSpec.ts` 里的提示词字面量**只减不增**（当前 7 处，全部列出），搬完一处就把 BUDGET 改小；另有「函数都在位」的断言。
-- [ ] 还剩 7 处字面量（都在 `llm.ts` / `llm-night.ts`）：`JSON_RETRY_MESSAGE`、角色起草 / 故事线起点 / 战斗札记 / 单条突发事件 / 故事蓝图 的 JSON 形状段、`dailyContract` 的 JSON 形状行。下一步继续搬，闸门数字往下调。
-- [ ] v63-4 余项：全量视图仍按任务页签分组（已有「全部」页签 + 已改计数），若要一屏平铺全部任务，再做分组折叠。
+- [x] 剩下的 6 处字面量已在 v198 搬完（`JSON_RETRY_MESSAGE` 保留：它是截断重试的系统话术，不是任务契约，已从闸门里排除）；`BUDGET` 归零。
+- [x] v63-4 余项：沿用「全部用途」页签的平铺视图，不再做分组折叠（现在一屏就能看全）。
 ## 修：同一个人反复提相似的议案
 
 - [x] **原因**：每日提案的提示词里只有**待议**的议题（`{{council}}`），已经决议过的题目模型一无所知，于是同一个作者连着几晚写同一个角度。
@@ -1005,3 +1005,14 @@
 - [x] 读档界面列出保留的旧档，可导出原始 JSON。
 - [x] `tests/v197` 两条；全量 860 通过，`check:rules` 与 `tsc -b` 通过。
 - [ ] 后续：坏档的字段级修复 / 自动迁移。
+
+## v198：最后 6 处提示词进预设（`tasks/plan-v198.md`）
+- [x] 新增 `singleIncidentContract` / `eventContract` / `witchFormContract` / `profileSchemaContract`；`dailyContract` 从 `llm-night.ts` 搬进 `promptSections.ts`。
+- [x] 四条新契约进 `promptContracts`（`incident:single` / `event:contract` / `profile:schema` / `profile:witch`），`daily:contract` 改为直接引用，删掉 `registerContractDefault` 间接层。
+- [x] 单条突发事件不再误用批量契约（`incident:single`）；角色起草的字段清单并入原有的 `profile:contract` 词条——此前那段字段只活在正文里，改契约改不到它。
+- [x] 四处调用点按 `generateStoryline` 的模式拆成「契约走 body、动态局势走 appendix」，预设覆盖契约时不再吃掉这一场的动态内容。
+- [x] `PRESET_SCHEMA 7 → 8`，已有预设升版时幂等补上四条契约词条；老预设进度与顺序不动。
+- [x] `prompt-lint` 闸门收窄：去掉过宽的「不要 Markdown 代码块」，`BUDGET` 6 → 0；`JSON_RETRY_MESSAGE` 留作系统话术。
+- [x] 补挂 `tests/v180`–`v183`（此前漏在 `npm test` 之外）。
+- [x] `tests/v198` 六条；全量 886 通过，`check:rules`、`tsc -b` 与 `npm run build` 通过。
+- [ ] 遗留：`promptHasMechanicBan` 仍会把 `incident:single` 判成「禁止数值」（与已有的 `incident:contract` / `battle:contract` 一致），预设界面会多一条提示，本次不动。

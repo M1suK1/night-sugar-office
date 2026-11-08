@@ -10,8 +10,10 @@ import { readFileSync } from 'node:fs';
  * 以后谁再往生成器里写提示词，测试就会红；搬完一处，把 BUDGET 改小即可。
  */
 const FILES = ['src/llm.ts', 'src/llm-night.ts', 'src/nightSpec.ts'];
-const PATTERNS = [/只输出一个 JSON 对象/, /请写下/, /请接着写/, /写她此刻发给所长/, /【回复格式】/, /不要 Markdown 代码块/];
-const BUDGET = 6;
+// v198：搬完之后闸门归零。「不要 Markdown 代码块」这条放得太宽，会把截断重试的
+// JSON_RETRY_MESSAGE（系统话术，不是任务契约）也算进来，因此只认结构契约的开头。
+const PATTERNS = [/只输出一个 JSON 对象/, /请写下/, /请接着写/, /写她此刻发给所长/, /【回复格式】/];
+const BUDGET = 0;
 
 function hits(): string[] {
   const found: string[] = [];

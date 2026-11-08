@@ -1,6 +1,6 @@
 import type { PromptEntry, PromptScope } from './presets.ts';
 import { NODE_LABELS } from './storygraph.ts';
-import { NIGHT_DIFFICULTIES, NIGHT_EXPRESSIONS, NIGHT_FACTIONS, NIGHT_TOPICS, NIGHT_WORKS } from './nightSpec.ts';
+import { NIGHT_DIFFICULTIES, NIGHT_EXPRESSIONS, NIGHT_FACTIONS, NIGHT_SCHEMA_EXAMPLE, NIGHT_TOPICS, NIGHT_WORKS } from './nightSpec.ts';
 
 /** 蓝图结构的唯一事实来源：提示词里的 `{{limits}}` 与校验器读同一份。 */
 export const STORY_LIMITS = {
@@ -335,4 +335,50 @@ export function profileVoiceRule(): string {
     '例话必须听得出出身与教养：协会的用词、政府的公文腔、无所属的短句与沉默，各不相同。',
     '不要用「温柔但坚定」这类两头堵的形容词，用具体习惯替代（自称「我」还是「人家」、句尾带不带「啦」、会不会先反问）。',
   ].join('\n');
+}
+
+/** 提案的锁定契约：只有解析器需要的 JSON 骨架与整数要求。其余文字在预设的 daily 分区里。 */
+export function dailyContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
+    JSON.stringify(NIGHT_SCHEMA_EXAMPLE),
+    '',
+    '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
+    '同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。',
+    '三条提案不要全在花星砂：至少留一条「不花钱」的——两个人的矛盾要你裁决、对排班或辖区归属不满、她护着的人被谁伤了。这类提案的代价落在关系与情绪上（bond / fatigue），不是账本。',
+    '涉及两个人的提案，dialogue 里两人都要说话，且第二个人必须反驳或加码；不要只有提出者一个人讲完。',
+  ].join('\n');
+}
+
+/** 单条突发事件的锁定契约：三选项与代价差异。以前写死在 generateIncident 的正文里。 */
+export function singleIncidentContract(): string {
+  return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
+{"title":"","body":"","options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"girl":""}}]}
+要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–120 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
+}
+
+/** 私人事件的锁定契约：两场、台词的插入位置。以前写死在 generateEvent 的正文里。 */
+export function eventContract(): string {
+  return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
+{"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
+要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
+}
+
+/** 魔女化形态的锁定契约：形态名、可见特征与魔女化人格。以前写死在 generateWitchFormProfile 的正文里。 */
+export function witchFormContract(): string {
+  return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
+{"name":"","description":"","personality":""}
+要求：name 以「魔女化 · 」开头，后面接 2–6 个汉字的形态核心词；description 40–90 字，只写这张立绘上看得见的东西——轮廓、材质、光、可动的部件与它给人的压迫感，不写数值、技能或战斗规则；personality 120–260 字，是她在魔女化状态下的人格：保留原本的执念，但把它扭曲成占有、多疑与不肯放手，写清她说话的方式与对所长提出的要求，不要变成另一个人。`;
+}
+
+/**
+ * 角色起草的字段契约。可选技能不在契约里：它随技能表变化，作为正文动态注入，
+ * 玩家改契约也不会把允许列表改没。
+ */
+export function profileSchemaContract(): string {
+  return `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
+{"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
+skillIds 只能从上面【可用主动技能】里选三个主动技能（不要选被动，也不许自己造 id）
+traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
+voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
 }

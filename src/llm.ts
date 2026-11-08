@@ -1652,14 +1652,12 @@ export async function generateIncident(config: LlmConfig, state: GameState, pres
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const girls = state.girls.filter(girl => !girl.dead).slice(0, 6).map(girl => `${girl.name}（关系 ${girl.bond}，侵蚀 ${girl.corruption}，疲劳 ${girl.fatigue}）`).join('；');
-  const body = `现在是第 ${state.day} 日 ${Math.floor((state.minutes % 1440) / 60).toString().padStart(2, '0')}:${String(state.minutes % 60).padStart(2, '0')}，夜糖事务所正在营业。
-在册契约者：${girls || '（还没有契约者）'}；安定度 ${state.reputation}；星砂 ${state.gold}。
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","body":"","options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"girl":""}}]}
-要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–120 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
-  const result = await callJson(config, preset, 'incident', body, '请把这件事放到我的桌上。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
+  const context = `现在是第 ${state.day} 日 ${Math.floor((state.minutes % 1440) / 60).toString().padStart(2, '0')}:${String(state.minutes % 60).padStart(2, '0')}，夜糖事务所正在营业。
+在册契约者：${girls || '（还没有契约者）'}；安定度 ${state.reputation}；星砂 ${state.gold}。`;
+  const result = await callJson(config, preset, 'incident', singleIncidentContract(), '请把这件事放到我的桌上。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
     scenario: `第 ${state.day} 日，事务所营业中`,
-  });
+    contractId: 'incident:single',
+  }, {}, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '强制事件', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -1746,17 +1744,15 @@ export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const pastEvents = state ? recentEventSummaries(state, girl.id) : '';
-  const body = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
-${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\n${pastEvents}` : ''}
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"title":"","hook":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
-要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
-  const result = await callJson(config, preset, 'event', body, eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
+  const context = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
+${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\n${pastEvents}` : ''}`;
+  const result = await callJson(config, preset, 'event', eventContract(), eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
     scenario: storyline ? `${storyline.title}——${storyline.premise}` : '',
     story: storyline?.title ?? '',
-    }, { state, focus: girl });
+    contractId: 'event:contract',
+    }, { state, focus: girl }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色事件', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2278,11 +2274,7 @@ export async function generateWitchFormProfile(
   const meta: LlmCallMeta = {};
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   const who = `她叫${input.girlName}${input.codename ? `（${input.codename}）` : ''}，原本的性格：${input.personality.trim() || '安静'}。${input.appearance ? `\n外貌：${input.appearance}` : ''}`;
-  const body = `${who}
-只输出一个 JSON 对象，不要 Markdown 代码块：
-{"name":"","description":"","personality":""}
-要求：name 以「魔女化 · 」开头，后面接 2–6 个汉字的形态核心词；description 40–90 字，只写这张立绘上看得见的东西——轮廓、材质、光、可动的部件与它给人的压迫感，不写数值、技能或战斗规则；personality 120–260 字，是她在魔女化状态下的人格：保留原本的执念，但把它扭曲成占有、多疑与不肯放手，写清她说话的方式与对所长提出的要求，不要变成另一个人。`;
-  const outcome = await chatJson(config, preset, 'profile', body, [{ type: 'text', text: '请为这张魔女化立绘写形态名、形态描述与魔女化人格。' }, { type: 'image_url', image_url: { url: input.portrait } }], ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：魔女化形态'], meta);
+  const outcome = await chatJson(config, preset, 'profile', witchFormContract(), [{ type: 'text', text: '请为这张魔女化立绘写形态名、形态描述与魔女化人格。' }, { type: 'image_url', image_url: { url: input.portrait } }], ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：魔女化形态'], meta, { contractId: 'profile:witch' }, 0, {}, who);
   const result = outcome.result;
   if (!result.ok) {
     const message = /image|vision|multimodal|图像|图片/i.test(result.message)
@@ -2391,11 +2383,7 @@ async function generateGirlProfileCore(config: LlmConfig, portrait?: string, hin
   if (!hasCredentials(applyPresetApi(preset ?? EMPTY_RUNTIME, config))) return { ok: false, message: '请先在设置中填写 API 密钥（本地接口可留空）。' };
   // 只把主动列给模型：被动带不带由本地掷骰决定，不写在提示词里。
   const skillList = girlSkillPool().filter(skill => skill.tier !== 'passive').map(s => `${s.id}(${s.name}/${tierLabels[s.tier]}/${s.school})`).join('、');
-  const schema = `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
-{"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
-skillIds 只能从以下 ID 中选三个主动技能（不要选被动）：${skillList}
-traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
-voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
+  const schema = profileSchemaContract();
   const visualRule = portrait
     ? '先观察附带的立绘：发色与发型、瞳色、服装轮廓与配色、配饰、兽耳或尾巴、姿态与表情。appearance 必须具体描述这些可见特征；outfitDescription 必须写到颜色、材质与穿法；element、archetype、personality 和 title 都要从画面气质推断，不能与立绘冲突。'
     : '这次没有立绘，请只根据世界观与文字要求起草，不要假装看见图片。';
@@ -2404,9 +2392,9 @@ voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${pr
   const researchRule = research?.summary
     ? `\n\n【联网资料（只作考据，可能不准确）】\n${research.summary.slice(0, 2000)}${research.sources.length ? `\n来源：${research.sources.map(source => source.title || source.uri).join('；')}` : ''}\n要求：只用来对齐作品设定、角色关键词与惯用称呼。与立绘或玩家要求冲突时，以立绘与玩家为准；不要照抄原文，不要写链接，不要编造资料里没有的设定。`
     : '';
-  const outcome = await chatJson(config, preset, 'profile', `${visualRule}${hintRule}${researchRule}\n\n${schema}`, portrait
+  const outcome = await chatJson(config, preset, 'profile', schema, portrait
     ? [{ type: 'text', text: '请根据这张立绘起草这位新契约者，确保外貌、服装、元素与职阶都和画面一致。' }, { type: 'image_url', image_url: { url: portrait } }]
-    : '请起草这位新契约者。', ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：起草新契约者'], meta);
+    : '请起草这位新契约者。', ['共用词条 + 角色起草词条 + 结构契约（含立绘）', '用户请求：起草新契约者'], meta, { contractId: 'profile:contract' }, 0, {}, `${visualRule}${hintRule}${researchRule}\n\n【可用主动技能】${skillList}`);
   const result = outcome.result;
   if (!result.ok) {
     if (portrait && /image|vision|multimodal|图像|图片/i.test(result.message)) {
@@ -2471,9 +2459,9 @@ import { tierLabels } from './content/skills.ts';
 import { girlSkillPool, pickCandidateSkills, rollPassiveSkill } from './skills.ts';
 import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
-import { dailyContract, validateNightProposal, type NightProposalV2 } from './llm-night.ts';
+import { validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
-import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dialogueContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileVoiceRule, storylineContract, storylineStartContract, whisperUserHint } from './promptSections.ts';
+import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchFormContract } from './promptSections.ts';
 import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

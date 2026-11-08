@@ -1,26 +1,20 @@
 /**
  * 锁定契约也是词条。
  *
- * 这些文本以前只活在代码里（\`promptSections.ts\` 的 \`*Contract()\` 与 \`llm-night.ts\` 的
- * \`dailyContract()\`），界面上看不到、也没法改——出问题只能等报错。现在它们作为
- * \`contract: true\` 的词条进预设：不参与正文分层（\`renderPresetSystem\` 会跳过），
- * 但由 \`composeTaskSystem\` 作为「永远排在最后」的那一段注入，可以逐条审核与修改。
+ * 这些文本以前只活在生成器里（promptSections.ts 的 *Contract() 与 llm-night.ts 的
+ * dailyContract()），界面上看不到、也没法改——出问题只能等报错。现在它们作为
+ * contract: true 的词条进预设：不参与正文分层（renderPresetSystem 会跳过），
+ * 但由 composeTaskSystem 作为「永远排在最后」的那一段注入，可以逐条审核与修改。
  *
- * daily 的默认值要带 NIGHT_SCHEMA_EXAMPLE，为免 presets ⇄ llm-night 成环，
- * 由 llm-night 在模块加载时注册进来。
+ * v198：dailyContract 也搬进了 promptSections，这里不再需要间接注册。
  */
 import type { PromptEntry, PromptScope } from './presets.ts';
 import {
   arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, battleContract,
-  dialogueContract, incidentBatchContract, newsContract, profileVoiceRule, storylineContract, storylineStartContract,
+  dailyContract, dialogueContract, eventContract, incidentBatchContract, newsContract,
+  profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract,
+  witchFormContract,
 } from './promptSections.ts';
-
-const registry = new Map<string, () => string>();
-
-/** 由 llm-night 注册「每日提案」的默认契约。 */
-export function registerContractDefault(id: string, make: () => string): void {
-  registry.set(id, make);
-}
 
 interface ContractSpec {
   id: string;
@@ -30,10 +24,13 @@ interface ContractSpec {
 }
 
 const SPECS: ContractSpec[] = [
-  { id: 'profile:contract', scope: 'profile', name: '角色起草 · 语料契约', make: profileVoiceRule },
-  { id: 'daily:contract', scope: 'daily', name: '每日提案 · 结构契约', make: () => registry.get('daily:contract')?.() ?? '' },
+  { id: 'profile:contract', scope: 'profile', name: '角色起草 · 结构契约', make: profileSchemaContract },
+  { id: 'profile:witch', scope: 'profile', name: '魔女化形态 · 结构契约', make: witchFormContract },
+  { id: 'daily:contract', scope: 'daily', name: '每日提案 · 结构契约', make: dailyContract },
   { id: 'news:contract', scope: 'news', name: '城市新闻 · 结构契约', make: newsContract },
-  { id: 'incident:contract', scope: 'incident', name: '突发事件 · 结构契约', make: incidentBatchContract },
+  { id: 'incident:contract', scope: 'incident', name: '突发事件 · 批量契约', make: incidentBatchContract },
+  { id: 'incident:single', scope: 'incident', name: '突发事件 · 单条契约', make: singleIncidentContract },
+  { id: 'event:contract', scope: 'event', name: '私人事件 · 结构契约', make: eventContract },
   { id: 'battle:contract', scope: 'battle', name: '战斗札记 · 结构契约', make: battleContract },
   { id: 'storyline:contract', scope: 'storyline', name: '故事线蓝图 · 结构契约', make: storylineContract },
   { id: 'storyline:start', scope: 'storyline', name: '故事线起点 · 结构契约', make: storylineStartContract },

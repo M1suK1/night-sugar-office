@@ -147,7 +147,7 @@ export interface PresetRuntime {
 }
 
 /** 词条结构版本：每加一批默认可编辑的分区就 +1，读档时按版本补齐。 */
-export const PRESET_SCHEMA = 7;
+export const PRESET_SCHEMA = 8;
 export const PRESET_STORAGE = 'night-sugar:presets';
 export const PRESET_BINDING = 'night-sugar:preset-binding';
 /** 本地存档里的同一份预设（v170）：换浏览器、清缓存之后还能拿回来。 */

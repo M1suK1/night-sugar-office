@@ -1,11 +1,11 @@
 import { outfitBrief } from './outfitBrief.ts';
+import { dailyContract } from './promptSections.ts';
 import { loadProposalCheck, repairRejectOptions } from './proposalCheck.ts';
 import type {
   Archetype, Element, Equipment, FactionId, GameState, Girl,
   GoalKind, Mission, MissionTemplate, MonsterRule, MonsterTemplate, Opinion, OpinionChange,
   OpinionDialogueLine, OpinionOutcome, OpinionOption, StatKey, TraitPolarity, WorkKind,
 } from './types';
-import { registerContractDefault } from './promptContracts.ts';
 import { repeatsRecentOpinion } from './opinionHistory.ts';
 import type { DistrictId } from './districts';
 import type { CommissionWindow } from './shift';
@@ -25,7 +25,7 @@ import { factionBrief, factionTagLabel } from './factions.ts';
 import { representativeOf } from './office.ts';
 import { pollutionTierLabel } from './pollution.ts';
 import { DEFAULT_PROMPTS, renderPresetSystem } from './presets.ts';
-import { NIGHT_ARCHETYPES, NIGHT_DIFFICULTIES, NIGHT_ELEMENTS, NIGHT_EXPRESSIONS, NIGHT_FACTIONS, NIGHT_GOALS, NIGHT_RANKS, NIGHT_SCHEMA_EXAMPLE, NIGHT_STATS, NIGHT_TOPICS, NIGHT_VERSION, NIGHT_WINDOWS, NIGHT_WORKS } from './nightSpec.ts';
+import { NIGHT_ARCHETYPES, NIGHT_DIFFICULTIES, NIGHT_ELEMENTS, NIGHT_EXPRESSIONS, NIGHT_FACTIONS, NIGHT_GOALS, NIGHT_RANKS, NIGHT_STATS, NIGHT_TOPICS, NIGHT_VERSION, NIGHT_WINDOWS, NIGHT_WORKS } from './nightSpec.ts';
 
 // 枚举与 JSON 骨架搬到 nightSpec.ts，这里照旧再导出一遍，外部 import 路径不用改。
 export * from './nightSpec.ts';
@@ -894,20 +894,7 @@ export function composeDailySections(ctx: { state: GameState }): string[] {
   return [rendered.system];
 }
 
-/** 提案的锁定契约：只有解析器需要的 JSON 骨架与整数要求。其余文字在预设的 daily 分区里。 */
-export function dailyContract(): string {
-  return [
-    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
-    JSON.stringify(NIGHT_SCHEMA_EXAMPLE),
-    '',
-    '把空字符串替换成与今晚局势一致的文案；保持字段完整；所有数值必须是整数。',
-    '同一作者不要重复最近提过的议题：题目、诉求与对白切入点都要换；同题重提会被本地校验拦下。',
-    '三条提案不要全在花星砂：至少留一条「不花钱」的——两个人的矛盾要你裁决、对排班或辖区归属不满、她护着的人被谁伤了。这类提案的代价落在关系与情绪上（bond / fatigue），不是账本。',
-    '涉及两个人的提案，dialogue 里两人都要说话，且第二个人必须反驳或加码；不要只有提出者一个人讲完。',
-  ].join('\n');
-}
 
-registerContractDefault('daily:contract', dailyContract);
 
 /** 兼容旧调用与测试：默认 daily 分区 + 锁定契约拼出来的系统提示。 */
 export function buildNightPrompt(state: GameState): string {
