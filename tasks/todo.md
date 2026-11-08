@@ -1080,3 +1080,8 @@
 - [x] 两件同套时显示「套装已激活」条：套装名、被动名与效果。
 - [x] 抽 `equipmentFacts` 纯函数；删掉旧的单行 `gearSummary`。
 - [x] `tests/v196` 四条；全量 855 通过，`check:rules` 与 `tsc -b` 通过。
+## v199：读档后的立绘在第二次存档里丢失（`tasks/plan-v199.md`）
+- [x] 根因：`hydrateStatePortraits` 把 `assetUrl()` 的 blob: 地址填回 `portrait`，而落盘只认 `data:`，下一次自动存档把会话地址写进档，再启动就是死链接。
+- [x] 落盘：`extractPortrait` 先看 blob:（清成 `''`），再处理 data:；含衣柜、魔女化、三方首领/随从；差分里的 blob 也一并丢掉。
+- [x] 读档：还原条件从「`!portrait`」放宽到「`!portrait` 或 `blob:`」，已经被写坏的老档打开即自愈。
+- [x] `tests/v199` 六条（两轮往返、老档自愈、衣柜/魔女化、首领随从、无 asset 的 blob、内联新图优先）；全量 938 通过。

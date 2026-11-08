@@ -29,8 +29,14 @@ const defaultStore: PortraitStore = {
   dataUrl: id => assetDataUrl(id),
 };
 
+/** 只活在当前会话的地址（blob:）或者压根没有，都算「需要从资产库取回」。 */
+function isTransientPortrait(value?: string): boolean {
+  return !value || value.startsWith('blob:');
+}
+
+/** 有图要处理：内联图要入库，blob: 只是把会话地址清掉。 */
 function needsExtract(girl: WithPortrait): boolean {
-  return typeof girl.portrait === 'string' && girl.portrait.startsWith('data:');
+  return typeof girl.portrait === 'string' && girl.portrait.length > 0;
 }
 
 /** 差分的内容指纹：长度 + 首尾片段，避免每次落盘都重算哈希。 */
@@ -57,7 +63,11 @@ async function extractVariants<T extends WithPortrait>(girl: T, store: PortraitS
   const assets: Record<string, string> = { ...(girl.variantAssets ?? {}) };
   let moved = false;
   for (const [key, value] of entries) {
-    if (typeof value !== 'string' || !value.startsWith('data:')) { inline[key] = value; continue; }
+    if (typeof value !== 'string' || !value.startsWith('data:')) {
+      // v199：差分也可能是会话内的 blob: 地址，同样不能留在存档里。
+      if (typeof value === 'string' && value.startsWith('blob:')) { moved = true; continue; }
+      inline[key] = value; continue;
+    }
     const cacheKey = variantCacheKey(store, value);
     const cached = variantAssetCache.get(cacheKey);
     if (cached) { assets[key] = cached; moved = true; continue; }
@@ -83,7 +93,10 @@ async function extractVariants<T extends WithPortrait>(girl: T, store: PortraitS
 
 /** 任何一张内联立绘 → 资产引用；同一张图在本进程里只写一次。 */
 async function extractPortrait<T extends PortraitOnly>(item: T, store: PortraitStore): Promise<T | undefined> {
-  if (!item.portrait || !item.portrait.startsWith('data:')) return undefined;
+  if (!item.portrait) return undefined;
+  // v199：blob: 只活在当前页面会话里，写进存档等于写一个死链接。资产库才是真源。
+  if (item.portrait.startsWith('blob:')) return { ...item, portrait: '' } as T;
+  if (!item.portrait.startsWith('data:')) return undefined;
   const cacheKey = variantCacheKey(store, item.portrait);
   const cached = variantAssetCache.get(cacheKey);
   if (cached) return { ...item, portraitAsset: cached, portrait: '' } as T;
@@ -207,13 +220,13 @@ export async function hydrateStatePortraits(state: GameState, store: PortraitSto
     return read(id).catch(() => undefined);
   };
   const restoreOutfit = async (outfit?: Outfit): Promise<Outfit | undefined> => {
-    if (!outfit || outfit.portrait || !outfit.portraitAsset) return outfit;
+    if (!outfit || !isTransientPortrait(outfit.portrait) || !outfit.portraitAsset) return outfit;
     const url = await readPortrait(outfit.portraitAsset);
     return url ? { ...outfit, portrait: url } : outfit;
   };
   const restore = async <T extends WithPortrait>(girl: T): Promise<T> => {
     let next: T = girl;
-    if (!girl.portrait && girl.portraitAsset) {
+    if (isTransientPortrait(girl.portrait) && girl.portraitAsset) {
       const url = await store.url(girl.portraitAsset).catch(() => undefined);
       if (url) next = { ...next, portrait: url };
     }
@@ -222,7 +235,7 @@ export async function hydrateStatePortraits(state: GameState, store: PortraitSto
       const variants = { ...(next.importedVariants ?? {}) };
       let changed = false;
       for (const [key, id] of Object.entries(assets)) {
-        if (variants[key]) continue;
+        if (!isTransientPortrait(variants[key])) continue;
         const read = store.dataUrl ?? store.url;
         const url = await read(id).catch(() => undefined);
         if (url) { variants[key] = url; changed = true; }
@@ -246,7 +259,7 @@ export async function hydrateStatePortraits(state: GameState, store: PortraitSto
   const girls = await Promise.all(state.girls.map(restore));
   const candidates = await Promise.all(state.candidates.map(restore));
   const restoreOnly = async <T extends PortraitOnly>(item: T): Promise<T> => {
-    if (item.portrait || !item.portraitAsset) return item;
+    if (!isTransientPortrait(item.portrait) || !item.portraitAsset) return item;
     const url = await readPortrait(item.portraitAsset);
     return url ? { ...item, portrait: url } : item;
   };
