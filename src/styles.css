@@ -1645,3 +1645,21 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .weather.weather-snow>svg{color:#c7d6e6}
 .weather.weather-storm>svg{color:#c4a8c6}
 .weather.weather-wind>svg{color:#b3c0b6}
+
+/* v196 角色档案里的装备信息：阶级、套装、基础加成与精炼词条 */
+.gear-facts{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:6px;text-align:left}
+.gear-facts-head{display:flex;align-items:center;gap:6px;font-size:9px;color:#8a8191}
+.gear-facts-head em{font-style:normal;letter-spacing:.05em}
+.gear-facts-set{font-weight:400;border:1px solid;border-radius:3px;padding:1px 4px;font-size:8px;line-height:1.35;opacity:.92}
+.gear-facts-row{display:flex;flex-wrap:wrap;gap:4px}
+.gear-facts-row i{display:inline-flex;gap:3px;font-style:normal;font-size:8.5px;color:#9a92a0;background:#ffffff05;border:1px solid #ffffff0c;border-radius:3px;padding:1px 5px}
+.gear-facts-row i b{font-weight:400;color:#d6c6d5;font-family:var(--font-data)}
+.gear-facts-affixes i{border-color:#f3aec926;background:#f3aec90a;color:#c6a8b8}
+.gear-facts-affixes i b{color:#f0c6da}
+.gear-facts-empty{font-size:8px;color:#5f5868}
+.gear-facts-passive{font-size:8.5px;line-height:1.6;color:#9d94a4}
+.equipment-set-active{margin-top:9px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--set-color) 32%,transparent);border-radius:5px;background:color-mix(in srgb,var(--set-color) 7%,transparent)}
+.equipment-set-active>span{display:flex;align-items:baseline;gap:7px}
+.equipment-set-active b{font-weight:500;font-size:11px;color:var(--set-color)}
+.equipment-set-active em{font-style:normal;font-size:9px;color:#b9aeb8}
+.equipment-set-active small{display:block;margin-top:4px;font-size:8.5px;line-height:1.7;color:#8d8492}
