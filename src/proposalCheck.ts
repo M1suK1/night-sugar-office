@@ -21,30 +21,38 @@ export function saveProposalCheck(mode: ProposalCheckMode): void {
   try { localStorage.setItem(KEY, mode); } catch { /* 存不进去就按默认 */ }
 }
 
-/** 把一份原始提案里的驳回选项改写成「只掉提出者羁绊」；其它内容原样保留。 */
+/** 把一条议题里的驳回选项改写成「只掉提出者羁绊」；其它内容原样保留。 */
+function repairOpinion(opinion: unknown): unknown {
+  if (!opinion || typeof opinion !== 'object') return opinion;
+  const entry = opinion as Record<string, unknown>;
+  if (!Array.isArray(entry.options)) return opinion;
+  const authorId = typeof entry.authorId === 'string' ? entry.authorId : '';
+  entry.options = entry.options.map(option => {
+    if (!option || typeof option !== 'object') return option;
+    const choice = option as Record<string, unknown>;
+    if (choice.id !== 'reject') return option;
+    const changes = Array.isArray(choice.changes) ? choice.changes : [];
+    const bonds = changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === 'object'
+      && (change as Record<string, unknown>).kind === 'girl'
+      && (change as Record<string, unknown>).field === 'bond'
+      && (change as Record<string, unknown>).girlId === authorId);
+    // 一条都没有就补一条 −2：驳回总得有点代价。
+    const kept = bonds.length ? bonds.slice(0, 1) : [{ kind: 'girl', girlId: authorId, field: 'bond', amount: -2 }];
+    return { ...choice, changes: kept, outcomes: [] };
+  });
+  return entry;
+}
+
+/**
+ * 把一份原始提案里的驳回选项改写成「只掉提出者羁绊」；其它内容原样保留。
+ *
+ * v192：v2 提案两种写法都收——新的 `opinions` 数组，和旧的单数 `opinion`。
+ * 以前只修数组，模型一旦退回旧写法，宽松模式就什么也没修，严格口径的报错照旧弹出来。
+ */
 export function repairRejectOptions(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
   const proposal = raw as Record<string, unknown>;
-  if (!Array.isArray(proposal.opinions)) return raw;
-  proposal.opinions = proposal.opinions.map(opinion => {
-    if (!opinion || typeof opinion !== 'object') return opinion;
-    const entry = opinion as Record<string, unknown>;
-    if (!Array.isArray(entry.options)) return opinion;
-    const authorId = typeof entry.authorId === 'string' ? entry.authorId : '';
-    entry.options = entry.options.map(option => {
-      if (!option || typeof option !== 'object') return option;
-      const choice = option as Record<string, unknown>;
-      if (choice.id !== 'reject') return option;
-      const changes = Array.isArray(choice.changes) ? choice.changes : [];
-      const bonds = changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === 'object'
-        && (change as Record<string, unknown>).kind === 'girl'
-        && (change as Record<string, unknown>).field === 'bond'
-        && (change as Record<string, unknown>).girlId === authorId);
-      // 一条都没有就补一条 −2：驳回总得有点代价。
-      const kept = bonds.length ? bonds.slice(0, 1) : [{ kind: 'girl', girlId: authorId, field: 'bond', amount: -2 }];
-      return { ...choice, changes: kept, outcomes: [] };
-    });
-    return entry;
-  });
+  if (Array.isArray(proposal.opinions)) proposal.opinions = proposal.opinions.map(repairOpinion);
+  if (proposal.opinion && typeof proposal.opinion === 'object') proposal.opinion = repairOpinion(proposal.opinion);
   return proposal;
 }

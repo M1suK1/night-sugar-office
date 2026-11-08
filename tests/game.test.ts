@@ -23,6 +23,31 @@ import { generateBattleNote, generateDaily, generateDialogue, generateGirlProfil
 import { buildNightCatalog, buildNightPrompt, materializeNightProposal, validateNightProposal, type NightProposalV2 } from '../src/llm-night.ts';
 import { buildGirlCard, girlCardHash, parseGirlCard } from '../src/cards.ts';
 import { EXPRESSIONS, expressionVariantKey } from '../src/expressions.ts';
+
+/**
+ * 这几条用例验的是「严格审查」的口径（驳回多写就整份作废 / 必须带代价）。
+ * v110 起默认是宽松模式，宽松会把驳回就地修好——所以这里把模式钉成 strict，
+ * 免得用例的意图被默认值左右。宽松一側由 tests/v192 覆盖。
+ */
+async function withStrictProposalCheck<T>(run: () => T | Promise<T>): Promise<T> {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const data = new Map<string, string>([['night-sugar:proposal-check', 'strict']]);
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => { data.set(key, String(value)); },
+      removeItem: (key: string) => { data.delete(key); },
+      clear: () => data.clear(),
+      key: () => null,
+      get length() { return data.size; },
+    },
+  });
+  try { return await run(); } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+}
 import { readWardrobePackage } from '../src/wardrobeImport.ts';
 import { fallbackStoryPlan, playableStoryPlan, sanitizeStoryPlan, storyPlanTemplate } from '../src/storyplan.ts';
 import { effectText, skills, getSkill, findSkill } from '../src/content/skills.ts';
@@ -817,7 +842,7 @@ test('LLM 400 会暴露服务端错误并在 temperature 被拒时自动重试',
   }
 });
 
-test('提案硬错误会带原始 JSON 修复一次，修好后采纳', async () => {
+test('提案硬错误会带原始 JSON 修复一次，修好后采纳', async () => await withStrictProposalCheck(async () => {
   const calls: Record<string, any>[] = [];
   const original = globalThis.fetch;
   const base = createInitialState();
@@ -841,9 +866,9 @@ test('提案硬错误会带原始 JSON 修复一次，修好后采纳', async ()
   } finally {
     globalThis.fetch = original;
   }
-});
+}));
 
-test('提案校验会拒绝缺少实际惩罚的驳回与越界数值裁剪', () => {
+test('提案校验会拒绝缺少实际惩罚的驳回与越界数值裁剪', async () => await withStrictProposalCheck(() => {
   const base = createInitialState();
   const broken = nightProposal();
   broken.opinion.options[2].changes = [
@@ -862,7 +887,7 @@ test('提案校验会拒绝缺少实际惩罚的驳回与越界数值裁剪', ()
   assert.equal(clamped.proposal?.mission.duration, 180);
   assert.equal(clamped.proposal?.mission.reward, 1800);
   assert.ok(clamped.warnings.some(warning => warning.includes('duration')));
-});
+}));
 
 test('叙事输出被 length 截断时会放大 token 额度重试一次', async () => {
   const calls: Record<string, any>[] = [];
@@ -5155,7 +5180,7 @@ test('v39 每日提案目录不再塞技能表，魔物表与完整物品表也�
   assert.ok(catalog.itemTiers.every(row => row.count > 0 && row.examples.length <= 3), '每阶只给最多三个示例名');
 });
 
-test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整份提案作废', () => {
+test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整份提案作废', async () => await withStrictProposalCheck(() => {
   const state = createInitialState();
   const raw = nightProposal();
   raw.opinion.options[1].changes[0] = { kind: 'girl', girlId: 'g_card_78ad3835', field: 'bond', amount: -1 };
@@ -5168,7 +5193,7 @@ test('v39 girlId 误用名册外的 id 时改写为提出者，而不是让整�
     if (!change) continue;
     assert.equal(change.girlId, raw.opinion.authorId, '写错的目标要改成提出者');
   }
-});
+}));
 
 test('v40 城市态势里的三方首领跟随开局指派，不再写死内置首领', () => {
   const state = createInitialState();
