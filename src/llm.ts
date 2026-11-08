@@ -2113,6 +2113,8 @@ export async function generateStoryEnding(
   state: GameState,
   event: CharacterEvent,
   preset?: PresetRuntime,
+  /** v188：所长点了结束、但输入框里还留着一句没发出去的话——收尾时当作引子。 */
+  lead?: string,
 ): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] }; summary: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
@@ -2129,8 +2131,7 @@ export async function generateStoryEnding(
     briefs || '只有她和你',
     '【此前的对话】',
     storyHistory(event.turns ?? []) || '（这是第一轮）',
-    '【所长的决定】',
-    '所长把这段剧情停在这里。请写收尾：不要新选项，不要留待续的钩子。',
+    endingLeadBlock(lead),
     rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
   ].filter(Boolean).join('\n');
   const result = await callJson(config, preset, 'arc', arcEndingContract(), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
@@ -2461,7 +2462,7 @@ import { sanitizeVoice, voiceLine } from './voice.ts';
 import { traits } from './content/traits.ts';
 import { validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
-import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchFormContract } from './promptSections.ts';
+import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, endingLeadBlock, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchFormContract} from './promptSections.ts';
 import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

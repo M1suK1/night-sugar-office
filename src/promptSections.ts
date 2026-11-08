@@ -265,6 +265,19 @@ export function eventUserHint(name: string): string {
 }
 
 /** 完整剧情（弧光）三处 user 指令。 */
+/**
+ * 收尾时所长留在输入框里的那一句。
+ *
+ * 没有就直说没有，别让模型自己编一句「所长说」；有就压成一行当引子，
+ * 并明确要求接着写、不复述、不替他补话。
+ */
+export function endingLeadBlock(lead?: string): string {
+  const line = (lead ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return line
+    ? `【所长的决定】\n所长把这段剧情停在这里。他最后写的是：「${line}」\n请把这一句当作收尾的引子：接着它往下写，不要复述它、不要替所长补话；不要新选项，不要留待续的钩子。`
+    : '【所长的决定】\n所长把这段剧情停在这里，没有多写一句。请写收尾：不要新选项，不要留待续的钩子。';
+}
+
 export function arcUserHint(kind: 'beat' | 'opening' | 'turn' | 'ending', name = ''): string {
   if (kind === 'opening') return '请写下这段剧情的开场白。';
   if (kind === 'turn') return '请接着写下一轮。';

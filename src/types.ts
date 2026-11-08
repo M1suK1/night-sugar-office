@@ -1427,7 +1427,8 @@ export type GameAction =
   | { type: 'editStoryTurn'; eventId: string; turnId: string; text: string }
   /** 删掉自己说的那一轮（只能删 player 轮）。 */
   | { type: 'deleteStoryTurn'; eventId: string; turnId: string }
-  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] }; summary?: string }
+  /** v189：`lead` 是所长停在输入框里、没发出去的那一句；结束时要作为最后一轮玩家发言记下来。 */
+  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] }; summary?: string; lead?: string }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }

@@ -783,7 +783,7 @@ export default function App() {
       notify(ok ? `「${event.title}」已收进记忆：开局界面的「观看保存的剧情」里能看到。` : '没能写到本地存档，稍后再试一次。', ok);
     });
   };
-  const endStorySession = async (eventId: string): Promise<boolean> => {
+  const endStorySession = async (eventId: string, lead?: string): Promise<boolean> => {
     const event = state.events.find(item => item.id === eventId);
     if (!event) return false;
     if (storyBusyTurn) return false;
@@ -791,18 +791,18 @@ export default function App() {
     // 没有配叙事者、或者正卡在蓝图岔路口：只能本地收尾（没有模型可重试）。
     // 收尾时仍然留一份本地摘要，之后的历史只引用它。
     if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
-      return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, '') });
+      return perform({ type: 'finishStorySession', eventId, summary: localSessionSummary(event, ''), lead });
     }
     setStoryBusyTurn(true);
     try {
-      const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
+      const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), lead);
       if (!result.ok) {
         // v117：收尾没写出来就**不要**结束事件——否则这一段既没有结局也没有摘要，
         // 等于把剧情硬切断。保持开着，玩家可以再点一次「结束事件」重试。
         notify(`收尾没有写出来：${result.message}剧情还开着，可以再点一次「结束事件」。`, false);
         return false;
       }
-      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary });
+      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary, lead });
     } finally {
       setStoryBusyTurn(false);
     }
@@ -2116,7 +2116,7 @@ export default function App() {
       const subject = storyPersonOf(state, target.girlId)?.girl;
       const castPool = [...state.girls, ...state.candidates, ...factionCast];
       if (target.mode === 'story') return <div className="story-overlay"><StoryPlayerDialog vnStory={vnStory === 'on'} event={target} girl={subject} busy={arcBusy === target.id} onChoose={(eventId, choiceId) => perform({ type: 'chooseStoryPassage', eventId, choiceId })} onClose={() => setModal(null)} /></div>;
-      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} castPool={castPool} onEnd={eventId => void endStorySession(eventId)} onSeed={seedStoryOpening} onArchive={archiveStoryNow} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
+      const dialog = <EventDialog vnStory={vnStory === 'on'} event={target} girl={subject} state={{ girls: state.girls, candidates: state.candidates }} busy={storyBusyTurn || arcBusy === target.id} onAdvance={eventId => perform({ type: 'advanceEvent', eventId })} onChoose={(eventId, choiceId) => perform({ type: 'resolveEvent', eventId, choiceId })} onTurn={submitStoryTurn} onRewrite={rewriteStoryTurn} onEditTurn={editStoryTurn} onDeleteTurn={deleteStoryTurn} castPool={castPool} onEnd={(eventId, lead) => void endStorySession(eventId, lead)} onSeed={seedStoryOpening} onArchive={archiveStoryNow} branch={(() => { const choice = pendingChoiceOf(state, target.girlId); return choice ? { storylineId: choice.storylineId, options: choice.options } : undefined; })()} onBranch={port => { const choice = pendingChoiceOf(state, target.girlId); if (!choice) return; if (perform({ type: 'chooseStoryOption', eventId: target.id, storylineId: choice.storylineId, port })) setModal(null); }} readOnly={target.status === 'done'} onClose={() => setModal(null)} />;
       return target.mode === 'session' ? dialog : <div className="story-overlay">{dialog}</div>;
     })()}
     {modal?.type === 'end-night' && <Dialog label="打烊与交接" onClose={() => setModal(null)}>
