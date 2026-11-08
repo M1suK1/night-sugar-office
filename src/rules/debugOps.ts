@@ -1,14 +1,17 @@
 /**
  * 调试用动作（控制台命令）。
  *
- * 只服务终端里的三条命令：让某位少女魔女化、把她重置回初始状态。
+ * 只服务终端里的调试命令：魔女化、重置、直接契约 / 移除，以及按槽位与阶级直接发放装备。
  * 刻意走正常 reducer 通道（clone + 校验 + 日志），这样和玩家操作留下的痕迹一致，
  * 不会绕过存档清洗或在状态里留下半个字段。
  */
 import { loadBalance } from '../balance.ts';
+import { baseItems } from '../content/items.ts';
+import { findEquipmentSet } from '../content/sets.ts';
+import { TIER_LABEL, tierOf } from '../items.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { baseStatsAt } from '../progression.ts';
-import type { ActionResult, GameAction, GameState } from '../types.ts';
+import type { ActionResult, Equipment, GameAction, GameState } from '../types.ts';
 import { clone, dateLabel, findRosterGirl } from './core.ts';
 import { witchOutfitFor } from './outfits.ts';
 import { importCardInto } from './cardOps.ts';
@@ -121,4 +124,47 @@ export function applyDebugRemoveGirl(state: GameState, action: Extract<GameActio
     text: `【调试】把 ${name} 从名册里移除了（连带清掉她的派遣、关系网与故事线）。`,
   });
   return { state: next, ok: true, message: `已移除 ${name}。` };
+}
+
+const SLOT_LABEL: Record<Equipment['slot'], string> = { weapon: '法器', charm: '护符', consumable: '消耗品' };
+
+/**
+ * 立刻入库一件指定槽位 / 阶级（可选套装）的装备（v184，控制台用）。
+ *
+ * 按候选在当前仓库里的总件数轮换：同一个存档、同一个参数结果稳定，
+ * 连续敲同一条命令不会永远拿到同一件。
+ */
+export function applyDebugGrantEquipment(state: GameState, action: Extract<GameAction, { type: 'debugGrantEquipment' }>): ActionResult {
+  const tier = action.tier;
+  if (![1, 2, 3, 4, 5].includes(tier)) return { state, ok: false, message: `阶级只能是 1–5，收到 ${tier}。` };
+  const slotLabel = SLOT_LABEL[action.slot] as string | undefined;
+  if (!slotLabel) return { state, ok: false, message: `槽位只能是法器、护符或消耗品，收到 ${action.slot}。` };
+  if (action.slot === 'consumable' && action.setId) {
+    return { state, ok: false, message: '消耗品没有套装归属，去掉套装参数再试。' };
+  }
+  const setInfo = action.setId ? findEquipmentSet(action.setId) : undefined;
+  if (action.setId && !setInfo) return { state, ok: false, message: `找不到套装「${action.setId}」。` };
+
+  // 只认内置装备：炼制实例与故事专属不在发放池里。
+  const candidates = baseItems.filter(item =>
+    item.slot === action.slot && tierOf(item) === tier && (!action.setId || item.setId === action.setId));
+  if (!candidates.length) {
+    const setPart = setInfo ? ` · ${setInfo.name}` : '';
+    return { state, ok: false, message: `没有匹配的装备：${slotLabel}${setPart} · ${TIER_LABEL[tier]}（内置内容里这一组合是空的）。` };
+  }
+
+  const next = clone(state);
+  const owned = candidates.reduce((sum, item) => sum + (next.inventory[item.id] ?? 0), 0);
+  const item = candidates[owned % candidates.length]!;
+  next.inventory[item.id] = (next.inventory[item.id] ?? 0) + 1;
+  next.logs.unshift({
+    id: `log-debug-gear-${item.id}-${next.day}-${next.minutes}-${owned}`,
+    time: dateLabel(next.day, next.minutes), kind: 'base',
+    text: `【调试】直接入库一件${slotLabel}「${item.name}」（${TIER_LABEL[tier]}${setInfo ? ` · ${setInfo.name}` : ''}）。`,
+  });
+  return {
+    state: next,
+    ok: true,
+    message: `已入库「${item.name}」：${setInfo?.name ?? '无套装'} · ${TIER_LABEL[tier]} · ${slotLabel}，仓库现有 ${next.inventory[item.id]} 件。`,
+  };
 }

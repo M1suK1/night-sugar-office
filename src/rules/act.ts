@@ -1,5 +1,5 @@
 // v35 从 src/game.ts 拆出：动作调度器。每个 case 只做一次委托。
-import { applyDebugContractCard, applyDebugGirl, applyDebugRemoveGirl } from './debugOps.ts';
+import { applyDebugContractCard, applyDebugGirl, applyDebugGrantEquipment, applyDebugRemoveGirl } from './debugOps.ts';
 import {
   applyAddCharacterEvent, applyAddStoryline, applyAdvanceEvent, applyAdvanceStoryline,
   applyAppendStoryTurn, applyBeginStoryEvent, applyChooseStoryPassage, applyChooseStoryPort,
@@ -98,6 +98,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'debugGirl': return applyDebugGirl(state, action);
     case 'debugContractCard': return applyDebugContractCard(state, action);
     case 'debugRemoveGirl': return applyDebugRemoveGirl(state, action);
+    case 'debugGrantEquipment': return applyDebugGrantEquipment(state, action);
     case 'upgradeMarket': return applyUpgradeMarket(state, action);
     case 'advancedRecruit': return applyAdvancedRecruit(state, action);
     case 'importCard': return applyImportCard(state, action);
