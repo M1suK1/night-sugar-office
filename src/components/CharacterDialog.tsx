@@ -505,7 +505,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <ClinicPanel state={state} girls={[girl]} onTreat={(_girlId, kink) => onClinic('treat', kink)} />
               <div className="clinic-grid">
                 <button id="clinic-clear" className="clinic-action" disabled={state.gold < 1200 || girl.status === 'mission' || girl.status === 'expedition' || (!girl.witch && !girl.scars.some(s => s.kind === 'mental'))} onClick={() => onClinic('clear')}><Sparkles size={16} /><b>记忆清除</b><small>1,200 星砂 · 清一条精神疤痕；魔女态则解除魔女化、等级归 1</small></button>
-                <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性重置</small></button>
+                <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性与疤痕重置</small></button>
                 <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
               </div>
             </section>

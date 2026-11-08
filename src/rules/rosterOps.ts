@@ -293,12 +293,14 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
         girl.level = 1; girl.exp = 0;
         girl.stats = { ...girl.baseStats };
         girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
+        // v201：重塑连深层疤痕一起剥离（界面文案一直这么写，代码没做），记忆与人格保留。
+        girl.scars = [];
         girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
         girl.hp = girl.maxHp;
         girl.maxSpirit = effectiveGuard(girl);
         girl.spirit = girl.maxSpirit;
         girl.status = 'idle'; girl.remaining = 0; girl.conditions = [];
-        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级与能力回到起点，疤痕仍在。`, delta: -wipeCost });
+        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级、能力与疤痕都回到起点，回忆还留着。`, delta: -wipeCost });
         return { state: next, ok: true, message: `${girl.name}的能力已重塑至 1 级。` };
       }
       if (action.mode === 'clear') {
@@ -311,7 +313,8 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
         if (next.gold < clearCost) return { state, ok: false, message: `记忆清除需要 ${clearCost.toLocaleString('en-US')} 星砂。` };
         const target = mental.find(scar => scar.id === action.clearScarId) ?? mental[0];
         next.gold -= clearCost; book(next, next.day, -clearCost);
-        if (target) girl.scars = girl.scars.filter(scar => scar.id !== target.id);
+        // 魔女态不清疤痕：她用记忆与等级换回形态，疤痕留给记忆重塑去剥。
+        if (target && !isWitch) girl.scars = girl.scars.filter(scar => scar.id !== target.id);
         if (isWitch) {
           // 清除的是「成为魔女的那段记忆」：形态解除、侵蚀归零，代价是等级与成长归零。
           const oldLevel = girl.level;
