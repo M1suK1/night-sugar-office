@@ -318,7 +318,9 @@ export function applySettleEnvironment(state: GameState, mission: Mission, squad
   const extraFatigue = mission.environment
     ? (mission.environment.fatigueFlat ?? 0)
     : (region.effect.fatigueFlat ?? 0) + (mission.district ? effectiveDistrictEffect(state.territories, mission.district).fatigueFlat ?? 0 : 0);
-  const spiritDrain = (region.effect.spiritPerHour ?? 0) * Math.max(0, Math.round(mission.duration / 60));
+  // 同样只认快照：浓雾的每小时精神流失要和辖区的合在一起算，别把快照绕过去。
+  const spiritPerHour = mission.environment ? (mission.environment.spiritPerHour ?? 0) : (region.effect.spiritPerHour ?? 0);
+  const spiritDrain = spiritPerHour * Math.max(0, Math.round(mission.duration / 60));
   for (const girl of squad) {
     if (extraFatigue) girl.fatigue = Math.max(0, Math.min(100, girl.fatigue + extraFatigue));
     if (spiritDrain) girl.spirit = Math.max(0, girl.spirit + spiritDrain);

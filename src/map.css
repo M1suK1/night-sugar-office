@@ -143,3 +143,23 @@
   .girl-roster-scroll { max-height: 70vh; }
   .girl-roster.is-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* v187 天气：地图上只加一层很轻的东西，不盖住辖区与委托。 */
+.weather-chip{display:inline-flex;align-items:center;gap:5px;margin-left:9px;font-size:8px;color:#9b93a2;letter-spacing:.08em;border:1px solid #ffffff0e;border-radius:4px;padding:2px 7px;background:#ffffff04;white-space:nowrap}
+.weather-chip small{font-size:7px;color:#6f6877}
+.weather-chip.weather-rain{color:#a3bcd0;border-color:#a3bcd024}
+.weather-chip.weather-fog{color:#b6bcc4;border-color:#b6bcc424}
+.weather-chip.weather-snow{color:#c7d6e6;border-color:#c7d6e624}
+.weather-chip.weather-storm{color:#c4a8c6;border-color:#c4a8c624}
+.weather-chip.weather-wind{color:#b3c0b6;border-color:#b3c0b624}
+.weather-layer{position:absolute;inset:0;pointer-events:none;z-index:1}
+.weather-layer.weather-clear{display:none}
+.weather-layer.weather-rain{background-image:repeating-linear-gradient(103deg,transparent 0 21px,#a9c7dd14 21px 22px);background-size:auto 220px;opacity:.85;animation:weather-fall 2.4s linear infinite}
+.weather-layer.weather-snow{background-image:radial-gradient(#e9f1ff5c 1px,transparent 1.4px),radial-gradient(#e9f1ff3d 1px,transparent 1.4px);background-size:47px 47px,79px 79px;background-position:0 0,23px 31px;opacity:.7;animation:weather-fall 34s linear infinite}
+.weather-layer.weather-fog{background:radial-gradient(ellipse at 50% 62%,#c9d4e021,transparent 68%),linear-gradient(180deg,#aab7c40a,#aab7c417);opacity:.9}
+.weather-layer.weather-storm{background:linear-gradient(180deg,#0a0f1a55,#11101a33);animation:weather-flash 11s ease-in-out infinite}
+.weather-layer.weather-wind{background:repeating-linear-gradient(118deg,transparent 0 66px,#b9c8c00a 66px 67px);opacity:.6;animation:weather-wind 8s linear infinite}
+@keyframes weather-fall{to{background-position:0 220px}}
+@keyframes weather-wind{to{background-position:340px 0}}
+@keyframes weather-flash{0%,88%,100%{opacity:.55}90%{opacity:.9}92%{opacity:.5}94%{opacity:.85}}
+@media(prefers-reduced-motion:reduce){.weather-layer{animation:none!important}}

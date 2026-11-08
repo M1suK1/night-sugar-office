@@ -54,8 +54,8 @@ test('v198 四条新契约都进 contractPrompts，默认文本非空且标了 c
   assert.match(profile?.content ?? '', /voice/);
 });
 
-test('v198 schema 升到 8：schema 7 的老预设补上新契约，且不动玩家改过的同 id 内容', () => {
-  assert.equal(PRESET_SCHEMA, 8);
+test('v198 schema 升到 9：老预设补上新契约，且不动玩家改过的同 id 内容', () => {
+  assert.equal(PRESET_SCHEMA, 9);
   const preset: ChatPreset = {
     id: 'old', name: '老预设', createdAt: stamp, updatedAt: stamp, schema: 7,
     settings: {},

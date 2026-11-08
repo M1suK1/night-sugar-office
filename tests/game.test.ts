@@ -1431,7 +1431,7 @@ test('平铺采样键名、prompt_order 与宏展开按 ST 语义处理', () => 
   assert.equal(runtime.topP, 0.98);
   assert.equal(runtime.maxTokens, 32768);
   assert.equal(runtime.maxContext, 400000);
-  assert.equal(activePrompts(flat.preset).length, 42);
+  assert.equal(activePrompts(flat.preset).length, 43);
   const wrapped = withPresetPrompts('基础。', runtime, { user: '白鸟', charName: '月见桃' });
   assert.ok(wrapped.system.includes('月见桃 的叙事者'));
   assert.ok(!wrapped.system.includes('注释'));
@@ -1762,15 +1762,15 @@ test('旧预设把 main / jailbreak 迁成词条，玩家档案拼成可注入�
   const legacy = importPresetObject({ name: '旧预设', settings: { main: '旧主提示', jailbreak: '旧约束' } });
   const all = presetPrompts(legacy.preset);
   const entries = all.filter(entry => !entry.contract);
-  assert.equal(entries.length, 40, '正文词条数量不变（契约另算）');
+  assert.equal(entries.length, 41, '正文词条数量不变（契约另算）');
   assert.ok(all.some(entry => entry.contract), '契约词条一并补齐');
   assert.ok(entries[0].content.includes('旧主提示'));
   assert.ok(entries[1].content.includes('旧约束'));
   const wrapped = withPresetPrompts('系统底稿', { ...presetRuntime(legacy.preset), entries });
   assert.ok(wrapped.system.includes('系统底稿'));
   assert.ok(wrapped.system.includes('旧主提示'));
-  assert.equal(DEFAULT_PROMPTS.length, 38);
-  assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'task']);
+  assert.equal(DEFAULT_PROMPTS.length, 39);
+  assert.deepEqual(DEFAULT_PROMPTS.filter(entry => entry.scope === 'shared').map(entry => entry.id), ['world', 'player', 'task', 'env-weather']);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'chat').length, 2);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'daily').length, 5);
   assert.equal(DEFAULT_PROMPTS.filter(entry => entry.scope === 'battle').length, 5);
@@ -1925,7 +1925,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 58, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项、v167 的失败惩罚三项与 v168 的会议七项');
+  assert.equal(BALANCE_FIELDS.length, 59, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项、v167 的失败惩罚三项、v168 的会议七项与 v187 的天气强度');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);
@@ -2368,13 +2368,13 @@ test('导入缺少任务词条的预设会补齐默认词条并标记', () => {
   assert.ok(imported.warnings.some(text => text.includes('默认词条')));
   const all = presetPrompts(imported.preset);
   const entries = all.filter(entry => !entry.contract);
-  assert.equal(entries.length, 39, '正文词条数量不变（契约另算）');
+  assert.equal(entries.length, 40, '正文词条数量不变（契约另算）');
   assert.equal(entries.filter(entry => entry.scope === 'daily').length, 5);
   assert.ok(entries.find(entry => entry.scope === 'daily')?.builtin);
   assert.equal(entries.filter(entry => entry.scope === 'battle').length, 5);
   assert.ok(all.some(entry => entry.contract && entry.scope === 'daily'), '每日提案的契约也补上了');
   const runtime = presetRuntime(imported.preset);
-  assert.equal(runtime.entries.length, 39, 'runtime.entries 只含正文（契约另存 contracts）');
+  assert.equal(runtime.entries.length, 40, 'runtime.entries 只含正文（契约另存 contracts）');
   assert.ok((runtime.contracts ?? []).some(entry => entry.id === 'daily:contract'));
   assert.equal(runtime.entries.some(entry => entry.scope === 'chat'), true);
 });

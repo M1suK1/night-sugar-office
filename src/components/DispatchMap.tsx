@@ -12,6 +12,7 @@ import { missionBaselineNote } from '../rules/missions';
 import { compareMissionsByTier } from '../missionTier';
 import { frontRemaining } from '../fronts';
 import { factionAttitude } from '../economy';
+import { WEATHERS, waveOf, weatherNow } from '../weather';
 
 const icons = { candy: Candy, station: TrainFront, mirror: Eclipse, cat: Cat, tower: Mail };
 /** 难度分级：与委托数据里的四个写法一一对应，顺序从轻到重。 */
@@ -25,6 +26,8 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
   /** 难度筛选独立于类型筛选：两排可以叠加，「高危 + 战斗」这种组合最常用。 */
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | MapDifficulty>('all');
   const missions = useMemo(() => state.missions.filter(m => missionVisibleOnMap(m, state.day)), [state.missions, state.day]);
+  const weather = weatherNow(state);
+  const wave = waveOf(state.minutes);
   const open = missions.filter(m => m.status === 'open').length;
   const visible = (m: Mission) => (filter === 'all' || (filter === 'urgent' ? m.window === 'urgent' || m.category === '紧急委托' : filter === 'active' ? m.status === 'active' : m.work === filter))
     && (difficultyFilter === 'all' || m.difficulty === difficultyFilter);
@@ -38,7 +41,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
 
   return <section className="dispatch-map" aria-label="樱雾市派遣地图">
     <div className="map-heading">
-      <div className="section-title"><Radar size={18} /><h2>城市感应地图</h2><span className="tiny-badge">{open} 个待处理</span></div>
+      <div className="section-title"><Radar size={18} /><h2>城市感应地图</h2><span className="tiny-badge">{open} 个待处理</span><span className={`weather-chip weather-${weather}`} title={WEATHERS[weather].hint}>{WEATHERS[weather].name}<small>第 {wave + 1} 段</small></span></div>
       <div className="map-view-controls"><button id="map-view-map" aria-label="地图视图" aria-pressed={!list} className={!list ? 'selected' : ''} onClick={() => setList(false)}><MapIcon size={16} /></button><button id="map-view-list" aria-label="委托列表视图" aria-pressed={list} className={list ? 'selected' : ''} onClick={() => setList(true)}><List size={16} /></button></div>
     </div>
     <div className="map-filters" aria-label="地图任务筛选">
@@ -75,6 +78,7 @@ export function DispatchMap({ state, onMission, onFront, onDropGirl }: { state: 
       <div className="map-world" style={{ transform: `scale(${zoom})` }}>
         <img className="city-art" src="/art/city.svg" alt="樱雾市夜间街区，穿城河流连接糖果公园、旧钟楼与南十字街区" draggable={false} />
         <div className="map-grain" />
+        <div className={`weather-layer weather-${weather}`} aria-hidden="true" />
         <svg className="district-layer" viewBox="0 0 1100 780" preserveAspectRatio="none" aria-label="辖区边界">
           {districtOrder.map(id => {
             const region = districts[id];

@@ -55,6 +55,9 @@ const HEROINE_BLOCK = `【她是谁】
 
 /** 蓝图（v46）与每日提案（v47）的提示词分区：可编辑、可启停、可按用途恢复默认。 */
 export const SECTION_PROMPTS: PromptEntry[] = [
+  section('env-weather', 'shared', '环境·天气', `【今夜天气】
+{{weather}}
+这一节只在场景落在室外、或人物刚从外面回来时取用；写室内长谈时，最多提一句衣角的水。`),
   section('sl-structure', 'storyline', '蓝图·规模与结构', "【规模与硬性结构】\n{{limits}}\n需要一段旁白时，用 incident 写一张「看一眼」的弹窗；需要她开口说话时，用 event。\n节点 kind 只能用这九种：{{kinds}}。"),
   section('sl-ports', 'storyline', '蓝图·连线总则', `【连线总则——这一节写错，整张蓝图会被校验打回】
 1. 必须是有向无环图：从 start 能到达每个节点；每条路径最终都到 end；不允许回环、自环、悬空连线。

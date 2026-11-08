@@ -1458,3 +1458,13 @@ button.vn-chip#story-opening-rewrite {
   .story-archive-body { grid-template-columns: 1fr; }
   .story-archive-list { max-height: 24vh; }
 }
+/* v187 天气：委托详情里的一行，只说发布时是什么天气。 */
+.mission-weather{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;border:1px solid #ffffff0c;border-radius:5px;background:#ffffff03;font-size:9px;color:#8c8492}
+.mission-weather-name{display:inline-flex;align-items:center;gap:5px;color:#a9a1b0;letter-spacing:.04em}
+.mission-weather>em{font-style:normal;color:#77707e}
+.mission-weather-note{margin-left:auto;color:#7f7887}
+.mission-weather.weather-rain .mission-weather-name{color:#a3bcd0}
+.mission-weather.weather-fog .mission-weather-name{color:#b6bcc4}
+.mission-weather.weather-snow .mission-weather-name{color:#c7d6e6}
+.mission-weather.weather-storm .mission-weather-name{color:#c4a8c6}
+.mission-weather.weather-wind .mission-weather-name{color:#b3c0b6}

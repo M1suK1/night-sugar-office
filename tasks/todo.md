@@ -1011,8 +1011,23 @@
 - [x] 四条新契约进 `promptContracts`（`incident:single` / `event:contract` / `profile:schema` / `profile:witch`），`daily:contract` 改为直接引用，删掉 `registerContractDefault` 间接层。
 - [x] 单条突发事件不再误用批量契约（`incident:single`）；角色起草的字段清单并入原有的 `profile:contract` 词条——此前那段字段只活在正文里，改契约改不到它。
 - [x] 四处调用点按 `generateStoryline` 的模式拆成「契约走 body、动态局势走 appendix」，预设覆盖契约时不再吃掉这一场的动态内容。
-- [x] `PRESET_SCHEMA 7 → 8`，已有预设升版时幂等补上四条契约词条；老预设进度与顺序不动。
+- [x] `PRESET_SCHEMA 7 → 8`（与 v187 天气合并后统一升到 9），已有预设升版时幂等补上四条契约词条；老预设进度与顺序不动。
 - [x] `prompt-lint` 闸门收窄：去掉过宽的「不要 Markdown 代码块」，`BUDGET` 6 → 0；`JSON_RETRY_MESSAGE` 留作系统话术。
 - [x] 补挂 `tests/v180`–`v183`（此前漏在 `npm test` 之外）。
 - [x] `tests/v198` 六条；全量 886 通过，`check:rules`、`tsc -b` 与 `npm run build` 通过。
 - [ ] 遗留：`promptHasMechanicBan` 仍会把 `incident:single` 判成「禁止数值」（与已有的 `incident:contract` / `battle:contract` 一致），预设界面会多一条提示，本次不动。
+
+## v187：天气变化与提示词（`tasks/plan-v187.md`）
+- [x] 六种天气，每夜三段（20:00 / 22:00 / 00:00），由 `(day, 段号)` 哈希取定；不新增存档字段。
+- [x] 天气并入 `missionSnapshot` 的环境快照：目标、报酬、伤害、敌人生命、疲劳、精神流失与战斗共用一份口径。
+- [x] 顶栏天气与下一段预告、地图天气层与 chip、委托详情标注「发布时」天气。
+- [x] 提示词：`{{weather}}` 宏 + 共用分区「环境·天气」，预设 schema 7 → 8 自动补齐（与 v198 合并后统一升到 9）。
+- [x] 数值规则新增「天气影响强度」；0 时天气只影响文案。
+- [x] `tests/v187` 九条；全量 858 通过，`check:rules` 与 `tsc -b` 通过。
+- [ ] 后续：季节（28 天一轮）按四季表另开一版。
+- [ ] 后续：天气对市场货源与事件池权重的重排。
+
+## 合并 v187 天气 + v198 契约（`superpowers/weather-v198`）
+- [x] 两条线合成一条：`generateIncident` 同时保留天气的 `{ state }` 上下文与 v198 的 appendix。
+- [x] `PRESET_SCHEMA` 统一升到 9：老预设一次补齐「环境·天气」分区与四条契约词条。
+- [x] `tests/v187` 九条 + `tests/v198` 六条；全量 895 通过，`check:rules`、`tsc -b` 与 `npm run build` 通过。

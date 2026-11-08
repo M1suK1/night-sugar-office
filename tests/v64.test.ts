@@ -40,8 +40,8 @@ test('v64 契约不参与正文分层（不会重复两遍）', () => {
   assert.equal(composed.system.split('【自定义契约】').length - 1, 1, '整份系统提示里只出现一次');
 });
 
-test('v64 内置预设自带契约词条，schema 已是 8', () => {
-  assert.equal(PRESET_SCHEMA, 8);
+test('v64 内置预设自带契约词条，schema 已是 9', () => {
+  assert.equal(PRESET_SCHEMA, 9);
   const preset = builtinPresets()[0]!;
   assert.ok(preset.prompts.some(entry => entry.id === 'news:contract' && entry.contract));
   assert.ok(preset.schema === PRESET_SCHEMA);

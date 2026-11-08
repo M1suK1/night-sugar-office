@@ -1,6 +1,6 @@
 import { GirlThumb } from './GirlThumb';
 import { useState } from 'react';
-import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle } from 'lucide-react';
+import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle, CloudRain, CloudLightning, Snowflake, CloudFog, Moon } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
 import { chance, clock, inWithdrawal, missionDeadlineLabel, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { districtOfMission, effectLines } from '../districts';
@@ -13,6 +13,7 @@ import { clampPollution, pollutionEffect, pollutionIsEstimated, pollutionLines, 
 import { MonsterGlyph } from './MonsterGlyph';
 import { applyEliteBuff, eliteBuffById } from '../content/eliteBuffs';
 import { missionBaselineNote } from '../rules/missions';
+import { WEATHERS, weatherForSpawn } from '../weather';
 
 function canGo(girl: Girl): { ok: boolean; reason: string } {
   if (girl.retired) return { ok: false, reason: '已退役' };
@@ -39,6 +40,8 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
   const assigned = mission.squad.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const lastBattle = state.battles.find(item => item.missionId === mission.id);
   const region = districtOfMission(mission);
+  const weather = weatherForSpawn(mission.spawnedAt, state.day);
+  const weatherDef = WEATHERS[weather];
   const toggle = (girl: Girl) => {
     if (!canGo(girl).ok) return;
     setSelected(current => current.includes(girl.id) ? current.filter(id => id !== girl.id) : current.length >= limit ? current : [...current, girl.id]);
@@ -66,6 +69,14 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <div className="modal-section-heading"><h3><MapPin size={14} />{region.name}</h3><small>{region.subtitle} · {region.terrain}</small></div>
         <p>{region.description}</p>
         <div className="district-effects">{effectLines(region.effect).map(line => <span key={line.label} className={`district-effect tone-${line.tone}`}>{line.label}<b>{line.value}</b></span>)}</div>
+        <div className={`mission-weather weather-${weather}`} title={weatherDef.hint}>
+          <span className="mission-weather-name">
+            {weather === 'rain' ? <CloudRain size={12} /> : weather === 'snow' ? <Snowflake size={12} /> : weather === 'storm' ? <CloudLightning size={12} /> : weather === 'fog' ? <CloudFog size={12} /> : weather === 'wind' ? <Wind size={12} /> : <Moon size={12} />}
+            发布时 · {weatherDef.name}
+          </span>
+          <em>{weatherDef.line}</em>
+          <span className="mission-weather-note">{weatherDef.hint}</span>
+        </div>
         <div className="mission-window">
           <span className={`window-badge ${mission.window ?? 'long'}`}><Hourglass size={12} />{windowLabel[mission.window ?? 'long']}委托</span>
           {mission.deadlineAt !== undefined && <span className="window-deadline">截止 {clock(((mission.deadlineAt % 1440) + 1440) % 1440)} · {missionDeadlineLabel(mission, state)}</span>}
