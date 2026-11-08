@@ -7,6 +7,7 @@ import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { arrangeStoryText, beatsFromPassage, beatsFromTurns } from '../vn/beats';
+import { expressionAtTurn } from '../storySession';
 import { storyBackdropOf } from '../vn/backdrops';
 import { scrollTopForNewTurn } from '../storyScroll';
 
@@ -161,6 +162,26 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   const end = useRef<HTMLDivElement>(null);
   /** 每一轮的 DOM 位置：新内容出现时停在它的开头，而不是滚到结尾。 */
   const turnNodes = useRef(new Map<string, HTMLElement>());
+  /** 阅读线：容器顶端往下 110px 以上的最后一轮，就是「正在读」的那一轮。 */
+  const readingFrame = useRef(0);
+  const measureReading = () => {
+    const box = end.current;
+    if (!box) return;
+    const lineY = box.getBoundingClientRect().top + 110;
+    let current = '';
+    for (const turn of turns) {
+      const node = turnNodes.current.get(turn.id);
+      if (!node) continue;
+      if (node.getBoundingClientRect().top <= lineY) current = turn.id;
+      else break;
+    }
+    setReadingId(current || turns[0]?.id || '');
+  };
+  const syncReading = () => {
+    if (readingFrame.current) return;
+    readingFrame.current = requestAnimationFrame(() => { readingFrame.current = 0; measureReading(); });
+  };
+  useEffect(() => () => { if (readingFrame.current) cancelAnimationFrame(readingFrame.current); }, []);
   const scrolledTurn = useRef('');
   const pool = useMemo(() => (castPool?.length ? castPool : [...state.girls, ...state.candidates]) as Girl[], [castPool, state.girls, state.candidates]);
   const cast = useMemo(() => {
@@ -175,13 +196,9 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
     () => beatsFromTurns(turns, { playerName: '所长', scene: storyBackdropOf(event) }),
     [turns],
   );
-  const latest = useMemo(() => {
-    for (let index = turns.length - 1; index >= 0; index -= 1) {
-      const line = turns[index]?.lines?.[turns[index]!.lines!.length - 1];
-      if (line && line.speakerId !== 'player') return { id: line.speakerId, expression: line.expression };
-    }
-    return null;
-  }, [turns]);
+  // v190：原文视图按「读到哪一轮」取表情；以前取整段最后一句，一打开回看就是结局的脸。
+  const [readingId, setReadingId] = useState('');
+  const latest = useMemo(() => expressionAtTurn(turns, readingId), [turns, readingId]);
   useEffect(() => {
     const box = end.current;
     if (!box) return;
@@ -207,6 +224,8 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
     scrolledTurn.current = newest.id;
     box.scrollTo({ top, behavior: 'smooth' });
   }, [turns.length, turns.at(-1)?.id]);
+  // 打开回看 / 新的一轮落地时重算一次：不用等玩家滚动，第一屏就该是这一段的表情。
+  useEffect(() => { syncReading(); }, [turns.length, readOnly]);
   const loading = busy || sending;
   const rounds = turns.filter(turn => turn.role === 'player').length;
   const lastNarrator = [...turns].reverse().find(turn => turn.role === 'narrator');
@@ -515,7 +534,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
             />
 
             <main className="battle-note-center event-center">
-              <div ref={end} className="battle-note-body" role="log" aria-live="polite">
+              <div ref={end} className="battle-note-body" role="log" aria-live="polite" onScroll={syncReading}>
                 {turns.length === 0 && (
                   <div className="battle-note-loading" role="status">
                     {loading ? <LoaderCircle size={22} className="spin" /> : null}
