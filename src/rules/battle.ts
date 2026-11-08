@@ -18,6 +18,7 @@ import { applyHostility, pairOf } from '../hostility.ts';
 import type { BattleState, GameState, Girl, Interception, Mission, Monster, Scar, StatKey } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
 import { addCondition, addCorruption, gainTrait } from './conditions.ts';
+import { applyWitchSquadRelation } from './witchSquad.ts';
 import { book, clone, dateLabel, findGirl, grantExpWithNotice, hashText, pushNotice, shiftTerritory } from './core.ts';
 import { makeOpinion } from './opinion.ts';
 import { capacity, seatsTaken } from './roster.ts';
@@ -233,6 +234,8 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     // 污染造成的侵蚀只从快照读一份：`environment` 已经是地形 + 当主 + 污染的和。
     addCorruption(state, girl, 3 + gearCorruption + (mission.boss ? 6 : 0) + (battle.outcome === 'defeat' ? 2 : 0) + (mission.environment?.corruptionFlat ?? 0));
   }
+  // v200：魔女出勤会让队友离她远一点（胜负都算）。
+  applyWitchSquadRelation(state, squad);
   if (battle.outcome === 'defeat') {
     for (const scar of battle.scars ?? []) {
       const girl = state.girls.find(g => scar.id.startsWith(`scar-${g.id}-`));

@@ -75,6 +75,8 @@ export interface BalanceRules {
   dormRestCorruption: number;
   /** 侵蚀达到多少可以显形魔女化礼装。 */
   corruptionThreshold: number;
+  /** 队伍里有魔女出勤时，其他队员对她的同伴关系每场扣多少。 */
+  witchSquadRelation: number;
   /** 单次派遣最多几人。 */
   squadLimit: number;
   /** 单个势力最多占几块辖区。 */
@@ -155,6 +157,7 @@ export const DEFAULT_BALANCE: BalanceRules = {
   dormRestExitFatigue: 20,
   dormRestCorruption: 5,
   corruptionThreshold: 40,
+  witchSquadRelation: -4,
   squadLimit: 3,
   territoryLimit: 5,
   longMinDays: 2,
@@ -235,6 +238,7 @@ export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'dormRestExitFatigue', label: '休息结束阈值', hint: '疲劳降到这个值以下就自动结束休息。', min: 0, max: 60, step: 1, unit: '疲劳', group: '运营与诊所' },
   { key: 'dormRestCorruption', label: '休息平复侵蚀', hint: '一次休息平复多少侵蚀。', min: 0, max: 30, step: 1, unit: '点', group: '运营与诊所' },
   { key: 'corruptionThreshold', label: '魔女化阈值', hint: '侵蚀达到该值后解锁魔女化礼装。', min: 10, max: 100, step: 5, unit: '侵蚀', group: '运营与诊所' },
+  { key: 'witchSquadRelation', label: '魔女出勤关系', hint: '队伍里有魔女时，其他队员对她的同伴关系每场扣多少（负数）。', min: -10, max: 0, step: 1, unit: '关系', group: '运营与诊所' },
   { key: 'squadLimit', label: '派遣上限', hint: '单个委托最多派几人。', min: 1, max: 5, step: 1, unit: '人', group: '运营与诊所' },
   { key: 'territoryLimit', label: '势力辖区上限', hint: '单一势力最多能占几块辖区。', min: 1, max: 9, step: 1, unit: '块', group: '运营与诊所' },
   { key: 'longMinDays', label: '长期委托最短', hint: '长期委托的持续天数下限。', min: 1, max: 7, step: 1, unit: '天', group: '运营与诊所' },

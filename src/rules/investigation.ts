@@ -6,6 +6,7 @@ import { addCorruption, gainTrait } from '../rules/conditions.ts';
 import { book, dateLabel, grantExpWithNotice, hashText, pushNotice, shiftTerritory } from '../rules/core.ts';
 import { makeOpinion } from '../rules/opinion.ts';
 import { squadChance } from '../rules/roster.ts';
+import { applyWitchSquadRelation } from '../rules/witchSquad.ts';
 import { completeStoryMission } from '../rules/storyRun.ts';
 import type { GameState, Girl, Mission } from '../types.ts';
 // v35 从 src/game.ts 拆出：调查委托的结算。
@@ -54,6 +55,8 @@ export function settleInvestigation(state: GameState, mission: Mission, squad: G
     applySettleEnvironment(state, mission, squad);
     applyPollutionRelief(state, mission, 'loss');
   }
+  // v200：魔女出勤同样让同伴关系下降。
+  applyWitchSquadRelation(state, squad);
   maybeQueueWhisper(state, mission, squad.filter(girl => !girl.dead), success ? 'success' : 'failure');
   recordMissionRun(state, {
     id: `mission:${mission.id}:${at.day}:${at.minutes}:${mission.attempts}`,

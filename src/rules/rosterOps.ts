@@ -303,24 +303,49 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
       }
       if (action.mode === 'clear') {
         if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆清除。' };
+        const isWitch = Boolean(girl.witch);
         const mental = girl.scars.filter(scar => scar.kind === 'mental');
-        if (!mental.length) return { state, ok: false, message: `${girl.name}没有可清除的精神疤痕。` };
+        // v200：魔女化的唯一解除路径就是这里，所以魔女态不要求先有一条精神疤痕。
+        if (!mental.length && !isWitch) return { state, ok: false, message: `${girl.name}没有可清除的精神疤痕。` };
         const clearCost = clinicPrice(MEMORY_CLEAR_COST, clinicLevel(next));
         if (next.gold < clearCost) return { state, ok: false, message: `记忆清除需要 ${clearCost.toLocaleString('en-US')} 星砂。` };
         const target = mental.find(scar => scar.id === action.clearScarId) ?? mental[0];
         next.gold -= clearCost; book(next, next.day, -clearCost);
-        girl.scars = girl.scars.filter(scar => scar.id !== target.id);
-        // 疤痕少了，上限跟着回来：血量按剩余疤痕重算，心防按当前共情重算。
+        if (target) girl.scars = girl.scars.filter(scar => scar.id !== target.id);
+        if (isWitch) {
+          // 清除的是「成为魔女的那段记忆」：形态解除、侵蚀归零，代价是等级与成长归零。
+          const oldLevel = girl.level;
+          const involved = (event: (typeof next.events)[number]) => event.girlId === girl.id
+            || (event.cast ?? []).includes(girl.id)
+            || Boolean(event.meeting?.attendeeIds.includes(girl.id));
+          next.events = next.events.filter(event => !(involved(event) && (event.status === 'done' || event.sessionDone)));
+          girl.level = 1; girl.exp = 0;
+          girl.stats = { ...girl.baseStats };
+          girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
+          girl.corruption = 0;
+          girl.witch = false;
+          girl.drugUntilDay = undefined;
+          girl.withdrawalDays = 0;
+          girl.conditions = [];
+        }
+        // 疤痕少了（或等级回退），上限跟着回来：血量按剩余疤痕重算，心防按当前共情重算。
         girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
-        girl.hp = Math.min(girl.hp, girl.maxHp);
+        girl.hp = isWitch ? girl.maxHp : Math.min(girl.hp, girl.maxHp);
         girl.maxSpirit = effectiveGuard(girl);
         girl.spirit = girl.maxSpirit;
         next.logs.unshift({
           id: `log-clear-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'clinic',
-          text: `${girl.name}做了一次记忆清除。「${target.name}」被折好收进档案袋，等级与能力没有动。`,
+          text: isWitch
+            ? `${girl.name}做了一次记忆清除。魔女形态解除，侵蚀归零，等级与成长回到起点；那些演完的对话也被折好收进档案袋。`
+            : `${girl.name}做了一次记忆清除。「${target?.name ?? '一段记忆'}」被折好收进档案袋，等级与能力没有动。`,
           delta: -clearCost,
         });
-        return { state: next, ok: true, message: `${girl.name}的精神疤痕「${target.name}」已被清除。` };
+        return {
+          state: next, ok: true,
+          message: isWitch
+            ? `${girl.name}的魔女形态解除了：侵蚀归零，等级回到 1。`
+            : `${girl.name}的精神疤痕「${target?.name ?? ''}」已被清除。`,
+        };
       }
       if (action.mode === 'clone') {
         if (girl.cloneOf || girl.generation) return { state, ok: false, message: '复制体不能再次被复制。' };

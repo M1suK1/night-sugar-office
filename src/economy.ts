@@ -4,8 +4,11 @@ import { guardMax } from './spirit.ts';
 
 export const statOrder: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 
+/** 第三档「魔女」的门槛：跨过这条线就回不去了（v200）。 */
+export const WITCH_STAGE_AT = 70;
+
 export function corruptionStage(value: number): 0 | 1 | 2 | 3 {
-  if (value >= 70) return 3;
+  if (value >= WITCH_STAGE_AT) return 3;
   if (value >= 40) return 2;
   if (value >= 1) return 1;
   return 0;
@@ -24,6 +27,11 @@ export function corruptionMultipliers(value: number): { empathy: number; other: 
   if (stage === 2) return { empathy: 0.88, other: 1.08 };
   if (stage === 1) return { empathy: 0.95, other: 1.03 };
   return { empathy: 1, other: 1 };
+}
+
+/** 共情修正的界面百分比：与 corruptionMultipliers 同源，避免界面另写一套。 */
+export function corruptionEmpathyPenalty(value: number): number {
+  return Math.round((1 - corruptionMultipliers(value).empathy) * 100);
 }
 
 export function equipmentOf(girl: Girl): Equipment[] {
