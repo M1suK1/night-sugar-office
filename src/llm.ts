@@ -2119,12 +2119,14 @@ export async function generateStoryEnding(
   preset?: PresetRuntime,
   /** v188：所长点了结束、但输入框里还留着一句没发出去的话——收尾时当作引子。 */
   lead?: string,
-): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] }; summary: string } | { ok: false; message: string }> {
+  choice?: { options: { id: string; label: string }[] },
+): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] }; summary: string; choice?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
   const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+  const choices = (choice?.options ?? []).slice(0, 4);
   const context = [
     `【这一段剧情】${event.title}`,
     event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
@@ -2135,12 +2137,22 @@ export async function generateStoryEnding(
     briefs || '只有她和你',
     '【此前的对话】',
     storyHistory(event.turns ?? []) || '（这是第一轮）',
+    choices.length ? `【这一段之后的岔路口】\n必须从这些选项里选一条，作为所长实际走的方向：\n${choices.map(option => `- ${option.id}：${option.label}`).join('\n')}\n只写 id，不要写效果数值。` : '',
     endingLeadBlock(lead),
     rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
   ].filter(Boolean).join('\n');
-  const result = await callJson(config, preset, 'arc', arcEndingContract(), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
+  const ask = (extra = '') => callJson(config, preset, 'arc', arcEndingContract(choices), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:ending',
-  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
+  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, extra ? `${context}\n\n${extra}` : context);
+  let result = await ask();
+  const allowed = choices.map(option => option.id);
+  const pickedChoice = () => (result.ok && typeof result.raw.choice === 'string' ? result.raw.choice.trim() : '');
+  if (result.ok && allowed.length && !allowed.includes(pickedChoice())) {
+    const first = result;
+    const repaired = await ask(`【上一次收尾没有落在蓝图分支上】\n${JSON.stringify(result.raw).slice(0, 1200)}\n\n【必须修正】choice 只能取：${allowed.join('、')}。只输出修正后的完整 JSON，保留 narration / lines / summary。`);
+    // 返修失败也保留第一次的结局：分支留空，交给档案页手选。
+    result = repaired.ok ? repaired : first;
+  }
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2153,12 +2165,14 @@ export async function generateStoryEnding(
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
+  const picked = pickedChoice();
+  const choiceId = allowed.includes(picked) ? picked : undefined;
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `收尾：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
   // v109：收尾时顺手把整段压成摘要——之后的历史只引用它，原文留给人翻。
   const summary = typeof result.raw.summary === 'string' && result.raw.summary.trim()
     ? result.raw.summary.trim().slice(0, 800)
     : localSessionSummary(event, narration);
-  return { ok: true, turn: { narration, lines }, summary };
+  return { ok: true, turn: { narration, lines }, summary, choice: choiceId };
 }
 
 /**

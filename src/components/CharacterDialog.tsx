@@ -8,7 +8,7 @@ import { activePersonality } from '../personality';
 import { WITCH_STAGE_AT, activeSetOf, corruptionEmpathyPenalty, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { findEquipmentSet } from '../content/sets';
 import { EquipmentFacts } from './EquipmentFacts';
-import { clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
+import { clinicCost, clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
 import { passiveText } from '../passives';
@@ -57,7 +57,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   /** 滑条一次提交四项：由 allocateStats 一次落地，避免连续 +1 互相盖掉。 */
   onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
-  onClinic: (mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
+  onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
   onExpressionVariants: () => void;
@@ -185,6 +185,9 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
     const itemId = event.dataTransfer.getData('text/equipment-id');
     if (itemId) equipFromInventory(itemId, slot);
   }
+  const wipePrice = clinicCost(state, 4000);
+  const clonePrice = clinicCost(state, 18000);
+
   return (
     <div className="character-dossier" style={{ '--girl-color': girl.color } as React.CSSProperties}>
       <div className="dossier-art">
@@ -239,7 +242,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                 <span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span>
               </div>
               {girl.witch && <p className="corruption-note">{girl.corruption >= WITCH_STAGE_AT
-                ? '她已经越过那条线：月光抑制剂只能续命，断药第 10 日会死亡；唯一解除方式是记忆清除。'
+                ? '她已经越过那条线：月光抑制剂只能续命，断药第 10 日会死亡；唯一解除方式是记忆重塑。'
                 : drug > 0 ? '抑制剂仍在起效。断药前记得补充。' : '断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。'}</p>}
             </div>
             {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
@@ -504,9 +507,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <div className="modal-section-heading"><h3>月光诊所</h3><small>按失血创伤程度分阶计价，按小时平稳愈合；治疗期间严禁签发出勤</small></div>
               <ClinicPanel state={state} girls={[girl]} onTreat={(_girlId, kink) => onClinic('treat', kink)} />
               <div className="clinic-grid">
-                <button id="clinic-clear" className="clinic-action" disabled={state.gold < 1200 || girl.status === 'mission' || girl.status === 'expedition' || (!girl.witch && !girl.scars.some(s => s.kind === 'mental'))} onClick={() => onClinic('clear')}><Sparkles size={16} /><b>记忆清除</b><small>1,200 星砂 · 清一条精神疤痕；魔女态则解除魔女化、等级归 1</small></button>
-                <button id="clinic-wipe" className="clinic-action" disabled={state.gold < 4000 || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>4,000 星砂 · 等级归 1，属性与疤痕重置</small></button>
-                <button id="clinic-clone" className="clinic-action" disabled={state.gold < 18000 || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>18,000 星砂 · 从 1 级开始，仅一次</small></button>
+                <button id="clinic-wipe" className="clinic-action" disabled={state.gold < wipePrice || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>{wipePrice.toLocaleString('en-US')} 星砂 · 等级、属性与疤痕归零；魔女态解除魔女化，已完成的回忆一并抹去</small></button>
+                <button id="clinic-clone" className="clinic-action" disabled={state.gold < clonePrice || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>{clonePrice.toLocaleString('en-US')} 星砂 · 从 1 级开始，仅一次</small></button>
               </div>
             </section>
           </>}

@@ -72,7 +72,7 @@ import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
 import { __resetKvForTests, __setKvWriteFaultForTests, kvSet } from '../src/store.ts';
 import { BROKEN_SPIRIT_MUL, BROKEN_TAKEN_MUL, GUARD_HP_MUL, GUARD_PER_EMPATHY, brokenSpiritDamage, guardHpMul, guardMax, guardState, guardStateLabel } from '../src/spirit.ts';
-import { MEMORY_CLEAR_COST } from '../src/game.ts';
+
 import { effectiveGuard } from '../src/economy.ts';
 import { emptyItem } from '../src/content/library.ts';
 import { items } from '../src/content/items.ts';
@@ -5099,29 +5099,7 @@ test('v25 魔物的心防同样按共情算，不再读 maxSpirit', () => {
   assert.equal(enemy.maxSpirit, guardMax({ stats: monster.stats }));
 });
 
-test('v25 记忆清除：只清一条精神疤痕，不动等级，扣 1200 星砂', () => {
-  const s = createInitialState();
-  const girl = s.girls[0];
-  girl.scars = [
-    { id: 'scar-a', name: '旧伤', condition: '下雨天会疼', effect: { kind: 'stat', stat: 'agility', amount: -1 }, maxHpLoss: 0, gainedAt: '第 1 日', kind: 'body' },
-    { id: 'scar-b', name: '走神', condition: '听到钟声会愣住', effect: { kind: 'stat', stat: 'insight', amount: -1 }, maxHpLoss: 0, gainedAt: '第 2 日', kind: 'mental' },
-  ] as Scar[];
-  const before = s.gold;
-  const next = act(s, { type: 'clinic', girlId: girl.id, mode: 'clear', clearScarId: 'scar-b' }).state;
-  const after = next.girls.find(g => g.id === girl.id)!;
-  assert.equal(next.gold, before - MEMORY_CLEAR_COST);
-  assert.deepEqual(after.scars.map(scar => scar.id), ['scar-a']);
-  assert.equal(after.level, girl.level);
-  assert.ok(next.logs.some(log => log.text.includes('记忆清除')));
-});
 
-test('v25 没有精神疤痕时记忆清除被拒绝', () => {
-  const s = createInitialState();
-  s.girls[0].scars = [];
-  const result = act(s, { type: 'clinic', girlId: s.girls[0].id, mode: 'clear' });
-  assert.equal(result.ok, false);
-  assert.equal(result.state.gold, s.gold);
-});
 
 test('v25 精神型失败只留下精神疤痕', () => {
   const s = createInitialState();

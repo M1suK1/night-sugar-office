@@ -2,7 +2,7 @@ import { loadBalance } from '../balance.ts';
 import { getSkill } from '../content/skills.ts';
 import { effectiveMaxHp, effectiveStats } from '../economy.ts';
 import type { GameState, Girl, Mission, Treatment } from '../types.ts';
-// v35 从 src/game.ts 拆出：席位、派遣名额、门诊与记忆清除报价。
+// v35 从 src/game.ts 拆出：席位、派遣名额、门诊与记忆重塑报价。
 
 export function capacity(state: GameState): number {
   return state.rooms.filter(r => r.type === 'dorm').reduce((sum, room) => sum + room.capacity, 0);
@@ -45,6 +45,16 @@ export function clinicPrice(base: number, level: number): number {
   return Math.max(0, Math.round(base * (1 - clinicDiscount(level))));
 }
 
+/** 月光诊所当前等级（没有诊所按 1 级算）。 */
+export function clinicLevel(state: GameState): number {
+  return state.rooms.find(room => room.type === 'clinic')?.level ?? 1;
+}
+
+/** 诊所实际扣款：按钮显示与结算共用这一个口径。 */
+export function clinicCost(state: GameState, base: number): number {
+  return clinicPrice(base, clinicLevel(state));
+}
+
 export function chance(girl: Girl, mission: Mission): number {
   const stats = effectiveStats(girl);
   return Math.max(35, Math.min(99, Math.round(70 + (stats[mission.requirement] - mission.target) * 0.65 - girl.fatigue * 0.15)));
@@ -78,9 +88,6 @@ export function drugDaysLeft(girl: Girl, day: number): number {
 export function inWithdrawal(girl: Girl): boolean {
   return Boolean(girl.witch && (girl.withdrawalDays ?? 0) > 0);
 }
-
-/** 记忆清除：只清一条精神疤痕，不动等级。 */
-export const MEMORY_CLEAR_COST = 1200;
 
 export interface ClinicQuote { missing: number; cost: number; minutes: number; perHour: number; maxMinutes: number; kink: boolean }
 

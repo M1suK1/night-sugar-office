@@ -67,16 +67,16 @@ test('v141 诊所每升一级：治疗速度 +10 血/小时、费用 −5%', () 
   assert.equal(lv4.cost, Math.round(lv1.cost * (1 - 3 * DEFAULT_BALANCE.clinicCostDiscountPerLevel / 100)));
 });
 
-test('v141 诊所等级也会让记忆清除与复制契约变便宜', () => {
+test('v141 诊所等级也会让记忆重塑与复制契约变便宜', () => {
   const base = createInitialState();
   const girl = base.girls[0]!;
   girl.scars = [{ id: 'scar-1', name: '耳鸣', kind: 'mental', effect: { kind: 'hit', amount: 4 }, day: 14 }] as typeof girl.scars;
 
   const cheap = withRoomLevel({ ...base, gold: 30000 }, 'clinic', 4);
   const before = cheap.gold;
-  const cleared = act(cheap, { type: 'clinic', girlId: girl.id, mode: 'clear' });
-  assert.equal(cleared.ok, true, cleared.message);
-  const paid = before - cleared.state.gold;
-  assert.ok(paid < 1200, `记忆清除应打折，实际扣 ${paid}`);
-  assert.equal(paid, Math.round(1200 * (1 - 3 * DEFAULT_BALANCE.clinicCostDiscountPerLevel / 100)));
+  const wiped = act(cheap, { type: 'clinic', girlId: girl.id, mode: 'wipe' });
+  assert.equal(wiped.ok, true, wiped.message);
+  const paid = before - wiped.state.gold;
+  assert.ok(paid < 4000, `记忆重塑应打折，实际扣 ${paid}`);
+  assert.equal(paid, Math.round(4000 * (1 - 3 * DEFAULT_BALANCE.clinicCostDiscountPerLevel / 100)));
 });

@@ -184,11 +184,22 @@ export function arcContract(targets: string): string {
 }
 
 /** 交互剧情的收尾契约：不写选项，只把这一段收束成一个结局。 */
-export function arcEndingContract(): string {
+export function arcEndingContract(choice?: { id: string; label: string }[]): string {
+  const allowed = (choice ?? []).slice(0, 4);
+  const shape = allowed.length
+    ? `{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":"","choice":"${allowed[0].id}"}`
+    : '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":""}';
+  const branch = allowed.length
+    ? [
+      `choice 只能取：${allowed.map(option => option.id).join('、')}；按此前的对话判断所长实际走向了哪一条，不要空着，也不要自创 id。`,
+      '结局 narration 要写出这条分支的直接后果；不要再把选项摆出来让玩家选。',
+    ]
+    : [];
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":""}',
+    shape,
     '这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。',
+    ...branch,
     'narration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。',
     'lines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。',
     'summary 150–300 字：把**这一整段**（不只是结尾）压成一段前情提要——发生了什么、关系推进到哪、留下什么未解的事。以后只引用这段摘要，不再回看原文。',

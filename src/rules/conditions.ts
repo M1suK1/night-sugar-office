@@ -43,7 +43,6 @@ export function drugTick(state: GameState, girl: Girl): void {
   }
 }
 
-/** 记忆清除：只清一条精神疤痕，不动等级。 */
 
 export const conditionCatalog = [  { name: '夜惊', kind: 'debuff' as const, description: '连续几晚在同一个时刻惊醒，白天会下意识避开钟声。', stat: 'insight' as StatKey, amount: -3 },
   { name: '手部震颤', kind: 'debuff' as const, description: '握笔时手指会轻轻发抖，写下的字比平时更用力。', stat: 'agility' as StatKey, amount: -4 },
