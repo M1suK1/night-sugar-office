@@ -1955,6 +1955,9 @@ export function parseStoryLinesForTest(raw: unknown, cast: { id: string; name: s
 /** 历史上下文里每段的摘要上限：提示词要求 300 字，实际容忍到 400。 */
 export const STORY_TURN_SUMMARY_LIMIT = 400;
 
+/** 上一轮原文的上限：正常一轮 1500–3000 字，尽量整段带进历史，只兜底超长的情况。 */
+export const STORY_LAST_TURN_LIMIT = 3000;
+
 export function clipStoryRecap(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, STORY_TURN_SUMMARY_LIMIT);
 }
@@ -1971,15 +1974,31 @@ export function storyTurnSummary(raw: unknown): string {
  * 旧存档没有 summary 时用那一轮原文截 400 字兜底。玩家原话不再进历史——
  * 每轮 summary 已经包含「所长做了什么」。
  */
+/**
+ * 此前的对话：除上一轮外只引用总结，上一轮回放原文（v225）。
+ *
+ * 开场没有单独总结，用 event.opening 截 400 字代替；更早的轮次只取 summary，
+ * 旧存档没有 summary 时用那一轮原文截 400 字兜底。紧挨着的那一轮保留旁白与
+ * 台词原文——只靠摘要接不住刚发生的细节，容易写得前后不连贯。
+ * 原文超过 3000 字时才截断；正常一轮都放得下。
+ * 玩家原话仍不进历史；每轮 summary 已经覆盖「所长做了什么」。
+ */
 export function storyRecapHistory(event: CharacterEvent, turns: StoryTurn[], limit = 8): string {
   const narrators = turns.filter(turn => turn.role === 'narrator');
   const opening = (event.opening ?? narrators[0]?.text ?? '').trim();
   const lines: string[] = [];
   if (opening) lines.push(`开场：${clipStoryRecap(opening)}`);
-  for (const turn of narrators.slice(1).slice(-limit)) {
+  const rounds = narrators.slice(1).slice(-limit);
+  rounds.forEach((turn, index) => {
+    if (index === rounds.length - 1) {
+      const dialogue = (turn.lines ?? []).map(line => `${line.speakerName}：「${line.text}」`).join('\n');
+      const original = `${turn.text.trim()}${dialogue ? `\n${dialogue}` : ''}`;
+      lines.push(`上一轮原文：\n${original.slice(0, STORY_LAST_TURN_LIMIT)}`);
+      return;
+    }
     const summary = turn.summary?.trim();
     lines.push(`· ${summary ? summary.slice(0, STORY_TURN_SUMMARY_LIMIT) : clipStoryRecap(turn.text)}`);
-  }
+  });
   return lines.join('\n');
 }
 

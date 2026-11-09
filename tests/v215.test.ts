@@ -17,25 +17,25 @@ test('v215 总结落库最多 400 字', () => {
   assert.equal(storyTurnSummary(undefined), '');
 });
 
-test('v215 历史只引用总结，不回放整段旁白', () => {
+test('v215 更早的轮次只引用总结，上一轮回放原文', () => {
   const event = { opening: '开'.repeat(1000) } as CharacterEvent;
-  const longNarration = '旁'.repeat(2000);
+  const earlier = '旧'.repeat(2000);
+  const latest = '新'.repeat(2000);
   const turns = [
     { id: 't1', role: 'narrator', text: event.opening },
     { id: 'p1', role: 'player', text: '玩家原话'.repeat(50) },
-    { id: 't2', role: 'narrator', text: longNarration, summary: '第二轮总结：他把伞递过去。' },
-    { id: 't3', role: 'narrator', text: longNarration },
+    { id: 't2', role: 'narrator', text: earlier, summary: '第二轮总结：他把伞递过去。' },
+    { id: 't3', role: 'narrator', text: latest },
   ] as StoryTurn[];
   const history = storyRecapHistory(event, turns);
   assert.ok(history.includes('第二轮总结：他把伞递过去。'));
   assert.ok(!history.includes('玩家原话'), '玩家原话不再进历史');
-  assert.ok(!history.includes('旁'.repeat(500)), '整段旁白不再进历史');
+  assert.ok(!history.includes('旧'.repeat(500)), '更早的轮次只留总结，不回放旁白');
+  assert.ok(history.includes(latest), '紧挨着的那一轮保留原文');
   const lines = history.split('\n');
   assert.ok(lines[0]!.startsWith('开场：'));
   assert.ok(lines[0]!.length <= 3 + STORY_TURN_SUMMARY_LIMIT, '开场截到 400 字');
   assert.ok(lines[1]!.length <= 2 + STORY_TURN_SUMMARY_LIMIT);
-  assert.ok(lines[2]!.length <= 2 + STORY_TURN_SUMMARY_LIMIT, '旧轮次用原文截 400 字兜底');
-  assert.ok(history.length < 1200);
 });
 
 test('v215 没有开场时用第一轮旁白截断代替', () => {
