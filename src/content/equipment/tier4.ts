@@ -6,7 +6,7 @@ export const tier4: Equipment[] = [
     id: 't4-witch-eclipse-scepter', name: '蚀心权杖', faction: 'witch', slot: 'weapon', tier: 4, price: 6000, standingReq: 50,
     description: '权杖顶端嵌合的深渊蚀晶会自主呼应持有者的心跳共振起伏，散发着沉郁的紫黑冷光；它仿佛渴望着痛楚的献祭，能在侵蚀加深的代价下迸发极强破坏力。',
     stats: { magic: 16, empathy: 8 }, passive: '造成伤害 +10%，每场战斗侵蚀 +2',
-    damageBonus: 0.1, corruptionPerBattle: 2,
+    damageBonus: 10, corruptionPerBattle: 2,
   },
   {
     id: 't4-witch-thorn-crown', name: '棘冠', faction: 'witch', slot: 'charm', tier: 4, price: 5400, standingReq: 50,
@@ -16,7 +16,7 @@ export const tier4: Equipment[] = [
   {
     id: 't4-assoc-starfall-staff', name: '落星长杖', faction: 'association', slot: 'weapon', tier: 4, price: 6200, standingReq: 50,
     description: '杖端以精巧的银爪机械牢固禁锢着一小块天外坠落的星核碎屑，挥动时长杖周围的空间微光隐隐塌陷，轰出的流星攻势具备摧枯拉朽的威能。',
-    stats: { magic: 17, insight: 9 }, passive: '造成伤害 +10%', damageBonus: 0.1,
+    stats: { magic: 17, insight: 9 }, passive: '造成伤害 +10%', damageBonus: 10,
   },
   {
     id: 't4-assoc-choir-cape', name: '合唱斗篷', faction: 'association', slot: 'charm', tier: 4, price: 5600, standingReq: 50,
@@ -31,7 +31,7 @@ export const tier4: Equipment[] = [
     id: 't4-gov-verdict', name: '裁决器械', faction: 'government', slot: 'weapon', tier: 4, price: 6400, standingReq: 50,
     description: '在特别勤务课绝密档案中仅被特批调出过三次的重型裁决器械，启动时内部齿轮沉重咬合，出手前能精准锁定敌方的生理弱点完成先手破防。',
     stats: { magic: 15, insight: 10 }, passive: '首轮洞察 +6，造成伤害 +6%',
-    initiativeBonus: 6, damageBonus: 0.06,
+    initiativeBonus: 6, damageBonus: 6,
   },
   {
     id: 't4-gov-sealed-armor', name: '封存胸甲', faction: 'government', slot: 'charm', tier: 4, price: 6000, standingReq: 50,
@@ -42,7 +42,7 @@ export const tier4: Equipment[] = [
   {
     id: 'moon-weapon', name: '蚀月法器', faction: 'witch', slot: 'weapon', tier: 4, price: 5200, standingReq: 50,
     description: '直接以月蚀深渊结晶薄片磨砺构筑的短法器，握持时间稍长便能隐隐听见其内部传来的非人心跳声，在微量侵蚀代价下赋予攻势狂躁的穿透力。',
-    stats: { magic: 8 }, passive: '造成伤害 +6%，每场战斗侵蚀 +1', damageBonus: 0.06, corruptionPerBattle: 1,
+    stats: { magic: 8 }, passive: '造成伤害 +6%，每场战斗侵蚀 +1', damageBonus: 6, corruptionPerBattle: 1,
   },
   {
     id: 'night-ring', name: '夜祷指环', faction: 'witch', slot: 'charm', tier: 4, price: 5600, standingReq: 50,

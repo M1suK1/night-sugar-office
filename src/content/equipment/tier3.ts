@@ -6,7 +6,7 @@ export const tier3: Equipment[] = [
   {
     id: 't3-witch-eclipse-staff', name: '蚀月长杖', faction: 'witch', slot: 'weapon', tier: 3, price: 3200, standingReq: 35,
     description: '杖头牢牢卡死着一小块取自深渊异变核心的黑色蚀月残片，举起施术时周围物体的投影会发生轻微扭曲偏移，使法术杀伤附带侵蚀穿透。',
-    stats: { magic: 12, insight: 6 }, passive: '造成伤害 +8%', damageBonus: 0.08,
+    stats: { magic: 12, insight: 6 }, passive: '造成伤害 +8%', damageBonus: 8,
   },
   {
     id: 't3-witch-night-thorn', name: '夜棘鞭', faction: 'witch', slot: 'weapon', tier: 3, price: 3600, standingReq: 35,
@@ -21,7 +21,7 @@ export const tier3: Equipment[] = [
   {
     id: 't3-witch-cinder-ring', name: '余烬指环', faction: 'witch', slot: 'charm', tier: 3, price: 3000, standingReq: 35,
     description: '通体焦黑且布满不可修复细密裂痕的旧式金属指环，贴肉佩戴时时刻泛出微弱灼烫，以轻微过载为代价强行榨取法术的狂暴破坏力。',
-    stats: { magic: 8, empathy: 7 }, passive: '每场战斗侵蚀 +1（换取伤害）', corruptionPerBattle: 1, damageBonus: 0.05,
+    stats: { magic: 8, empathy: 7 }, passive: '每场战斗侵蚀 +1（换取伤害）', corruptionPerBattle: 1, damageBonus: 5,
   },
   {
     id: 't3-witch-black-mass', name: '黑弥撒', faction: 'witch', slot: 'consumable', tier: 3, price: 2900, standingReq: 35,
@@ -35,7 +35,7 @@ export const tier3: Equipment[] = [
   {
     id: 't3-assoc-starweave', name: '星织长杖', faction: 'association', slot: 'weapon', tier: 3, price: 3400, standingReq: 35,
     description: '法杖全长以繁复的星图轨迹精密穿引纯银细线，每一次强力施术，银丝都会如同活物般轻微震颤调谐，将法力束流聚焦得极其收束凝聚。',
-    stats: { magic: 11, insight: 8 }, passive: '造成伤害 +7%', damageBonus: 0.07,
+    stats: { magic: 11, insight: 8 }, passive: '造成伤害 +7%', damageBonus: 7,
   },
   {
     id: 't3-assoc-lantern-flail', name: '提灯链锤', faction: 'association', slot: 'weapon', tier: 3, price: 3300, standingReq: 35,
@@ -64,7 +64,7 @@ export const tier3: Equipment[] = [
   {
     id: 't3-gov-riot-rod', name: '镇暴长杖', faction: 'government', slot: 'weapon', tier: 3, price: 3500, standingReq: 35,
     description: '市役所军械库封存特批的重型合金长杖，杖头加配了惯性增压模块，轰落时的声响低沉发闷，在阵地战中具备可怕的阻滞破坏力。',
-    stats: { magic: 13, agility: 6 }, passive: '造成伤害 +8%', damageBonus: 0.08,
+    stats: { magic: 13, agility: 6 }, passive: '造成伤害 +8%', damageBonus: 8,
   },
   {
     id: 't3-gov-archive-blade', name: '归档刃', faction: 'government', slot: 'weapon', tier: 3, price: 3700, standingReq: 35,

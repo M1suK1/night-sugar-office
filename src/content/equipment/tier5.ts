@@ -10,7 +10,7 @@ export const tier5: Equipment[] = [
     description: '一枚被精密焊接在苍白骨柄内部、依然维持着低沉搏动节律的焦黑异化核心。月蚀庭坚称这是自愿献祭的升华遗存，挥动它掀起狂暴黑焰时，使用者能清晰感知到自身心室亦在同频灼痛。',
     stats: { magic: 22, empathy: 12 }, skillId: 'night-prayer',
     passive: '获得技能「夜祷回响」；造成伤害 +15%，但每场战斗侵蚀 +4',
-    damageBonus: 0.15, corruptionPerBattle: 4,
+    damageBonus: 15, corruptionPerBattle: 4,
   },
   {
     id: 't5-assoc-last-lamp', name: '最后一盏灯', faction: 'association', slot: 'weapon', tier: 5, price: 10800, standingReq: 80,
