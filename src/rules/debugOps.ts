@@ -15,6 +15,7 @@ import type { ActionResult, Equipment, GameAction, GameState } from '../types.ts
 import { clone, dateLabel, findRosterGirl } from './core.ts';
 import { witchOutfitFor } from './outfits.ts';
 import { importCardInto } from './cardOps.ts';
+import { girlCardHash } from '../cards.ts';
 
 const findAny = (state: GameState, id: string) =>
   findRosterGirl(state, id) ?? state.candidates.find(girl => girl.id === id);
@@ -79,11 +80,16 @@ export function applyDebugGirl(state: GameState, action: Extract<GameAction, { t
  */
 export function applyDebugContractCard(state: GameState, action: Extract<GameAction, { type: 'debugContractCard' }>): ActionResult {
   const next = clone(state);
-  const before = new Set(next.candidates.map(girl => girl.id));
+  const key = girlCardHash(action.card);
+  const known = next.candidates.some(item => item.cardId === key) || next.girls.some(item => item.cardId === key);
   const imported = importCardInto(next, action.card);
-  if (!imported.ok) return { state, ok: false, message: imported.message };
-  const girl = next.candidates.find(item => !before.has(item.id));
-  if (!girl) return { state, ok: false, message: '这张卡没能登记成候选。' };
+  // 已经登记过的卡不会再新增候选：按卡号找回那一位，别把「更新」误报成失败。
+  if (!imported.ok && !known) return { state, ok: false, message: imported.message };
+  const girl = next.candidates.find(item => item.cardId === key) ?? next.girls.find(item => item.cardId === key);
+  if (!girl) return { state, ok: false, message: imported.ok ? '这张卡没能登记成候选。' : imported.message };
+  if (next.girls.some(item => item.id === girl.id)) {
+    return { state: next, ok: true, message: `${girl.name}已经在事务所名册里，这次只更新了卡面资料。` };
+  }
   next.candidates = next.candidates.filter(item => item.id !== girl.id);
   girl.candidateUntilDay = 0;
   girl.status = 'idle';
