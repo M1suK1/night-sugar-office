@@ -26,8 +26,39 @@ export function girlCardHash(card: GirlCard): string {
   return hash([g.name, g.codename, g.level, g.skillIds.join('|'), g.traitIds.join('|'), g.portrait?.length ?? 0, g.witchForm?.name ?? '', g.witchForm?.portrait?.length ?? 0, hash(g.witchPersonality ?? ''), variants, plan, g.factionTag ?? ''].join(':'));
 }
 
+const CARD_IMAGE_LIMIT = 2_800_000;
+
+/** 卡片里能落地的立绘：内置 /art/ 或受限大小的内嵌图。坏地址一律返回 undefined。 */
+function cardPortrait(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (value.startsWith('/art/') && value.length < 200) return value;
+  if (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(value) && value.length <= CARD_IMAGE_LIMIT) return value;
+  return undefined;
+}
+
+/** 主图坏掉时，用一张 calm 差分（或第一张有效差分）顶上。 */
+function fallbackPortrait(variants: Record<string, string>): string | undefined {
+  return variants['custom:calm']
+    ?? Object.entries(variants).find(([key]) => key.endsWith(':calm'))?.[1]
+    ?? Object.values(variants)[0];
+}
+
+/** 主图和 calm 差分是同一张时只留主图，避免卡片和状态里重复存一份。 */
+function dedupeCalmPortrait(variants: Record<string, string>, portrait: string | undefined): Record<string, string> {
+  if (!portrait) return variants;
+  const next = { ...variants };
+  for (const key of Object.keys(next)) {
+    if (key.endsWith(':calm') && next[key] === portrait) delete next[key];
+  }
+  return next;
+}
+
 export function buildGirlCard(girl: Girl, state: { day: number; packHash?: string; storylines?: Storyline[] }): GirlCard {
   const stories = cardStorylinesFor({ storylines: state.storylines ?? [] }, girl.id);
+  const importedVariants = sanitizeExpressionVariants(girl.importedVariants);
+  const mainPortrait = cardPortrait(girl.portrait);
+  const portrait = mainPortrait ?? fallbackPortrait(importedVariants);
+  const variants = dedupeCalmPortrait(importedVariants, portrait);
   return {
     format: 'night-sugar/girl-card', version: 1, exportedAt: new Date().toISOString(), sourceDay: state.day, packHash: state.packHash,
     storylines: stories.length ? stories : undefined,
@@ -40,10 +71,10 @@ export function buildGirlCard(girl: Girl, state: { day: number; packHash?: strin
       stats: { ...girl.stats }, skillIds: [...girl.skills], traitIds: girl.traits.map(trait => trait.id),
       // 自定义特性只活在这位少女身上，不写进卡片就再也还原不出来。
       traits: girl.traits.map(trait => ({ ...trait, tags: [...trait.tags] })),
-      portrait: girl.portrait || undefined, portraitSpec: girl.portraitSpec,
-      wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit })), outfitId: girl.outfitId, expression: girl.expression,
-      importedVariants: girl.importedVariants && Object.keys(girl.importedVariants).length ? { ...girl.importedVariants } : undefined,
-      witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
+      portrait, portraitSpec: mainPortrait ? girl.portraitSpec : undefined,
+      wardrobe: girl.wardrobe?.map(outfit => ({ ...outfit, portrait: cardPortrait(outfit.portrait) })), outfitId: girl.outfitId, expression: girl.expression,
+      importedVariants: Object.keys(variants).length ? variants : undefined,
+      witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch', portrait: cardPortrait(girl.witchForm.portrait) } : undefined,
       factionTag: girl.factionTag,
       // 语料不进卡就等于丢：卡一旦离开这台机器，她的说话方式就再也找不回来。
       voice: girl.voice,
@@ -121,12 +152,15 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
   const traits = resolveCardTraits(g.traitIds, (g as Record<string, unknown>).traits);
   const declaredTraits = new Set(g.traitIds.filter((id): id is string => typeof id === 'string')).size;
   const skippedTraits = Math.max(0, declaredTraits - traits.length);
-  const portraitOk = !g.portrait || (typeof g.portrait === 'string' && ((g.portrait.startsWith('/art/') && g.portrait.length < 200) || (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(g.portrait) && g.portrait.length <= 2_800_000)));
-  if (!portraitOk) return { ok: false, message: '立绘必须是小于约 2MB 的 PNG、JPEG、WebP 或内置 SVG。' };
-  const wardrobe: Outfit[] | undefined = Array.isArray(g.wardrobe) ? g.wardrobe.filter(outfit => outfit && typeof outfit.id === 'string' && typeof outfit.name === 'string').slice(0, 4) : undefined;
+  const importedVariants = sanitizeExpressionVariants(g.importedVariants);
+  const mainPortrait = cardPortrait(g.portrait);
+  const portrait = mainPortrait ?? fallbackPortrait(importedVariants);
+  const variants = dedupeCalmPortrait(importedVariants, portrait);
+  const wardrobe: Outfit[] | undefined = Array.isArray(g.wardrobe)
+    ? g.wardrobe.filter(outfit => outfit && typeof outfit.id === 'string' && typeof outfit.name === 'string').slice(0, 4)
+      .map(outfit => ({ ...outfit, portrait: cardPortrait(outfit.portrait) }))
+    : undefined;
   const rawWitch = (g as Record<string, unknown>).witchForm;
-  const witchPortraitOk = (value: unknown): value is string => typeof value === 'string'
-    && ((value.startsWith('/art/') && value.length < 200) || (/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(value) && value.length <= 2_800_000));
   const witchForm: Outfit | undefined = rawWitch && typeof rawWitch === 'object' && !Array.isArray(rawWitch)
     ? (() => {
       const raw = rawWitch as Record<string, unknown>;
@@ -137,7 +171,7 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
         description: typeof raw.description === 'string' ? raw.description.slice(0, 100) : '从契约卡带入的魔女形态。',
         palette: Array.isArray(raw.palette) ? raw.palette.filter((color): color is string => typeof color === 'string').slice(0, 5) : [],
         layerKey: typeof raw.layerKey === 'string' ? raw.layerKey.slice(0, 24) : 'witch',
-        portrait: witchPortraitOk(raw.portrait) ? raw.portrait : undefined,
+        portrait: cardPortrait(raw.portrait),
         imported: true,
       };
     })()
@@ -157,10 +191,10 @@ export function parseGirlCard(raw: string): { ok: true; card: GirlCard } | { ok:
       outfitDescription: typeof g.outfitDescription === 'string' ? g.outfitDescription.slice(0, 240) : '值夜制服。',
       voice: sanitizeVoice(g.voice),
       level: g.level, stats: Object.fromEntries(STAT_KEYS.map(key => [key, Math.round((g.stats as Record<string, number>)[key])])) as Record<StatKey, number>,
-      skillIds: [...g.skillIds], traitIds: traits.map(trait => trait.id), traits, skippedTraits: skippedTraits || undefined, portrait: g.portrait || undefined, portraitSpec: g.portraitSpec,
+      skillIds: [...g.skillIds], traitIds: traits.map(trait => trait.id), traits, skippedTraits: skippedTraits || undefined, portrait, portraitSpec: mainPortrait ? g.portraitSpec : undefined,
       wardrobe, outfitId: typeof g.outfitId === 'string' ? g.outfitId : 'uniform',
       expression: EXPRESSIONS.includes(g.expression as Expression) ? g.expression : 'calm',
-      importedVariants: sanitizeExpressionVariants(g.importedVariants),
+      importedVariants: variants,
       witchForm,
       storyPlan: sanitizeStoryPlan((g as Record<string, unknown>).storyPlan) ?? undefined,
     storyPlans: Array.isArray((g as Record<string, unknown>).storyPlans)
