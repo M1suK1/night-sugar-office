@@ -192,6 +192,14 @@ const STAT_KEYS: StatKey[] = ['magic', 'insight', 'agility', 'empathy'];
 const clampInt = (value: unknown, min: number, max: number, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, Math.round(value))) : fallback;
 
+/** 节点标题：空标题按结局名 / 种类名回退。 */
+function nodeTitle(value: unknown, kind: StoryNodeKind, data: StoryNodeData): string {
+  const text = typeof value === 'string' ? value.trim().slice(0, 40) : '';
+  if (text) return text;
+  if (data.kind === 'end' && data.ending?.trim()) return data.ending.trim().slice(0, 40);
+  return NODE_LABELS[kind];
+}
+
 const str = (value: unknown, limit: number, fallback = '') =>
   typeof value === 'string' ? value.slice(0, limit) : fallback;
 
@@ -417,10 +425,11 @@ export function sanitizeGraph(raw: unknown): StoryGraph | null {
         },
       }
       : rawData;
+    const data = sanitizeData(kind, migrated);
     nodes.push({
       id, kind, x: clampInt(item.x, 0, 4000, 60), y: clampInt(item.y, 0, 3000, 60),
-      title: str(item.title, 40, NODE_LABELS[kind]), note: str(item.note, 200) || undefined,
-      data: sanitizeData(kind, migrated),
+      title: nodeTitle(item.title, kind, data), note: str(item.note, 200) || undefined,
+      data,
     });
   }
   const edgeIds = new Set<string>();
@@ -485,14 +494,15 @@ export function buildGraphFromDraft(draft: StoryGraphDraft): StoryGraph {
     usedIds.add(id);
     if (original && !idMap.has(original)) idMap.set(original, id);
     if (raw.kind === 'start') startIds.push(id);
+    const data = sanitizeData(raw.kind, raw.data);
     nodes.push({
       id,
       kind: raw.kind,
       x: 0,
       y: 0,
-      title: typeof raw.title === 'string' ? raw.title : '',
+      title: nodeTitle(raw.title, raw.kind, data),
       note: typeof raw.note === 'string' ? raw.note : undefined,
-      data: sanitizeData(raw.kind, raw.data),
+      data,
     });
   });
   if (startIds.length !== 1) throw new Error('蓝图需要且只能有一个「开始」节点。');

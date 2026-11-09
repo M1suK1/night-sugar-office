@@ -95,6 +95,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
   }, []);
 
   const node = graph.nodes.find(item => item.id === selected) ?? null;
+  const nodeLabel = (item: StoryNode) => item.title.trim() || (item.data.kind === 'end' ? item.data.ending?.trim() : '') || NODE_LABELS[item.kind];
   const reward = node?.kind === 'reward' && node.data.kind === 'reward' ? node.data : null;
   const issues = validateGraph(graph);
   const errors = issues.filter(issue => issue.level === 'error');
@@ -257,7 +258,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
     for (let guard = 0; guard < 40 && cursor; guard += 1) {
       const item = graph.nodes.find(entry => entry.id === cursor);
       if (!item) break;
-      steps.push({ id: item.id, title: item.title, kind: item.kind });
+      steps.push({ id: item.id, title: nodeLabel(item), kind: item.kind });
       if (item.kind === 'end') break;
       const out = graph.edges.filter(edge => edge.from === item.id);
       if (!out.length) { steps.push({ id: 'stop-' + guard, title: '没有出口，流程停在这里', kind: 'stop' }); break; }
@@ -450,7 +451,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
                 onPointerUp={() => { drag.current = null; }}
               >
                 <header>{(() => { const Icon = NODE_ICON[item.kind]; return <Icon size={11} style={{ color: NODE_COLOR[item.kind] }} />; })()}<span>{NODE_LABELS[item.kind]}</span></header>
-                <b>{item.title}</b>
+                <b>{nodeLabel(item)}</b>
                 {(item.data.kind === 'mission' || item.data.kind === 'event') && <em>{item.data.kind === 'mission' ? item.data.spec.title : item.data.hook.slice(0, 24)}</em>}
                 {item.data.kind === 'choice' && <em>{item.data.options.length} 个选项</em>}
                 {item.kind !== 'start' && (
@@ -517,7 +518,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
               <>
                 <small>{NODE_LABELS[node.kind]} · {node.id}</small>
                 <label className="graph-field"><span>标题</span>
-                  <input id="story-graph-inspect-title" className="av-input" value={node.title} onChange={event => patchNode(node.id, { title: event.target.value.slice(0, 40) })} />
+                  <input id="story-graph-inspect-title" className="av-input" value={node.title} placeholder={NODE_LABELS[node.kind]} onChange={event => patchNode(node.id, { title: event.target.value.slice(0, 40) })} />
                 </label>
                 {node.kind === 'start' && <p className="story-graph-tip">入口节点，运行时从这里开始。</p>}
                 {node.kind === 'event' && node.data.kind === 'event' && (() => {
