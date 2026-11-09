@@ -1,6 +1,6 @@
 /**
  * 世界书：与 SillyTavern 的 World Info 同构的词条集合。
- * 常驻词条每次注入；其余按关键词命中注入，总预算默认 1200 字。
+ * 常驻词条每次注入；其余按关键词命中注入，总预算默认 1900 字。
  */
 import { kvGet, kvSet } from './store.ts';
 import type { Girl, OfficeProfile } from './types.ts';
@@ -73,6 +73,7 @@ export function builtinWorldbook(): WorldbookEntry[] {
     entry('kink', '治疗癖好', '部分常年在生死边缘游走的契约者，唯有在被深度照料、触碰甚至施加某种特定约束时，绷紧至极点的心弦才会产生奇特的情感宣泄与放松。接纳此类带有特殊癖好的私人护理疗程，开销更为昂贵且耗时更长，然而当手术室的帘幕拉开时，双方的心理依存度将显著加深，伴随而来的则是法蚀杂质的同步上扬；若该成员早已沉溺于此种治愈偏好，再度推入疗程时，其羁绊交织与魔力异化的共振幅度将成倍放大。', { keys: ['癖好', '治疗癖好'], priority: 55, order: 13 }),
     entry('story', '故事线', '每位契约少女的命运齿轮在同一时期仅能维系一条专属的故事轨迹。长线手稿由数个高潮迭起的章节幕次串联而成，每一幕皆锚定着明确的现场追查指标；唯有攻克特定的故事委托，方能唤起该节点上的深度私人互动，并于余波平息之后解锁下一阶段的执念。少女的故事线享有崇高豁免，能够跨越漫漫长夜稳固封存，静静守候在档案深处等待下一次执意续写。', { keys: ['故事线', '剧情', '羁绊事件', '特殊事件'], priority: 70, order: 14 }),
     entry('battle-note', '战斗札记', '战斗结束后值班席有权将交锋日志展开为带体温的详实札记：以回合为脉络，真实复盘那一瞬间是谁挺身挡下致命穿刺、是谁心神动摇，又是谁的魔杖擦亮了生路。这份札记将沉淀为后续人际互动的记忆基石，笔墨必须严格忠实于战报事实，容不得半点虚构粉饰。', { keys: ['战斗', '札记', '战斗记录', '回合'], priority: 55, order: 15 }),
+    entry('ending-leave', '离城结局', '【离城】攒够十万星砂，所长可把灯留在身后，体面离开樱雾市；不是逃亡或破产，是自己选定的收摊。这一局的故事收束为「离城」，事务所与契约者仍在。\n\n【写法】离城是主动的终局，不是死亡或失败。', { keys: ['离城', '离开樱雾市', '结局', '收摊'], priority: 60, order: 16 }),
   ];
 }
 
@@ -238,7 +239,8 @@ export function syncBuiltinWorldbook(): boolean {
     return fresh ? item : item;
   });
   const exist = new Set(updated.map(item => item.id));
-  const missing = builtinWorldbook().filter(item => item.constant && !exist.has(item.id));
+  // v206：离城结局不是常驻词条，但老档也要补上，否则新写的结局设定看不到。
+  const missing = builtinWorldbook().filter(item => (item.constant || item.id === 'ending-leave') && !exist.has(item.id));
   if (missing.length) {
     updated.push(...missing);
     changed = true;

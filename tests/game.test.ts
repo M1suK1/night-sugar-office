@@ -1879,13 +1879,17 @@ test('自定义的「… 副本」不会被任务默认预设改名', () => {
   assert.equal(event.name, '私人事件');
   assert.notEqual(story.id, event.id);
 });
-test('世界书内置 17 条，默认只启用 9 条常驻词条', () => {
-  assert.equal(builtinWorldbook().length, 17);
+test('世界书内置 18 条，默认只启用 9 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 18);
   const defaults = defaultWorldbook();
   assert.equal(defaults.filter(entry => entry.enabled).length, 9);
   assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
   assert.ok(defaults.some(entry => entry.id === 'clinic'));
   assert.ok(defaults.some(entry => entry.id === 'office-profile'));
+  assert.ok(defaults.some(entry => entry.id === 'ending-leave'));
+  const withEnding = defaults.map(entry => entry.id === 'ending-leave' ? { ...entry, enabled: true } : entry);
+  const context = worldbookContext('所长准备离城', withEnding);
+  assert.ok(context.hits.some(hit => hit.id === 'ending-leave'), '提到离城时要注入结局词条');
 });
 
 test('世界书按关键词命中，常驻优先进入且超预算会跳过', () => {
@@ -3476,6 +3480,18 @@ test('v19 世界书同步把「月蚀教团」的旧称迁到「月蚀庭」', (
     assert.ok(migrated.content.includes('月蚀庭'));
     assert.equal(syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE), true, '再同步一次也不报错');
     assert.equal(loadWorldbook().filter(item => item.id === OFFICE_WORLDBOOK_ID).length, 1, '不会重复插入');
+  });
+});
+
+test('v206 老档世界书启动时补上离城结局词条', () => {
+  withMemoryStorage(() => {
+    saveWorldbook(builtinWorldbook().filter(item => item.id !== 'ending-leave'));
+    assert.equal(loadWorldbook().some(item => item.id === 'ending-leave'), false);
+    assert.equal(syncBuiltinWorldbook(), true);
+    const entry = loadWorldbook().find(item => item.id === 'ending-leave');
+    assert.ok(entry, '老档也要拿到新词条');
+    assert.equal(entry!.enabled, true);
+    assert.ok(entry!.content.includes('十万星砂'));
   });
 });
 
