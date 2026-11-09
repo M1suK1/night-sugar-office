@@ -138,6 +138,16 @@
 .girl-roster.is-grid .girl-roster-card:focus-within .girl-tooltip { transform: translateY(0); }
 .girl-roster.is-grid .girl-tooltip:after { display: none; }
 
+/* 悬停预览渲染在滚动容器之外：fixed 定位，避免被 .girl-roster-scroll 的 overflow 裁掉 */
+.girl-tooltip.is-floating {
+  position: fixed; inset: auto; width: 266px; max-width: calc(100vw - 24px);
+  max-height: min(70vh, 420px); overflow-y: auto; z-index: 900;
+  opacity: 1; visibility: visible; pointer-events: none; transition: none;
+  animation: roster-tooltip-fade .16s ease-out;
+}
+.girl-tooltip.is-floating:after { display: none; }
+@keyframes roster-tooltip-fade { from { opacity: 0; } to { opacity: 1; } }
+
 @media (max-width: 800px) {
   .roster-slot { display: block; }
   .girl-roster-scroll { max-height: 70vh; }
