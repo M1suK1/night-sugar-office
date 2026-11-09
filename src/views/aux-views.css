@@ -903,7 +903,14 @@
 
 .av-gear-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
+  /* 装备多了就滚这里，筛选项留在上方不动 */
+  max-height: min(56vh, 560px); overflow-y: auto; overflow-x: hidden;
+  padding-right: 6px; scrollbar-width: thin; scrollbar-color: #5b4a61 transparent;
+  overscroll-behavior: contain;
 }
+.av-gear-grid::-webkit-scrollbar { width: 5px; }
+.av-gear-grid::-webkit-scrollbar-thumb { background: #5b4a61; border-radius: 3px; }
+.av-gear-grid::-webkit-scrollbar-track { background: transparent; }
 .av-gear-card {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
   background: rgba(20, 16, 28, 0.75); border: 1px solid rgba(247, 242, 245, 0.09); border-radius: 8px;
