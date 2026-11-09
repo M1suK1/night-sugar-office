@@ -31,6 +31,8 @@ function repairOpinion(opinion: unknown): unknown {
     if (!option || typeof option !== 'object') return option;
     const choice = option as Record<string, unknown>;
     if (choice.id !== 'reject') return option;
+    // 三方首领没有少女羁绊：驳回不补 bond，也不留任何变化。
+    if (entry.authorKind === 'leader') return { ...choice, changes: [], outcomes: [] };
     const changes = Array.isArray(choice.changes) ? choice.changes : [];
     const bonds = changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === 'object'
       && (change as Record<string, unknown>).kind === 'girl'

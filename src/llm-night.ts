@@ -427,6 +427,11 @@ function parseChange(ctx: Ctx, value: unknown, path: string, fallbackGirlId?: st
   if (kind === 'girl') {
     const field = choice(ctx, body.field, ['bond', 'fatigue', 'corruption', 'hp'] as const, `${path}.field`, 'bond');
     let girlId = typeof body.girlId === 'string' ? body.girlId : '';
+    // 三方首领没有少女羁绊。别把首领 id 悄悄改写成名册第一位——那会惩罚一个无关的人。
+    if (ctx.representatives.some(rep => rep.id === girlId)) {
+      warn(ctx, `${path}.girlId`, `「${girlId}」是三方首领，没有少女羁绊；这条变化已忽略`);
+      return undefined;
+    }
     if (!ctx.activeGirls.some(girl => girl.id === girlId)) {
       // 模型常把「三方首领」的 id 写进 girlId（名册里只有少女）。这时改成提出者：
       // defer/reject 本来就要求改提出者的羁绊，改写比整份提案作废更接近它的本意。
