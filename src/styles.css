@@ -1347,6 +1347,9 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .graph-node b { color: #f8effa; }
 .graph-node header span { color: #b3a1bc; }
 .graph-node em { color: #a291ab; }
+.graph-node.end { background: linear-gradient(155deg, #17221c, #0f1512 65%); }
+.graph-node.end b { color: #d9e8de; }
+.graph-node.end em { color: #95ab9d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .graph-node.entry::after { background: #7fc8c02e; }
 .story-graph-actions .btn.ghost { font-size: 10px; letter-spacing: .04em; }
 .graph-port.in { left: -6px; right: auto; top: calc(50% - 5px); width: 10px; height: 10px; border-color: #ffffff38; background: #14101d; pointer-events: none; box-shadow: none; }

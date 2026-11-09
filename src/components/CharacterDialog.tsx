@@ -10,6 +10,8 @@ import { findEquipmentSet } from '../content/sets';
 import { EquipmentFacts } from './EquipmentFacts';
 import { clinicCost, clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
+import { eventClockLabel } from '../storySession';
+import { clock } from '../rules/labels';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
 import { passiveText } from '../passives';
 import { skillAccuracy } from '../combat';
@@ -48,7 +50,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   /** 普通形态下，服装描述编辑的是「当前穿着的那套礼装」。 */
   onOutfitDescription?: (outfitId: string, text: string) => void;
   /** 这位少女演完的交互剧情：列表显示收尾摘要，点开只读回看原文。 */
-  memories?: { id: string; title: string; day: number; rounds: number; summary?: string }[];
+  memories?: { id: string; title: string; day: number; minutes?: number; rounds: number; summary?: string }[];
   onMemory?: (eventId: string) => void;
   /** 立绘缺失时手动补一张：读成 data URL 后由 setPortrait 落地。 */
   onPortraitFile?: (file: File) => void;
@@ -139,6 +141,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const variantOutfitId = currentExpressionOutfitId(girl);
   const importedVariantCount = EXPRESSIONS.filter(id => Boolean(girl.importedVariants?.[expressionVariantKey(variantOutfitId, id)])).length;
   const storyline = state.storylines.find(item => item.girlId === girl.id && item.status === 'active');
+  const activeEvent = state.events.find(item => item.girlId === girl.id && item.status === 'active');
   const waitingMission = storyline?.run?.waiting?.kind === 'mission'
     ? storyline.beats.find(item => item.missionId === storyline.run?.waiting?.ref)
     : undefined;
@@ -397,7 +400,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                   );
                 })}
               </ol>
-              {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {girl.eventBadge} · 进入</button>}
+              {girl.eventBadge && <button id="dossier-event-enter" type="button" className="story-event-btn" onClick={onEvent}><Sparkles size={14} />角色事件 · {activeEvent ? eventClockLabel(activeEvent) : girl.eventBadge} · 进入</button>}
               {memories && memories.length > 0 && (
                 <div className="story-memories" id="dossier-story-memories">
                   <div className="story-memories-head"><b>回忆</b><small>演完的对话都留在这里，点开只是回看</small></div>
@@ -406,7 +409,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                       <li key={memory.id}>
                         <button id={`dossier-memory-${memory.id}`} type="button" onClick={() => onMemory?.(memory.id)}>
                           <span>{memory.title}</span>
-                          <small>第 {memory.day} 夜 · {memory.rounds} 轮对话{memory.summary ? '' : ' · 点开回看原文'}</small>
+                          <small>第 {memory.day} 夜{memory.minutes !== undefined ? ` · ${clock(memory.minutes)}` : ''} · {memory.rounds} 轮对话{memory.summary ? '' : ' · 点开回看原文'}</small>
                           {memory.summary && <em className="story-memory-summary">{memory.summary}</em>}
                         </button>
                       </li>

@@ -734,6 +734,8 @@ export interface CharacterEvent {
   title: string; hook: string; scenes: EventScene[];
   stage: number; status: 'active' | 'done' | 'abandoned';
   day: number; source: 'llm' | 'template'; badge: boolean;
+  /** 这段剧情开始的时刻（0–1439）；旧存档没有，只显示第几日。 */
+  minutes?: number;
   /** scenes = 旧的逐场事件；story = 分幕剧情；session = 你一句我一句的交互剧情。 */
   mode?: 'scenes' | 'story' | 'session';
   passages?: StoryPassage[];
@@ -1204,7 +1206,7 @@ export interface BattleState {
   /** 判负的原因：`stunned` 是全队被打得踉跄，`wounded` 是血量归零。疤痕取法不同。 */
   defeatReason?: 'stunned' | 'wounded';
   frames?: { round: number; units: BattleUnit[]; initiative: string[] }[];
-  rewards?: { gold: number; exp: number; bond: number };
+  rewards?: { gold: number; exp: number; bond: number; materials?: Record<string, number> };
   scars?: Scar[]; fatal?: string[]; createdAt: string;
   /** 这一战发生时辖区的污染等级，只用于战报摘要；旧战报没有这一项。 */
   pollution?: number;

@@ -8,7 +8,7 @@ import type { CharacterEvent, StoryTurn } from '../src/types.ts';
 test('v215 续写契约要求写不超过 300 字的总结', () => {
   const text = arcTurnContract();
   assert.ok(text.includes('"bond":0,"summary":""'), text);
-  assert.ok(text.includes('summary 不超过 300 字'), text);
+  assert.ok(text.includes('summary 必填'), text);
 });
 
 test('v215 总结落库最多 400 字', () => {
@@ -51,7 +51,7 @@ test('v215 出厂预设的续写契约也带总结要求', () => {
     const entry = presetPrompts(preset).find(item => item.id === 'arc:turn');
     assert.ok(entry, `${preset.id} 缺少 arc:turn`);
     assert.ok(entry!.content.includes('"bond":0,"summary":""'), `${preset.id} 的形状缺少 summary`);
-    assert.ok(entry!.content.includes('summary 不超过 300 字'), `${preset.id} 缺少总结要求`);
-    assert.ok(entry!.content.includes('24 字'), `${preset.id} 的选项字数被顺手改掉了`);
+    assert.ok(entry!.content.includes('summary 必填'), `${preset.id} 缺少总结要求`);
+    assert.ok(entry!.content.includes('60 字'), `${preset.id} 的选项字数被顺手改掉了`);
   }
 });

@@ -7,7 +7,7 @@ import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
 import { arrangeStoryText, beatsFromPassage, beatsFromTurns } from '../vn/beats';
-import { expressionAtTurn } from '../storySession';
+import { eventClockLabel, expressionAtTurn } from '../storySession';
 import { storyBackdropOf } from '../vn/backdrops';
 import { scrollTopForNewTurn } from '../storyScroll';
 
@@ -98,7 +98,7 @@ function SceneEvent({ event, girl, onAdvance, onChoose, onClose, stage, onText, 
     <div className="event-modal">
       <button id="event-close" type="button" className="event-close" aria-label="关闭事件" onClick={onClose}><X size={15} /></button>
       <div className="event-head">
-        <span className="modal-eyebrow"><Sparkles size={13} />角色事件 · 第 {event.stage + 1} / {event.scenes.length} 场</span>
+        <span className="modal-eyebrow"><Sparkles size={13} />角色事件 · {eventClockLabel(event)} · 第 {event.stage + 1} / {event.scenes.length} 场</span>
         <h2>{scene.title}</h2>
         <p className="event-title">{event.title} · {event.hook}</p>
       </div>
@@ -413,7 +413,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
         <div className="battle-note-shell">
           <header className="battle-note-head">
             <div className="battle-note-head-copy">
-              <span className="modal-eyebrow"><Sparkles size={13} />{rewriteOpen ? '重写开场' : `开场 · 第 ${event.day} 日`}</span>
+              <span className="modal-eyebrow"><Sparkles size={13} />{rewriteOpen ? '重写开场' : `开场 · ${eventClockLabel(event)}`}</span>
               <h2>{event.title}</h2>
               <p>{event.hook}</p>
             </div>
@@ -468,7 +468,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
       <div className="battle-note-shell">
         <header className="battle-note-head">
           <div className="battle-note-head-copy">
-            <span className="modal-eyebrow"><Sparkles size={13} />{event.meeting ? `事务所会议 · ${event.meeting.placeName} · ${event.meeting.fee} 星砂` : `角色剧情 · 已走 ${rounds} 轮`}</span>
+            <span className="modal-eyebrow"><Sparkles size={13} />{event.meeting ? `事务所会议 · ${eventClockLabel(event)} · ${event.meeting.placeName} · ${event.meeting.fee} 星砂` : `角色剧情 · ${eventClockLabel(event)} · 已走 ${rounds} 轮`}</span>
             <h2>{event.title}</h2>
             <p>{event.hook}</p>
             {event.meeting && (

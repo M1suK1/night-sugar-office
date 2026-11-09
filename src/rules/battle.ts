@@ -191,7 +191,10 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     }
     if (mission.boss && state.boss) defeatBoss(state, at.day);
     const dropEnemies = (mission.enemyIds ?? []).map(id => state.customMonsters?.find(m => m.id === id) ?? findMonster(id)).filter((m): m is Monster => Boolean(m));
-    if (dropEnemies.length) grantBattleDrops(state, mission, dropEnemies, squad, battle.outcome);
+    if (dropEnemies.length) {
+      const drops = grantBattleDrops(state, mission, dropEnemies, squad, battle.outcome);
+      battle.rewards = { ...(battle.rewards ?? { gold: 0, exp: 0, bond: 0 }), materials: drops };
+    }
     state.logs.unshift({ id: `log-win-${battle.id}`, time: dateLabel(at.day, at.minutes), kind: 'battle', text: `${outcomeLabel(battle.outcome, battle.partial === true)}：${mission.title}。${battle.partial ? '大部分魔物被清除，剩下的逃散了；事件同样移出委托池，报酬按 90% 结算。' : '魔物已被清除，事件移出委托池。'}${mission.boss ? '它终于从椅子上下来了。' : ''}`, delta: rewards.gold });
       pushNotice(state, { kind: 'mission', day: at.day, minutes: at.minutes, missionId: mission.id, title: `${battle.partial ? '委托达成' : '委托完成'} · ${mission.title}`, text: `${squad.map(girl => girl.name).join('、')}${battle.partial ? '把大部分魔物清了出去' : '打赢了这一场'}，报酬 ${rewards.gold} 星砂${battle.partial ? '（不完全胜利 · 90%）' : ''}。` });
   } else if (battle.outcome === 'defeat') {

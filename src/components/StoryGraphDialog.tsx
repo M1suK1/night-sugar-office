@@ -140,7 +140,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
   const patchReward = (effect: Partial<StoryEffect>) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, effect: { ...c.data.effect, ...effect } } }); };
   const patchRewardData = (patch: { equipmentTier?: number }) => { const c = node; if (c?.data.kind === 'reward') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchWait = (patch: { days?: number; minutes?: number }) => { const c = node; if (c?.data.kind === 'wait') patchNode(c.id, { data: { ...c.data, ...patch } }); };
-  const patchEnd = (summary: string) => { const c = node; if (c?.data.kind === 'end') patchNode(c.id, { data: { ...c.data, summary } }); };
+  const patchEnd = (patch: { summary?: string; ending?: string }) => { const c = node; if (c?.data.kind === 'end') patchNode(c.id, { data: { ...c.data, ...patch } }); };
   const patchOptions = (options: { id: string; label: string; intent?: string; effect?: StoryEffect }[]) => { const c = node; if (c?.data.kind === 'choice') patchNode(c.id, { data: { ...c.data, options } }); };
   const addNode = (kind: StoryNodeKind) => {
     const host = canvas.current;
@@ -454,6 +454,7 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
                 <b>{nodeLabel(item)}</b>
                 {(item.data.kind === 'mission' || item.data.kind === 'event') && <em>{item.data.kind === 'mission' ? item.data.spec.title : item.data.hook.slice(0, 24)}</em>}
                 {item.data.kind === 'choice' && <em>{item.data.options.length} 个选项</em>}
+                {item.data.kind === 'end' && <em className="graph-node-ending">{item.data.summary?.trim() ? item.data.summary.trim().slice(0, 46) : '还没有写结局描述'}</em>}
                 {item.kind !== 'start' && (
                   <span className="graph-port in" aria-hidden="true" title="入口：多条连线可以汇入这里" />
                 )}
@@ -749,9 +750,15 @@ export function StoryGraphDialog({ girl, slot = 1, incidents, roster, notice, on
                   </div>
                 )}
                 {node.kind === 'end' && node.data.kind === 'end' && (
-                  <label className="graph-field"><span>收束语</span>
-                    <textarea className="av-input" rows={4} value={node.data.summary ?? ''} onChange={event => patchEnd(event.target.value)} />
-                  </label>
+                  <>
+                    <label className="graph-field"><span>结局名</span>
+                      <input id="story-graph-end-name" className="av-input" value={node.data.ending ?? ''} placeholder="两三个字，例如：留下" onChange={event => patchEnd({ ending: event.target.value.slice(0, 12) })} />
+                    </label>
+                    <label className="graph-field"><span>结局描述</span>
+                      <textarea id="story-graph-end-summary" className="av-input" rows={5} value={node.data.summary ?? ''} placeholder="这一条结局收在哪里：最后发生的事、她停下的位置。" onChange={event => patchEnd({ summary: event.target.value })} />
+                    </label>
+                    <p className="story-graph-tip">结局名显示在节点标题与通关记录；描述会写进这段剧情的结局档案。</p>
+                  </>
                 )}
                 <div className="graph-node-actions">
                   <button type="button" className="btn ghost" onClick={() => { setGraph(current => ({ ...current, entry: node.id })); setSelected(node.id); }} disabled={node.kind !== 'start'}>设为入口</button>

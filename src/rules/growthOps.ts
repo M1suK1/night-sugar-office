@@ -15,7 +15,7 @@ import type { ActionResult, GameAction, GameState, Outfit } from '../types.ts';
 /** build 的动作处理器（v35 从 act 拆出）。 */
 export function applyBuild(state: GameState, action: Extract<GameAction, { type: 'build' }>): ActionResult {
       const next = clone(state); const room = next.rooms.find(r => r.id === (action.roomId ?? 'dorm')) ?? next.rooms.find(r => r.type === 'dorm')!;
-      if (room.level >= 4) return { state, ok: false, message: '这个房间已经达到最高等级。' };
+      if (room.level >= 6) return { state, ok: false, message: '这个房间已经达到最高等级。' };
       const cost = buildCost(room);
       if (next.gold < cost) return { state, ok: false, message: `星砂不足，扩建需要 ${cost}。` };
       next.gold -= cost; room.level += 1;

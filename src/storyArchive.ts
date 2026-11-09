@@ -30,6 +30,8 @@ export interface ArchivedStory {
   eventId: string;
   title: string;
   day: number;
+  /** 这段剧情开始的时刻；旧副本没有，只显示第几日。 */
+  minutes?: number;
   savedAt: number;
   /** 主角（回看时用来取卡面立绘）。 */
   lead?: { id: string; name: string; cardId?: string };
@@ -94,6 +96,7 @@ export function replayEventOf(story: ArchivedStory): CharacterEvent {
     stage: 0,
     status: 'done',
     day: story.day,
+    minutes: story.minutes,
     source: 'llm',
     badge: false,
     mode: 'session',
@@ -127,6 +130,7 @@ export function archiveStoryRecord(event: CharacterEvent, state?: GameState): Ar
     eventId: event.id,
     title: event.title,
     day: event.day,
+    minutes: event.minutes,
     savedAt: Date.now(),
     lead: event.girlId ? { id: event.girlId, name: names.get(event.girlId) ?? leadGirl?.name ?? event.girlId, cardId: leadGirl?.cardId } : undefined,
     participants,

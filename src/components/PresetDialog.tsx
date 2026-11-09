@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Braces, Download, FileJson, FlaskConical, KeyRound, Plus, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import {
-  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, defaultPromptContent, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
+  DEFAULT_PRESET_BINDING, DEFAULT_PROMPTS, defaultPromptContent, PROMPT_SCOPES, PROMPT_TASK_SCOPES, PROMPT_VARIABLES, VN_PROMPT_ENTRIES, applyRegexScripts, boundPreset, duplicatePreset, exportPresetJson, importPresetJson, newEntryId, presetPrompts,
   promptScope, promptScopeLabel, promptTokens, promptHasMechanicBan, stripMechanicBan, SAMPLING_FIELDS, samplingValue, activePrompts, savePresetsToStore,
   type ChatPreset, type PresetApi, type PresetBinding, type PromptEntry, type PromptScope, type PromptTask, type RegexScript,
 } from '../presets';
@@ -90,7 +90,10 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
     if (!preset || !editable) return;
     const scope = view === 'all' ? undefined : view;
     const defaults = DEFAULT_PROMPTS.filter(entry => !scope || promptScope(entry) === scope);
-    const kept = scope ? entries.filter(entry => promptScope(entry) !== scope) : [];
+    const vnIds = new Set(VN_PROMPT_ENTRIES.map(spec => spec.id));
+    const kept = scope
+      ? entries.filter(entry => promptScope(entry) !== scope || vnIds.has(entry.id))
+      : entries.filter(entry => vnIds.has(entry.id));
     patchEntries([...kept, ...defaults.map((entry, index) => ({ ...entry, id: newEntryId(kept.length + index) }))]);
     onNotify(scope ? `已恢复「${promptScopeLabel(scope)}」的默认词条。` : '已恢复全部默认词条。');
   };

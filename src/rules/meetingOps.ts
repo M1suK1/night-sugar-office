@@ -106,6 +106,7 @@ export function applyStartMeeting(state: GameState, action: Extract<GameAction, 
       stage: 1,
       status: 'active',
       day: next.day,
+      minutes: next.minutes,
       source: 'template',
       badge: true,
       // 会议不是"约谈"：引子只给界面看，开场由玩家先写。

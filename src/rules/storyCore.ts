@@ -79,6 +79,7 @@ export function addEvent(state: GameState, girl: Girl, title: string, hook: stri
     stage: 0,
     status: 'active',
     day: state.day,
+    minutes: state.minutes,
     source: source === 'llm' ? 'llm' : 'template',
     badge: true,
   };

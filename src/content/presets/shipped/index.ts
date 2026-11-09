@@ -1,4 +1,4 @@
-/** 出厂预设清单（v178）：这 11 份就是本地调好的那套，逐条可按用途绑定。 */
+/** 出厂预设清单（由本地预设导出生成）。 */
 import { PRESET as ARC_PRESET } from './arc.ts';
 import { PRESET as BATTLE_PRESET } from './battle.ts';
 import { PRESET as CHAT_PRESET } from './chat.ts';

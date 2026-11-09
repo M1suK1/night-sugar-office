@@ -75,6 +75,7 @@ export function buildSummonEvent(state: GameState, faction: FactionId): Characte
     stage: 1,
     status: 'active',
     day: state.day,
+    minutes: state.minutes,
     source: 'template',
     badge: true,
   };
@@ -120,6 +121,7 @@ export function buildMeetEvent(state: GameState, faction: FactionId, leaderName:
     stage: 1,
     status: 'active',
     day: state.day,
+    minutes: state.minutes,
     source: 'template',
     badge: true,
   };

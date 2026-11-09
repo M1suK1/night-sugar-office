@@ -1882,6 +1882,15 @@ export interface StoryTurnDraft {
   bond: number;
 }
 
+/** `【在场的人】` 只列配角：主角的完整档案已经在【她是谁】里，别再抄一遍。 */
+function storyPresentBriefs(cast: { id: string; name: string; brief?: string }[], protagonistId: string): string {
+  const others = cast
+    .filter(person => person.id !== 'player' && person.id !== protagonistId)
+    .map(person => person.brief ?? person.name);
+  if (!others.length) return '只有她和你。主角的资料见【她是谁】，这里不重复。';
+  return `${others.join('\n')}\n（主角的资料见【她是谁】，这里不重复。）`;
+}
+
 function storyCast(state: GameState, event: CharacterEvent): { id: string; name: string; brief?: string }[] {
   const ids = (event.cast ?? []).filter(Boolean);
   const people = ids.flatMap(id => {
@@ -2079,12 +2088,21 @@ function meetingContext(state: GameState, event: CharacterEvent): string {
  * 玩家写的那段话原样进来，并且明确要求模型沿用他给出的时间、地点、姿态，
  * 不另起炉灶——否则模型会把「我推门进去，外头在下雨」改写成另一种开场。
  */
+/** 剧情发生的日期与时刻：只给叙事者一个可自然带出的时间感，不报数字。 */
+function storyClockText(event: CharacterEvent, state: GameState): string {
+  const minutes = event.minutes ?? state.minutes;
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return `【现在的时间】第 ${event.day} 日 ${hh}:${mm}。旁白里要让人感到这个时间：夜色深到哪一步、街上的灯还剩几盏、离打烊还有多久；不要直接报时、不要写「第几轮」。`;
+}
+
 export function openingContext(state: GameState, event: CharacterEvent, seed = ''): string {
   const cast = storyCast(state, event);
-  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   const seedText = seed.trim().slice(0, 300);
   return [
     `【这一段剧情】${event.title}`,
+    storyClockText(event, state),
     event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     // v109：以前的剧情只以摘要形式出现，不回放原文。
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
@@ -2092,7 +2110,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
     meetingContext(state, event),
     seedText ? `【所长的开场】${seedText}\n这一段会作为这一段剧情的第一句，由所长先说。你只写她听见之后的反应、场面与台词：不要替所长补话，也不要抢先替她寒暄；沿用他给出的时间、地点与姿态，不要另起炉灶、不要换场景。` : '',
     '【在场的人】',
-    briefs || '只有她和你',
+    storyPresentBriefs(cast, event.girlId),
     '【你】所长（player），用「你」称呼，可以是说话人。',
     seedText ? '【这一次】接着所长写的那一段往下写第一轮，把话头交回给他。' : '【这一次】写这一幕的开场白，把话头留给所长。',
   ].filter(Boolean).join('\n');
@@ -2157,12 +2175,13 @@ export async function generateStoryEnding(
   const hookFallback = !event.opening && !turns.length && event.hookInPrompt !== false && event.hook ? `引子：${event.hook}` : '';
   const context = [
     `【这一段剧情】${event.title}`,
+    storyClockText(event, state),
     hookFallback,
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     '【在场的人】',
-    briefs || '只有她和你',
+    storyPresentBriefs(cast, event.girlId),
     '【此前的对话】',
     storyRecapHistory(event, turns) || '（这是第一轮）',
     choices.length ? `【这一段之后的岔路口】\n必须从这些选项里选一条，作为所长实际走的方向：\n${choices.map(option => `- ${option.id}：${option.label}`).join('\n')}\n只写 id，不要写效果数值。` : '',
@@ -2226,18 +2245,20 @@ export async function generateStoryTurn(
   const playerLine = action.trim().slice(0, 300);
   const context = [
     `【这一段剧情】${event.title}`,
+    storyClockText(event, state),
     hookFallback,
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     '【在场的人】',
-    briefs || '只有她和你',
+    storyPresentBriefs(cast, event.girlId),
     '【此前的对话】',
     history || '（这是第一轮）',
     '【所长这一次的行动】',
     playerLine,
     options.rewrite ? '【要求】把上一轮的旁白与台词换一种写法重写：同样的局面、同样的结果，但换动作、换角度、换她说话的方式。不要复述原文句式。' : '',
     '【这一次】接着写下一轮，不要重写开场。',
+    '【必须返回 summary】把这一轮压成 100–280 字：所长这一轮做了什么、她怎么回应、局面推进到哪。下一轮的历史只会引用这段总结，不要再回放整段旁白。',
   ].filter(Boolean).join('\n');
   const body = arcTurnContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {

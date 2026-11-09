@@ -124,6 +124,15 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
   attachPassive(unit, unit.skills);
   return unit;
 }
+/** `always` 的常驻属性加成：在单位建立时一次性写进 stats，之后再参与心防与判定。 */
+function applyAlwaysBuffs(stats: Record<StatKey, number>, rules: MonsterRule[] | undefined): void {
+  for (const rule of rules ?? []) {
+    if (rule.trigger !== 'always' || rule.effect !== 'buff' || rule.belowHpPct !== undefined) continue;
+    if (!rule.stat || rule.stat === 'hit') continue;
+    stats[rule.stat] += rule.amount ?? 0;
+  }
+}
+
 function unitFromMonster(id: string, index: number, wounded: boolean, pool: MonsterTemplate[] = [], hpPct = 0, powerPct = 0, buffId?: string | null, hpOverride?: number): BattleUnit {
   const plain = pool.find(m => m.id === id) ?? findMonster(id);
   // 精英不是新的魔物，只是一层 buff 套在同一只怪身上。
@@ -145,6 +154,7 @@ function unitFromMonster(id: string, index: number, wounded: boolean, pool: Mons
   // Boss 消耗战：上一位玩家打剩下多少血，这一场就从多少血开始。
   const startHp = hpOverride === undefined ? maxHp : clamp(1, maxHp, Math.round(hpOverride));
   const stats = { magic: Math.round(monster.stats.magic * power), insight: Math.round(monster.stats.insight * power), agility: Math.round(monster.stats.agility * power), empathy: Math.round(monster.stats.empathy * power) };
+  applyAlwaysBuffs(stats, monster.rules);
   // 魔物的心防不再手写：它等于自己的共情 × 2，和血量各自独立。
   const guard = guardMax({ stats });
   const unit: BattleUnit = {
@@ -514,6 +524,12 @@ export function simulateBattle(setup: BattleSetup): BattleState {
         }
         if (rule.effect === 'haste' && round > 1 && !unit.effects.some(e => e.kind === 'stun') && unit.stats.agility < 140) {
           unit.stats.agility += rule.amount ?? 0;
+        }
+        if (rule.effect === 'dot') {
+          for (const target of units) {
+            if (target.side === unit.side || target.down || target.hp <= 0) continue;
+            addEffect(target, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: unit.name });
+          }
         }
       }
       firePassive(unit, 'roundStart', { round });

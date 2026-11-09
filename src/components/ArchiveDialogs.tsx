@@ -3,6 +3,7 @@ import { BookOpen, Skull, Flower2, Sparkles, Shield, ScanEye, ChevronRight, Moon
 import type { GameState, MonsterTemplate } from '../types';
 import { monsters as baseMonsters } from '../content/monsters';
 import { eliteBuffs } from '../content/eliteBuffs';
+import { eliteRuleText, eliteSkillText } from '../eliteFacts';
 import { statLabels } from '../game';
 import { MonsterGlyph } from './MonsterGlyph';
 
@@ -70,7 +71,8 @@ export function CodexDialog({ initialId, extra = [] }: { initialId?: string; ext
               <div><ScanEye size={13} /><span>属性</span><b>×{elite.statMul.toFixed(2)}</b></div>
               <div><ScanEye size={13} /><span>心防</span><b>×{elite.empathyMul.toFixed(2)}</b></div>
             </div>
-            <div className="codex-trait"><Flame size={15} /><div><small>附带技能</small><p>{elite.skillIds.join('、')}</p></div></div>
+            <div className="codex-trait"><Flame size={15} /><div><small>附带技能</small><p>{elite.skillIds.map(eliteSkillText).join('；')}</p></div></div>
+            {elite.rules?.length ? <div className="codex-trait"><Sparkles size={15} /><div><small>规则</small><p>{elite.rules.map(eliteRuleText).join('；')}</p></div></div> : null}
             <div className="codex-notes">
               <div><small>对策</small><p>{elite.counter}</p></div>
             </div>

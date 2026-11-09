@@ -239,6 +239,10 @@
 .report-exp i{height:3px;flex:1;background:#ffffff0d;border-radius:3px;overflow:hidden}
 .report-exp i>b{display:block;height:100%;background:linear-gradient(90deg,#9cc9d2,#f3aec9)}
 .report-exp b{font-family:var(--font-data);font-size:8px;color:#d9c1d1}
+.report-materials{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.report-materials>span{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--material-color,#d9b68a) 32%,transparent);border-radius:5px;background:color-mix(in srgb,var(--material-color,#d9b68a) 7%,transparent);font-size:8px;color:#cdb9c6}
+.report-materials i{width:5px;height:5px;border-radius:50%;background:var(--material-color,#d9b68a)}
+.report-materials b{font-family:var(--font-data);font-weight:500;color:#f0dde8}
 .fatal-note{display:flex;gap:6px;align-items:center;margin-top:12px;padding:8px 10px;border:1px solid #ff6b7833;border-radius:5px;background:#ff6b7810;color:#ffb3b9;font-size:7.5px;line-height:1.7}
 
 /* 魔物图鉴 */

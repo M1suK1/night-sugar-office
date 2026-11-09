@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Download, PlayCircle, Trash2 } from 'lucide-react';
 import { clearStoryArchive, deleteStoryFromArchive, loadStoryArchive, type ArchivedStory } from '../storyArchive';
+import { eventClockLabel } from '../storySession';
 
 /**
  * 已保存的剧情（v176）。
@@ -28,7 +29,7 @@ export function StoryArchiveDialog({ onClose, onWatch }: { onClose: () => void; 
   const exportOne = (story: ArchivedStory) => {
     const text = [
       `# ${story.title}`,
-      `第 ${story.day} 日 · ${story.participants.map(person => person.name).join('、')}`,
+      `${eventClockLabel(story)} · ${story.participants.map(person => person.name).join('、')}`,
       story.summary ? `\n摘要：${story.summary}` : '',
       '',
       ...story.turns.map(turn => turn.role === 'player'
@@ -60,7 +61,7 @@ export function StoryArchiveDialog({ onClose, onWatch }: { onClose: () => void; 
               <li key={story.id}>
                 <button type="button" id={`story-archive-${story.id}`} className={`story-archive-item${story.id === activeId ? ' active' : ''}`} onClick={() => setActiveId(story.id)}>
                   <b>{story.title}</b>
-                  <small>第 {story.day} 日 · {story.participants.length} 人 · {story.turns.length} 轮</small>
+                  <small>{eventClockLabel(story)} · {story.participants.length} 人 · {story.turns.length} 轮</small>
                 </button>
                 <button type="button" className="story-archive-del" title="删掉这份副本" onClick={() => { void deleteStoryFromArchive(story.id).then(reload); }}><Trash2 size={12} /></button>
               </li>
@@ -71,7 +72,7 @@ export function StoryArchiveDialog({ onClose, onWatch }: { onClose: () => void; 
             <article className="story-archive-read" id="story-archive-read">
               <header>
                 <h3>{active.title}</h3>
-                <small>第 {active.day} 日 · {active.participants.map(person => person.name).join('、')}</small>
+                <small>{eventClockLabel(active)} · {active.participants.map(person => person.name).join('、')}</small>
                 <button type="button" id="story-archive-watch" className="vn-chip" onClick={() => onWatch(active)}><PlayCircle size={12} />观看这一段</button>
                 <button type="button" className="vn-chip" onClick={() => exportOne(active)}><Download size={12} />导出这一段</button>
               </header>

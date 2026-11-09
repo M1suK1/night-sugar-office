@@ -4,12 +4,12 @@ import type { BattleState, BattleUnit, BattleEvent, Girl } from '../types';
 import { outcomeLabel } from '../combat';
 import { portraitSourceOf } from '../battleNote';
 import { findMonster } from '../content/monsters';
+import { effectValueText, materialEntries } from '../battleReportFacts';
 import { MonsterGlyph } from './MonsterGlyph';
 import { usePortraitSrc } from '../usePortrait';
 
 const effectLabels: Record<string, string> = { dot: '灼伤', stun: '眩晕', shield: '护盾', buff: '增益', debuff: '减益', regen: '恢复' };
 const effectIcons: Record<string, typeof Flame> = { dot: Flame, stun: Snowflake, shield: Shield, buff: TrendingUp, debuff: TrendingDown, regen: Heart };
-const effectStats: Record<string, string> = { magic: '魔力', insight: '洞察', agility: '敏捷', empathy: '共情', hit: '命中', initiative: '先手' };
 
 function UnitCard({ unit, girl, active, compact }: { unit: BattleUnit; girl?: Girl; active: boolean; compact?: boolean }) {
   const monster = unit.side === 'enemy' ? (unit.monster ?? findMonster(unit.portrait)) : undefined;
@@ -36,7 +36,9 @@ function UnitCard({ unit, girl, active, compact }: { unit: BattleUnit; girl?: Gi
         {unit.effects.length > 0 && <div className="unit-effects">{unit.effects.filter(e => e.kind !== 'shield' || e.amount > 0).map((e, i) => {
           const Icon = effectIcons[e.kind] ?? Sparkles;
           const label = e.label ?? effectLabels[e.kind];
-          return <span key={i} className={`fx-${e.kind}`} title={`${label}${e.stat ? ` · ${effectStats[e.stat] ?? e.stat}` : ''}`}><Icon size={9} />{label}{e.kind === 'shield' ? ` ${e.amount}` : ''}</span>;
+          const remain = e.remaining > 1 && e.remaining < 90 ? ` · ${e.remaining} 轮` : '';
+          const detail = effectValueText(e);
+          return <span key={i} className={`fx-${e.kind}`} title={`${label}${detail ? ` ${detail}` : ''}${remain}${e.source ? `（${e.source}）` : ''}`}><Icon size={9} />{label}{detail ? ` ${detail}` : ''}</span>;
         })}</div>}
       </div>
     </article>
@@ -106,6 +108,7 @@ export function BattleReport({ battle, girls = [], hasNote, onNote, onClose }: {
   const enemies = units.filter(u => u.side === 'enemy');
   const events = useMemo(() => battle.events.filter(e => e.round === round), [battle.events, round]);
   const atEnd = index >= frames.length - 1;
+  const rewardMaterials = materialEntries(battle.rewards?.materials);
 
   useEffect(() => {
     if (!playing || atEnd) return;
@@ -180,6 +183,16 @@ export function BattleReport({ battle, girls = [], hasNote, onNote, onClose }: {
               <tbody>{allies.map(u => <tr key={u.uid} className={u.down ? 'down' : ''}><td>{u.name}</td><td>{u.dealt}</td><td>{u.taken}</td><td>{u.healed}</td><td>{u.controlled}</td><td>{u.kills}</td></tr>)}</tbody>
             </table>
           </section>
+          {rewardMaterials.length > 0 && (
+            <section>
+              <div className="modal-section-heading"><h3>战场材料</h3><small>已收入装备仓库</small></div>
+              <div className="report-materials">
+                {rewardMaterials.map(material => (
+                  <span key={material.id} style={{ '--material-color': material.color } as React.CSSProperties}><i />{material.name}<b>×{material.count}</b></span>
+                ))}
+              </div>
+            </section>
+          )}
           <section>
             <div className="modal-section-heading"><h3>战后记录</h3><small>疤痕与羁绊</small></div>
             {battle.scars?.length ? (

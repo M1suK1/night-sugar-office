@@ -1,5 +1,12 @@
 import type { CharacterEvent, Expression, StoryTurn } from './types.ts';
 
+/** 剧情发生的日期与时刻；旧存档没有 minutes 时只显示第几日。 */
+export function eventClockLabel(event: Pick<CharacterEvent, 'day' | 'minutes'>): string {
+  if (event.minutes === undefined) return `第 ${event.day} 日`;
+  const m = ((Math.round(event.minutes) % 1440) + 1440) % 1440;
+  return `第 ${event.day} 日 · ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 /**
  * 交互剧情是否该由界面自动开场（v186）。
  *
