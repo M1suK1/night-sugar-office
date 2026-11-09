@@ -2,7 +2,7 @@ import { effectiveGuard, effectiveMaxHp } from '../economy.ts';
 import { absoluteMinutes } from '../shift.ts';
 import { statusLabels } from '../rules/labels.ts';
 import { loadBalance } from '../balance.ts';
-import { MEMORY_CLEAR_COST, capacity, clinicPrice, clinicQuote, inWithdrawal, seatsTaken, treatmentFor } from '../rules/roster.ts';
+import { capacity, clinicLevel, clinicPrice, clinicQuote, inWithdrawal, seatsTaken, treatmentFor } from '../rules/roster.ts';
 import { DEFAULT_OFFICE_PROFILE, sanitizeOfficeProfile } from '../office.ts';
 import { factionInfo } from '../content/items.ts';
 import { factionCollapsed, leaderById, leaderTitle, rosterLeader } from '../factions.ts';
@@ -252,11 +252,6 @@ export function applyRecallExpedition(state: GameState, action: Extract<GameActi
 }
 
 /** clinic 的动作处理器（v35 从 act 拆出）。 */
-/** 月光诊所当前等级（没有诊所按 1 级算）。 */
-function clinicLevel(state: GameState): number {
-  return state.rooms.find(room => room.type === 'clinic')?.level ?? 1;
-}
-
 export function applyClinic(state: GameState, action: Extract<GameAction, { type: 'clinic' }>): ActionResult {
       const next = clone(state); const girl = findGirl(next, action.girlId);
       if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
@@ -290,65 +285,30 @@ export function applyClinic(state: GameState, action: Extract<GameAction, { type
         if (next.gold < wipeCost) return { state, ok: false, message: `记忆重塑需要 ${wipeCost.toLocaleString('en-US')} 星砂。` };
         const oldLevel = girl.level;
         next.gold -= wipeCost; book(next, next.day, -wipeCost);
+        // v203：诊所只剩这一个记忆动作。已完成/已收束的回忆一并抹掉。
+        const involved = (event: (typeof next.events)[number]) => event.girlId === girl.id
+          || (event.cast ?? []).includes(girl.id)
+          || Boolean(event.meeting?.attendeeIds.includes(girl.id));
+        next.events = next.events.filter(event => !(involved(event) && (event.status === 'done' || event.sessionDone)));
         girl.level = 1; girl.exp = 0;
         girl.stats = { ...girl.baseStats };
         girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
-        // v201：重塑连深层疤痕一起剥离（界面文案一直这么写，代码没做），记忆与人格保留。
         girl.scars = [];
         girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
         girl.hp = girl.maxHp;
         girl.maxSpirit = effectiveGuard(girl);
         girl.spirit = girl.maxSpirit;
         girl.status = 'idle'; girl.remaining = 0; girl.conditions = [];
-        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}接受了记忆重塑。等级、能力与疤痕都回到起点，回忆还留着。`, delta: -wipeCost });
-        return { state: next, ok: true, message: `${girl.name}的能力已重塑至 1 级。` };
-      }
-      if (action.mode === 'clear') {
-        if (girl.status === 'mission' || girl.status === 'expedition') return { state, ok: false, message: '出勤中的契约者无法进行记忆清除。' };
-        const isWitch = Boolean(girl.witch);
-        const mental = girl.scars.filter(scar => scar.kind === 'mental');
-        // v200：魔女化的唯一解除路径就是这里，所以魔女态不要求先有一条精神疤痕。
-        if (!mental.length && !isWitch) return { state, ok: false, message: `${girl.name}没有可清除的精神疤痕。` };
-        const clearCost = clinicPrice(MEMORY_CLEAR_COST, clinicLevel(next));
-        if (next.gold < clearCost) return { state, ok: false, message: `记忆清除需要 ${clearCost.toLocaleString('en-US')} 星砂。` };
-        const target = mental.find(scar => scar.id === action.clearScarId) ?? mental[0];
-        next.gold -= clearCost; book(next, next.day, -clearCost);
-        // 魔女态不清疤痕：她用记忆与等级换回形态，疤痕留给记忆重塑去剥。
-        if (target && !isWitch) girl.scars = girl.scars.filter(scar => scar.id !== target.id);
-        if (isWitch) {
-          // 清除的是「成为魔女的那段记忆」：形态解除、侵蚀归零，代价是等级与成长归零。
-          const oldLevel = girl.level;
-          const involved = (event: (typeof next.events)[number]) => event.girlId === girl.id
-            || (event.cast ?? []).includes(girl.id)
-            || Boolean(event.meeting?.attendeeIds.includes(girl.id));
-          next.events = next.events.filter(event => !(involved(event) && (event.status === 'done' || event.sessionDone)));
-          girl.level = 1; girl.exp = 0;
-          girl.stats = { ...girl.baseStats };
-          girl.baseMaxHp = Math.max(40, girl.baseMaxHp - (oldLevel - 1) * 4);
-          girl.corruption = 0;
+        // v203：魔女态重塑同时解除魔女化，断药计时清零。
+        const wasWitch = Boolean(girl.witch);
+        if (wasWitch) {
           girl.witch = false;
+          girl.corruption = 0;
           girl.drugUntilDay = undefined;
           girl.withdrawalDays = 0;
-          girl.conditions = [];
         }
-        // 疤痕少了（或等级回退），上限跟着回来：血量按剩余疤痕重算，心防按当前共情重算。
-        girl.maxHp = Math.max(40, Math.round(girl.baseMaxHp * Math.max(0.4, 1 - girl.scars.length * 0.08)));
-        girl.hp = isWitch ? girl.maxHp : Math.min(girl.hp, girl.maxHp);
-        girl.maxSpirit = effectiveGuard(girl);
-        girl.spirit = girl.maxSpirit;
-        next.logs.unshift({
-          id: `log-clear-${girl.id}-${next.day}-${next.minutes}`, time: dateLabel(next.day, next.minutes), kind: 'clinic',
-          text: isWitch
-            ? `${girl.name}做了一次记忆清除。魔女形态解除，侵蚀归零，等级与成长回到起点；那些演完的对话也被折好收进档案袋。`
-            : `${girl.name}做了一次记忆清除。「${target?.name ?? '一段记忆'}」被折好收进档案袋，等级与能力没有动。`,
-          delta: -clearCost,
-        });
-        return {
-          state: next, ok: true,
-          message: isWitch
-            ? `${girl.name}的魔女形态解除了：侵蚀归零，等级回到 1。`
-            : `${girl.name}的精神疤痕「${target?.name ?? ''}」已被清除。`,
-        };
+        next.logs.unshift({ id: `log-wipe-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: wasWitch ? `${girl.name}接受了记忆重塑。魔女形态解除，侵蚀归零，等级、能力与疤痕都回到起点，那些演完的回忆也被折好收走。` : `${girl.name}接受了记忆重塑。等级、能力与疤痕都回到起点，那些演完的回忆也被折好收走。`, delta: -wipeCost });
+        return { state: next, ok: true, message: wasWitch ? `${girl.name}的魔女形态解除了：侵蚀归零，等级回到 1。` : `${girl.name}的能力已重塑至 1 级。` };
       }
       if (action.mode === 'clone') {
         if (girl.cloneOf || girl.generation) return { state, ok: false, message: '复制体不能再次被复制。' };

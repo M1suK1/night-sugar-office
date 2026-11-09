@@ -7,10 +7,10 @@ import * as game from '../src/game.ts';
  * 新增/删除导出时请同步改这份快照，并在提交信息里说明原因。
  */
 const EXPECTED = [
-  'MEMORY_CLEAR_COST', 'SAVE_KEY', 'STORY_SESSION_TURNS', 'WARDROBE_LIMIT', 'act',
+  'SAVE_KEY', 'STORY_SESSION_TURNS', 'WARDROBE_LIMIT', 'act',
   'advanceStoryGraph', 'annotateMission', 'applyIncidentEffect', 'applyStoryEffect',
   'buildCost', 'buildTemplateArc', 'buildTemplateStoryline', 'canAcceptGeneratedContent',
-  'capacity', 'chance', 'clinicQuote', 'clock', 'completeStoryMission', 'createBlankState',
+  'capacity', 'chance', 'clinicCost', 'clinicLevel', 'clinicQuote', 'clock', 'completeStoryMission', 'createBlankState',
   'createInitialFromPack', 'createInitialState', 'customOutfitFor', 'dateLabel',
   'deployIncidentCard', 'deployMissionTemplate', 'districtPin', 'drugDaysLeft', 'eliteChance',
   'ensureMissionPools', 'ensureMonsterPool', 'factionStanding', 'finishStoryEvent',

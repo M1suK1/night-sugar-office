@@ -1494,6 +1494,34 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   .shift-badge { padding-top: 0; }
 }
 
+/* v206：新闻卡旁的离城终局进度。 */
+.dispatch-ending { width: min(220px, 24vw); display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; border: 1px solid rgba(244, 154, 189, 0.16); border-radius: 10px; background: linear-gradient(165deg, rgba(24, 17, 27, 0.92), rgba(14, 12, 18, 0.92)); color: #b9adb8; font: inherit; text-align: left; cursor: default; }
+.dispatch-ending:disabled { opacity: 1; }
+.dispatch-ending-head { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: .12em; color: #a99ca6; }
+.dispatch-ending-head b { color: #f3aec9; font-weight: 500; letter-spacing: .16em; }
+.dispatch-ending-head em { margin-left: auto; font-style: normal; color: #6f6470; }
+.dispatch-ending-value { font-family: var(--font-display); font-size: 20px; letter-spacing: .02em; color: #f4e9ef; line-height: 1.1; }
+.dispatch-ending-value small { margin-left: 4px; font-family: inherit; font-size: 10px; color: #6f6470; letter-spacing: 0; }
+.dispatch-ending-track { display: block; height: 4px; border-radius: 999px; background: rgba(244, 154, 189, 0.14); overflow: hidden; }
+.dispatch-ending-track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8f6b7c, #f3aec9); transition: width .4s ease; }
+.dispatch-ending-note { font-size: 10px; line-height: 1.5; color: #8d818c; }
+.dispatch-ending.is-ready { border-color: rgba(244, 154, 189, 0.7); box-shadow: 0 0 24px rgba(243, 174, 201, 0.14); cursor: pointer; }
+.dispatch-ending.is-ready .dispatch-ending-note { color: #f3aec9; }
+.dispatch-ending.is-ready .dispatch-ending-track > span { box-shadow: 0 0 10px rgba(243, 174, 201, 0.65); }
+.dispatch-ending.is-ready:hover { border-color: #f3aec9; }
+.dispatch-ending.is-done { cursor: pointer; border-color: rgba(143, 211, 199, 0.3); }
+.dispatch-ending.is-done .dispatch-ending-head em,
+.dispatch-ending.is-done .dispatch-ending-note { color: #8fd3c7; }
+@media (max-width: 1100px) { .dispatch-ending { width: min(420px, 62vw); } }
+@media (max-width: 720px) { .dispatch-ending { width: 100%; } }
+
+/* v206：离城确认框与落幕页。 */
+.campaign-ending { max-width: 560px; }
+.campaign-ending.is-done h2 { font-size: 34px; letter-spacing: .18em; color: #f3aec9; }
+.campaign-ending .ending-facts { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 14px 0 18px; padding: 12px 14px; border: 1px solid rgba(244, 154, 189, 0.14); border-radius: 10px; background: rgba(24, 17, 27, 0.6); }
+.campaign-ending .ending-facts span { display: flex; flex-direction: column; gap: 3px; font-size: 10px; letter-spacing: .1em; color: #8d818c; }
+.campaign-ending .ending-facts b { font-family: var(--font-display); font-size: 16px; font-weight: 500; color: #f4e9ef; letter-spacing: .02em; }
+
 /* v51：派遣页把「事务所档案 / 玩家档案」放进三方势力栏旁边；结构与势力卡一致，只把声望条换成入口提示。 */
 .dispatch-world-strip { grid-template-columns: minmax(230px, 300px) minmax(0, 1fr) minmax(190px, 224px); }
 @media (max-width: 1180px) {

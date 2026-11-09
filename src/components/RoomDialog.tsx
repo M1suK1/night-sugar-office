@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowUpRight, Brain, Building2, Check, Compass, Copy, MessageCircle, Moon, Plus, ShieldCheck, Sparkles, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
-import { buildCost, capacity, inWithdrawal, statusLabels } from '../game';
+import { buildCost, capacity, clinicCost, inWithdrawal, statusLabels } from '../game';
 import { factionInfo } from '../content/items';
 import { representativeNameOf } from '../factions';
 import { factionAttitude } from '../economy';
@@ -12,7 +12,7 @@ type Props = {
   state: GameState; id: string; onGirl: (id: string) => void; onTalk: (id: string) => void; onBuild: () => void;
   onDecide: (id: string, decision: 'accept' | 'defer' | 'reject') => void;
   onStartExpedition: (ids: string[]) => void; onRecall: (id: string) => void;
-  onClinic: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
+  onClinic: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   onRest: (girlId: string) => void;
   onAcceptTask?: (faction: FactionId) => void;
 };
@@ -34,6 +34,8 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
   const expedition = state.expeditions[0];
   const eligible = state.girls.filter(g => g.status === 'idle' && !g.retired && !inWithdrawal(g) && g.hp >= 30 && g.fatigue < 80);
   const labels: Record<string, string> = { members: '驻留成员', council: '今日议事', envoys: '三方来使', expedition: '远行观测', clinic: '治疗', surgery: '重塑与复制', dorm: '降侵蚀休息' };
+  const wipePrice = clinicCost(state, 4000);
+  const clonePrice = clinicCost(state, 18000);
 
   return <div className="standard-modal room-dialog">
     <div className="modal-eyebrow"><Building2 size={14} />基地设施模块 / 等级 {room.level}</div>
@@ -142,14 +144,14 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
       <div className="room-function">
         <h3>今夜，先把伤口放下</h3>
         <p>诊所依据失血创伤程度分阶计价，按小时平稳弥合肉体撕裂；治疗期间严禁签发出勤，且药浴无法代替深度睡眠对神经疲惫的化解。</p>
-        <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} onClear={girlId => onClinic(girlId, 'clear')} />
+        <ClinicPanel state={state} girls={activeGirls} onGirl={onGirl} onTreat={(girlId, kink) => onClinic(girlId, 'treat', kink)} />
       </div>
     )}
 
     {tab === 'surgery' && (
       <div className="room-function">
         <h3>记忆重塑与复制契约</h3>
-        <p>记忆重塑耗费 4,000 星砂（彻底剥离全部深层精神疤痕，等级与羁绊因果重归初始）；复制契约耗费 18,000 星砂（Lv.3 及以上资深契约者可凝练 1 级纯净镜像灵体，仅限一次）。</p>
+        <p>记忆重塑耗费 {wipePrice.toLocaleString('en-US')} 星砂（等级、属性与全部疤痕归零，已完成的回忆一并抹去；魔女态同时解除魔女化）；复制契约耗费 {clonePrice.toLocaleString('en-US')} 星砂（Lv.3 及以上资深契约者可凝练 1 级纯净镜像灵体，仅限一次）。</p>
         <div className="girl-card-grid room-card-grid">
           {activeGirls.map(g => (
             <article key={g.id} className="girl-card">
@@ -158,8 +160,8 @@ export function RoomDialog({ state, id, onGirl, onTalk, onBuild, onDecide, onSta
                 <strong>{g.name} <small>Lv.{g.level}</small></strong>
                 <span>疤痕 {g.scars.length}/5 · {g.cloneOf ? '复制体' : '原体'} · 羁绊 {g.bond}</span>
                 <div className="girl-card-actions">
-                  <button id={`room-wipe-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 4000 || g.status !== 'idle'} onClick={() => onClinic(g.id, 'wipe')}><Brain size={12} />重塑</button>
-                  <button id={`room-clone-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf)} onClick={() => onClinic(g.id, 'clone')}><Copy size={12} />复制</button>
+                  <button id={`room-wipe-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < wipePrice || g.status !== 'idle'} onClick={() => onClinic(g.id, 'wipe')}><Brain size={12} />重塑</button>
+                  <button id={`room-clone-${g.id}`} type="button" className="av-btn av-btn-small" disabled={state.gold < clonePrice || g.level < 3 || Boolean(g.cloneOf)} onClick={() => onClinic(g.id, 'clone')}><Copy size={12} />复制</button>
                 </div>
               </div>
             </article>

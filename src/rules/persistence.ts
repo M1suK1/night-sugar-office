@@ -147,6 +147,21 @@ function normalizeState(raw: string | null): GameState | null {
       : [];
     // v50：城市新闻是可选字段；坏数据直接丢掉，读档后换日会重写。
     state.cityNews = sanitizeCityNews(state.cityNews, state.day);
+    // v206：终局记录是可选字段；只认已开放的 id，丢掉坏数据并按 id 去重。
+    state.endings = Array.isArray(state.endings)
+      ? state.endings
+        .filter(record => record && record.id === 'leave' && Number.isFinite(record.day) && Number.isFinite(record.gold))
+        .map(record => ({
+          id: 'leave' as const,
+          day: record.day,
+          at: typeof record.at === 'string' && record.at ? record.at : `第 ${record.day} 日`,
+          gold: record.gold,
+          reputation: Number.isFinite(record.reputation) ? record.reputation : 0,
+          girls: Number.isFinite(record.girls) ? Math.max(0, Math.round(record.girls)) : 0,
+        }))
+        .filter((record, index, list) => list.findIndex(item => item.id === record.id) === index)
+        .slice(0, 3)
+      : [];
   // v168：会议记录（旧档没有就是空数组）。
   state.meetings = sanitizeMeetingRecords(state.meetings);
     // v33：旧档没有这套成长设置时按自动加点读，不追溯退点。

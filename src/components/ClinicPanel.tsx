@@ -4,11 +4,11 @@ import { effectiveMaxHp } from '../economy.ts';
 import type { GameState, Girl, Treatment } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 
-export function ClinicPanel({ state, girls, onTreat, onClear, onGirl }: {
+export function ClinicPanel({ state, girls, onTreat, onGirl }: {
   state: GameState;
   girls: Girl[];
   onTreat: (girlId: string, kink: boolean) => void;
-  onClear?: (girlId: string) => void;
+
   onGirl?: (girlId: string) => void;
 }) {
   const scoped = girls.map(g => state.girls.find(item => item.id === g.id) ?? g);
@@ -78,9 +78,6 @@ export function ClinicPanel({ state, girls, onTreat, onClear, onGirl }: {
                   <button id={`clinic-kink-${girl.id}`} type="button" className="clinic-kink-btn" disabled={!kinkAffordable || girl.status !== 'idle'} onClick={() => onTreat(girl.id, true)}>
                     <Sparkles size={11} />{kinkAffordable ? `治疗癖好 · ${kinkQuote.cost} · 2 小时` : `星砂不足 · ${kinkQuote.cost}`}
                   </button>
-                  {onClear && <button id={`clinic-clear-${girl.id}`} type="button" className="clinic-kink-btn" disabled={state.gold < 1200 || girl.status !== 'idle' || (!girl.witch && !girl.scars.some(scar => scar.kind === 'mental'))} onClick={() => onClear(girl.id)}>
-                    <Sparkles size={11} />{girl.witch ? '记忆清除 · 1,200 · 解除魔女化' : '记忆清除 · 1,200 · 清一条精神疤痕'}
-                  </button>}
                 </div>
               </div>
             );

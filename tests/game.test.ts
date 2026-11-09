@@ -72,7 +72,7 @@ import type { DistrictId } from '../src/districts.ts';
 import type { FactionId, GameState, GirlFaction, Incident, Mission, OfficeProfile, Opinion, Outfit, Scar, Skill, StoryGraph, Storyline } from '../src/types.ts';
 import { __resetKvForTests, __setKvWriteFaultForTests, kvSet } from '../src/store.ts';
 import { BROKEN_SPIRIT_MUL, BROKEN_TAKEN_MUL, GUARD_HP_MUL, GUARD_PER_EMPATHY, brokenSpiritDamage, guardHpMul, guardMax, guardState, guardStateLabel } from '../src/spirit.ts';
-import { MEMORY_CLEAR_COST } from '../src/game.ts';
+
 import { effectiveGuard } from '../src/economy.ts';
 import { emptyItem } from '../src/content/library.ts';
 import { items } from '../src/content/items.ts';
@@ -1879,13 +1879,17 @@ test('自定义的「… 副本」不会被任务默认预设改名', () => {
   assert.equal(event.name, '私人事件');
   assert.notEqual(story.id, event.id);
 });
-test('世界书内置 17 条，默认只启用 9 条常驻词条', () => {
-  assert.equal(builtinWorldbook().length, 17);
+test('世界书内置 18 条，默认只启用 9 条常驻词条', () => {
+  assert.equal(builtinWorldbook().length, 18);
   const defaults = defaultWorldbook();
   assert.equal(defaults.filter(entry => entry.enabled).length, 9);
   assert.ok(defaults.filter(entry => entry.enabled).every(entry => entry.constant));
   assert.ok(defaults.some(entry => entry.id === 'clinic'));
   assert.ok(defaults.some(entry => entry.id === 'office-profile'));
+  assert.ok(defaults.some(entry => entry.id === 'ending-leave'));
+  const withEnding = defaults.map(entry => entry.id === 'ending-leave' ? { ...entry, enabled: true } : entry);
+  const context = worldbookContext('所长准备离城', withEnding);
+  assert.ok(context.hits.some(hit => hit.id === 'ending-leave'), '提到离城时要注入结局词条');
 });
 
 test('世界书按关键词命中，常驻优先进入且超预算会跳过', () => {
@@ -1950,7 +1954,7 @@ test('数值规则夹取越界值，并修正长期委托上下限', () => {
   assert.equal(rules.corruptionThreshold, 10);
   assert.equal(rules.longMaxDays, rules.longMinDays);
   assert.equal(sanitizeBalance({}).clinicBase, DEFAULT_BALANCE.clinicBase);
-  assert.equal(BALANCE_FIELDS.length, 60, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项、v167 的失败惩罚三项、v168 的会议七项与 v187 的天气强度');
+  assert.equal(BALANCE_FIELDS.length, 61, '在 34 项之上再加 v85 的污染四项、多怪奖励、索款四项、借星砂三项、v89 的休息两项、v167 的失败惩罚三项、v168 的会议七项、v187 的天气强度与 v206 的终局门槛');
   for (const key of ['clinicHpPerHourPerLevel', 'clinicCostDiscountPerLevel', 'expeditionMembersPerLevel', 'expeditionGoldPerLevel', 'dormBuildDiscountPct',
     'envoyCoopWeight', 'envoyRaidWeight', 'envoyLoanWeight', 'envoyRaidHostility', 'envoyLoanMaxHours']) {
     assert.ok(BALANCE_FIELDS.some(field => field.key === key), `${key} 应该出现在数值面板里`);
@@ -3476,6 +3480,18 @@ test('v19 世界书同步把「月蚀教团」的旧称迁到「月蚀庭」', (
     assert.ok(migrated.content.includes('月蚀庭'));
     assert.equal(syncOfficeWorldbook(DEFAULT_OFFICE_PROFILE), true, '再同步一次也不报错');
     assert.equal(loadWorldbook().filter(item => item.id === OFFICE_WORLDBOOK_ID).length, 1, '不会重复插入');
+  });
+});
+
+test('v206 老档世界书启动时补上离城结局词条', () => {
+  withMemoryStorage(() => {
+    saveWorldbook(builtinWorldbook().filter(item => item.id !== 'ending-leave'));
+    assert.equal(loadWorldbook().some(item => item.id === 'ending-leave'), false);
+    assert.equal(syncBuiltinWorldbook(), true);
+    const entry = loadWorldbook().find(item => item.id === 'ending-leave');
+    assert.ok(entry, '老档也要拿到新词条');
+    assert.equal(entry!.enabled, true);
+    assert.ok(entry!.content.includes('十万星砂'));
   });
 });
 
@@ -5099,29 +5115,7 @@ test('v25 魔物的心防同样按共情算，不再读 maxSpirit', () => {
   assert.equal(enemy.maxSpirit, guardMax({ stats: monster.stats }));
 });
 
-test('v25 记忆清除：只清一条精神疤痕，不动等级，扣 1200 星砂', () => {
-  const s = createInitialState();
-  const girl = s.girls[0];
-  girl.scars = [
-    { id: 'scar-a', name: '旧伤', condition: '下雨天会疼', effect: { kind: 'stat', stat: 'agility', amount: -1 }, maxHpLoss: 0, gainedAt: '第 1 日', kind: 'body' },
-    { id: 'scar-b', name: '走神', condition: '听到钟声会愣住', effect: { kind: 'stat', stat: 'insight', amount: -1 }, maxHpLoss: 0, gainedAt: '第 2 日', kind: 'mental' },
-  ] as Scar[];
-  const before = s.gold;
-  const next = act(s, { type: 'clinic', girlId: girl.id, mode: 'clear', clearScarId: 'scar-b' }).state;
-  const after = next.girls.find(g => g.id === girl.id)!;
-  assert.equal(next.gold, before - MEMORY_CLEAR_COST);
-  assert.deepEqual(after.scars.map(scar => scar.id), ['scar-a']);
-  assert.equal(after.level, girl.level);
-  assert.ok(next.logs.some(log => log.text.includes('记忆清除')));
-});
 
-test('v25 没有精神疤痕时记忆清除被拒绝', () => {
-  const s = createInitialState();
-  s.girls[0].scars = [];
-  const result = act(s, { type: 'clinic', girlId: s.girls[0].id, mode: 'clear' });
-  assert.equal(result.ok, false);
-  assert.equal(result.state.gold, s.gold);
-});
 
 test('v25 精神型失败只留下精神疤痕', () => {
   const s = createInitialState();

@@ -10,7 +10,7 @@ export { customOutfitFor, witchOutfitFor } from './rules/outfits.ts';
 export { SAVE_KEY, importState, loadState } from './rules/persistence.ts';
 export { canAcceptGeneratedContent, validBattleNote } from './rules/validate.ts';
 export { ensureMissionPools, ensureMonsterPool, missionKey, missionKeyTaken, missionVisibleOnMap, trimMissionPools } from './rules/pools.ts';
-export { MEMORY_CLEAR_COST, buildCost, capacity, chance, clinicQuote, drugDaysLeft, inWithdrawal, seatedGirls, seatsTaken, squadChance, squadLimit, treatmentFor } from './rules/roster.ts';
+export { buildCost, capacity, chance, clinicCost, clinicLevel, clinicQuote, drugDaysLeft, inWithdrawal, seatedGirls, seatsTaken, squadChance, squadLimit, treatmentFor } from './rules/roster.ts';
 export { createBlankState, createInitialFromPack, createInitialState } from './rules/state.ts';
 export { applyStoryEffect, fireStoryTrigger } from './rules/storyCore.ts';
 export { STORY_SESSION_TURNS, buildTemplateArc, buildTemplateStoryline, finishStoryEvent } from './rules/storyEvent.ts';

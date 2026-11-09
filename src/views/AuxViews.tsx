@@ -3,7 +3,7 @@ import { useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, BedDouble, BookOpen, Brain, Building2, Cat, Check, ChevronRight, Coins, Compass, Copy, Crosshair, Feather, Flame, Flower2, Heart, HeartPulse, History, House, Info, LockKeyhole, MapPin, MessageCircle, Moon, Phone, Plus, ScrollText, ShieldCheck, Siren, Sparkles, Star, Swords, Syringe, Telescope, Users } from 'lucide-react';
 import type { FactionId, GameState, Girl, MaterialId, Room } from '../types';
 import { factionInfo, items } from '../content/items';
-import { buildCost, drugDaysLeft, inWithdrawal } from '../game';
+import { buildCost, clinicCost, drugDaysLeft, inWithdrawal } from '../game';
 import { envoyOfferOf } from '../rules/envoy';
 import { cityStage, corruptionLabels, corruptionMultipliers, corruptionStage, equipmentOf, factionAttitude } from '../economy';
 import { EMPLOYER_LABEL, factionTagColor, factionTagLabel, factionRepresentativeOf, representativeNameOf, representativeTitleOf } from '../factions';
@@ -32,7 +32,7 @@ type BaseViewProps = {
   onPreviewEnvoy?: (faction: FactionId) => void;
   /** v85：拿城市安定向势力换星砂。 */
   onBorrowStability?: (faction: FactionId, points: number) => void;
-  onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone' | 'clear', kink?: boolean) => void;
+  onClinic?: (girlId: string, mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   onCare?: (girlId: string, mode: 'resting') => void;
   onAssistant?: (girlId?: string) => void;
   onUseItem?: (girlId: string, itemId: string) => void;
@@ -159,6 +159,8 @@ export function BaseView({
   const needCareCount = active.filter(g => g.hp < g.maxHp || g.fatigue >= 45 || (g.corruption ?? 0) >= 35 || inWithdrawal(g)).length;
   const observatoryLevel = state.rooms.find(room => room.type === 'observatory')?.level ?? 1;
   const expeditionCap = 2 + Math.max(0, observatoryLevel - 1);
+  const wipePrice = clinicCost(state, 4000);
+  const clonePrice = clinicCost(state, 18000);
   const toggleExpedition = (id: string) => setExpeditionSquad(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= expeditionCap ? current : [...current, id]);
 
   const renderRoomModule = (item: Room) => {
@@ -501,14 +503,14 @@ export function BaseView({
                   girls={active}
                   onGirl={id => onGirl?.(id)}
                   onTreat={(girlId, kink) => onClinic?.(girlId, 'treat', kink)}
-                  onClear={girlId => onClinic?.(girlId, 'clear')}
+
                 />
               </div>
             )}
 
             {clinicTab === 'surgery' && (
               <div className="av-module-panel">
-                <p className="av-module-hint">记忆重塑 4,000 星砂（抹除精神疤痕，等级与关系归初）；复制契约 18,000 星砂（Lv.3+ 生成 1 级镜像复制体）。</p>
+                <p className="av-module-hint">记忆重塑 {wipePrice.toLocaleString('en-US')} 星砂（等级、属性与全部疤痕归零，已完成的回忆一并抹去；魔女态同时解除魔女化）；复制契约 {clonePrice.toLocaleString('en-US')} 星砂（Lv.3+ 生成 1 级镜像复制体）。</p>
                 <div className="girl-card-grid">
                   {active.map(g => (
                     <article key={g.id} className="girl-card">
@@ -521,19 +523,19 @@ export function BaseView({
                             id={`av-clinic-wipe-${g.id}`}
                             type="button"
                             className="av-btn av-btn-small"
-                            disabled={state.gold < 4000 || g.status !== 'idle' || !onClinic}
+                            disabled={state.gold < wipePrice || g.status !== 'idle' || !onClinic}
                             onClick={() => onClinic?.(g.id, 'wipe')}
                           >
-                            <Brain size={11} />重塑 4,000
+                            <Brain size={11} />重塑 {wipePrice.toLocaleString('en-US')}
                           </button>
                           <button
                             id={`av-clinic-clone-${g.id}`}
                             type="button"
                             className="av-btn av-btn-small"
-                            disabled={state.gold < 18000 || g.level < 3 || Boolean(g.cloneOf) || !onClinic}
+                            disabled={state.gold < clonePrice || g.level < 3 || Boolean(g.cloneOf) || !onClinic}
                             onClick={() => onClinic?.(g.id, 'clone')}
                           >
-                            <Copy size={11} />复制 18,000
+                            <Copy size={11} />复制 {clonePrice.toLocaleString('en-US')}
                           </button>
                         </div>
                       </div>

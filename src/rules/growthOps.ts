@@ -314,7 +314,7 @@ export function applySuppressWitch(state: GameState, action: Extract<GameAction,
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
   if (!girl.witch) return { state, ok: false, message: `${girl.name}现在不是魔女形态。` };
   // v200：越过 70 之后回不去——抑制剂只负责续命。
-  if ((girl.corruption ?? 0) >= WITCH_STAGE_AT) return { state, ok: false, message: `${girl.name}已经越过那条线：月光抑制剂只能续命，压不回普通形态。唯一解除方式是记忆清除。` };
+  if ((girl.corruption ?? 0) >= WITCH_STAGE_AT) return { state, ok: false, message: `${girl.name}已经越过那条线：月光抑制剂只能续命，压不回普通形态。唯一解除方式是记忆重塑。` };
   if ((next.inventory['moon-drug'] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有月光抑制剂，压不回去。' };
   next.inventory['moon-drug'] -= 1;
   girl.witch = false;

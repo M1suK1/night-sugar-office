@@ -1,4 +1,4 @@
-import { pendingChoiceOf } from './storyChoice.ts';
+import { nextChoiceAfterEvent, pendingChoiceOf } from './storyChoice.ts';
 import { applyStoryEffect } from '../rules/storyCore.ts';
 import { buildTemplateStoryline, finishStoryEvent } from '../rules/storyEvent.ts';
 import { advanceStoryGraph, planToStoryline, spawnStoryBeat, startStoryGraph } from '../rules/storyRun.ts';
@@ -270,6 +270,13 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
       if (!event) return { state, ok: false, message: '找不到这段剧情。' };
       if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
+      // v205：收尾时若带了自动分支，先校验它确实是紧接着的 choice 的一个合法出口。
+      const port = action.port?.trim();
+      if (port) {
+        const story = event.storylineId ? next.storylines.find(item => item.id === event.storylineId && item.status === 'active') : undefined;
+        const upcoming = nextChoiceAfterEvent(story, event);
+        if (!upcoming?.options.some(option => option.id === port)) return { state, ok: false, message: '这个分支走不通。' };
+      }
       // v189：点结束时还留在输入框里的那一句，作为玩家最后一轮记下来。
       // 它没有真的发出去，所以只入档、不计入轮数，也不参与羁绊结算。
       const lead = (action.lead ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -283,7 +290,7 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
         }];
       }
       // 蓝图正卡在选项上：这一下不该收尾，而是把剧情引到门口、把选项摆出来。
-      const branch = pendingChoiceOf(next, event.girlId);
+      const branch = port ? undefined : pendingChoiceOf(next, event.girlId);
       if (branch && !event.pendingChoice) {
         const labels = branch.options.map(option => `「${option.label}」`).join('　');
         event.turns = [...(event.turns ?? []), {
@@ -322,26 +329,38 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
       // v168：会议结束时结算参会者之间的关系，并留一条会议记录（事件被裁剪后摘要仍在）。
       if (event.meeting) settleMeeting(next, event, action.summary?.trim() || event.summary || '');
       finishStoryEvent(next, event);
+      // v205：事件已经收尾并推进到 choice，直接替玩家走掉叙事者选定的那条边。
+      if (port && event.storylineId) {
+        const taken = takeStoryPort(next, event.storylineId, port);
+        if (!taken.ok) next.logs.unshift({ id: `log-port-fallback-${event.id}`, time: dateLabel(next.day, next.minutes), kind: 'story', text: '自动分支没有接上，改由档案页选择。' });
+      }
       return { state: next, ok: true, message: gain ? `事件结束，羁绊 +${gain}。` : '事件结束。' };
 }
 
-/** chooseStoryPort 的动作处理器（v35 从 act 拆出）。 */
-export function applyChooseStoryPort(state: GameState, action: Extract<GameAction, { type: 'chooseStoryPort' }>): ActionResult {
-      const next = clone(state);
-      const story = next.storylines.find(item => item.id === action.storylineId && item.status === 'active');
-      if (!story?.graph || !story.run) return { state, ok: false, message: '这条故事线没有可以选择的岔路。' };
+/** 把蓝图停在 choice 的状态往前推一格；收尾自动选边与手动选边共用。 */
+function takeStoryPort(next: GameState, storylineId: string, port: string): { ok: boolean; message: string } {
+      const story = next.storylines.find(item => item.id === storylineId && item.status === 'active');
+      if (!story?.graph || !story.run) return { ok: false, message: '这条故事线没有可以选择的岔路。' };
       const node = story.graph.nodes.find(item => item.id === story.run?.waiting?.ref);
-      if (!node || node.kind !== 'choice' || node.data.kind !== 'choice') return { state, ok: false, message: '现在没有在等你的选择。' };
-      const edge = story.graph.edges.find(item => item.from === node.id && item.fromPort === action.port);
-      const option = node.data.options.find(item => item.id === action.port);
-      if (!edge || !option) return { state, ok: false, message: '这个选项走不通。' };
+      if (!node || node.kind !== 'choice' || node.data.kind !== 'choice') return { ok: false, message: '现在没有在等你的选择。' };
+      const edge = story.graph.edges.find(item => item.from === node.id && item.fromPort === port);
+      const option = node.data.options.find(item => item.id === port);
+      if (!edge || !option) return { ok: false, message: '这个选项走不通。' };
       const girl = findGirl(next, story.girlId);
       if (girl && option.effect) applyStoryEffect(next, girl, option.effect, '剧情「' + story.title + '」');
       story.run.waiting = undefined;
       story.run.cursor = edge.to;
       advanceStoryGraph(next, story);
-      next.logs.unshift({ id: 'log-port-' + story.id + '-' + action.port, time: dateLabel(next.day, next.minutes), kind: 'story', text: '你选了：' + option.label.slice(0, 60) + '。' });
-      return { state: next, ok: true, message: '剧情继续。' };
+      next.logs.unshift({ id: 'log-port-' + story.id + '-' + port, time: dateLabel(next.day, next.minutes), kind: 'story', text: '你选了：' + option.label.slice(0, 60) + '。' });
+      return { ok: true, message: '剧情继续。' };
+}
+
+/** chooseStoryPort 的动作处理器（v35 从 act 拆出）。 */
+export function applyChooseStoryPort(state: GameState, action: Extract<GameAction, { type: 'chooseStoryPort' }>): ActionResult {
+      const next = clone(state);
+      const taken = takeStoryPort(next, action.storylineId, action.port);
+      if (!taken.ok) return { state, ok: false, message: taken.message };
+      return { state: next, ok: true, message: taken.message };
 }
 
 /** chooseStoryPassage 的动作处理器（v35 从 act 拆出）。 */

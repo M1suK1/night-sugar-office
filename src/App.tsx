@@ -43,6 +43,8 @@ import { MeetingPlanDialog } from './components/MeetingPlanDialog';
 import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
 import { NewsDialog } from './components/NewsDialog';
 import { NewsTicker } from './components/NewsTicker';
+import { EndingProgress } from './components/EndingProgress';
+import { CampaignEndingDialog } from './components/CampaignEndingDialog';
 import { StoryArchiveDialog } from './components/StoryArchiveDialog';
 import { replayEventOf, saveStoryToArchive, type ArchivedStory } from './storyArchive';
 import { EndingDialog } from './components/EndingDialog';
@@ -76,7 +78,7 @@ import { CommandConsole } from './components/CommandConsole';
 import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
 import { blockingIncidents, openIncidentFor } from './incidents';
-import { pendingChoiceOf } from './rules/storyChoice';
+import { nextChoiceAfterEvent, pendingChoiceOf } from './rules/storyChoice';
 import { finishedSessionEvents } from './rules/storyEvent';
 import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } from './points';
 import { loadVnStory, saveVnStory, type VnStoryMode } from './vnPrefs';
@@ -138,6 +140,7 @@ type Modal =
   | { type: 'meeting-plan' }
   | { type: 'meeting-records' }
   | { type: 'news' }
+  | { type: 'ending'; phase: 'confirm' | 'done' }
   | { type: 'stories' }
   | { type: 'office' };
 
@@ -799,6 +802,9 @@ export default function App() {
     if (!event) return false;
     if (storyBusyTurn) return false;
     const config = loadLlmConfig();
+    // v205：收尾前先看蓝图下一站是不是 choice，是就把选项交给叙事者一起选。
+    const story = event.storylineId ? state.storylines.find(item => item.id === event.storylineId && item.status === 'active') : undefined;
+    const upcomingChoice = nextChoiceAfterEvent(story, event);
     // 没有配叙事者、或者正卡在蓝图岔路口：只能本地收尾（没有模型可重试）。
     // 收尾时仍然留一份本地摘要，之后的历史只引用它。
     if (!config.apiKey || pendingChoiceOf(state, event.girlId)) {
@@ -806,14 +812,14 @@ export default function App() {
     }
     setStoryBusyTurn(true);
     try {
-      const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), lead);
+      const result = await generateStoryEnding(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), lead, upcomingChoice);
       if (!result.ok) {
         // v117：收尾没写出来就**不要**结束事件——否则这一段既没有结局也没有摘要，
         // 等于把剧情硬切断。保持开着，玩家可以再点一次「结束事件」重试。
         notify(`收尾没有写出来：${result.message}剧情还开着，可以再点一次「结束事件」。`, false);
         return false;
       }
-      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary, lead });
+      return perform({ type: 'finishStorySession', eventId, ending: result.turn, summary: result.summary, lead, port: upcomingChoice && result.choice ? result.choice : undefined });
     } finally {
       setStoryBusyTurn(false);
     }
@@ -1792,6 +1798,7 @@ export default function App() {
                 </ul>
               )}
             </aside>
+            <EndingProgress state={state} onOpen={() => setModal({ type: 'ending', phase: (state.endings ?? []).some(item => item.id === 'leave') ? 'done' : 'confirm' })} />
             <div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div>
           </div>
         </PageHeading>
@@ -1999,6 +2006,7 @@ export default function App() {
         onClose={() => setStoryReplay(null)}
       /></div>}
       {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} presetName={boundPreset('news', presets, binding)?.name} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
+      {modal.type === 'ending' && <CampaignEndingDialog phase={modal.phase} state={state} record={(state.endings ?? []).find(item => item.id === 'leave')} onConfirm={() => { if (perform({ type: 'finishEnding', endingId: 'leave' })) setModal({ type: 'ending', phase: 'done' }); }} onClose={() => setModal(null)} />}
       {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
         const before = new Set(state.events.map(event => event.id));
         const applied = act(state, { type: 'startMeeting', plan });
