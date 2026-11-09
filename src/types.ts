@@ -1250,6 +1250,14 @@ export interface FactionState {
 export interface MarketStockEntry {
   id: string; itemId: string; faction: FactionId; sold: boolean;
 }
+export interface EndingRecord {
+  id: 'leave';
+  day: number;
+  at: string;
+  gold: number;
+  reputation: number;
+  girls: number;
+}
 export interface ChronicleEntry {
   id: string; day: number; at: string; kind: '魔物' | '少女' | '事件' | '议程' | '代表' | '登记' | '辖区' | '关系';
   title: string; summary: string;
@@ -1331,6 +1339,8 @@ export interface GameState {
   incidentCooldowns: Record<string, number>;
   storylines: Storyline[];
   events: CharacterEvent[];
+  /** v206：已经完成的终局（目前只有离城）。 */
+  endings?: EndingRecord[];
   /** 进行中的诊所治疗。 */
   treatments: Treatment[];
   /** 空白档案开局。 */
@@ -1431,6 +1441,7 @@ export type GameAction =
   | { type: 'deleteStoryTurn'; eventId: string; turnId: string }
   /** v189：`lead` 是所长停在输入框里、没发出去的那一句；结束时要作为最后一轮玩家发言记下来。 */
   | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] }; summary?: string; lead?: string; port?: string }
+  | { type: 'finishEnding'; endingId: 'leave' }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }
   | { type: 'buyItem'; itemId?: string; stockId?: string }

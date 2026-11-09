@@ -43,6 +43,8 @@ import { MeetingPlanDialog } from './components/MeetingPlanDialog';
 import { MeetingRecordsDialog } from './components/MeetingRecordsDialog';
 import { NewsDialog } from './components/NewsDialog';
 import { NewsTicker } from './components/NewsTicker';
+import { EndingProgress } from './components/EndingProgress';
+import { CampaignEndingDialog } from './components/CampaignEndingDialog';
 import { StoryArchiveDialog } from './components/StoryArchiveDialog';
 import { replayEventOf, saveStoryToArchive, type ArchivedStory } from './storyArchive';
 import { EndingDialog } from './components/EndingDialog';
@@ -138,6 +140,7 @@ type Modal =
   | { type: 'meeting-plan' }
   | { type: 'meeting-records' }
   | { type: 'news' }
+  | { type: 'ending'; phase: 'confirm' | 'done' }
   | { type: 'stories' }
   | { type: 'office' };
 
@@ -1795,6 +1798,7 @@ export default function App() {
                 </ul>
               )}
             </aside>
+            <EndingProgress state={state} onOpen={() => setModal({ type: 'ending', phase: (state.endings ?? []).some(item => item.id === 'leave') ? 'done' : 'confirm' })} />
             <div className="shift-badge"><span className="signal-dot" /><span>夜班契约进行中</span><small>第 014 号值班席 · 灵魂天平</small></div>
           </div>
         </PageHeading>
@@ -2002,6 +2006,7 @@ export default function App() {
         onClose={() => setStoryReplay(null)}
       /></div>}
       {modal.type === 'news' && <NewsDialog state={state} news={state.cityNews} busy={newsBusy} presetName={boundPreset('news', presets, binding)?.name} onHost={changeNewsHost} onRefresh={() => void refreshCityNews('manual')} onClose={() => setModal(null)} />}
+      {modal.type === 'ending' && <CampaignEndingDialog phase={modal.phase} state={state} record={(state.endings ?? []).find(item => item.id === 'leave')} onConfirm={() => { if (perform({ type: 'finishEnding', endingId: 'leave' })) setModal({ type: 'ending', phase: 'done' }); }} onClose={() => setModal(null)} />}
       {modal.type === 'meeting-plan' && <MeetingPlanDialog state={state} onStart={plan => {
         const before = new Set(state.events.map(event => event.id));
         const applied = act(state, { type: 'startMeeting', plan });

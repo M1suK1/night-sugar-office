@@ -25,6 +25,7 @@ import {
   applyMergeIncidentPool, applyResolveIncident, applySaveBattleNote, applySetPoolLimit,
 } from './factionOps.ts';
 import { applyAssignFactionRoster } from './rosterOps.ts';
+import { applyFinishEnding } from './endingOps.ts';
 import {
   applyClinic, applyHire, applyHireLeader, applyOpeningFill,
   applyRecallExpedition, applyRehire, applyRenewContract, applyRetire,
@@ -133,6 +134,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'editStoryTurn': return applyEditStoryTurn(state, action);
     case 'deleteStoryTurn': return applyDeleteStoryTurn(state, action);
     case 'finishStorySession': return applyFinishStorySession(state, action);
+    case 'finishEnding': return applyFinishEnding(state, action);
     case 'chooseStoryOption': return applyChooseStoryOption(state, action);
     case 'chooseStoryPort': return applyChooseStoryPort(state, action);
     case 'chooseStoryPassage': return applyChooseStoryPassage(state, action);
