@@ -39,6 +39,7 @@
 .av-supply-title{display:flex;align-items:center;gap:7px;color:#e7d4e2;font-size:11px}
 .av-supply-title svg{color:var(--faction)}
 .av-supply-title span{margin-left:auto;font-size:8px;color:#7e6e88;border:1px solid #f3aec91a;padding:2px 5px;border-radius:3px}
+.av-supply-title .gear-facts-set{flex-shrink:0;white-space:nowrap}
 .av-supply-card p{font-size:9px;line-height:1.75;color:#8c7c96;margin:7px 0 9px;min-height:31px}
 .av-supply-buy{display:flex;align-items:center;gap:8px}
 .av-supply-buy>span{font-size:12px;color:#e8cfe0}
