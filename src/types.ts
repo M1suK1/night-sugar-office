@@ -721,6 +721,8 @@ export interface StoryTurn {
   lines?: StoryLine[];
   /** 模型给下一轮的参考选项；玩家仍可自由输入。 */
   options?: string[];
+  /** 这一轮的总结（≤400 字）；历史上下文只引用它，不回放整段旁白。 */
+  summary?: string;
   /** 这一轮被重写过几次。 */
   rewrites?: number;
   /** 这一轮被玩家手动改过几次（v104）。 */

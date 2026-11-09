@@ -1772,7 +1772,7 @@ ${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\
       const lines = Array.isArray(scene.lines) ? scene.lines.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').slice(0, 5) : [];
       return {
         title: typeof scene.title === 'string' && scene.title.trim() ? scene.title.trim().slice(0, 16) : `第 ${index + 1} 场`,
-        narration: typeof scene.narration === 'string' ? scene.narration.trim().slice(0, 120) : '',
+        narration: typeof scene.narration === 'string' ? scene.narration.trim().slice(0, 220) : '',
         lines: lines.map(line => ({
           speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim().slice(0, 12) : girl.name,
           tone: typeof line.tone === 'string' ? line.tone.trim().slice(0, 10) : '',
@@ -1875,6 +1875,8 @@ const STORY_EXPRESSIONS = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'] a
 
 export interface StoryTurnDraft {
   narration: string;
+  /** 这一轮的总结（提示词 300 字，落库最多 400）；历史只引用它。 */
+  summary: string;
   lines: StoryLine[];
   options: string[];
   bond: number;
@@ -1941,11 +1943,35 @@ export function parseStoryLinesForTest(raw: unknown, cast: { id: string; name: s
   return parseStoryLines(raw, cast, limit);
 }
 
-function storyHistory(turns: StoryTurn[], limit = 8): string {
-  const kept = turns.slice(-limit);
-  return kept.map(turn => turn.role === 'player'
-    ? `所长：${turn.text}`
-    : `${turn.text}${turn.lines?.length ? `\n${turn.lines.map(line => `${line.speakerName}：「${line.text}」`).join('\n')}` : ''}`).join('\n\n');
+/** 历史上下文里每段的摘要上限：提示词要求 300 字，实际容忍到 400。 */
+export const STORY_TURN_SUMMARY_LIMIT = 400;
+
+export function clipStoryRecap(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, STORY_TURN_SUMMARY_LIMIT);
+}
+
+/** 续写轮的总结：提示词按 300 字要求，落库最多 400 字。 */
+export function storyTurnSummary(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim().slice(0, STORY_TURN_SUMMARY_LIMIT) : '';
+}
+
+/**
+ * 此前的对话只引用总结（v215）。
+ *
+ * 开场没有单独总结：用 event.opening 截 400 字代替；之后每轮只取 summary，
+ * 旧存档没有 summary 时用那一轮原文截 400 字兜底。玩家原话不再进历史——
+ * 每轮 summary 已经包含「所长做了什么」。
+ */
+export function storyRecapHistory(event: CharacterEvent, turns: StoryTurn[], limit = 8): string {
+  const narrators = turns.filter(turn => turn.role === 'narrator');
+  const opening = (event.opening ?? narrators[0]?.text ?? '').trim();
+  const lines: string[] = [];
+  if (opening) lines.push(`开场：${clipStoryRecap(opening)}`);
+  for (const turn of narrators.slice(1).slice(-limit)) {
+    const summary = turn.summary?.trim();
+    lines.push(`· ${summary ? summary.slice(0, STORY_TURN_SUMMARY_LIMIT) : clipStoryRecap(turn.text)}`);
+  }
+  return lines.join('\n');
 }
 
 /** 模型没写摘要时的兜底：用标题、轮数、最后一次行动与最后一段正文拼一小段，够当「前情提要」用。 */
@@ -2125,18 +2151,20 @@ export async function generateStoryEnding(
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
   const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
-  const rounds = (event.turns ?? []).filter(turn => turn.role === 'player').length;
+  const turns = event.turns ?? [];
+  const rounds = turns.filter(turn => turn.role === 'player').length;
   const choices = (choice?.options ?? []).slice(0, 4);
+  const hookFallback = !event.opening && !turns.length && event.hookInPrompt !== false && event.hook ? `引子：${event.hook}` : '';
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
+    hookFallback,
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     '【在场的人】',
     briefs || '只有她和你',
     '【此前的对话】',
-    storyHistory(event.turns ?? []) || '（这是第一轮）',
+    storyRecapHistory(event, turns) || '（这是第一轮）',
     choices.length ? `【这一段之后的岔路口】\n必须从这些选项里选一条，作为所长实际走的方向：\n${choices.map(option => `- ${option.id}：${option.label}`).join('\n')}\n只写 id，不要写效果数值。` : '',
     endingLeadBlock(lead),
     rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
@@ -2193,11 +2221,12 @@ export async function generateStoryTurn(
   const cast = storyCast(state, event);
   const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   const turns = event.turns ?? [];
-  const history = storyHistory(turns);
+  const history = storyRecapHistory(event, turns);
+  const hookFallback = !event.opening && !turns.length && event.hookInPrompt !== false && event.hook ? `引子：${event.hook}` : '';
   const playerLine = action.trim().slice(0, 300);
   const context = [
     `【这一段剧情】${event.title}`,
-    event.opening ? `开场：${event.opening.slice(0, 1600)}` : event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
+    hookFallback,
     recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
@@ -2219,6 +2248,7 @@ export async function generateStoryTurn(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
+  const summary = storyTurnSummary(result.raw.summary);
   const lines = parseStoryLines(result.raw.lines, cast, 8);
   // v102：不再因为「太短」把这一轮丢掉——先让玩家看到旁白与台词，觉得不够可以自己重写。
   if (!narration && lines.length === 0) {
@@ -2234,7 +2264,7 @@ export async function generateStoryTurn(
     .slice(0, 3);
   const bondRaw = Number(result.raw.bond);
   const bond = Number.isFinite(bondRaw) ? Math.max(-2, Math.min(2, Math.round(bondRaw))) : 0;
-  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), lines, options: optionList, bond };
+  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), summary, lines, options: optionList, bond };
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${lines.length} 句）`, request: meta.request, response: meta.response });
   return { ok: true, turn };
 }
@@ -2244,7 +2274,7 @@ export interface GeneratedOutfit {
   description: string;
 }
 
-/** 看图写一条衣柜词条：套装名 + 50–90 字的材质/剪裁/配饰描述。 */
+/** 看图写一条衣柜词条：套装名 + 60–120 字的材质/剪裁/配饰描述。 */
 export async function generateOutfitDescription(config: LlmConfig, portrait: string, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedOutfit } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};

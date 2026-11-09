@@ -681,7 +681,7 @@ export default function App() {
       // 表现就是「引擎显示生成成功，但界面里一个字都没有」。
       let appendError = '';
       setState(prev => {
-        const turn: StoryTurn = { id: `turn-n-${Date.now().toString(36)}`, role: 'narrator', text: result.turn.narration, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
+        const turn: StoryTurn = { id: `turn-n-${Date.now().toString(36)}`, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
         const applied = act(prev, { type: 'appendStoryTurn', eventId, turn });
         if (!applied.ok) { appendError = applied.message; return prev; }
         if (!gains) return applied.state;
@@ -737,7 +737,7 @@ export default function App() {
       const context: CharacterEvent = { ...event, turns: turns.slice(0, index) };
       const result = await generateStoryTurn(config, state, context, action, taskRuntime(boundPreset('arc', presets, binding), 'arc'), { rewrite: true });
       if (!result.ok) { notify(result.message, false); return false; }
-      const turn: StoryTurn = { id: turnId, role: 'narrator', text: result.turn.narration, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
+      const turn: StoryTurn = { id: turnId, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
       setState(prev => { const applied = act(prev, { type: 'replaceStoryTurn', eventId, turnId, turn }); return applied.ok ? applied.state : prev; });
       return true;
     } finally {

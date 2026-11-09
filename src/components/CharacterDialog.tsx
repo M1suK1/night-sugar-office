@@ -3,7 +3,7 @@ import { rules } from '../balance';
 import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
 import type { Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionOutfits, expressionVariantKey } from '../expressions';
-import { planForSlot } from '../storyplan';
+import { orderStorylinesBySlot, planForSlot } from '../storyplan';
 import { activePersonality } from '../personality';
 import { WITCH_STAGE_AT, activeSetOf, corruptionEmpathyPenalty, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { findEquipmentSet } from '../content/sets';
@@ -145,7 +145,8 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const current = storyline ? storyline.beats.find(item => item.status !== 'done') ?? storyline.beats[storyline.beats.length - 1] : undefined;
   const beat = waitingMission ?? current ?? (storyline ? storyline.beats[storyline.stage] : undefined);
   // 三段各一张蓝图：面板上说的是「下一段」那张图（第 1 段没写就是它）。
-  const finishedStories = state.storylines.filter(item => item.girlId === girl.id && item.status === 'done').length;
+  const doneStories = orderStorylinesBySlot(state.storylines.filter(item => item.girlId === girl.id && item.status === 'done'));
+  const finishedStories = doneStories.length;
   const nextSlot = Math.max(1, Math.min(3, finishedStories + 1));
   const slotPlan = planForSlot(girl, nextSlot);
   const planGraph = slotPlan?.graph;
@@ -384,7 +385,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <ol className="story-slots" id="dossier-story-slots">
                 {Array.from({ length: 3 }, (_, index) => {
                   const slot = index + 1;
-                  const done = state.storylines.filter(item => item.girlId === girl.id && item.status === 'done')[index];
+                  const done = doneStories[index];
                   const active = storyline && (storyline.slot ?? 1) === slot ? storyline : undefined;
                   const label = active ? '进行中' : done ? (done.ending ? `结局：${done.ending}` : '已收束') : '未开启';
                   return (

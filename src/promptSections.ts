@@ -75,7 +75,7 @@ export const SECTION_PROMPTS: PromptEntry[] = [
 7. incident 的选项 id 固定写 o1、o2、o3；每个选项对应一条 fromPort 相同的边。incident 不写选项时，用一条 fromPort="out"。
 8. opinion 固定两个分支：accept 与 reject 各一条出边，fromPort 分别写 accept / reject。
    不要写 defer，暂缓由系统处理、不走剧情线。`),
-  section('sl-nodes', 'storyline', '蓝图·节点写法', "【各节点 data 的写法】\n- start: {\"kind\":\"start\"}\n- choice: {\"kind\":\"choice\",\"prompt\":\"她在等你怎么回应\",\"options\":[{\"id\":\"a\",\"label\":\"选项文案\",\"intent\":\"这个选择意味着什么\",\"effect\":{\"bond\":2}},{\"id\":\"b\",\"label\":\"另一个选项\",\"intent\":\"\",\"effect\":{\"bond\":-1,\"corruption\":1}}]}\n  · 2–4 个选项；id 只能是 a/b/c/d。effect 可用 bond −12…12、gold −800…800、reputation −10…10、corruption −10…10。\n- mission: {\"kind\":\"mission\",\"spec\":{\"title\":\"\",\"goal\":\"她要在这场委托里做到什么，写具体\",\"work\":\"combat / investigation\",\"difficulty\":\"简单|常规|棘手|危险\"}}\n  · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；\n    战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。\n- event: {\"kind\":\"event\",\"title\":\"\",\"hook\":\"一句引子\",\"cast\":[\"名册里的角色 id\"],\"opening\":\"250–350 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档\"}\n  · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。\n  · backdrop 只能取：{{backdrops}}。必须和 opening 里写的地点一致：室内用 room:*，街区用辖区 id；不确定就写她此刻站的那块地。\n  · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。\n- incident（强制弹窗：必须现在拿主意，或必须先看一眼的事）:\n  {\"kind\":\"incident\",\"spec\":{\"kind\":\"faction\",\"title\":\"不超过 14 字\",\"body\":\"60–160 字，写清谁在施压、要什么、不答应会怎样\",\"faction\":\"witch / association / government\",\"district\":\"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks\",\"options\":[{\"label\":\"答应\",\"hint\":\"一句代价\",\"effect\":{\"gold\":-200,\"reputation\":2}},{\"label\":\"拒绝\",\"hint\":\"一句代价\",\"effect\":{\"reputation\":-3,\"faction\":{\"id\":\"government\",\"standing\":-2}}}]}}\n  · spec.kind 只能是 faction / environment / girl。\n  · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。\n  · 不给选项就是一张纯通报卡，玩家点「知道了」继续。\n- opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:\n  {\"kind\":\"opinion\",\"spec\":{\"topic\":\"私人心愿\",\"title\":\"不超过 14 字\",\"text\":\"60–140 字，写清她要什么、为什么现在提\",\"request\":\"一句话说明她要你答应什么\",\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"批准之后会发生什么，一句话\"},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"驳回之后会发生什么，一句话\"}]}}\n  · options 只能有 accept 与 reject 两项；节点上对应两条出边，fromPort 分别是 accept 与 reject。\n  · 暂缓（defer）由程序固定补，不占端口、不推进剧情——不要写。\n  · topic 只能是 经费 / 排班 / 设施 / 同伴 / 城市 / 私人心愿。\n- reward（一次结算：数值 + 可能的特性 + 可能的一件装备）: {\"kind\":\"reward\",\"effect\":{\"bond\":2,\"gold\":0},\"equipmentTier\":3}\n  · effect 可用：bond −12…12、gold −800…800、reputation −10…10、corruption −10…10、growth{magic|insight|agility|empathy 各 −3…3}、trait{name≤16字, description≤60字}、buff{name, stat, amount ≤6, days 1…5}。\n  · equipmentTier 可选，1–5 的整数：写 3 就是「一件三阶装备」，具体哪一件由程序随机发放；不写即不给装备。\n  · 全图 gold 合计不超过 800，bond 合计不超过 12。不要写 skill、装备名字或装备属性。\n- wait: {\"kind\":\"wait\",\"days\":0,\"minutes\":60}（days 0–14，minutes 0–1440）\n- end: {\"kind\":\"end\",\"summary\":\"这条结局收在哪里\",\"ending\":\"两三个字的结局名，同一张图里不能重复\"}"),
+  section('sl-nodes', 'storyline', '蓝图·节点写法', "【各节点 data 的写法】\n- start: {\"kind\":\"start\"}\n- choice: {\"kind\":\"choice\",\"prompt\":\"她在等你怎么回应\",\"options\":[{\"id\":\"a\",\"label\":\"选项文案\",\"intent\":\"这个选择意味着什么\",\"effect\":{\"bond\":2}},{\"id\":\"b\",\"label\":\"另一个选项\",\"intent\":\"\",\"effect\":{\"bond\":-1,\"corruption\":1}}]}\n  · 2–4 个选项；id 只能是 a/b/c/d。effect 可用 bond −12…12、gold −800…800、reputation −10…10、corruption −10…10。\n- mission: {\"kind\":\"mission\",\"spec\":{\"title\":\"\",\"goal\":\"她要在这场委托里做到什么，写具体\",\"work\":\"combat / investigation\",\"difficulty\":\"简单|常规|棘手|危险\"}}\n  · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；\n    战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。\n- event: {\"kind\":\"event\",\"title\":\"\",\"hook\":\"一句引子\",\"cast\":[\"名册里的角色 id\"],\"opening\":\"300–500 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档\"}\n  · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。\n  · backdrop 只能取：{{backdrops}}。必须和 opening 里写的地点一致：室内用 room:*，街区用辖区 id；不确定就写她此刻站的那块地。\n  · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。\n- incident（强制弹窗：必须现在拿主意，或必须先看一眼的事）:\n  {\"kind\":\"incident\",\"spec\":{\"kind\":\"faction\",\"title\":\"不超过 14 字\",\"body\":\"60–160 字，写清谁在施压、要什么、不答应会怎样\",\"faction\":\"witch / association / government\",\"district\":\"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks\",\"options\":[{\"label\":\"答应\",\"hint\":\"一句代价\",\"effect\":{\"gold\":-200,\"reputation\":2}},{\"label\":\"拒绝\",\"hint\":\"一句代价\",\"effect\":{\"reputation\":-3,\"faction\":{\"id\":\"government\",\"standing\":-2}}}]}}\n  · spec.kind 只能是 faction / environment / girl。\n  · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。\n  · 不给选项就是一张纯通报卡，玩家点「知道了」继续。\n- opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:\n  {\"kind\":\"opinion\",\"spec\":{\"topic\":\"私人心愿\",\"title\":\"不超过 14 字\",\"text\":\"60–140 字，写清她要什么、为什么现在提\",\"request\":\"一句话说明她要你答应什么\",\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"批准之后会发生什么，一句话\"},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"驳回之后会发生什么，一句话\"}]}}\n  · options 只能有 accept 与 reject 两项；节点上对应两条出边，fromPort 分别是 accept 与 reject。\n  · 暂缓（defer）由程序固定补，不占端口、不推进剧情——不要写。\n  · topic 只能是 经费 / 排班 / 设施 / 同伴 / 城市 / 私人心愿。\n- reward（一次结算：数值 + 可能的特性 + 可能的一件装备）: {\"kind\":\"reward\",\"effect\":{\"bond\":2,\"gold\":0},\"equipmentTier\":3}\n  · effect 可用：bond −12…12、gold −800…800、reputation −10…10、corruption −10…10、growth{magic|insight|agility|empathy 各 −3…3}、trait{name≤16字, description≤60字}、buff{name, stat, amount ≤6, days 1…5}。\n  · equipmentTier 可选，1–5 的整数：写 3 就是「一件三阶装备」，具体哪一件由程序随机发放；不写即不给装备。\n  · 全图 gold 合计不超过 800，bond 合计不超过 12。不要写 skill、装备名字或装备属性。\n- wait: {\"kind\":\"wait\",\"days\":0,\"minutes\":60}（days 0–14，minutes 0–1440）\n- end: {\"kind\":\"end\",\"summary\":\"这条结局收在哪里\",\"ending\":\"两三个字的结局名，同一张图里不能重复\"}"),
   section('sl-heroine', 'storyline', '蓝图·她是谁', "【她是谁】\n{{heroine}}\n\n【她的过往】\n{{history.storylines}}\n{{history.missions:6}}\n{{history.chat:8}}\n\n【可以点名的人】\n{{girls}}\n\n【不 OOC 的边界】\n1. 只用这里写到的信息；没写的事她不知道，不要替她编经历、亲友或秘密。\n2. 用她的语气参考与说话方式，不要写成通用温柔女主腔。\n3. 能力只按档案里的三技能与特性，不临时加新技能或新形态。\n4. 状态要影响她：疲劳高就迟钝，侵蚀高就偏执，疤痕多则心防低、更容易被戳痛。\n5. 距离感按羁绊阶段（疏离 → 戒备 → 平常 → 亲近 → 依恋 → 爱意），别一上来就交底。\n6. 魔女化形态用魔女化人格，普通形态用原人格，不要混。\n7. 引用过往时可以回指（「上次那条巷子」），但不要逐条复述历史。\n8. 不替所长说话、不做决定。\n9. 全程使用第三人称。"),
   section('sl-guard', 'storyline', '蓝图·不要与自检', "【不要】\n不要给 x、y、边 id、颜色、note 或任何额外字段；不要输出注释、解释或 Markdown 代码块。\n\n【提交前自检——逐条对照，全部通过再输出】\n1. 所有 kind 都在九种之内，且没有 scene。\n2. 每个 choice 的选项 id 都是 a/b/c/d；每个选项在 edges 里都有且只有一条 fromPort 完全相同的边。\n3. edges 里每条的 fromPort，都能在 from 指向的节点里找到同名出口；出现 trust_calc、defy_fate 这类名字就说明写错了。\n4. 每个 mission 恰好一条 success、一条 failure。\n5. 每个 incident：有选项就每个 o1/o2/o3 各一条同名边，没选项就一条 out。\n6. 每个 opinion 恰好 accept 与 reject 两条边——批准走一条，驳回走另一条。\n7. start 只有一条 out；end 没有任何出边；其余非 end 节点至少一条出边。\n8. 从 start 出发能走到每一个节点，且每条路径都能到某个 end；没有环。\n\n【如果这是返修】\n若请求里出现【必须修正的问题】，逐条按它改：只补边、不改选项 id、不新增端口、不删节点；仍然只输出完整 JSON。"),
   section('dy-catalog', 'daily', '提案·今晚的目录', `【今晚的机制目录】
@@ -138,7 +138,7 @@ export const SECTION_PROMPTS: PromptEntry[] = [
   section('dy-repair', 'daily', '提案·返修策略', `【如果这是返修】
 若请求里出现【必须修正的问题】，逐条按它改：只补不删、所有 id 仍取上面的目录、不新增字段、不要改选项 id；仍然只输出一个完整的 JSON 对象。`),
   section('chat-heroine', 'chat', '对话·她是谁', `${HEROINE_BLOCK.replace('{{history.chat:8}}', '{{history.battles:3}}')}`),
-  section('nw-brief', 'news', '新闻·今晚的城市', "【今晚的城市】\n{{night}}\n\n【三方势力】\n{{factions}}\n\n【辖区污染】\n{{districts}}\n\n【势力敌意】\n{{hostility}}\n\n【会客厅待议】\n{{council}}\n【具体写法】\n- 这是一档深夜访谈节目：用主持人与嘉宾之间的对话侧面描写城市的状况，同时体现各个角色的特点和不同的立场。不要在台词中出现旁白、舞台提示，具体数据也不要写成一条条短讯。\n- 主持人先开场一句，把话头抛给嘉宾。之后嘉宾之间要接话、反驳或赞同，当嘉宾吵起来的时候主持人要及时圆场，最后由主持人收束。lines 给 6–10 句，每句不超过 60 字。\n- 每句话都不要提及具体的数字，要从火气、污染读数、安定度、事务所的星砂与人数等推测场所的形势，并从每个人不同的立场发表意见。\n- 角色要有真实感、活人感，别为了强调人设让角色变得不真实。嗯，就是要更多的情感驱动而不是逻辑驱动，语言要直白生活化贴近日常，别说些莫名其妙的听不懂的话。\n- 称呼所长时用他的名字或「所长」，不编造名单外的人与不存在的辖区。"),
+  section('nw-brief', 'news', '新闻·今晚的城市', "【今晚的城市】\n{{night}}\n\n【三方势力】\n{{factions}}\n\n【辖区污染】\n{{districts}}\n\n【势力敌意】\n{{hostility}}\n\n【会客厅待议】\n{{council}}\n【具体写法】\n- 这是一档深夜访谈节目：用主持人与嘉宾之间的对话侧面描写城市的状况，同时体现各个角色的特点和不同的立场。不要在台词中出现旁白、舞台提示，具体数据也不要写成一条条短讯。\n- 主持人先开场一句，把话头抛给嘉宾。之后嘉宾之间要接话、反驳或赞同，当嘉宾吵起来的时候主持人要及时圆场，最后由主持人收束。lines 给 6–10 句，每句不超过 80 字。\n- 每句话都不要提及具体的数字，要从火气、污染读数、安定度、事务所的星砂与人数等推测场所的形势，并从每个人不同的立场发表意见。\n- 角色要有真实感、活人感，别为了强调人设让角色变得不真实。嗯，就是要更多的情感驱动而不是逻辑驱动，语言要直白生活化贴近日常，别说些莫名其妙的听不懂的话。\n- 称呼所长时用他的名字或「所长」，不编造名单外的人与不存在的辖区。"),
   section('arc-brief', 'arc', '剧情·这一幕的写法', `【这一幕的写法】
 - 只写本场主角自己的故事：其他契约少女可以出场当同事、对手或见证者，但亲密与告白只能落在她身上，不要替别人推进关系。
 - 这条故事线最多三段；同一个人第二、三段要接住上一段留下的东西，别当作全新开场。
@@ -187,8 +187,8 @@ export function arcContract(targets: string): string {
 export function arcEndingContract(choice?: { id: string; label: string }[]): string {
   const allowed = (choice ?? []).slice(0, 4);
   const shape = allowed.length
-    ? `{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":"","choice":"${allowed[0].id}"}`
-    : '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"summary":""}';
+    ? `{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","after":0,"mode":"speech|thought"}],"summary":"","choice":"${allowed[0].id}"}`
+    : '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","after":0,"mode":"speech|thought"}],"summary":""}';
   const branch = allowed.length
     ? [
       `choice 只能取：${allowed.map(option => option.id).join('、')}；按此前的对话判断所长实际走向了哪一条，不要空着，也不要自创 id。`,
@@ -202,6 +202,7 @@ export function arcEndingContract(choice?: { id: string; label: string }[]): str
     ...branch,
     'narration 400–900 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。',
     'lines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。',
+    'after 必填：这句台词插在旁白的第几段之后（0 = 旁白最前面；narration 要分段，段间用换行，从 0 数）。每句贴着她开口的那一段，不要几句都填同一个数，也不要全塞在最前或最后。',
     'summary 150–300 字：把**这一整段**（不只是结尾）压成一段前情提要——发生了什么、关系推进到哪、留下什么未解的事。以后只引用这段摘要，不再回看原文。',
     '不要写数值、伤害、技能名，也不要写「第几轮」。',
   ].join('\n');
@@ -245,7 +246,7 @@ export function arcOpeningContract(): string {
 
 /** 交互式续写的锁定契约。 */
 export function arcTurnContract(): string {
-  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 60 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白必须先把她推到选择的门口：写清她停下来的动作、看着的人、以及没说出口的那半个问题——不要让选项悬在没有任何铺垫的叙述后面。";
+  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"after\":0,\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0,\"summary\":\"\"}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 60 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nsummary 不超过 300 字：把这一轮压成一段给下一轮用的前情——所长做了什么、她怎么回应、局面推进到哪；之后的历史只引用它。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白必须先把她推到选择的门口：写清她停下来的动作、看着的人、以及没说出口的那半个问题——不要让选项悬在没有任何铺垫的叙述后面。";
 }
 
 /** 战斗札记的锁定契约：JSON 骨架、台词上限与「不写数值」的硬规则。 */
@@ -255,7 +256,7 @@ export function battleContract(): string {
 
 /** 城市新闻的锁定契约：访谈的 JSON 骨架、句数与枚举。 */
 export function newsContract(): string {
-  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 20 字的标题\",\"lines\":[{\"speakerId\":\"主持人或嘉宾的 id\",\"text\":\"一句话\"}],\"items\":[{\"text\":\"一条要闻\",\"tone\":\"faction|pollution|stability|street\"}]}\n注意格式：\nspeakerId 只能取用户消息里列出的那几个人；不要自己编人名，不要写旁白、括号动作或「（沉默）」这类舞台提示。\nitems 给 1–3 条，同样不要写数字，用具体的人、地点和动作说清发生了什么，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。"
+  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：\n{\"headline\":\"不超过 28 字的标题\",\"lines\":[{\"speakerId\":\"主持人或嘉宾的 id\",\"text\":\"一句话\"}],\"items\":[{\"text\":\"一条要闻\",\"tone\":\"faction|pollution|stability|street\"}]}\n注意格式：\nspeakerId 只能取用户消息里列出的那几个人；不要自己编人名，不要写旁白、括号动作或「（沉默）」这类舞台提示。\nitems 给 1–3 条，同样不要写数字，用具体的人、地点和动作说清发生了什么，tone 四选一：faction 势力、pollution 污染、stability 安定度、street 街头。"
 }
 
 /** 灯下私语这一轮的 user 指令（原来是写死在 llm.ts 里的字符串）。 */
@@ -268,7 +269,7 @@ export function outfitContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
     '{"name":"","description":""}',
-    '要求：name 是 4–10 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 50–90 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。',
+    '要求：name 是 4–14 个汉字的套装名，像「莓色夜巡」「糖纸披风」；description 60–120 字，写颜色、材质、剪裁、配饰与整体气质，用夜糖事务所的口吻，不要出现现实品牌、地名或数值。',
   ].join('\n');
 }
 
@@ -318,8 +319,8 @@ export function incidentBatchContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：',
     '{"entries":[{"category":"report|decision|scene","kind":"faction|environment|girl","title":"","body":"","trigger":{"kind":"dayStart|wave|missionDone","wave":1,"work":"combat|investigation"},"girlId":"","district":"","faction":"association|government|witch","ttlMinutes":240,"options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"faction":{"id":"association|government|witch","standing":0},"girl":{"bond":0}}}]}]}',
-    '要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 60–120 字的场景。',
-    'title 2–14 字，body 30–120 字，写出具体的人、地点与时间压力。',
+    '要求：2 到 3 条；category 至少一条是 report（纯通报，options 给空数组）；decision 给 2 到 3 个选项，代价与收益各不相同；scene 写一段 80–160 字的场景。',
+    'title 2–14 字，body 40–160 字，写出具体的人、地点与时间压力。',
     '【trigger.kind 必填】dayStart＝开门前已经摆在桌上（通报与必须当场决定的事）；wave＝某个时段敲门，写 wave 0/1/2 对应 20:00 / 22:00 / 00:00；missionDone＝某类委托收尾时等在门口，可用 work 与 district 收窄。认不出的触发会按类别兜底，但请照写。',
     '【kind 必填】faction＝势力施压（配 faction）；environment＝环境异变（配 district）；girl＝某位少女出事（配 girlId，只能取自【值夜名册】）。',
     '【出场角色】正文里出现的人必须是名册上的契约者或三方首领，名字照抄，不要写名单外的人，也不要让空月这类非人存在说话。',
@@ -384,21 +385,21 @@ export function dailyContract(): string {
 export function singleIncidentContract(): string {
   return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","body":"","options":[{"label":"","hint":"","effect":{"gold":0,"reputation":0,"girl":""}}]}
-要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–120 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
+要求：恰好 3 个选项，代价与收益各不相同（一个付钱、一个付人情、一个硬扛）；body 60–160 字，写出具体的人、地点与时间压力；不要出现需要额外数值系统的效果。`;
 }
 
 /** 私人事件的锁定契约：两场、台词的插入位置。以前写死在 generateEvent 的正文里。 */
 export function eventContract(): string {
   return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
 {"title":"","hook":"","backdrop":"","scenes":[{"title":"","narration":"","lines":[{"speaker":"","tone":"","text":"","after":0}]}]}
-要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 2–4 行；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
+要求：恰好 2 场；speaker 只能是角色名或「你」；tone 是「轻声」「停顿」「笑」这类表演提示；每场 80–220 字旁白、2–4 行台词，每句不超过 120 字；after 必填，写这句台词插在旁白的第几段之后（0 = 旁白最前面，按 narration 空行分段、从 0 数），不要全堆在旁白后面。`;
 }
 
 /** 魔女化形态的锁定契约：形态名、可见特征与魔女化人格。以前写死在 generateWitchFormProfile 的正文里。 */
 export function witchFormContract(): string {
   return `【JSON 形状】只输出一个 JSON 对象，不要 Markdown 代码块：
 {"name":"","description":"","personality":""}
-要求：name 以「魔女化 · 」开头，后面接 2–6 个汉字的形态核心词；description 40–90 字，只写这张立绘上看得见的东西——轮廓、材质、光、可动的部件与它给人的压迫感，不写数值、技能或战斗规则；personality 120–260 字，是她在魔女化状态下的人格：保留原本的执念，但把它扭曲成占有、多疑与不肯放手，写清她说话的方式与对所长提出的要求，不要变成另一个人。`;
+要求：name 以「魔女化 · 」开头，后面接 2–6 个汉字的形态核心词；description 40–100 字，只写这张立绘上看得见的东西——轮廓、材质、光、可动的部件与它给人的压迫感，不写数值、技能或战斗规则；personality 120–260 字，是她在魔女化状态下的人格：保留原本的执念，但把它扭曲成占有、多疑与不肯放手，写清她说话的方式与对所长提出的要求，不要变成另一个人。`;
 }
 
 /**
@@ -409,6 +410,6 @@ export function profileSchemaContract(): string {
   return `只输出一个 JSON 对象，不要 Markdown 代码块。字段：
 {"name":"","codename":"","title":"","element":"星光系|糖霜系|月影系|梦境系|自然系|赤焰系","archetype":"输出|守护|治愈|控制|侦查","quote":"","goal":"","appearance":"","personality":"","outfitDescription":"","color":"#RRGGBB（代表色，避开常见的荧光粉）","focus":"magic|insight|agility|empathy","skillIds":["","",""],"traits":[{"name":"","description":"","polarity":"positive|negative|neutral"}]}
 skillIds 只能从上面【可用主动技能】里选三个主动技能（不要选被动，也不许自己造 id）
-traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–40 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
+traits 必须由你自己写满三条：每条 2–6 个字的名称 + 一句 20–60 字的行为解释，必须与立绘和气质吻合；不要从任何现成列表里挑，也不要重复已有的常见词。
 voice 字段长这样：{"tone":"","habits":["",""],"samples":["","",""]}。${profileVoiceRule()}`;
 }

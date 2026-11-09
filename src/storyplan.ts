@@ -11,6 +11,15 @@ export const STORY_PLAN_BEATS = 4;
 /** 每位契约少女最多三段故事，前一段讲完才开下一段。 */
 export const STORY_SLOT_MAX = 3;
 
+/**
+ * 按段号排故事线（v214）。
+ * `state.storylines` 是新段在前（unshift），直接按下标取会把她第二段的标题
+ * 放到「第 1 段」上。展示前先按 slot 翻回正序；没有段号的老数据按第 1 段算。
+ */
+export function orderStorylinesBySlot<T extends { slot?: number; day: number }>(list: readonly T[]): T[] {
+  return [...list].sort((a, b) => (a.slot ?? 1) - (b.slot ?? 1) || a.day - b.day);
+}
+
 export function storyPlanTemplate(title = '', premise = ''): StoryPlan {
   return {
     title,
