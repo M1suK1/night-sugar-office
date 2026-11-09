@@ -2101,7 +2101,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     return { ok: false, message };
   }
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
-  const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 24)).filter(Boolean).slice(0, 3);
+  const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
   // v191：叙事者写这一段时顺手选的背景；认不出来就不用，交给辖区/房间的旧规则。
   return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
@@ -2229,7 +2229,7 @@ export async function generateStoryTurn(
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const optionList = rawOptions
     .filter((item): item is string => typeof item === 'string')
-    .map(item => item.trim().slice(0, 24))
+    .map(item => item.trim().slice(0, 60))
     .filter(Boolean)
     .slice(0, 3);
   const bondRaw = Number(result.raw.bond);

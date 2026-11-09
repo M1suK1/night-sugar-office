@@ -979,6 +979,8 @@ export interface Mission {
   storyGoal?: string;
   /** 必须编入小队的少女（故事线指定同行者）。 */
   requiredGirlId?: string;
+  /** v209：阶段委托后面接角色剧情时，剧情 cast 里的可编队角色都必须随行。 */
+  storyCastIds?: string[];
   /** 完成后发放的专属装备 id（已登记进物品表）。 */
   rewardEquipmentId?: string;
   /** 完成后免费加入事务所的契约者等级；0 或未设置表示没有这项奖励。 */

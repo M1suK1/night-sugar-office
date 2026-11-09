@@ -238,14 +238,14 @@ export function arcOpeningContract(): string {
     '{"narration":"","lines":[{"speakerId":"","expression":"smile","text":"","mode":"speech|thought"}],"options":["","",""],"backdrop":""}',
     'backdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。',
     'expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。',
-    'narration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 24 字、用「你……」开头。',
+    'narration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 60 字、用「你……」开头。',
     '不要写数值与技能名。',
   ].join('\n');
 }
 
 /** 交互式续写的锁定契约。 */
 export function arcTurnContract(): string {
-  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 24 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白必须先把她推到选择的门口：写清她停下来的动作、看着的人、以及没说出口的那半个问题——不要让选项悬在没有任何铺垫的叙述后面。";
+  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 60 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白必须先把她推到选择的门口：写清她停下来的动作、看着的人、以及没说出口的那半个问题——不要让选项悬在没有任何铺垫的叙述后面。";
 }
 
 /** 战斗札记的锁定契约：JSON 骨架、台词上限与「不写数值」的硬规则。 */

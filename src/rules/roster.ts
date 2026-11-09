@@ -68,9 +68,10 @@ export function chance(girl: Girl, mission: Mission): number {
  */
 export function squadLimit(mission: Mission): number {
   const cap = loadBalance().squadLimit;
-  if (mission.work !== 'combat') return Math.max(1, Math.min(cap, 2));
+  const cast = mission.storyCastIds?.length ?? 0;
+  if (mission.work !== 'combat') return Math.max(1, Math.min(cap, 2), cast);
   const monsters = mission.enemyIds?.length ?? 0;
-  return Math.max(cap, monsters);
+  return Math.max(cap, monsters, cast);
 }
 
 export function squadChance(girls: Girl[], mission: Mission): number {

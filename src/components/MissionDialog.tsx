@@ -35,7 +35,8 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
   const [selected, setSelected] = useState<string[]>(initial && canGo(initial).ok ? [initial.id] : []);
   const limit = squadLimit(mission);
   const squad = selected.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
-  const squadReady = squad.length > 0 && squad.every(g => canGo(g).ok) && squad.length <= limit;
+  const castReady = (mission.storyCastIds ?? []).every(id => selected.includes(id));
+  const squadReady = squad.length > 0 && squad.every(g => canGo(g).ok) && squad.length <= limit && castReady;
   const chanceValue = squadChance(squad, mission);
   const assigned = mission.squad.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const lastBattle = state.battles.find(item => item.missionId === mission.id);
@@ -120,9 +121,10 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <section className="mission-story" aria-label="故事委托的目标">
           <div className="modal-section-heading"><h3><Sparkles size={14} />故事委托</h3><small>这一幕的明确目标</small></div>
           <p>{mission.storyGoal}</p>
-          {mission.requiredGirlId && (
+          {(mission.requiredGirlId || mission.storyCastIds?.length) && (
             <div className="story-grants">
-              <span>同行：{state.girls.find(girl => girl.id === mission.requiredGirlId)?.name ?? state.candidates.find(girl => girl.id === mission.requiredGirlId)?.name ?? '指定契约者'}</span>
+              {mission.requiredGirlId && <span>同行：{state.girls.find(girl => girl.id === mission.requiredGirlId)?.name ?? state.candidates.find(girl => girl.id === mission.requiredGirlId)?.name ?? '指定契约者'}</span>}
+              {mission.storyCastIds?.length ? <span>剧情同行：{mission.storyCastIds.map(id => state.girls.find(girl => girl.id === id)?.name ?? id).join('、')}</span> : null}
             </div>
           )}
         </section>

@@ -151,13 +151,14 @@ export function storylineHistoryText(state: GameState | undefined, girl: Girl, l
     }).join(' → ');
     const current = story.status === 'active' ? story.beats.find(beat => beat.status !== 'done') : undefined;
     return [
-      `- 第 ${story.slot ?? 1} 段「${story.title}」（${status}）：${story.premise?.slice(0, 60) ?? ''}`,
+      `- 第 ${story.slot ?? 1} 段「${story.title}」（${status}）：${story.premise?.trim() ?? ''}`,
       walkText ? `  已走过：${walkText}` : '',
       story.ending ? `  结局：${story.ending}` : '',
       current ? `  现在停在：${current.title}` : '',
     ].filter(Boolean).join('\n');
   });
-  return fitLines(lines, 320, { fromEnd: true, omitted: count => `（还有 ${count} 段更早的故事线未列出）` });
+  const budget = Math.min(1400, Math.max(320, ordered.length * 520));
+  return fitLines(lines, budget, { fromEnd: false, omitted: count => `（还有 ${count} 段更早的故事线未列出）` });
 }
 
 /** 聊天记录：她与所长说过的话，按时间正序取最近 N 条。 */

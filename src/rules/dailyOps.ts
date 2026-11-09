@@ -61,6 +61,11 @@ export function dispatch(state: GameState, girlIds: string[], missionId: string)
   const next = clone(state);
   const mission = next.missions.find(m => m.id === missionId);
   if (!mission || mission.status !== 'open') return { state, ok: false, message: '这项委托当前无法接取。' };
+  const missingCast = (mission.storyCastIds ?? []).filter(id => !girlIds.includes(id));
+  if (missingCast.length) {
+    const names = missingCast.map(id => findGirl(next, id)?.name ?? id).join('、');
+    return { state, ok: false, message: `这份委托要求${names}同行，先把她编进小队。` };
+  }
   if (mission.requiredGirlId && !girlIds.includes(mission.requiredGirlId)) {
     const partner = findGirl(next, mission.requiredGirlId) ?? next.candidates.find(girl => girl.id === mission.requiredGirlId);
     return { state, ok: false, message: `这份委托要求${partner?.name ?? '指定的契约者'}同行，先把她编进小队。` };

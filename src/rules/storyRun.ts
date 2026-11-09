@@ -9,6 +9,7 @@ import { endingLabel, ensureGraph, graphBeats } from '../storygraph.ts';
 import { absoluteMinutes, deadlineFor } from '../shift.ts';
 import { buildNodeIncident, stampIncident } from './storyIncidents.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
+import { storyCastAfterMission } from './storyChoice.ts';
 import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
 import { pickEquipmentOfTier, pickMissionTemplate } from '../nightPick.ts';
 import { pickCandidateSkills } from '../skills.ts';
@@ -238,6 +239,7 @@ export function planToStoryline(girl: Girl, plan: StoryPlan, day: number, minute
 
 export function storyMissionForBeat(state: GameState, story: Storyline, beat: StoryBeat): Mission {
   const spec = beat.mission;
+  const storyCastIds = storyCastAfterMission(story, beat.id, state);
   const rank = storyRank[spec?.difficulty ?? '常规'] ?? 2;
   // v47：只写了 work 的阶段委托，从真实委托模板里抽一条：数值与敌人组合都照搬，描述用模型写的 goal。
   const picked = spec?.work && !spec.monsters?.length
@@ -295,6 +297,7 @@ export function storyMissionForBeat(state: GameState, story: Storyline, beat: St
     storyBeatId: beat.id,
     storyGoal: (spec?.goal ?? `完成「${beat.title}」：${beat.hook}`).slice(0, 200),
     requiredGirlId: companionId ?? spec?.requiredGirlId,
+    storyCastIds,
     rewardEquipmentId: spec?.rewardEquipment ? registerItem({ ...spec.rewardEquipment, id: spec.rewardEquipment.id || `relic-${hashText(`${story.id}:${beat.id}`).toString(16)}` }).id : undefined,
   };
 }
