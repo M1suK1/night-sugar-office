@@ -212,7 +212,7 @@ export async function testLlmConnection(config: LlmConfig): Promise<{ ok: boolea
 export async function generateDaily(config: LlmConfig, state: GameState, context?: string, preset?: PresetRuntime): Promise<{ ok: true; data: NightProposalV2; warnings: string[] } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateDailyCore(config, state, context, preset, meta);
+  const result = await generateDailyCore(config, state, context ? expandRandomMacros(context) : context, preset, meta);
   recordLlmLog({
     kind: '每日提案', ok: result.ok, model: logModel(meta, config), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
@@ -236,7 +236,7 @@ export interface GirlResearch {
 export async function generateGirlProfile(config: LlmConfig, portrait?: string, hint?: string, preset?: PresetRuntime, research?: GirlResearch): Promise<{ ok: true; data: GeneratedGirlProfile } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const result = await generateGirlProfileCore(config, portrait, hint, preset, meta, research);
+  const result = await generateGirlProfileCore(config, portrait, hint ? expandRandomMacros(hint) : hint, preset, meta, research);
   recordLlmLog({
     kind: '角色起草', ok: result.ok, model: logModel(meta, config), status: result.ok ? 200 : statusOf(result.message),
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(config),
@@ -390,6 +390,8 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     role: message.role === 'player' ? 'user' as const : 'assistant' as const,
     content: message.action ? `${message.text}\n（${message.action}）` : message.text,
   }));
+  // v248：玩家这句话里的 {{random}} / {{color}} 在发出去之前展开；存档里保留原文。
+  const spoken = expandRandomMacros(text);
   // v49：她的档案与过往由 chat 分区的宏供给，这里只留这次见面的场景。
   const body = remote
     ? '你们正在通电话，她退役后住在城南家中；电话那头有很轻的电流声。'
@@ -397,7 +399,7 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
   const MAX_CONTEXT = runtime.maxContext;
   const recentHistory: typeof history = [];
   const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话', { state, focus: girl }, storyMemoryAppendix(runtime, state, girl));
-  let used = baseSystem.length + text.length;
+  let used = baseSystem.length + spoken.length;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
     const clipped = message.content.slice(0, 1_200);
@@ -411,7 +413,7 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
   const messages: ChatMessage[] = applyRegexToMessages([
     { role: 'system', content: dialogueSystem },
     ...recentHistory,
-    { role: 'user', content: applyRegexScripts(text, runtime.regex, 'input', 'prompt') },
+    { role: 'user', content: applyRegexScripts(spoken, runtime.regex, 'input', 'prompt') },
   ], runtime.regex);
   const params = presetParams(runtime);
   const labels = [
@@ -1464,13 +1466,14 @@ export async function generateStoryline(config: LlmConfig, girl: Girl, direction
   const started = Date.now();
   const meta: LlmCallMeta = {};
   // 结构契约走预设词条（storyline:start），正文只留档案与方向。
+  const userDirection = direction?.trim() ? expandRandomMacros(direction.trim()) : '';
   const context = `先读她的档案：${girlBrief(girl)}
-${direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}`;
+${userDirection ? `玩家给的方向（必须遵守）：${userDirection}` : '玩家没有给方向，请从她的目标、特性与当前关系里找一个最小的裂缝开始。'}`;
   const body = storylineStartContract();
   const result = await callJson(config, preset, 'storyline', body, `请为${girl.name}写这条故事线。`, ['共用词条 + 故事线词条 + 结构契约', `档案：${girl.name}`], meta, {
     char: girlBrief(girl),
     personality: activePersonality(girl),
-    scenario: direction?.trim() ?? '',
+    scenario: userDirection,
     contractId: 'storyline:start',
   }, { focus: girl }, 0, context);
   if (!result.ok) {
@@ -1607,13 +1610,14 @@ export async function generateStoryBlueprint(config: LlmConfig, girl: Girl, dire
   const slot = Math.max(1, Math.min(3, Math.round(options.slot ?? 1)));
   // 第 2/3 段要先看上一段怎么收的：结局里的损失与承诺必须在下一段里继续生效。
   const prior = state ? priorSegmentBrief(state, girl.id, slot) : '';
+  const userDirection = direction?.trim() ? expandRandomMacros(direction.trim()) : '';
   const context = [
     slot > 1 ? `这是${girl.name}的第 ${slot} 段故事。` : '',
     prior,
-    direction?.trim() ? `玩家给的方向（必须遵守）：${direction.trim()}` : '',
+    userDirection ? `玩家给的方向（必须遵守）：${userDirection}` : '',
   ].filter(Boolean).join('\n');
   const labels = ['共用词条 + 故事线词条 + 蓝图结构契约', `档案：${girl.name}`];
-  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: direction?.trim() ?? '', story: direction?.trim() ?? '', contractId: 'storyline:contract' };
+  const extra = { char: girlBrief(girl), personality: activePersonality(girl), scenario: userDirection, story: userDirection, contractId: 'storyline:contract' };
   const macroCtx: MacroContext = { state, focus: girl };
   const first = await chatJson(config, preset, 'storyline', body, `请为${girl.name}画一张故事蓝图。`, labels, meta, extra, LONG_FORM_TOKEN_FLOOR, macroCtx, context);
   if (!first.result.ok) {
@@ -2193,7 +2197,7 @@ function storyClockText(event: CharacterEvent, state: GameState): string {
 
 export function openingContext(state: GameState, event: CharacterEvent, seed = ''): string {
   const cast = storyCast(state, event);
-  const seedText = seed.trim().slice(0, 300);
+  const seedText = expandRandomMacros(seed.trim().slice(0, 300));
   return [
     `【这一段剧情】${event.title}`,
     storyClockText(event, state),
@@ -2336,7 +2340,7 @@ export async function generateStoryEnding(
     '【此前的对话】',
     storyRecapHistory(event, turns) || '（这是第一轮）',
     choices.length ? `【这一段之后的岔路口】\n必须从这些选项里选一条，作为所长实际走的方向：\n${choices.map(option => `- ${option.id}：${option.label}`).join('\n')}\n只写 id，不要写效果数值。` : '',
-    endingLeadBlock(lead),
+    endingLeadBlock(lead ? expandRandomMacros(lead) : lead),
     rounds ? `（这一夜你们来回说了 ${rounds} 轮。）` : '',
   ].filter(Boolean).join('\n');
   const ask = (extra = '') => callJson(config, preset, 'arc', arcEndingContract(choices), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
@@ -2393,7 +2397,7 @@ export async function generateStoryTurn(
   const turns = event.turns ?? [];
   const history = storyRecapHistory(event, turns);
   const hookFallback = !event.opening && !turns.length && event.hookInPrompt !== false && event.hook ? `引子：${event.hook}` : '';
-  const playerLine = action.trim().slice(0, 300);
+  const playerLine = expandRandomMacros(action.trim().slice(0, 300));
   const context = [
     `【这一段剧情】${event.title}`,
     storyClockText(event, state),
@@ -2683,6 +2687,7 @@ import { traits } from './content/traits.ts';
 import { validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
 import { isBackdropId } from './vn/backdrops.ts';
+import { expandRandomMacros } from './randomize.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, endingLeadBlock, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchConfrontationContract, witchFormContract, witchUserHint} from './promptSections.ts';
 import { newsFocus, newsSpeakerBrief, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';

@@ -15,6 +15,7 @@ import { traits } from './content/traits.ts';
 import { battleHistoryText, chatHistoryText, dossierOf, missionHistoryText, storylineHistoryText } from './girlDossier.ts';
 import { ENUM_TEXT, limitsText } from './promptSections.ts';
 import { promptTokens } from './tokens.ts';
+import { randomFromArg, randomHexColor } from './randomize.ts';
 import { weatherPrompt } from './weather.ts';
 
 /** 宏解析上下文：本次请求的存档与「这一场写的是谁」。 */
@@ -225,6 +226,8 @@ const RESOLVERS: Record<string, Resolver> = {
   items: (ctx, arg) => itemsText(ctx.state, arg),
   missions: (ctx, arg) => missionsText(ctx.state, arg),
   traits: () => traitsText(),
+  random: (_ctx, arg) => String(randomFromArg(arg)),
+  color: (_ctx, arg) => randomHexColor(arg),
   kinds: () => Object.keys(NODE_LABELS).join('、'),
   limits: () => limitsText(),
   works: () => ENUM_TEXT.works,
@@ -283,6 +286,18 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'items', label: '器物阶级', hint: '每阶件数与示例', budget: 200 },
       { key: 'items:3', label: '只看三阶器物', hint: '写 loot 时给个参照', budget: 60 },
       { key: 'traits', label: '特性词表', hint: '可用的特性名', budget: 120 },
+    ],
+  },
+  {
+    id: 'random', label: '随机与颜色', hint: '每次拼提示词时重新抽；也可以写在玩家输入里',
+    items: [
+      { key: 'random', label: '随机 1–100', hint: '{{random}} 等价于 1–100', budget: 4 },
+      { key: 'random:6', label: '骰子 1–6', hint: '{{random:6}} 掷一个六面骰', budget: 4 },
+      { key: 'random:1-100', label: '随机区间', hint: '{{random:1-100}} 写任意 A-B，支持负数', budget: 4 },
+      { key: 'color', label: '随机颜色', hint: '{{color}} 生成 #RRGGBB', budget: 8 },
+      { key: 'color:pastel', label: '柔和色', hint: '{{color:pastel}} 低饱和高明亮', budget: 8 },
+      { key: 'color:neon', label: '荧光色', hint: '{{color:neon}} 高饱和', budget: 8 },
+      { key: 'color:dark', label: '暗色', hint: '{{color:dark}} 低明度', budget: 8 },
     ],
   },
   {
