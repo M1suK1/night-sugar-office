@@ -9,8 +9,13 @@ import { getItem } from './content/items.ts';
 import { skills } from './content/skills.ts';
 import { promptTokens } from './tokens.ts';
 
-/** 一条宏的默认字数预算（token 估算由 tokens.ts 给）。 */
-export const DOSSIER_BUDGET = 800;
+/**
+ * 一条宏的默认字数预算（token 估算由 tokens.ts 给）。
+ *
+ * v239：800 会把「特性 / 心愿 / 关系」整段裁掉——这 3 条是模型判断她性格与立场最需要的部分。
+ * 提到 2000 之后，正常卡（含 7 条特性、9 位同伴）整份装得下，不再截断。
+ */
+export const DOSSIER_BUDGET = 2000;
 export const BRIEF_BUDGET = 150;
 
 const OUTCOME_LABEL: Record<string, string> = {
