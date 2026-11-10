@@ -3,6 +3,8 @@ import { Coins, MapPin, ShieldAlert, Sparkles, Users } from 'lucide-react';
 import type { FactionId, GameState } from '../types';
 import { factionInfo } from '../content/items';
 import { envoyPreviewOf } from '../rules/envoyPreview';
+import { factionRepresentativeOf } from '../factions';
+import { GirlPortrait } from './GirlPortrait';
 
 /**
  * 代表委托的预览（v167）。
@@ -19,13 +21,31 @@ export function EnvoyPreviewDialog({ state, faction, onAccept, onClose }: {
   const preview = useMemo(() => envoyPreviewOf(state, faction), [state, faction]);
   const [girlId, setGirlId] = useState<string | undefined>(preview.loan?.candidates[0]?.id);
   const info = factionInfo[faction];
+  const leader = factionRepresentativeOf(state, faction);
   const title = preview.mission ? preview.mission.title : preview.kind === 'tribute' ? '协调费' : preview.kind === 'loan' ? '借调人手' : '代表委托';
 
   return (
     <div className="standard-modal envoy-preview" id="envoy-preview-dialog" role="dialog" aria-modal="true" aria-label="委托预览">
-      <div className="modal-eyebrow"><Sparkles size={14} />{info.name} · {preview.representative.title}</div>
-      <h2>{title}</h2>
-      <p className="envoy-preview-lead">{preview.note}</p>
+      <div className="envoy-preview-head">
+        {!preview.vacant && (
+          <span className="envoy-preview-face">
+            <GirlPortrait
+              girl={{
+                id: leader.id, name: leader.name, color: leader.color,
+                portrait: leader.portrait ?? '', portraitSpec: leader.portraitSpec,
+                witch: leader.witch, witchForm: leader.witchForm,
+                wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
+              }}
+              variant="avatar"
+            />
+          </span>
+        )}
+        <div className="envoy-preview-heading">
+          <div className="modal-eyebrow"><Sparkles size={14} />{info.name} · {leader.name}</div>
+          <h2>{title}</h2>
+          <p className="envoy-preview-lead">{preview.note}</p>
+        </div>
+      </div>
 
       {preview.vacant ? (
         <p className="envoy-preview-empty">{preview.vacantNote}</p>
