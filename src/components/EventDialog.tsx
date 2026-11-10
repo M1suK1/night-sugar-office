@@ -234,8 +234,35 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   const expressionFor = (person: Girl) => preview?.id === person.id ? preview.expression : latest?.id === person.id ? latest.expression : person.expression ?? 'calm';
   // v172：立绘栏要的数据（与战斗札记共用 SideCast）。
   const castGirls = useMemo(() => new Map(cast.map(person => [person.id, person])), [cast]);
-  const hoveredCastKey = preview ? `left:${preview.id}` : '';
-  const litCastKeys = useMemo(() => cast.map(person => `left:${person.id}`), [cast]);
+  // v234：会议最多 6 人。超过 3 人时左右各站一半，右侧不再固定给「所长」，
+  // 否则第 4–6 个人永远轮不上场。
+  const castSplit = cast.length > 3 ? Math.ceil(cast.length / 2) : cast.length;
+  const leftCast = cast.slice(0, castSplit);
+  const rightCast = cast.slice(castSplit);
+  const sideOfCast = (id: string) => rightCast.some(person => person.id === id) ? 'right' : 'left';
+  const hoveredCastKey = preview ? `${sideOfCast(preview.id)}:${preview.id}` : '';
+  const litCastKeys = useMemo(() => [
+    ...leftCast.map(person => `left:${person.id}`),
+    ...rightCast.map(person => `right:${person.id}`),
+  ], [leftCast, rightCast]);
+  const castFigureOf = (person: Girl) => ({
+    uid: person.id,
+    side: 'ally' as const,
+    girlId: person.id,
+    name: person.name,
+    codename: person.codename,
+    portrait: person.portrait ?? '',
+    portraitAsset: (person as { portraitAsset?: string }).portraitAsset,
+    color: person.color ?? '#f3aec9',
+    expression: expressionFor(person),
+    monster: undefined,
+    portraitSpec: person.portraitSpec,
+  });
+  const stageActiveLine = preview
+    ? { speakerId: preview.id, speakerSide: 'ally' as const, expression: preview.expression }
+    : latest
+      ? { speakerId: latest.id, speakerSide: 'ally' as const, expression: latest.expression }
+      : null;
 
   const submit = async (value: string) => {
     const text = value.trim();
@@ -507,30 +534,14 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
                 更多人也只显示焦点所在的三格，不会把立绘压成细条。 */}
             <SideCast
               side="left"
-              list={cast.map(person => ({
-                uid: person.id,
-                side: 'ally' as const,
-                girlId: person.id,
-                name: person.name,
-                codename: person.codename,
-                portrait: person.portrait ?? '',
-                portraitAsset: (person as { portraitAsset?: string }).portraitAsset,
-                color: person.color ?? '#f3aec9',
-                expression: expressionFor(person),
-                monster: undefined,
-                portraitSpec: person.portraitSpec,
-              }))}
+              list={leftCast.map(castFigureOf)}
               // v173：悬停某句台词时，那个人先亮起来并换成那句的表情；没有悬停就跟着最近一句说话的人。
-              // （上次抽共用组件时把这层丢了，表现就是「表情不再变化」。）
-              activeLine={preview
-                ? { speakerId: preview.id, speakerSide: 'ally', expression: preview.expression }
-                : latest
-                  ? { speakerId: latest.id, speakerSide: 'ally', expression: latest.expression }
-                  : null}
+              activeLine={stageActiveLine}
               girlsById={castGirls}
               hoverKey={hoveredCastKey}
               litKeys={litCastKeys}
               resetKey={event.id}
+              hideLabel={rightCast.length > 0}
             />
 
             <main className="battle-note-center event-center">
@@ -619,13 +630,26 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
               {composerContent}
             </main>
 
-            <aside className="battle-note-side right" aria-label="所长">
-              <span className="battle-note-side-label">所长</span>
-              <figure className="battle-note-portrait player" aria-label="所长（玩家）">
-                <div className="battle-note-portrait-art event-player-art"><span>所长</span></div>
-                <figcaption><b>所长</b><small>你</small></figcaption>
-              </figure>
-            </aside>
+            {rightCast.length > 0 ? (
+              <SideCast
+                side="right"
+                list={rightCast.map(castFigureOf)}
+                activeLine={stageActiveLine}
+                girlsById={castGirls}
+                hoverKey={hoveredCastKey}
+                litKeys={litCastKeys}
+                resetKey={event.id}
+                hideLabel
+              />
+            ) : (
+              <aside className="battle-note-side right" aria-label="所长">
+                <span className="battle-note-side-label">所长</span>
+                <figure className="battle-note-portrait player" aria-label="所长（玩家）">
+                  <div className="battle-note-portrait-art event-player-art"><span>所长</span></div>
+                  <figcaption><b>所长</b><small>你</small></figcaption>
+                </figure>
+              </aside>
+            )}
           </div>
         )}
       </div>

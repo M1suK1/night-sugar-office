@@ -33,7 +33,7 @@ function windowOf(order: string[], focusId: string, size: number): string[] {
  * 三人时用前后三格（front-left / front-right / back），悬停或轮到谁说话就整体轮转过去；
  * 超过三人时只显示焦点所在的三人窗口 —— 以前直接把所有人塞成一排，立绘会被压成细条。
  */
-export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys, resetKey }: {
+export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys, resetKey, hideLabel = false }: {
   side: 'left' | 'right';
   list: CastFigure[];
   activeLine: SideCastLine | null;
@@ -41,6 +41,7 @@ export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys,
   hoverKey: string;
   litKeys: string[];
   resetKey: string;
+  hideLabel?: boolean;
 }) {
   const idsKey = list.map(actor => actor.girlId ?? actor.uid).join('|');
   const [order, setOrder] = useState<string[]>(() => list.map(actor => actor.girlId ?? actor.uid));
@@ -77,7 +78,7 @@ export function SideCast({ side, list, activeLine, girlsById, hoverKey, litKeys,
 
   return (
     <aside className={`battle-note-side ${side} ${list.length ? '' : 'empty'} ${list.length >= 3 ? 'dense' : ''} ${three ? 'three-up' : ''}`} aria-label={side === 'left' ? '左侧角色' : '右侧角色'}>
-      {list.length > 0 && <span className="battle-note-side-label">{label}</span>}
+      {list.length > 0 && !hideLabel && <span className="battle-note-side-label">{label}</span>}
       {shown.map((actor, index) => {
         const { expression, speaking } = castExpressionOf(actor, activeLine);
         return (

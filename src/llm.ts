@@ -1988,14 +1988,26 @@ export function storyTurnSummary(raw: unknown): string {
 export function storyRecapHistory(event: CharacterEvent, turns: StoryTurn[], limit = 8): string {
   const narrators = turns.filter(turn => turn.role === 'narrator');
   const opening = (event.opening ?? narrators[0]?.text ?? '').trim();
+  const originalOf = (turn: StoryTurn) => {
+    const dialogue = (turn.lines ?? []).map(line => `${line.speakerName}：「${line.text}」`).join('\n');
+    return `${turn.text.trim()}${dialogue ? `\n${dialogue}` : ''}`;
+  };
   const lines: string[] = [];
-  if (opening) lines.push(`开场：${clipStoryRecap(opening)}`);
   const rounds = narrators.slice(1).slice(-limit);
+  // 只有开场、还没有后续轮次时，上一段就是开场本身：整段回放，
+  // 不能只给 400 字摘要，否则第一次续写就接不住开场的场景与台词。
+  if (!rounds.length) {
+    const openingTurn = narrators[0];
+    const previous = openingTurn && (!event.opening || openingTurn.text.trim() === opening)
+      ? originalOf(openingTurn)
+      : opening;
+    if (previous) lines.push(`上一轮原文：\n${previous.slice(0, STORY_LAST_TURN_LIMIT)}`);
+    return lines.join('\n');
+  }
+  if (opening) lines.push(`开场：${clipStoryRecap(opening)}`);
   rounds.forEach((turn, index) => {
     if (index === rounds.length - 1) {
-      const dialogue = (turn.lines ?? []).map(line => `${line.speakerName}：「${line.text}」`).join('\n');
-      const original = `${turn.text.trim()}${dialogue ? `\n${dialogue}` : ''}`;
-      lines.push(`上一轮原文：\n${original.slice(0, STORY_LAST_TURN_LIMIT)}`);
+      lines.push(`上一轮原文：\n${originalOf(turn).slice(0, STORY_LAST_TURN_LIMIT)}`);
       return;
     }
     const summary = turn.summary?.trim();

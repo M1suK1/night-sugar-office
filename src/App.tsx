@@ -629,7 +629,7 @@ export default function App() {
     setArcBusy(event.id);
     void (async () => {
       const config = loadLlmConfig();
-      const cast = (event.cast?.length ? event.cast : [event.girlId]).slice(0, 5);
+      const cast = (event.cast?.length ? event.cast : [event.girlId]).slice(0, event.meeting ? 6 : 5);
       const seed = event.playerSeed ?? '';
       let opening = event.opening?.trim() ?? '';
       let lines: StoryLine[] = [];

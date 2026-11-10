@@ -28,9 +28,11 @@ test('v225 上一轮的旁白与台词原样进历史', () => {
   assert.ok(history.includes('第一轮总结。'));
 });
 
-test('v225 只有开场时不会凭空造出「上一轮」', () => {
+test('v225 只有开场时把开场原文作为上一轮', () => {
   const turns = [{ id: 't1', role: 'narrator', text: event.opening! }] as StoryTurn[];
-  assert.ok(!storyRecapHistory(event, turns).includes('上一轮原文'));
+  const history = storyRecapHistory(event, turns);
+  assert.ok(history.startsWith('上一轮原文：'));
+  assert.ok(history.includes(event.opening!));
 });
 
 test('v225 超过 8 轮时仍以最近的上一轮为原文', () => {

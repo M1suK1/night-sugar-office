@@ -38,12 +38,12 @@ test('v215 更早的轮次只引用总结，上一轮回放原文', () => {
   assert.ok(lines[1]!.length <= 2 + STORY_TURN_SUMMARY_LIMIT);
 });
 
-test('v215 没有开场时用第一轮旁白截断代替', () => {
+test('v215 没有开场时第一轮旁白作为上一轮原文', () => {
   const event = {} as CharacterEvent;
   const turns = [{ id: 't1', role: 'narrator', text: '第一轮的旁白'.repeat(100) }] as StoryTurn[];
   const history = storyRecapHistory(event, turns);
-  assert.ok(history.startsWith('开场：'));
-  assert.ok(history.length <= 3 + STORY_TURN_SUMMARY_LIMIT);
+  assert.ok(history.startsWith('上一轮原文：'));
+  assert.ok(history.includes('第一轮的旁白'.repeat(100)));
 });
 
 test('v215 出厂预设的续写契约也带总结要求', () => {
