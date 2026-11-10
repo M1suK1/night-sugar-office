@@ -61,6 +61,58 @@ export function swapSpeaker(rows: StageRows, speakerId: string): StageRows {
   return { front, back };
 }
 
+/** 舞台上一个人的横向落位（百分比，相对舞台宽度）。 */
+export interface StageSlot {
+  id: string;
+  row: 'front' | 'back';
+  /** 左边界百分比。 */
+  left: number;
+  /** 宽度百分比。 */
+  width: number;
+  /** 底边距百分比：后排抬高一层。 */
+  bottom: number;
+}
+
+/** 后排抬高的底边位置（%），与 `.vn-cast.two-row .vn-actor[data-row="back"]` 的高度配套。 */
+export const BACK_ROW_BOTTOM = 26;
+
+/**
+ * 两排舞台的落位（v234）。
+ *
+ * 旧算法把前后排放在**同一列**上：后排整张立绘正好压在前排背后，只剩头顶一条缝，
+ * 六人同台时看着像只站了四个人，而且前后排完全没有交错。
+ *
+ * 现在改成「交错槽位」：把前后排的人按 F1 B1 F2 B2 … 的顺序排进同一串槽位，
+ * 每人占一个等宽槽位，后排自然落进前排两人的缝里，谁的脸都不会被完全挡住。
+ */
+export function stageSlots(rows: StageRows): StageSlot[] {
+  const front = rows.front;
+  const back = rows.back;
+  const total = front.length + back.length;
+  if (!total) return [];
+  if (!back.length) {
+    const width = 100 / Math.max(1, front.length);
+    return front.map((id, index) => ({ id, row: 'front' as const, left: index * width, width, bottom: 0 }));
+  }
+  const inset = 2.5;
+  const usable = 100 - inset * 2;
+  const pitch = usable / total;
+  // 单人格宽跟人数走：六人时约 30%，同时不超过「三人并排」那一档，保证立绘大小观感一致。
+  const width = Math.min(100 / 3, Math.max(24, pitch * 1.9));
+  const order: { id: string; row: 'front' | 'back' }[] = [];
+  for (let index = 0; index < Math.max(front.length, back.length); index += 1) {
+    const one = front[index];
+    if (one) order.push({ id: one, row: 'front' });
+    const other = back[index];
+    if (other) order.push({ id: other, row: 'back' });
+  }
+  return order.map((entry, slot) => {
+    const center = inset + (slot + 0.5) * pitch;
+    const left = Math.min(Math.max(center - width / 2, 0), 100 - width);
+    return { id: entry.id, row: entry.row, left, width, bottom: entry.row === 'back' ? BACK_ROW_BOTTOM : 0 };
+  });
+}
+
 /** 旁白与所长不算「立绘角色」：他们开口不该改变舞台站位。 */
 const OFF_STAGE = new Set(['narrator', 'player']);
 

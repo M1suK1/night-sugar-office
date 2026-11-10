@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronsRight, FastForward, Rewind, SkipForward, Square, UserRound } from 'lucide-react';
 import { GirlPortrait } from '../components/GirlPortrait';
 import { resolveBackdrop } from './backdrops';
-import { castBucket, expressionsAt, lastSpeakerAt, speakersBySegment, stageAfter, stageRows, swapSpeaker } from './stage';
+import { castBucket, expressionsAt, lastSpeakerAt, speakersBySegment, stageAfter, stageRows, stageSlots, swapSpeaker } from './stage';
 import type { StageRows } from './stage';
 import { vnAwaitingChoice, vnInitial, vnLastSayIndex, vnRebase, vnReducer } from './reducer';
 import type { VnBeat, VnCastMember } from './types';
@@ -234,6 +234,9 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
     setRows(current => swapSpeaker(current, speakingId));
   }, [speakingId, rowsKey]);
   const twoRows = rows.back.length > 0;
+  // v234：两排时按交错槽位落位（前后排各占一半槽位），而不是前后排同列相叠。
+  const slots = useMemo(() => (twoRows ? stageSlots(rows) : []), [twoRows, rows]);
+  const slotOf = useMemo(() => new Map(slots.map(slot => [slot.id, slot])), [slots]);
 
   const shownCast = useMemo(() => {
     const ids = [...stage.ids];
@@ -257,17 +260,21 @@ export function VnReader({ beats, cast, onChoose, onClose, onText, title, resetK
           const expression = lastExpressions.get(id) ?? member.girl.expression ?? 'calm';
           const leaving = stage.leaving.includes(id);
           const entering = stage.entering.includes(id);
-          const frontAt = rows.front.indexOf(id);
-          const backAt = rows.back.indexOf(id);
-          const row = backAt >= 0 ? 'back' : 'front';
-          const col = frontAt >= 0 ? frontAt : backAt >= 0 ? backAt : at % 3;
+          const slot = slotOf.get(id);
           return (
             <div
               key={id}
-              data-row={twoRows ? row : undefined}
+              data-row={twoRows ? (slot?.row ?? 'front') : undefined}
               className={`vn-actor ${leaving ? 'leaving' : entering ? 'entering' : ''} ${lit ? 'active' : lastSpeakerId ? 'dimmed' : ''}`}
               style={twoRows
-                ? { left: `${(col * 100) / 3}%`, bottom: row === 'back' ? '20%' : 0, zIndex: speaking ? 40 : row === 'front' ? 20 : 10 }
+                ? slot
+                  ? {
+                    left: `${slot.left}%`,
+                    width: `${slot.width}%`,
+                    bottom: `${slot.bottom}%`,
+                    zIndex: speaking ? 40 : slot.row === 'front' ? 20 : 10,
+                  }
+                  : { left: 0, width: 0, opacity: 0, pointerEvents: 'none' }
                 : { zIndex: speaking ? 40 : 10 + at }}
             >
               <GirlPortrait girl={{ ...member.girl, expression }} variant="full" bare />
