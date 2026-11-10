@@ -2,7 +2,7 @@ import { GirlThumb } from './GirlThumb';
 import { useState } from 'react';
 import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle, CloudRain, CloudLightning, Snowflake, CloudFog, Moon } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
-import { chance, clock, inWithdrawal, missionDeadlineLabel, squadChance, squadLimit, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
+import { chance, clock, duelOpponents, inWithdrawal, missionDeadlineLabel, squadChance, squadLimitFor, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { districtOfMission, effectLines } from '../districts';
 import { windowLabel } from '../shift';
 import { findMonster } from '../content/monsters';
@@ -33,7 +33,8 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
 }) {
   const initial = initialGirlId ? state.girls.find(g => g.id === initialGirlId) : undefined;
   const [selected, setSelected] = useState<string[]>(initial && canGo(initial).ok ? [initial.id] : []);
-  const limit = squadLimit(mission);
+  const limit = squadLimitFor(state, mission);
+  const duel = duelOpponents(state, mission);
   const squad = selected.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const castReady = (mission.storyCastIds ?? []).every(id => selected.includes(id));
   const squadReady = squad.length > 0 && squad.every(g => canGo(g).ok) && squad.length <= limit && castReady;
@@ -62,7 +63,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
         <div><Sparkles size={18} /><small>委托报酬</small><b>{mission.reward.toLocaleString()}<em> 星砂</em></b></div>
         <div><Clock3 size={18} /><small>预计耗时</small><b>{mission.duration}<em> 分钟</em></b></div>
         <div><Shield size={18} /><small>{mission.work === 'combat' ? '战斗轮次' : '推荐能力'}</small><b>{mission.work === 'combat' ? mission.rounds : statLabels[mission.requirement]}<em>{mission.work === 'combat' ? ` × ${mission.rounds} 轮` : ` ${mission.target}+`}</em></b></div>
-        <div><Users size={18} /><small>编队上限</small><b>{limit}<em> 人</em></b></div>
+        <div><Users size={18} /><small>编队上限</small><b>{limit}<em> 人</em></b>{duel !== undefined && <span className="mission-fact-note">对面 {duel} 人</span>}</div>
         <div className="mission-fact-wide"><Shield size={18} /><small>难度 · 推荐等级</small><b>{mission.difficulty}<em>推荐 Lv.{mission.recommendedLevel ?? '—'}</em></b>{missionBaselineNote(mission) && <span className="mission-fact-note">{missionBaselineNote(mission)}</span>}</div>
       </div>
 
@@ -101,7 +102,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
               {pollutionLines(effect).map(line => <li key={line}>{line}</li>)}
             </ul>
             <p className="mission-pollution-relief">完成委托预计净化 −{relief}</p>
-            {intercept && interceptOwner && <p className="mission-interception-warning" id={`mission-interception-${mission.id}`}><AlertTriangle size={13} /><span>{factionName[interceptOwner]}在此戒备。派遣后会被其所属少女拦截，原委托将被覆盖。</span></p>}
+            {intercept && interceptOwner && <p className="mission-interception-warning" id={`mission-interception-${mission.id}`}><AlertTriangle size={13} /><span>{factionName[interceptOwner]}在此戒备。派遣后会被其所属少女拦截（对面 {duel ?? '—'} 人，编队最多 {duel ?? '—'} 人），原委托将被覆盖。</span></p>}
           </div>;
         })()}
       </section>
@@ -132,7 +133,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
 
       {mission.work === 'combat' && mission.envoyKind === 'raid' && (
         <section className="enemy-lineup" aria-label="对面的人">
-          <div className="modal-section-heading"><h3>对面的人</h3><small>破坏行动打的是这一方的魔法少女，不是魔物</small></div>
+          <div className="modal-section-heading"><h3>对面的人</h3><small>破坏行动打的是这一方的魔法少女，不是魔物{duel !== undefined ? ` · 对面 ${duel} 人，编队最多 ${limit} 人` : ''}</small></div>
           <div className="enemy-row">
             {(mission.interception?.girlIds ?? []).map(id => {
               const person = state.girls.find(girl => girl.id === id) ?? (state.customFactionGirls ?? []).find(girl => girl.id === id);
@@ -197,7 +198,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           </div>
           <div className="assignment-note">
             <Radio size={14} />
-            <span>{squad.length ? `${squad.map(g => g.name).join('、')}已受领简报，预计于 ${clock((state.minutes + mission.duration) % 1440)} 携现场记录返回事务所。${mission.work === 'combat' ? '战斗交锋一旦展开不可中途撤回，请审慎确认阵线。' : '调查行动以队伍最高特长综合裁定胜负。'}${squadChance(squad, mission) < 45 ? ' 当前队伍契合度偏低，面临较高失手与负伤风险。' : ''}` : '请自待命名单中指派 1 至 ' + limit + ' 位契约少女组建出勤小队；当成员生命过低或过度疲惫时，请优先安排休整或诊所药浴。'}</span>
+            <span>{squad.length ? `${squad.map(g => g.name).join('、')}已受领简报，预计于 ${clock((state.minutes + mission.duration) % 1440)} 携现场记录返回事务所。${mission.work === 'combat' ? '战斗交锋一旦展开不可中途撤回，请审慎确认阵线。' : '调查行动以队伍最高特长综合裁定胜负。'}${squadChance(squad, mission) < 45 ? ' 当前队伍契合度偏低，面临较高失手与负伤风险。' : ''}` : '请自待命名单中指派最多 ' + limit + ' 位契约少女组建出勤小队；当成员生命过低或过度疲惫时，请优先安排休整或诊所药浴。'}</span>
           </div>
           <div className="squad-readiness">
             <div><span>队伍契合</span><b className={chanceValue < 45 ? 'low' : chanceValue > 75 ? 'high' : ''}>{squad.length ? `${chanceValue}%` : '—'}</b></div>

@@ -3634,13 +3634,18 @@ test('v19 拦截判定：只有被当主戒备的普通辖区委托才会被拦'
 
 test('v19 拦截战胜利：声望 −4，原委托作废且不算完成', () => {
   const state = hostileCandy();
-  // 当主只派得出名册里那一位随从（8 级、血比旧静态表更厚），所以带两个人去才稳赢。
+  // 当主只派得出名册里那一位随从（8 级、血比旧静态表更厚），v237 起编队最多与对面人数相等，只能单人上。
+  // 一个人打 155 血的随从要 4 轮（技能在治疗与穿刺之间轮转），延长到 6 轮才打得完。
+  state.missions.find(item => item.id === 'candy')!.rounds = 6;
   buffGirl(state, 'yue');
-  buffGirl(state, 'tang');
+  // 单人上场要打赢 8 级随从，属性再堆一层（v237 之前是两个人分摊火力）。
+  const ace = state.girls.find(girl => girl.id === 'yue')!;
+  for (const key of Object.keys(ace.stats) as Array<keyof typeof ace.stats>) ace.stats[key] = ace.baseStats[key] = ace.stats[key] * 3;
+  ace.maxHp = ace.hp = 12000;
   const before = state.factions.association.standing;
   const pollution = state.pollution.candy;
 
-  const deployed = act(state, { type: 'dispatch', girlIds: ['yue', 'tang'], missionId: 'candy' });
+  const deployed = act(state, { type: 'dispatch', girlIds: ['yue'], missionId: 'candy' });
   assert.equal(deployed.ok, true, deployed.message);
   const settled = act(deployed.state, { type: 'advance', minutes: 180 });
   assert.equal(settled.ok, true, settled.message);

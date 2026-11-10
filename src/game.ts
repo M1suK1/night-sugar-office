@@ -1,6 +1,7 @@
 export { interceptionFor } from './rules/battle.ts';
 export { dateLabel, grantExpWithNotice, pushNotice, shiftTerritory } from './rules/core.ts';
 export { deployIncidentCard, eliteChance, rollEnemies } from './rules/encounters.ts';
+export { MAX_DUEL_SIDE, duelOpponents, interceptionSquadSize, squadLimitFor } from './rules/duel.ts';
 export { applyIncidentEffect, makeRuleIncident, pickPoolIncidentCard } from './rules/incidentOps.ts';
 export { WARDROBE_LIMIT, clock, relationshipStage, stageHints, stageLabels, statLabels, statusLabels, workDescriptions, workLabels } from './rules/labels.ts';
 export { factionStanding, itemPrice, makeFactionStock, makeMarketStock, marketPool, marketSlots, marketUpgrade, marketWindow } from './rules/market.ts';
