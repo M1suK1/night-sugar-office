@@ -23,6 +23,14 @@ function bondStage(bond: number): string {
   return stageLabels[relationshipStage(bond)] ?? '平常';
 }
 
+/** 誓约 / 婚礼状态：档案、名册与剧情简报共用同一句话。 */
+export function oathStatusText(girl: Pick<Girl, 'oath' | 'wedding'>): string {
+  if (!girl.oath) return '';
+  return girl.wedding
+    ? `已与所长缔结誓约（第 ${girl.oath.day} 日），并在第 ${girl.wedding.day} 日于${girl.wedding.placeName}举行婚礼`
+    : `已与所长缔结誓约（第 ${girl.oath.day} 日），尚未举行婚礼`;
+}
+
 /** 按预算裁行：从尾部裁（older=false 时从头部裁），留下省略说明。 */
 function fitLines(lines: string[], budget: number, opts: { fromEnd: boolean; omitted: (count: number) => string }): string {
   const kept = [...lines];
@@ -52,7 +60,8 @@ function itemLine(id: string | undefined): string {
 
 /** 她的全量档案：静态设定 + 此刻状态 + 关系与契约。brief 只留身份 / 性情 / 关系 / 心愿。 */
 export function dossierOf(girl: Girl, state?: GameState, opts: { brief?: boolean; role?: string } = {}): string {
-  const bondText = `对所长 ${girl.bond}/100（${bondStage(girl.bond)}）`;
+  const oath = oathStatusText(girl);
+  const bondText = `对所长 ${girl.bond}/100（${bondStage(girl.bond)}）${oath ? `；${oath}` : ''}`;
   const peers = Object.entries(girl.relationships ?? {})
     .map(([id, value]) => {
       const peer = state ? [...state.girls, ...state.candidates, ...state.memorial.map(entry => entry.girl)].find(item => item.id === id) : undefined;

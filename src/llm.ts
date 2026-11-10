@@ -1,4 +1,5 @@
 import { outfitLine } from './outfitBrief.ts';
+import { oathStatusText } from './girlDossier.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
@@ -463,7 +464,7 @@ export async function generateWhisper(
   const recentWithActions = (state.messages[girl.id] ?? []).slice(-6).map(message => `${message.role === 'player' ? '所长' : girl.name}：${message.text}${message.action ? `（${message.action}）` : ''}`).join('\n') || '（还没有聊过）';
   const body = `【她】${girl.name}（${girl.title}）· ${girl.element}/${girl.archetype ?? '未定'} · Lv.${girl.level}
 性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。语气参考：${girl.quote ?? '没有留下出场白'}。
-对所长（玩家）的羁绊：${girl.bond}/100${job.outcome === 'victory' || job.outcome === 'success' ? '。她刚打完这一场，还带着疲惫与一点侥幸。' : '。这一场没打好，她可能有点自责或嘴硬。'}
+对所长（玩家）的羁绊：${girl.bond}/100${girl.oath ? `（${oathStatusText(girl)}）` : ''}${job.outcome === 'victory' || job.outcome === 'success' ? '。她刚打完这一场，还带着疲惫与一点侥幸。' : '。这一场没打好，她可能有点自责或嘴硬。'}
 
 【这一次】${mission ? `${mission.title} · ${mission.work === 'combat' ? '战斗' : '调查'} · ${mission.difficulty} · ${mission.district ? districts[mission.district]?.name ?? mission.district : '事务所周边'}` : job.missionId}
 结果：${outcomeLabel}${mission ? `；报酬 ${mission.reward} 星砂` : ''}
@@ -1373,7 +1374,8 @@ function girlBrief(girl: Girl): string {
   const outfit = outfitLine(girl);
   // 出身与雇主必须分开写：出身只交代她来自哪一方，雇主永远是把她们收进名册的夜糖事务所。
   const voice = voiceLine(girl);
-  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}${voice ? `；${voice}` : ''}；关系 ${girl.bond}/100；侵蚀 ${girl.corruption}/100；${outfit ? `${outfit}；` : ''}特性：${traitText}；目标：${girl.goal}`;
+  const oath = oathStatusText(girl);
+  return `姓名 ${girl.name}／代号 ${girl.codename}／称号 ${girl.title}／${girl.element}·${girl.archetype}；出身 ${factionTagLabel(girl.factionTag)}；雇主 ${EMPLOYER_LABEL}；性格：${activePersonality(girl)}${voice ? `；${voice}` : ''}；关系 ${girl.bond}/100${oath ? `（${oath}）` : ''}；侵蚀 ${girl.corruption}/100；${outfit ? `${outfit}；` : ''}特性：${traitText}；目标：${girl.goal}`;
 }
 
 function parseEffect(raw: unknown): StoryEffect {
@@ -1651,7 +1653,7 @@ ${parsed.errors.slice(0, 12).map((entry, index) => `${index + 1}. ${entry}`).joi
 export async function generateIncident(config: LlmConfig, state: GameState, preset?: PresetRuntime): Promise<{ ok: true; data: GeneratedIncident } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const girls = state.girls.filter(girl => !girl.dead).slice(0, 6).map(girl => `${girl.name}（关系 ${girl.bond}，侵蚀 ${girl.corruption}，疲劳 ${girl.fatigue}）`).join('；');
+  const girls = state.girls.filter(girl => !girl.dead).slice(0, 6).map(girl => `${girl.name}（关系 ${girl.bond}${girl.oath ? (girl.wedding ? '，已完婚' : '，已誓约') : ''}，侵蚀 ${girl.corruption}，疲劳 ${girl.fatigue}）`).join('；');
   const context = `现在是第 ${state.day} 日 ${Math.floor((state.minutes % 1440) / 60).toString().padStart(2, '0')}:${String(state.minutes % 60).padStart(2, '0')}，夜糖事务所正在营业。
 在册契约者：${girls || '（还没有契约者）'}；安定度 ${state.reputation}；星砂 ${state.gold}。`;
   const result = await callJson(config, preset, 'incident', singleIncidentContract(), '请把这件事放到我的桌上。', ['共用词条 + 突发事件词条 + 结构契约', '当前局势'], meta, {
@@ -2050,7 +2052,7 @@ function newsGuestMemory(state: GameState, girlId: string): string {
 }
 function storyCastBrief(girl: Girl, isAssistant = false): string {
   // v176：助手在提示词里要有身份，不然模型只把她当普通契约者。
-  return `${girl.name}（${girl.id}）${isAssistant ? ' · 所长的助手' : ''} · ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
+  return `${girl.name}（${girl.id}）${isAssistant ? ' · 所长的助手' : ''} · ${girl.title} · ${girl.element}/${girl.archetype ?? '未定'} · 羁绊 ${girl.bond}${girl.oath ? `（${oathStatusText(girl)}）` : ''}。性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。${outfitLine(girl) ? `${outfitLine(girl)}。` : ''}`;
 }
 
 /**
@@ -2612,7 +2614,7 @@ export async function generateIncidentBatch(config: LlmConfig, state: GameState,
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const factions = (['association', 'government', 'witch'] as const).map(id => `${factionInfo[id].name} 态度 ${state.factions[id].standing}`).join('；');
-  const girls = state.girls.filter(girl => !girl.dead).slice(0, 5).map(girl => `${girl.name}（关系 ${girl.bond}，疲劳 ${girl.fatigue}）`).join('；');
+  const girls = state.girls.filter(girl => !girl.dead).slice(0, 5).map(girl => `${girl.name}（关系 ${girl.bond}${girl.oath ? (girl.wedding ? '，已完婚' : '，已誓约') : ''}，疲劳 ${girl.fatigue}）`).join('；');
   const used = state.incidentPool.map(item => item.title).concat(state.incidents.filter(item => item.status === 'pending').map(item => item.title)).slice(0, 12).join('、');
   const body = `第 ${state.day} 日，夜糖事务所。安定度 ${state.reputation}，星砂 ${state.gold}，城市平均污染 ${Math.round(cityAveragePollution(state))}。
 三方态度：${factions}。在册契约者：${girls || '（暂无）'}。

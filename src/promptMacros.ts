@@ -63,7 +63,7 @@ function girlsText(state: GameState | undefined, arg?: string): string {
   const limit = argInt(arg, 12, 1, 40);
   const lines = list.slice(0, limit).map(girl => [
     `- ${girl.name}（${girl.id}）· 代号「${girl.codename}」· ${girl.title} · ${girl.element}/${girl.archetype ?? '未定职阶'} · Lv.${girl.level}`,
-    ` · 羁绊 ${girl.bond} · 疲劳 ${girl.fatigue} · 侵蚀 ${girl.corruption ?? 0} · 出身 ${girl.factionTag}`,
+    ` · 羁绊 ${girl.bond} · 疲劳 ${girl.fatigue} · 侵蚀 ${girl.corruption ?? 0} · 出身 ${girl.factionTag}${girl.oath ? ` · ${girl.wedding ? '已与所长完婚' : '已与所长誓约'}` : ''}`,
     girl.personality ? `\n  性格：${girl.personality.trim().slice(0, 80)}` : '',
     girl.appearance ? `\n  外貌：${girl.appearance.trim().slice(0, 80)}` : '',
     // v95：她现在穿着什么；魔女化之后这一行写的是形态描述。
