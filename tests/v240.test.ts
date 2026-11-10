@@ -4,6 +4,7 @@ import { act, createInitialState } from '../src/game.ts';
 import { addCorruption } from '../src/rules/conditions.ts';
 import { nextWitchEvent, spawnWitchConfrontation, witchFallbackOpening } from '../src/rules/witchEvent.ts';
 import { witchConfrontationContext } from '../src/llm.ts';
+import { composeTaskSystem, presetPrompts, presetRuntime, shippedPresets } from '../src/presets.ts';
 import { witchConfrontationContract } from '../src/promptSections.ts';
 import { witchOutfitFor } from '../src/rules/outfits.ts';
 import type { CharacterEvent, GameState, Storyline } from '../src/types.ts';
@@ -104,6 +105,26 @@ test('v240 上下文带上故事线结局描述与私人事件回忆', () => {
   assert.equal(context.includes('已走过'), false);
   assert.match(context, /魔女化人格/);
   assert.match(context, /堵住/);
+});
+
+test('v240 出厂预设都带着这条契约，位置也在注入顺序里', () => {
+  for (const preset of shippedPresets()) {
+    const entry = presetPrompts(preset).find(item => item.id === 'arc:witch');
+    assert.ok(entry, `${preset.id} 缺少 arc:witch`);
+    assert.equal(entry!.contract, true);
+    assert.equal(entry!.name, '魔女化对峙 · 结构契约');
+    const ordered = preset.promptOrder?.some(item => item.identifier === 'arc:witch');
+    assert.ok(ordered, `${preset.id} 的 prompt_order 里没有 arc:witch`);
+  }
+});
+
+test('v240 改过的契约会覆盖代码默认值', () => {
+  const preset = shippedPresets()[0]!;
+  const entries = presetPrompts(preset);
+  const edited = { ...preset, prompts: entries.map(entry => entry.id === 'arc:witch' ? { ...entry, content: '【改过的契约】只输出 JSON。' } : entry) };
+  const system = composeTaskSystem(witchConfrontationContract(), presetRuntime(edited), 'arc', {}, {}, 'arc:witch').system;
+  assert.match(system, /【改过的契约】/);
+  assert.equal(system.includes('narration 300–500 字'), false);
 });
 
 test('v240 模型写不出来时仍有兜底开场', () => {
