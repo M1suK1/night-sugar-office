@@ -150,7 +150,12 @@ export function missionHistoryText(state: GameState | undefined, girl: Girl, lim
   return rest > 0 ? `${fitted}\n（还有 ${rest} 次更早的出勤未列出）` : fitted;
 }
 
-/** 故事线经历：按段号排，写清走完的幕、当时的选择与结局。 */
+/**
+ * 故事线经历：按段号排，写清这一段讲什么、走到了哪个结局。
+ *
+ * v233：不再复述「已走过」的节点（模型会照着抄成一串流水账），改成把结局那一段的
+ * 结局描述整段带进来——她要能顺着自己这条线的收束讲话。
+ */
 export function storylineHistoryText(state: GameState | undefined, girl: Girl, limit: number): string {
   if (!state) return '（未开局，没有故事线）';
   const all = state.storylines.filter(story => story.girlId === girl.id);
@@ -158,20 +163,21 @@ export function storylineHistoryText(state: GameState | undefined, girl: Girl, l
   const ordered = [...all].sort((a, b) => (a.slot ?? 1) - (b.slot ?? 1) || a.day - b.day).slice(0, Math.max(1, limit));
   const lines = ordered.map((story: Storyline) => {
     const status = story.status === 'done' ? '已完结' : story.status === 'abandoned' ? '已放弃' : '进行中';
-    const walked = story.beats.filter(beat => beat.status === 'done' || beat.resolvedChoiceId);
-    const walkText = walked.map(beat => {
-      const choice = beat.choices.find(option => option.id === beat.resolvedChoiceId)?.label;
-      return choice ? `${beat.title}（选了「${choice}」）` : beat.title;
-    }).join(' → ');
     const current = story.status === 'active' ? story.beats.find(beat => beat.status !== 'done') : undefined;
+    // v233：不再复述「已走过」的节点（模型会照抄成一串流水账），改成把结局那一段的结局描述整段带进来。
+    // 老存档没有 endingSummary 时，退回蓝图里那个 end 节点写的 summary。
+    const endNode = story.graph?.nodes.find(node => node.data.kind === 'end' && node.data.ending === story.ending);
+    const endingSummary = story.endingSummary?.trim()
+      || (endNode?.data.kind === 'end' ? endNode.data.summary?.trim() ?? '' : '');
     return [
       `- 第 ${story.slot ?? 1} 段「${story.title}」（${status}）：${story.premise?.trim() ?? ''}`,
-      walkText ? `  已走过：${walkText}` : '',
       story.ending ? `  结局：${story.ending}` : '',
+      endingSummary ? `  结局描述：${endingSummary}` : '',
       current ? `  现在停在：${current.title}` : '',
     ].filter(Boolean).join('\n');
   });
-  const budget = Math.min(1400, Math.max(320, ordered.length * 520));
+  // 结局描述必须完整交给模型：预算按每段 900 tokens 给足，宁可整段省略更早的故事线，也不截断结局。
+  const budget = Math.min(2800, Math.max(900, ordered.length * 900));
   return fitLines(lines, budget, { fromEnd: false, omitted: count => `（还有 ${count} 段更早的故事线未列出）` });
 }
 

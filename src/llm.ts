@@ -1,5 +1,5 @@
 import { outfitLine } from './outfitBrief.ts';
-import { oathStatusText } from './girlDossier.ts';
+import { oathStatusText, storylineHistoryText } from './girlDossier.ts';
 import { interleaveTurn } from './storyLines.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
@@ -362,6 +362,21 @@ function missionMemory(state: GameState, girl: Girl, excludeMissionId?: string):
 }
 
 
+/**
+ * 角色对话 / 灯下私语：预设词条里没写【她的过往】时，代码补一段故事线记忆（v233）。
+ *
+ * 玩家自己复制的老预设常常只有【她是谁】，模型就只知道她此刻的样子，不知道她自己
+ * 那条故事线走到了哪个结局——这里兜住这一段，保证对话与私语都带着她的故事。
+ */
+export function storyMemoryAppendix(runtime: PresetRuntime, state: GameState | undefined, girl: Girl): string {
+  if (!state) return '';
+  const hasMacro = [...(runtime.entries ?? []), ...(runtime.contracts ?? [])]
+    .some(entry => entry.content.includes('{{history.storylines}}'));
+  if (hasMacro) return '';
+  const text = storylineHistoryText(state, girl, 3);
+  return text ? `【她的过往】\n${text}` : '';
+}
+
 export async function generateDialogue(config: LlmConfig, { girl, state, text, remote }: DialogueContext, preset?: PresetRuntime): Promise<{ ok: true; text: string; lines: DialogueLine[] } | { ok: false; message: string }> {
   const started = Date.now();
   const runtime = preset ?? EMPTY_RUNTIME;
@@ -381,7 +396,7 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     : `你们在事务所的${state.rooms.find(room => room.id === girl.roomId)?.name ?? '会客厅'}见面。（只作为语气与记忆参考；当前这次对话没有新的委托结算。）`;
   const MAX_CONTEXT = runtime.maxContext;
   const recentHistory: typeof history = [];
-  const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话', { state, focus: girl });
+  const { system: baseSystem } = composePrompt(body, runtime, 'chat', { char: girlBrief(girl) }, '与委托人的对话', { state, focus: girl }, storyMemoryAppendix(runtime, state, girl));
   let used = baseSystem.length + text.length;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
@@ -480,7 +495,7 @@ ${job.outcome === 'victory' || job.outcome === 'success' ? '她赢了，但不�
 ${missionMemory(state, girl, job.missionId)}
 【最近对话】
 ${recentWithActions}`;
-  const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语', { state, focus: girl });
+  const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语', { state, focus: girl }, storyMemoryAppendix(runtime, state, girl));
   const messages: ChatMessage[] = [
     { role: 'system', content: `${system}\n\n${DIALOGUE_FORMAT_HINT}` },
     { role: 'user', content: whisperUserHint() },

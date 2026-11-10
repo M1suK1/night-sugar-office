@@ -97,7 +97,8 @@ test('v49 历史：故事线写出走过的幕与当时的选择', () => {
   state.storylines = [story];
   const text = storylineHistoryText(state, target, 3);
   assert.ok(text.includes('第 1 段「雨里的信」'), '要写段号与标题');
-  assert.ok(text.includes('门口（选了「让她进来」）'), '要写当时的选择');
+  assert.ok(text.includes('她有一封没寄出的信'), '要写这一段讲什么');
+  assert.equal(text.includes('已走过'), false, 'v233 不再复述走过的节点');
   assert.ok(text.includes('现在停在：热水'), '要标出当前停在哪一幕');
 });
 

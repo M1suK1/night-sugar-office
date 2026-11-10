@@ -35,11 +35,14 @@ test('v210 两段长 premise 都原样保留，不再截到 60 字', () => {
 test('v210 三段超预算时丢最旧一段，并写明省略', () => {
   const state = createInitialState();
   const girl = state.girls[0]!;
-  const premise = '这是一段很长的前提，用来把故事线历史撑到预算上限之外，确保第三段还能保留，而最旧的一段被整段省略。'.repeat(10);
+  // v233：结局描述不再被截断，预算放大到每段 900 tokens，这里要真撑爆它才测得到省略。
+  const premise = '这是一段很长的前提，用来把故事线历史撑到预算上限之外，确保第三段还能保留，而最旧的一段被整段省略。'.repeat(60);
   state.storylines = [story(1, premise, '第一幕', '第二幕'), story(2, premise, '第三幕', '第四幕'), story(3, premise, '第五幕', '第六幕')].map(item => ({ ...item, girlId: girl.id }));
   const text = storylineHistoryText(state, girl, 3);
-  assert.ok(text.includes('（还有 1 段更早的故事线未列出）'));
+  // 预算放大后（v233：结局描述不许截断），一次可能丢掉不止一段——只要写明丢了几段、最新的那段还在。
+  assert.match(text, /（还有 [1-9]\d* 段更早的故事线未列出）/);
   assert.ok(text.includes('第 3 段'));
+  assert.equal(text.includes('第 1 段'), false, '最旧的一段应被整段省略');
 });
 
 function sessionEvent(state: ReturnType<typeof createInitialState>): CharacterEvent {

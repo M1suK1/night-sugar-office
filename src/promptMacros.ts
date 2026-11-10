@@ -252,7 +252,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
     id: 'history', label: '她的过往', hint: '按需取用，带参数控制条数与预算',
     items: [
       { key: 'history.missions:6', label: '任务经历', hint: '最近 6 次结算过的委托', budget: 300 },
-      { key: 'history.storylines', label: '故事线经历', hint: '三段故事走到哪、选了什么、结局', budget: 320 },
+      { key: 'history.storylines', label: '故事线经历', hint: '每段故事讲到什么份上、各自走到哪个结局（带完整结局描述）', budget: 900 },
       { key: 'history.chat:20', label: '聊天记录', hint: '最近 20 条她与所长说过的话', budget: 420 },
       { key: 'history.battles:4', label: '战斗经历', hint: '最近 4 场战报的胜负与伤害', budget: 260 },
     ],
