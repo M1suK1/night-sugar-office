@@ -13,7 +13,7 @@ import {
   arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, battleContract,
   dailyContract, dialogueContract, eventContract, incidentBatchContract, newsContract,
   profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract,
-  witchFormContract,
+  witchConfrontationContract, witchFormContract,
 } from './promptSections.ts';
 
 interface ContractSpec {
@@ -36,6 +36,7 @@ const SPECS: ContractSpec[] = [
   { id: 'storyline:start', scope: 'storyline', name: '故事线起点 · 结构契约', make: storylineStartContract },
   { id: 'arc:contract', scope: 'arc', name: '故事线蓝图 · 结构契约', make: () => arcContract('demo-node') },
   { id: 'arc:opening', scope: 'arc', name: '蓝图开场 · 结构契约', make: arcOpeningContract },
+  { id: 'arc:witch', scope: 'arc', name: '魔女化对峙 · 结构契约', make: witchConfrontationContract },
   { id: 'arc:turn', scope: 'arc', name: '蓝图续写 · 结构契约', make: arcTurnContract },
   { id: 'arc:ending', scope: 'arc', name: '剧情收尾 · 结构契约', make: arcEndingContract },
   { id: 'chat:contract', scope: 'chat', name: '角色对话 · 回复格式契约', make: dialogueContract },

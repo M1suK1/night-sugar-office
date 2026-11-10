@@ -769,6 +769,8 @@ export interface CharacterEvent {
   summary?: string;
   pending?: boolean;
   storyNodeId?: string;
+  /** v240：魔女化对峙事件。第一次进入魔女形态时自动生成，开场白由专门的提示词写。 */
+  witch?: boolean;
 }
 export interface PendingTalk { topic: string; prompt: string; day: number }
 

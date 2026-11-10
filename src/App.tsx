@@ -58,7 +58,7 @@ import { slimStateImages } from './imageSlim';
 import { resizeImageFile, yieldToGC } from './image';
 import { taskRuntime } from './llm';
 import { incidentPoolNeed } from './incidents.ts';
-import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryEnding, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchFormProfile, llmHasKey, loadLlmConfig, localSessionSummary, type GirlResearch } from './llm';
+import { generateBattleNote, generateCityNews, generateDaily, generateDialogue, generateEvent, generateGirlProfile, generateIncidentBatch, generateOutfitDescription, generateStoryArc, generateStoryBlueprint, generateStoryEnding, generateStoryOpening, generateStoryTurn, generateWhisper, generateWitchConfrontation, generateWitchFormProfile, llmHasKey, loadLlmConfig, localSessionSummary, type GirlResearch } from './llm';
 import { newsCastPool, newsIsStale, OPENING_NEWS_DAY, openingCityNews } from './cityNews';
 import { localCityNews } from './cityNewsLocal';
 import { loadBalance } from './balance';
@@ -79,6 +79,7 @@ import { CouncilView } from './components/CouncilView';
 import { IncidentDialog } from './components/IncidentDialog';
 import { blockingIncidents, openIncidentFor } from './incidents';
 import { nextChoiceAfterEvent, pendingChoiceOf } from './rules/storyChoice';
+import { nextWitchEvent, witchFallbackOpening } from './rules/witchEvent';
 import { finishedSessionEvents } from './rules/storyEvent';
 import { loadPointsMuted, pointsKey, savePointsMuted, shouldShowPointBadge } from './points';
 import { loadVnStory, saveVnStory, type VnStoryMode } from './vnPrefs';
@@ -1025,6 +1026,46 @@ export default function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, phase, state.whisperQueue, presets, binding]);
+  // v240：魔女化对峙。一次只开一段：当前没有弹窗时，把排队中的那一段打开并写完开场白。
+  const witchRunning = useRef(false);
+  useEffect(() => {
+    if (!loaded || phase !== 'play' || witchRunning.current || modal) return;
+    const pending = nextWitchEvent(state);
+    if (!pending) return;
+    const girl = state.girls.find(entry => entry.id === pending.girlId);
+    if (!girl) return;
+    witchRunning.current = true;
+    setModal({ type: 'event', id: pending.id });
+    void (async () => {
+      const fallback = witchFallbackOpening(girl);
+      let narration = '';
+      let lines: StoryLine[] = [];
+      let options: string[] = [];
+      let backdrop: string | undefined = pending.backdrop;
+      let failure = '';
+      try {
+        if (llmHasKey()) {
+          const result = await generateWitchConfrontation(loadLlmConfig(), latestState.current ?? state, pending, taskRuntime(boundPreset('arc', presets, binding), 'arc'));
+          if (result.ok) {
+            narration = result.narration;
+            lines = result.lines;
+            options = result.options;
+            backdrop = result.backdrop;
+          } else failure = result.message;
+        }
+      } catch (error) {
+        failure = error instanceof Error ? error.message : '未知错误';
+      }
+      if (!narration) { narration = fallback.narration; lines = fallback.lines; }
+      if (!options.length) options = fallback.options;
+      setState(prev => {
+        const applied = act(prev, { type: 'startStorySession', eventId: pending.id, cast: [pending.girlId], opening: narration, lines, options, seed: '', backdrop });
+        return applied.ok ? applied.state : prev;
+      });
+      if (failure) notify(`魔女化对峙没有写出来：${failure} 先用模板接上。`, false);
+    })().finally(() => { witchRunning.current = false; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, phase, modal, state.events, presets, binding]);
   const writeBattleNote = async (battle: BattleState) => {
     if (noteBusy) return;
     setNoteBusy(true);

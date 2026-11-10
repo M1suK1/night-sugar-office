@@ -3,6 +3,7 @@ import { pensionFor } from '../contracts.ts';
 import { corruptionStage } from '../economy.ts';
 import type { GameState, Girl, StatKey } from '../types.ts';
 import { book, clone, dateLabel, hashText } from './core.ts';
+import { spawnWitchConfrontation } from './witchEvent.ts';
 // v35 从 src/game.ts 拆出：侵蚀、药瘾、特性与年金。
 
 export function addCorruption(state: GameState, girl: Girl, amount: number): void {
@@ -16,6 +17,8 @@ export function addCorruption(state: GameState, girl: Girl, amount: number): voi
       girl.witch = true;
       girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
       girl.withdrawalDays = 0;
+      // v240：跨过魔女线的那一刻就排一段对峙，界面立刻弹出。
+      spawnWitchConfrontation(state, girl);
     }
   }
 }

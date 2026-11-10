@@ -245,6 +245,23 @@ export function arcOpeningContract(): string {
   ].join('\n');
 }
 
+/** 魔女化对峙这一请求的点题句（生成器里不写提示词）。 */
+export function witchUserHint(): string {
+  return '请写下她堵住所长的那一段。';
+}
+
+/** 魔女化对峙的锁定契约：开场白、她的台词与三个选项。 */
+export function witchConfrontationContract(): string {
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
+    '{"narration":"","lines":[{"speakerId":"","expression":"angry","text":"","mode":"speech|thought"}],"options":["","",""],"backdrop":""}',
+    'backdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。',
+    'narration 300–500 字：先写清她把你堵在哪里（具体到房间、门口或街区），再写她怎么封住退路、你此刻能看见什么。不要写数值、伤害、技能名，也不要解释「魔女化」这个词。',
+    'lines 3–6 句，全部是她对你说的，speakerId 只能是她：按上面的经历逐条对质——她记得的承诺、你让她受的伤、你让她上的战场、你瞒过她的事，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。',
+    'options 恰好 3 条，每条不超过 60 字、用「你……」开头：一条解释、一条认错、一条不退让；不要写数值与效果。',
+  ].join('\n');
+}
+
 /** 交互式续写的锁定契约。 */
 export function arcTurnContract(): string {
   return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"after\":0,\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0,\"summary\":\"\"}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 60 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nsummary 必填，不超过 300 字：把这一轮压成一段给下一轮用的前情——所长做了什么、她怎么回应、局面推进到哪；之后的历史只引用它。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n如果这一轮之后要给出选项，旁白必须先把她推到选择的门口：写清她停下来的动作、看着的人、以及没说出口的那半个问题——不要让选项悬在没有任何铺垫的叙述后面。";

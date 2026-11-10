@@ -1,5 +1,5 @@
 import { outfitLine } from './outfitBrief.ts';
-import { oathStatusText, storylineHistoryText } from './girlDossier.ts';
+import { chatHistoryText, oathStatusText, storylineHistoryText } from './girlDossier.ts';
 import { interleaveTurn } from './storyLines.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
@@ -2225,6 +2225,63 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
 }
 
+
+/**
+ * 魔女化对峙的上下文（v240）。
+ *
+ * 她刚跨过魔女线：把她堵人的场面、这些日子攒下的账，一起交给叙事者。
+ * 故事线的结局描述与私人事件摘要都走已有口径，不在这里另拼一份。
+ */
+export function witchConfrontationContext(state: GameState, event: CharacterEvent): string {
+  const girl = state.girls.find(entry => entry.id === event.girlId) ?? focusGirlOf(state, event);
+  if (!girl) return '';
+  const witchForm = girl.witchForm;
+  return [
+    `【这一段】${event.title}`,
+    storyClockText(event, state),
+    `【她】${girl.name}（${girl.id}）· ${girl.element}/${girl.archetype ?? '未定'} · Lv.${girl.level}`,
+    `【魔女化人格】${activePersonality(girl)}`,
+    witchForm ? `【魔女形态】${witchForm.name}${witchForm.description ? `：${witchForm.description}` : ''}` : '',
+    `【她此刻】侵蚀 ${girl.corruption ?? 0}/100 · 生命 ${girl.hp}/${girl.maxHp} · 疲劳 ${girl.fatigue}/100${girl.scars.length ? ` · 疤痕 ${girl.scars.length} 道` : ''}${girl.oath ? ` · ${oathStatusText(girl)}` : ''}`,
+    `【她的故事】\n${storylineHistoryText(state, girl, 3)}`,
+    recentEventSummaries(state, girl.id) ? `【你们之前发生过的】\n${recentEventSummaries(state, girl.id)}` : '',
+    `【最近说过的话】\n${chatHistoryText(state, girl, 8)}`,
+    '【这一次】她刚跨过魔女线，就用这副样子把你堵住。开场只写这一场对峙：地点具体，退路被她封死；她的不满必须来自上面的经历——承诺、伤势、战场、隐瞒，一条一条落到具体的事上。不要写数值、技能名、回合数；不要替所长说话；最后把话头留给所长。',
+  ].filter(Boolean).join('\n');
+}
+
+/** 魔女化对峙的开场白：写她怎么把人堵住、按经历一条条算账。失败时由调用方用模板兜底。 */
+export async function generateWitchConfrontation(
+  config: LlmConfig,
+  state: GameState,
+  event: CharacterEvent,
+  preset?: PresetRuntime,
+): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string } | { ok: false; message: string }> {
+  const started = Date.now();
+  const meta: LlmCallMeta = {};
+  const cast = storyCast(state, event);
+  const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
+  const context = witchConfrontationContext(state, event);
+  const result = await callJson(config, preset, 'arc', witchConfrontationContract(), witchUserHint(), ['共用词条 + 完整剧情词条 + 魔女化对峙契约', `角色：${event.title}`], meta, {
+    char: briefs, personality: '', scenario: event.title, story: event.title, contractId: 'arc:witch',
+  }, { state, focus: focusGirlOf(state, event) }, 0, context);
+  if (!result.ok) {
+    recordLlmLog({ kind: '魔女化', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
+    return result;
+  }
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
+  const lines = parseStoryLines(result.raw.lines, cast, 6);
+  if (!narration && lines.length === 0) {
+    const message = '叙事者没有写出这一段对峙。';
+    recordLlmLog({ kind: '魔女化', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
+    return { ok: false, message };
+  }
+  const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
+  const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
+  recordLlmLog({ kind: '魔女化', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `魔女化对峙：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
+  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
+}
+
 /**
  * 交互剧情的收尾：玩家决定把这一段停在这里，由叙事者写出结局。
  *
@@ -2606,7 +2663,7 @@ import { traits } from './content/traits.ts';
 import { validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
 import { isBackdropId } from './vn/backdrops.ts';
-import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, endingLeadBlock, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchFormContract} from './promptSections.ts';
+import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, endingLeadBlock, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchConfrontationContract, witchFormContract, witchUserHint} from './promptSections.ts';
 import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';

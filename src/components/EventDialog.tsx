@@ -495,7 +495,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
       <div className="battle-note-shell">
         <header className="battle-note-head">
           <div className="battle-note-head-copy">
-            <span className="modal-eyebrow"><Sparkles size={13} />{event.meeting ? `事务所会议 · ${eventClockLabel(event)} · ${event.meeting.placeName} · ${event.meeting.fee} 星砂` : `角色剧情 · ${eventClockLabel(event)} · 已走 ${rounds} 轮`}</span>
+            <span className="modal-eyebrow"><Sparkles size={13} />{event.meeting ? `事务所会议 · ${eventClockLabel(event)} · ${event.meeting.placeName} · ${event.meeting.fee} 星砂` : event.witch ? `魔女化 · ${eventClockLabel(event)} · 已走 ${rounds} 轮` : `角色剧情 · ${eventClockLabel(event)} · 已走 ${rounds} 轮`}</span>
             <h2>{event.title}</h2>
             <p>{event.hook}</p>
             {event.meeting && (
