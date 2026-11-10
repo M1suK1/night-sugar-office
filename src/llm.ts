@@ -1,5 +1,6 @@
 import { outfitLine } from './outfitBrief.ts';
 import { oathStatusText } from './girlDossier.ts';
+import { interleaveTurn } from './storyLines.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
 import { describeVertexCredential, normalizeVertexModel, vertexChat, vertexLocation, vertexTarget } from './vertex.ts';
@@ -1989,8 +1990,23 @@ export function storyRecapHistory(event: CharacterEvent, turns: StoryTurn[], lim
   const narrators = turns.filter(turn => turn.role === 'narrator');
   const opening = (event.opening ?? narrators[0]?.text ?? '').trim();
   const originalOf = (turn: StoryTurn) => {
-    const dialogue = (turn.lines ?? []).map(line => `${line.speakerName}：「${line.text}」`).join('\n');
-    return `${turn.text.trim()}${dialogue ? `\n${dialogue}` : ''}`;
+    const lines = (turn.lines ?? []).filter(line => line.text.trim());
+    const paragraphs = turn.text.trim().split(/\n+/).map(paragraph => paragraph.trim()).filter(Boolean);
+    if (!lines.length || !paragraphs.length) return paragraphs.join('\n') || turn.text.trim();
+    // 台词按 after 插回旁白段之间；提示词按换行分段，和 after 的口径一致，
+    // 不为了凑格子把一段旁白再切开。
+    const segments = interleaveTurn(paragraphs, lines);
+    const parts: string[] = [];
+    for (const segment of segments) {
+      if (segment.kind === 'narration') {
+        const paragraph = paragraphs[segment.index];
+        if (paragraph) parts.push(paragraph);
+        continue;
+      }
+      const line = lines[segment.index];
+      if (line) parts.push(`${line.speakerName}：「${line.text}」`);
+    }
+    return parts.join('\n');
   };
   const lines: string[] = [];
   const rounds = narrators.slice(1).slice(-limit);
