@@ -77,7 +77,7 @@ test('v240 对峙契约：写清地点、逐条对质、不写数值', () => {
   const text = witchConfrontationContract();
   assert.match(text, /堵在哪里/);
   assert.match(text, /逐条对质/);
-  assert.match(text, /不要写数值/);
+  assert.match(text, /500–1000 字/);
   assert.match(text, /"narration"/);
 });
 

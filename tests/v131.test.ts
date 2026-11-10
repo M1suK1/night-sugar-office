@@ -77,7 +77,7 @@ test('v103 一次请求只留一份【JSON 形状】：续写只用续写要求�
 
   const ending = composeTaskSystem(arcEndingContract(), runtime, 'arc', {}, {}, 'arc:ending');
   assert.equal(ending.system.split('【JSON 形状】').length - 1, 1);
-  assert.ok(ending.system.includes('narration 400–900 字'));
+  assert.ok(ending.system.includes('narration 1000–2000 字'));
   assert.ok(ending.system.trim().endsWith(arcEndingContract().trim()));
 });
 

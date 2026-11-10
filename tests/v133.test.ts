@@ -52,7 +52,7 @@ test('v133 收尾契约作为预设词条暴露，且明确要求不给选项', 
   assert.ok(entry, '预设里要有「剧情收尾 · 结构契约」');
   assert.equal(entry!.content, arcEndingContract());
   assert.ok(entry!.content.includes('不要写 options'));
-  assert.ok(entry!.content.includes('400–900 字'));
+  assert.ok(entry!.content.includes('1000–2000 字'));
 });
 
 test('v133 收尾请求发的是收尾契约，而且不带 options 字段', async () => {
