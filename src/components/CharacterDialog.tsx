@@ -8,7 +8,7 @@ import { activePersonality } from '../personality';
 import { WITCH_STAGE_AT, activeSetOf, corruptionEmpathyPenalty, effectiveMaxHp, effectiveMaxSpirit, effectiveStats, corruptionStage } from '../economy';
 import { findEquipmentSet } from '../content/sets';
 import { EquipmentFacts } from './EquipmentFacts';
-import { clinicCost, clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
+import { DRUG_STABILITY_COST, DRUG_STOCK_MAX, clinicCost, clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
 import { OATH_RING_COST, oathBlockedReason } from '../rules/oathOps';
 import { eventClockLabel } from '../storySession';
@@ -40,7 +40,7 @@ const slotLabels = { weapon: '法器', charm: '护符' } as const;
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
+export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign, onHire, onRetire, onClinic, onTradeDrug, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 满羁绊后缔结誓约；誓约后婚礼走议会会议。 */
   onOath?: () => void;
@@ -63,6 +63,8 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
   onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
+  /** v244：用城市安定度换一支月蚀抑制剂（不动星砂）。 */
+  onTradeDrug?: () => void;
   onAssistant: () => void; onRemote: () => void; onRenew: () => void; onRehire: () => void;
   onChangeOutfit: (id: string) => void; onExpression: (expression: Expression) => void;
   onExpressionVariants: () => void;
@@ -534,6 +536,7 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
               <div className="clinic-grid">
                 <button id="clinic-wipe" className="clinic-action" disabled={state.gold < wipePrice || girl.status === 'mission' || girl.status === 'expedition'} onClick={() => onClinic('wipe')}><Brain size={16} /><b>记忆重塑</b><small>{wipePrice.toLocaleString('en-US')} 星砂 · 等级、属性与疤痕归零；魔女态解除魔女化，已完成的回忆一并抹去</small></button>
                 <button id="clinic-clone" className="clinic-action" disabled={state.gold < clonePrice || girl.level < 3 || Boolean(girl.cloneOf)} onClick={() => onClinic('clone')}><Users size={16} /><b>复制契约</b><small>{clonePrice.toLocaleString('en-US')} 星砂 · 从 1 级开始，仅一次</small></button>
+                {onTradeDrug && <button id="clinic-trade-drug" className="clinic-action" disabled={state.reputation < DRUG_STABILITY_COST || (state.inventory['moon-drug'] ?? 0) >= DRUG_STOCK_MAX} onClick={onTradeDrug}><Syringe size={16} /><b>安定度换抑制剂</b><small>{DRUG_STABILITY_COST} 点城市安定度 · 仓库上限 {DRUG_STOCK_MAX} 支 · 现有 {state.inventory['moon-drug'] ?? 0} 支</small></button>}
               </div>
             </section>
           </>}

@@ -1515,6 +1515,8 @@ export type GameAction =
   | { type: 'clearWitchForm'; girlId: string }
   /** v85：用一支月光抑制剂把魔女形态压回去（魔女化不能自己退）。 */
   | { type: 'suppressWitch'; girlId: string }
+  /** v244：用城市安定度直接换一支月蚀抑制剂（不动星砂）。 */
+  | { type: 'tradeStabilityDrug' }
   | { type: 'addIncident'; incident: Incident }
   /** 模型生成的一批弹窗，进待用池（由 game 侧洗数据）。 */
   | { type: 'mergeIncidentPool'; entries: unknown[] }

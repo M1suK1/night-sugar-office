@@ -11,7 +11,7 @@ import {
   applyImportCards, applyRefillMarket, applyUpgradeMarket,
 } from './cardOps.ts';
 import {
-  applyBuyItem, applyCraftEquipment, applyEquipItem, applyRefineEquipment, applyUnequipItem, applyUseItem,
+  applyBuyItem, applyCraftEquipment, applyEquipItem, applyRefineEquipment, applyTradeStabilityDrug, applyUnequipItem, applyUseItem,
 } from './itemOps.ts';
 import {
   applyAllocateStat, applyAllocateStats, applyBuild, applyChangeOutfit, applyClearWitchForm, applySuppressWitch,
@@ -90,6 +90,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'removeOutfit': return applyRemoveOutfit(state, action);
     case 'renameOutfit': return applyRenameOutfit(state, action);
     case 'buyItem': return applyBuyItem(state, action);
+    case 'tradeStabilityDrug': return applyTradeStabilityDrug(state);
     case 'craftEquipment': return applyCraftEquipment(state, action);
     case 'refineEquipment': return applyRefineEquipment(state, action);
     case 'equipItem': return applyEquipItem(state, action);

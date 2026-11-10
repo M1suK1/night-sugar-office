@@ -7,7 +7,7 @@ import * as game from '../src/game.ts';
  * 新增/删除导出时请同步改这份快照，并在提交信息里说明原因。
  */
 const EXPECTED = [
-  'MAX_DUEL_SIDE', 'SAVE_KEY', 'STORY_SESSION_TURNS', 'WARDROBE_LIMIT', 'act',
+  'DRUG_STABILITY_COST', 'DRUG_STOCK_MAX', 'MAX_DUEL_SIDE', 'SAVE_KEY', 'STORY_SESSION_TURNS', 'WARDROBE_LIMIT', 'act',
   'advanceStoryGraph', 'annotateMission', 'applyIncidentEffect', 'applyStoryEffect',
   'buildCost', 'buildTemplateArc', 'buildTemplateStoryline', 'canAcceptGeneratedContent',
   'capacity', 'chance', 'clinicCost', 'clinicLevel', 'clinicQuote', 'clock', 'completeStoryMission', 'createBlankState',

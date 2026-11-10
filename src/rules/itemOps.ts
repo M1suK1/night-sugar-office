@@ -7,6 +7,28 @@ import { executeRefine } from '../refine.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
+/** 用安定度换抑制剂的价码与库存上限（v244）。 */
+export const DRUG_STABILITY_COST = 10;
+export const DRUG_STOCK_MAX = 5;
+
+/** tradeStabilityDrug：10 点城市安定度换 1 支月蚀抑制剂。 */
+export function applyTradeStabilityDrug(state: GameState): ActionResult {
+  const next = clone(state);
+  const stock = next.inventory['moon-drug'] ?? 0;
+  if (stock >= DRUG_STOCK_MAX) return { state, ok: false, message: `抑制剂最多囤积 ${DRUG_STOCK_MAX} 支。` };
+  if (next.reputation < DRUG_STABILITY_COST) return { state, ok: false, message: `城市安定度不足：换一支需要 ${DRUG_STABILITY_COST} 点，当前 ${next.reputation}。` };
+  next.reputation -= DRUG_STABILITY_COST;
+  next.inventory['moon-drug'] = stock + 1;
+  next.logs.unshift({
+    id: `log-trade-drug-${next.day}-${Date.now()}`,
+    time: dateLabel(next.day, next.minutes),
+    kind: 'clinic',
+    text: `用 ${DRUG_STABILITY_COST} 点城市安定度向协会换了一支「月蚀抑制剂」（库存 ${stock + 1} 支）。`,
+    delta: -DRUG_STABILITY_COST,
+  });
+  return { state: next, ok: true, message: `用 ${DRUG_STABILITY_COST} 点安定度换到一支月蚀抑制剂，库存 ${stock + 1} 支。` };
+}
+
 /** buyItem 的动作处理器（v35 从 act 拆出）。 */
 export function applyBuyItem(state: GameState, action: Extract<GameAction, { type: 'buyItem' }>): ActionResult {
       const next = clone(state);
