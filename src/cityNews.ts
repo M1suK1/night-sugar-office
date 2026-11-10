@@ -261,6 +261,79 @@ export function newsTalkingPoints(state: GameState, roll = newsRollOf(state)): {
   };
 }
 
+
+export interface NewsFocus {
+  tone: CityNewsItem['tone'];
+  /** 今晚这一档只谈这一件事。 */
+  title: string;
+  detail: string[];
+}
+
+/**
+ * 今晚只谈哪一件事（v243）。
+ *
+ * 以前四件事（势力 / 污染 / 安定 / 街头）一起丢给模型，台上三个人各说各的，
+ * 读起来前言不搭后语。这里先按存档挑出最值得谈的一件，并给出两三条可落地的细节；
+ * 命中多条时按当天的 roll 轮换，免得每晚都在谈同一个话题。
+ */
+export function newsFocus(state: GameState, roll = newsRollOf(state)): NewsFocus {
+  const hottest = [...HOSTILITY_PAIRS]
+    .map(pair => ({ pair, value: hostilityValue(state, pair) }))
+    .sort((a, b) => b.value - a.value)[0];
+  const dirtiestId = rolledDistrict(state, roll);
+  const dirtiestLevel = dirtiestId ? state.pollution?.[dirtiestId] ?? 0 : 0;
+  const busiest = state.missions.find(mission => mission.status !== 'done');
+  const candidates: NewsFocus[] = [];
+
+  if (hottest && hottest.value >= 35) {
+    const [left, right] = pairMembers(hottest.pair);
+    candidates.push({
+      tone: 'faction',
+      title: `${pairLabel(hottest.pair)}之间的火气`,
+      detail: [
+        `敌意 ${hottest.value}（${hostilityTierLabel(hottest.value)}）`,
+        `${factionInfo[left].name}的态度 ${state.factions[left]?.standing ?? 0}`,
+        `${factionInfo[right].name}的态度 ${state.factions[right]?.standing ?? 0}`,
+      ],
+    });
+  }
+  if (dirtiestId && dirtiestLevel >= 40) {
+    const owner = state.territories?.[dirtiestId];
+    candidates.push({
+      tone: 'pollution',
+      title: `${districts[dirtiestId].name}的污染`,
+      detail: [
+        `污染 ${dirtiestLevel}（${pollutionTierLabel(dirtiestLevel)}）`,
+        owner ? `这一片现在归${factionInfo[owner].name}管` : '这一片暂时没人认领',
+        '附近的委托与夜巡都会绕着这块地走',
+      ],
+    });
+  }
+  if (busiest) {
+    const district = busiest.district ? districts[busiest.district]?.name : '事务所周边';
+    candidates.push({
+      tone: 'street',
+      title: `派遣栏上的「${clip(busiest.title, 16)}」`,
+      detail: [
+        `${busiest.work === 'combat' ? '战斗' : '调查'} · ${busiest.difficulty} · ${district}`,
+        `报酬 ${busiest.reward} 星砂`,
+        busiest.deadlineAt !== undefined ? '还挂在栏上，等着有人接' : '今晚还挂在栏上',
+      ],
+    });
+  }
+  candidates.push({
+    tone: 'stability',
+    title: '事务所的安定度',
+    detail: [
+      `安定度 ${state.reputation}`,
+      `协会 ${state.factions.association?.standing ?? 0} · 市役所 ${state.factions.government?.standing ?? 0} · 月蚀庭 ${state.factions.witch?.standing ?? 0}`,
+      '市民怎么看待这间事务所，从今晚的电话和委托里听得出来',
+    ],
+  });
+
+  return candidates[roll % candidates.length]!;
+}
+
 /** 没有 API Key、或模型两次都不合格时的本地访谈：全部由当前存档算出来。 */
 
 /** 玩家接手的第一夜：不生成，只播这一条。电台口吻，用名字称呼所长，不用「你」。 */

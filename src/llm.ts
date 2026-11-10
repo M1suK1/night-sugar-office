@@ -1731,7 +1731,7 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
   // v167：一档夜间访谈 —— 主持人与嘉宾由本地先选好，模型只负责写他们说的话。
   const host = pickNewsHost(state);
   const guests = pickNewsGuests(state, host?.id);
-  const points = newsTalkingPoints(state);
+  const focus = newsFocus(state);
   const castLines = [host, ...guests]
     .filter((person): person is NonNullable<typeof host> => Boolean(person))
     .map(person => {
@@ -1754,12 +1754,11 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
     `请为第 ${state.day} 日的夜晚写这档访谈。提到所长时用他的名字「${loadPlayerProfile().name.trim() || '新任所长'}」，不要用「你」。`,
     '【今晚台上的人】',
     castLines || '（今晚没有人能上节目，写一段主持人独白）',
-    '【今晚要谈的事】',
-    `- 势力：${points.faction}`,
-    `- 污染：${points.pollution}`,
-    `- 安定：${points.stability}`,
-    `- 街头：${points.street}`,
-    '【她们最近做过的事】这是她们自己的经历；聊到时用她自己的口吻带一句，不要念数字、不要整段复述。',
+    '【今晚只谈这一件】',
+    `- ${focus.title}：${focus.detail.join('；')}`,
+    '整场访谈只围绕这一件事：主持人开场就点题，嘉宾的每一次发言都要回到它上面——赞成、反对、追问、打圆场都行，但不要换话题。',
+    '不要提别的新闻，也不要罗列势力、污染、安定、街头里的其他项；items 只写这一条。',
+    '【她们最近做过的事】这是她们自己的经历；只在能接上今晚这一件时用一句，接不上就别提，不要念数字、不要整段复述。',
     memoryLines || '（最近没有特别的事，聊眼前就好）',
     '每个人说话都要像她自己：照上面写的性格与说话方式，三个人不要一个腔调，也不要写成汇报或通报。',
     '上面的数字只是给你判断形势用的：台词里不要报数字、不要念读数，把它们变成具体的人、事、动作和情绪。',
@@ -2685,7 +2684,7 @@ import { validateNightProposal, type NightProposalV2 } from './llm-night.ts';
 import { priorSegmentBrief } from './storyplan.ts';
 import { isBackdropId } from './vn/backdrops.ts';
 import { arcContract, arcEndingContract, arcOpeningContract, arcTurnContract, arcUserHint, battleContract, dailyContract, dialogueContract, endingLeadBlock, eventContract, eventUserHint, incidentBatchContract, newsContract, outfitContract, profileSchemaContract, singleIncidentContract, storylineContract, storylineStartContract, whisperUserHint, witchConfrontationContract, witchFormContract, witchUserHint} from './promptSections.ts';
-import { newsSpeakerBrief, newsTalkingPoints, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
+import { newsFocus, newsSpeakerBrief, pickNewsGuests, pickNewsHost, sanitizeCityNews } from './cityNews.ts';
 import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
