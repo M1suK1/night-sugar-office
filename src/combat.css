@@ -1128,3 +1128,14 @@
 @media (max-width: 900px) {
   .battle-note-stage-body .vn-stage { min-height: 0; }
 }
+
+/* v231：满羁绊誓约 */
+.oath-strip{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;border:1px solid #f3aec926;border-radius:6px;background:#f3aec908;color:#d4a0bd}
+.oath-strip>svg{flex-shrink:0}
+.oath-strip>span:first-of-type{display:flex;flex-direction:column;gap:4px;min-width:0}
+.oath-strip b{font-size:10px;font-weight:500;color:#e5c0d6}
+.oath-strip small{font-size:8px;line-height:1.6;color:#8f7899}
+.oath-strip>.btn{margin-left:auto;flex-shrink:0;font-size:9px;padding:7px 10px;min-height:30px}
+.oath-actions{display:flex;gap:6px;margin-left:auto}
+.oath-actions .btn{font-size:9px;padding:7px 10px;min-height:30px}
+@media(max-width:560px){.oath-strip{flex-wrap:wrap}.oath-strip>.btn,.oath-actions{width:100%;justify-content:center}}

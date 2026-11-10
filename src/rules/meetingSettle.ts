@@ -18,6 +18,14 @@ export function settleMeeting(state: GameState, event: CharacterEvent, summary: 
   const gain = Math.max(0, Math.round(rules.meetingRelationBase));
   const ids = plan.attendeeIds.filter(id => state.girls.some(girl => girl.id === id));
   if (!ids.length) return undefined;
+  const kind = plan.kind === 'wedding' ? 'wedding' : 'meeting';
+  const partner = kind === 'wedding' && plan.partnerId
+    ? state.girls.find(girl => girl.id === plan.partnerId)
+    : undefined;
+  // 婚礼只在剧情正常收尾时落账：中途关掉不算，可以重新办。
+  if (partner?.oath && !partner.wedding) {
+    partner.wedding = { day: plan.day, at: plan.at || dateLabel(state.day, state.minutes), eventId: event.id, placeName: plan.placeName };
+  }
 
   for (const girl of state.girls) {
     if (!ids.includes(girl.id)) continue;
@@ -31,6 +39,9 @@ export function settleMeeting(state: GameState, event: CharacterEvent, summary: 
   const record: MeetingRecord = {
     id: `meeting-record-${event.id}`,
     eventId: event.id,
+    kind,
+    partnerId: kind === 'wedding' ? plan.partnerId : undefined,
+    partnerName: kind === 'wedding' ? partner?.name : undefined,
     day: plan.day,
     at: plan.at || dateLabel(state.day, state.minutes),
     title: plan.title,
@@ -38,7 +49,9 @@ export function settleMeeting(state: GameState, event: CharacterEvent, summary: 
     attendees: ids.map(id => ({ id, name: state.girls.find(girl => girl.id === id)?.name ?? id })),
     buys: plan.buys,
     fee: plan.fee,
-    summary: (summary || '').slice(0, 600) || `${plan.title}：${ids.length} 人在${plan.placeName}坐了一小时。`,
+    summary: (summary || '').slice(0, 600) || (kind === 'wedding'
+      ? `${plan.title}：${partner?.name ?? '她'}与所长在${plan.placeName}举行了婚礼。`
+      : `${plan.title}：${ids.length} 人在${plan.placeName}坐了一小时。`),
     relationshipGain: gain,
   };
   state.meetings = [record, ...(state.meetings ?? [])].slice(0, MEETING_RECORD_MAX);
@@ -46,7 +59,9 @@ export function settleMeeting(state: GameState, event: CharacterEvent, summary: 
     id: `log-meeting-done-${event.id}`,
     time: dateLabel(state.day, state.minutes),
     kind: 'council',
-    text: `「${plan.title}」散会：${record.attendees.map(person => person.name).join('、')}之间关系 +${gain}。`,
+    text: kind === 'wedding' && partner
+      ? `${partner.name}与所长的婚礼结束：${record.attendees.map(person => person.name).join('、')}之间关系 +${gain}。`
+      : `「${plan.title}」散会：${record.attendees.map(person => person.name).join('、')}之间关系 +${gain}。`,
   });
   return record;
 }
@@ -72,6 +87,9 @@ export function sanitizeMeetingRecords(raw: unknown): MeetingRecord[] {
     return [{
       id: typeof value.id === 'string' && value.id ? value.id : `meeting-record-${index}`,
       eventId,
+      kind: value.kind === 'wedding' ? 'wedding' : 'meeting',
+      partnerId: typeof value.partnerId === 'string' && value.partnerId ? value.partnerId : undefined,
+      partnerName: typeof value.partnerName === 'string' && value.partnerName ? value.partnerName.slice(0, 40) : undefined,
       day: Number.isFinite(Number(value.day)) ? Math.max(0, Math.round(Number(value.day))) : 0,
       at: typeof value.at === 'string' ? value.at.slice(0, 32) : '',
       title: title || '一场会议',

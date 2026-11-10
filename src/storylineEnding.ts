@@ -7,6 +7,8 @@ export interface EndingNotice {
   ending: string;
   girlId: string;
   premise: string;
+  /** 结束节点写的结局描述；旧故事线没有就留空。 */
+  summary?: string;
   day: number;
 }
 
@@ -29,6 +31,10 @@ export function newlyFinishedStories(
     const ending = story.ending?.trim();
     if (story.status !== 'done' || !ending) return [];
     if (before.get(story.id) !== 'active') return [];
-    return [{ id: story.id, title: story.title, ending, girlId: story.girlId, premise: story.premise, day: story.day }];
+    const summary = story.endingSummary?.trim() || undefined;
+    return [{
+      id: story.id, title: story.title, ending, girlId: story.girlId, premise: story.premise,
+      ...(summary ? { summary } : {}), day: story.day,
+    }];
   });
 }

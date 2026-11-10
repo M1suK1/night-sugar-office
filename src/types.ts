@@ -514,6 +514,8 @@ export interface Storyline {
   requires?: string;
   /** 实际走到的结局标签，写进编年史。 */
   ending?: string;
+  /** 走到结局时那个结束节点写的结局描述（v232），结局弹窗要展示。 */
+  endingSummary?: string;
   graph?: StoryGraph;
   run?: StoryRun;
 }
@@ -939,6 +941,10 @@ export interface Girl {
   /** 故事线触发的「有话想说」。 */
   pendingTalk?: PendingTalk;
   corruption: number; witch?: boolean; drugUntilDay?: number; withdrawalDays?: number;
+  /** 满羁绊后的誓约；day/at 在缔结那一刻记录。 */
+  oath?: { day: number; at: string };
+  /** 婚礼完成记录：会议事件正常收尾时才写入。 */
+  wedding?: { day: number; at: string; eventId: string; placeName: string };
   /** 升级后还没分配的四维点数（手动加点模式）；旧档没有按 0 算。 */
   unspentPoints?: number;
   equipment: { weapon?: string; charm?: string };
@@ -1020,6 +1026,10 @@ export interface Mission {
 /** 一场事务所会议（v168）：玩家填的标题、地点、参会者与采购，都是剧情设定。 */
 export interface MeetingPlan {
   title: string;
+  /** 这一场是普通会议还是婚礼；旧档缺失按 meeting 处理。 */
+  kind?: 'meeting' | 'wedding';
+  /** 婚礼对象（kind === 'wedding' 时必填）。 */
+  partnerId?: string;
   placeId: string;
   placeName: string;
   /** 参会者（至少 2 人、最多 6 人，含助手）。 */
@@ -1036,6 +1046,10 @@ export interface MeetingPlan {
 export interface MeetingRecord {
   id: string;
   eventId: string;
+  /** 这场是普通会议还是婚礼；旧记录按 meeting。 */
+  kind?: 'meeting' | 'wedding';
+  partnerId?: string;
+  partnerName?: string;
   day: number;
   at: string;
   title: string;
@@ -1448,6 +1462,7 @@ export type GameAction =
         | { kind: 'girl'; girlId: string; slot: 'weapon' | 'charm' };
     }
   | { type: 'startMeeting'; plan: Omit<MeetingPlan, 'fee' | 'day' | 'at'> }
+  | { type: 'oath'; girlId: string }
   | { type: 'appendStoryTurn'; eventId: string; turn: StoryTurn }
   | { type: 'replaceStoryTurn'; eventId: string; turnId: string; turn: StoryTurn }
   /** 手动改一句：玩家自己修台词/旁白文本（不动 id 与轮次）。 */

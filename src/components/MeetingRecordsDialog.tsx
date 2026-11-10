@@ -1,4 +1,4 @@
-import { Coins, MapPin, ScrollText, Users } from 'lucide-react';
+import { Coins, Heart, MapPin, ScrollText, Users } from 'lucide-react';
 import type { MeetingRecord } from '../types';
 
 /** 会议记录（v168）：日期、标题、地点、人数、花费，点开看摘要与回看入口。 */
@@ -18,6 +18,7 @@ export function MeetingRecordsDialog({ records, onReplay, onClose }: {
           <li key={record.id} id={`meeting-record-${record.id}`}>
             <header>
               <b>{record.title}</b>
+              {record.kind === 'wedding' && <em className="meeting-record-wedding"><Heart size={10} />婚礼</em>}
               <small>{record.at || `第 ${record.day} 日`}</small>
             </header>
             <div className="meeting-record-meta">

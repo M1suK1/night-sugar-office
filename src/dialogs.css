@@ -1470,7 +1470,18 @@ button.vn-chip#story-opening-rewrite {
 .mission-weather.weather-wind .mission-weather-name{color:#b3c0b6}
 
 /* v193 故事线结局弹窗 */
-.ending-notice h2{font-family:var(--font-display);font-size:clamp(24px,2.4vw,32px);letter-spacing:.14em;font-weight:500;margin:8px 0 10px}
-.ending-notice-line{font-size:11px;color:#b9a9b6;letter-spacing:.06em;margin-bottom:14px}
-.ending-notice-note{margin-top:16px;font-size:10px;color:#756d7b;letter-spacing:.03em}
-.ending-notice .meeting-actions{justify-content:flex-end}
+.ending-notice{position:relative}
+.ending-notice h2{font-family:var(--font-display);font-size:clamp(24px,2.4vw,32px);letter-spacing:.14em;font-weight:500;margin:4px 0 10px}
+.ending-notice-line{font-size:11px;color:#b9a9b6;letter-spacing:.06em;margin:0}
+.ending-notice-summary{margin:18px 0 0;padding:14px 16px;border-left:2px solid var(--pink);border-radius:0 7px 7px 0;background:linear-gradient(90deg,#f3aec910,#f3aec902)}
+.ending-notice-summary small{display:block;font-size:8px;letter-spacing:.18em;color:#a88d9f;margin-bottom:7px}
+.ending-notice-summary p{margin:0;font-family:var(--font-display);font-size:14px;line-height:2.05;color:#e0ccd9;letter-spacing:.03em;white-space:pre-wrap}
+.ending-notice-premise{margin:14px 0 0;font-size:10px;line-height:1.9;color:#7d6c87}
+.ending-notice-note{margin-top:16px;padding-top:12px;border-top:1px solid #ffffff0b;font-size:10px;color:#756d7b;letter-spacing:.03em}
+.ending-notice .meeting-actions{justify-content:flex-end;margin-top:20px}
+@media(max-width:560px){.ending-notice-summary p{font-size:12px;line-height:1.95}}
+
+/* v231：婚礼模式 */
+.meeting-modes{display:flex;gap:8px;margin:0 0 14px}
+.meeting-person.locked{opacity:1;border-color:#f3aec966;background:#f3aec910}
+.meeting-record-wedding{display:inline-flex;align-items:center;gap:4px;font-style:normal;font-size:8px;color:#f3aec9;border:1px solid #f3aec955;border-radius:99px;padding:2px 6px;margin-left:6px}

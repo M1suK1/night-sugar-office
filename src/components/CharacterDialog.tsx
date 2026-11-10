@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { rules } from '../balance';
-import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check } from 'lucide-react';
+import { Heart, BatteryMedium, Sparkles, MessageCircle, ArrowUpRight, Moon, Cross, Star, LockKeyhole, BadgeCheck, Bandage, Users, Feather, Flower2, ShieldCheck, Swords, Timer, RefreshCw, Phone, UserRoundCheck, Brain, ClipboardList, Download, Shirt, Syringe, Wand2, X, Smile, Frown, Angry, Meh, ChevronRight, GripVertical, PackageOpen, ImagePlus, Pencil, Check, Gem } from 'lucide-react';
 import type { Expression, GameState, Girl, StatKey } from '../types';
 import { EXPRESSIONS, EXPRESSION_META, currentExpressionOutfitId, expressionOutfits, expressionVariantKey } from '../expressions';
 import { orderStorylinesBySlot, planForSlot } from '../storyplan';
@@ -10,6 +10,7 @@ import { findEquipmentSet } from '../content/sets';
 import { EquipmentFacts } from './EquipmentFacts';
 import { clinicCost, clinicQuote, drugDaysLeft, relationshipStage, stageHints, stageLabels, statLabels, statusLabels } from '../game';
 import { restPlanOf } from '../rules/dailyOps';
+import { OATH_RING_COST, oathBlockedReason } from '../rules/oathOps';
 import { eventClockLabel } from '../storySession';
 import { clock } from '../rules/labels';
 import { effectText, findSkill, resourceLabels, tierLabels } from '../content/skills';
@@ -39,8 +40,10 @@ const slotLabels = { weapon: '法器', charm: '护符' } as const;
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
+export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign, onHire, onRetire, onClinic, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
+  /** 满羁绊后缔结誓约；誓约后婚礼走议会会议。 */
+  onOath?: () => void;
   /** 改档案里的外貌 / 服装描述（导入契约卡后也能改）。 */
   /** 关掉这个人的加点提醒（升级发新点数后会重新出现）。 */
   onMutePoints?: () => void;
@@ -101,6 +104,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
   const [editingPersonality, setEditingPersonality] = useState(false);
   const [personalityDraft, setPersonalityDraft] = useState('');
   const [appearanceDraft, setAppearanceDraft] = useState(girl.appearance ?? '');
+  const [oathConfirm, setOathConfirm] = useState(false);
   // 这一栏永远跟着「她现在穿着的那一套」：魔女形态 → witchForm；普通形态 → 当前礼装。
   // 换了衣服，描述就换一栏，不会把上一套的文字带到下一套上。
   const wornOutfit = girl.witch
@@ -366,6 +370,23 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
               <div><small>与你的关系</small><h3>{stageLabels[stage]}</h3><p>{stageHints[stage]}</p></div>
             </div>
             <div className="relation-legend">{stageLabels.map((label, index) => <span key={label} className={`stage-${index} ${index === stage ? 'current' : ''}`}>{label}</span>)}</div>
+            {!candidate && (
+              <div className="oath-strip">
+                <Gem size={15} />
+                <span>
+                  <b>{girl.oath ? (girl.wedding ? `婚礼 · 第 ${girl.wedding.day} 日` : `已誓约 · 第 ${girl.oath.day} 日`) : '尚未誓约'}</b>
+                  <small>{girl.wedding ? `${girl.wedding.placeName} · 誓约已成` : girl.oath ? '可以在议会厅的「组织会议」里举办婚礼' : `羁绊满 100 后，花 ${OATH_RING_COST} 星砂买一枚戒指`}</small>
+                </span>
+                {!girl.oath && (oathConfirm ? (
+                  <span className="oath-actions">
+                    <button id="girl-oath-confirm" type="button" className="btn primary" onClick={() => { setOathConfirm(false); onOath?.(); }}>确定</button>
+                    <button id="girl-oath-cancel" type="button" className="btn" onClick={() => setOathConfirm(false)}>取消</button>
+                  </span>
+                ) : (
+                  <button id="girl-oath" type="button" className="btn" disabled={!onOath || Boolean(oathBlockedReason(state, girl))} title={oathBlockedReason(state, girl) ?? `花费 ${OATH_RING_COST} 星砂`} onClick={() => setOathConfirm(true)}>缔结誓约</button>
+                ))}
+              </div>
+            )}
             <div className="modal-section-heading"><h3>事务所内的关系</h3><small>同伴之间的看法</small></div>
             <div className="peer-list">
               {peers.map(({ girl: peer, score }) => {

@@ -166,6 +166,7 @@ export function advanceStoryGraph(state: GameState, story: Storyline): void {
       story.run = undefined;
       const ending = endingLabel(node);
       story.ending = ending || undefined;
+      story.endingSummary = node.data.kind === 'end' && node.data.summary?.trim() ? node.data.summary.trim() : undefined;
       archive(state, '关系', girl.name + '的故事', node.data.kind === 'end' ? node.data.summary || story.premise : story.premise);
       state.logs.unshift({
         id: 'log-graph-end-' + story.id,

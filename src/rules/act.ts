@@ -36,6 +36,7 @@ import {
   applyAddWhisper, applyDropWhisper, applyMarkWhispersRead, applySetCityNews, applyRollNewsCast, applySetNewsHost, care,
   dispatch, talk,
 } from './dailyOps.ts';
+import { applyOath } from './oathOps.ts';
 import {
   advance, endNight,
 } from './time.ts';
@@ -55,6 +56,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'advance': return advance(state, action.minutes);
     case 'dispatch': return dispatch(state, action.girlIds, action.missionId);
     case 'care': return care(state, action.girlId, action.mode);
+    case 'oath': return applyOath(state, action);
     case 'talk': return talk(state, action.girlId, action.text, action.remote, action.reply);
     case 'markWhispersRead': return applyMarkWhispersRead(state, action);
     case 'addWhisper': return applyAddWhisper(state, action);

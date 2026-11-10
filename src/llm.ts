@@ -2090,6 +2090,16 @@ function meetingContext(state: GameState, event: CharacterEvent): string {
     }
   }
   const host = state.girls.find(girl => girl.id === state.assistantId);
+  if (plan.kind === 'wedding') {
+    const bride = plan.partnerId ? state.girls.find(girl => girl.id === plan.partnerId) : undefined;
+    return [
+      `【这是一场婚礼】「${plan.title}」，地点：${plan.placeName}，${plan.at}`,
+      bride ? `新娘是 ${bride.name}（${bride.title}，羁绊 ${bride.bond}）。` : '',
+      `到场 ${people.length} 人：${people.join('、') || '（名单为空）'}`,
+      bride?.oath ? `两人已在第 ${bride.oath.day} 日缔结誓约：这一场写誓词、交换戒指与在场者的祝词。` : '',
+      '婚礼不是会议：不要安排议题、预算、排班或辖区；到场的人是来见证，不是来议事。',
+    ].filter(Boolean).join('\n');
+  }
   return [
     `【这是一场事务所会议】「${plan.title}」，地点：${plan.placeName}，${plan.at}`,
     `参会 ${people.length} 人：${people.join('、') || '（名单为空）'}`,
