@@ -134,12 +134,14 @@ test('v49 历史：战斗记录按 ally-<id> 找得到本人', () => {
 test('v49 拼装：分区在前、契约在最后，删掉一段就真的消失', () => {
   const state = createInitialState();
   const focus = state.girls[0];
+  // 契约会随规则增删改动，这里对齐它的最后一行，而不是写死某一句。
+  const contractTail = storylineContract().trimEnd().split('\n').pop()!;
   const full = composeTaskSystem(storylineContract(), withRuntime(), 'storyline', {}, { state, focus });
   assert.ok(full.system.includes('【连线总则'), '默认分区要注入');
-  assert.ok(full.system.trimEnd().endsWith('不要给 x、y、边 id、颜色或 note。'), `契约必须在最后：${full.system.slice(-80)}`);
+  assert.ok(full.system.trimEnd().endsWith(contractTail), `契约必须在最后：${full.system.slice(-80)}`);
   const trimmed = composeTaskSystem(storylineContract(), withRuntime([DEFAULT_PROMPTS.find(entry => entry.id === 'sl-structure')!]), 'storyline', {}, { state, focus });
   assert.equal(trimmed.system.includes('【连线总则'), false, '删掉的分区不该被补回来');
-  assert.ok(trimmed.system.trimEnd().endsWith('不要给 x、y、边 id、颜色或 note。'), '契约不受词条增删影响');
+  assert.ok(trimmed.system.trimEnd().endsWith(contractTail), '契约不受词条增删影响');
 });
 
 test('v49 可覆盖：把提案目录改成自定义文本后，默认目录不再出现', () => {
