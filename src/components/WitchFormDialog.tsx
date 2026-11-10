@@ -86,7 +86,7 @@ export function WitchFormDialog({ girl, onSave, onRemove, onSuppress, onDescribe
     <div className="standard-modal witch-form-modal" role="dialog" aria-modal="true" aria-labelledby="witch-form-title">
       <div className="modal-eyebrow"><Sparkles size={13} />魔女化 / 第五格</div>
       <h2 id="witch-form-title">为她留一张夜之形。</h2>
-      <p className="muted">魔女化立绘独立于四格衣柜，保存在第五格。导入后普通服装仍可用；真正切换要等侵蚀达到阈值。也可以把图片直接拖进左边的预览。</p>
+      <p className="muted">魔女化立绘独立于四格衣柜，保存在第五格。侵蚀达到阈值会自动魔女化并锁定立绘；也可以在这里保存后从第五格手动切换。也可以把图片直接拖进左边的预览。</p>
 
       <div className="witch-form-layout">
         <div className={`witch-form-preview ${preview ? 'ready' : 'empty'} ${over ? 'is-drop-over' : ''}`} {...fileDropProps(setOver, files => { if (files[0]) void pick(files[0]); })}>

@@ -246,8 +246,8 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
               <div className="corruption-head"><span><Syringe size={14} />侵蚀度<em>{corruptionLabel}</em></span><b>{girl.corruption}<small> / 100</small></b></div>
               <i><b style={{ width: `${girl.corruption}%` }} /></i>
               <div className="corruption-facts">
-                <span>魔女化礼装<b>{rules().corruptionThreshold}</b></span>
-                <span>魔女阶段<b>{WITCH_STAGE_AT}</b></span>
+                <span>魔女化阈值<b>{rules().corruptionThreshold}</b></span>
+                <span>不可逆阶段<b>{WITCH_STAGE_AT}</b></span>
                 <span>共情修正<b>−{corruptionEmpathyPenalty(girl.corruption)}%</b></span>
                 <span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span>
               </div>

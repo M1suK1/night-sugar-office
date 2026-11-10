@@ -6,6 +6,7 @@ import { clampHostility, pairLabel } from '../hostility.ts';
 import { defaultOpinionDialogue, defaultOpinionOptions, opinionOptionTags } from '../opinions.ts';
 import type { FactionId, GameState, Girl, Opinion, OpinionOption } from '../types.ts';
 import { makeCandidate } from './candidate.ts';
+import { addCorruption } from './conditions.ts';
 import { book, dateLabel, findGirl, hashText, shiftTerritory } from './core.ts';
 import { deployMissionTemplate } from './missions.ts';
 import { capacity, seatsTaken } from './roster.ts';
@@ -76,7 +77,10 @@ export function applyOpinionChanges(state: GameState, opinion: Opinion, option: 
       if (girl) {
         if (change.field === 'bond') girl.bond = Math.max(0, Math.min(100, girl.bond + change.amount));
         if (change.field === 'fatigue') girl.fatigue = Math.max(0, Math.min(100, girl.fatigue + change.amount));
-        if (change.field === 'corruption') girl.corruption = Math.max(0, Math.min(100, girl.corruption + change.amount));
+        if (change.field === 'corruption') {
+          if (change.amount > 0) addCorruption(state, girl, change.amount);
+          else girl.corruption = Math.max(0, Math.min(100, girl.corruption + change.amount));
+        }
         if (change.field === 'hp') girl.hp = Math.max(0, Math.min(effectiveMaxHp(girl), girl.hp + change.amount));
       }
     }

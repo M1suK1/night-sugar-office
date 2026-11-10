@@ -266,6 +266,9 @@ export function applySetWitchForm(state: GameState, action: Extract<GameAction, 
       girl.witch = true;
       if (!girl.witchPersonality?.trim()) girl.witchPersonality = defaultWitchPersonality(girl);
       if (firstTime) {
+        // v245：手动切换与自动魔女化同一套后果——先给 10 天药效，再发通知。
+        girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, next.day + 10);
+        girl.withdrawalDays = 0;
         // 第一次踏进魔女形态：给她一条单独的通知，别只混在日志里。
         const seen = (next.notices ?? []).some(notice => notice.kind === 'witch' && notice.girlId === girl.id);
         if (!seen) {

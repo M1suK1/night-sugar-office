@@ -233,7 +233,7 @@ export function settleTreatments(state: GameState, to: number): void {
     if (treatment.kink) {
       // 癖好护理只影响关系，不留下永久特性。
       girl.bond = Math.min(100, girl.bond + 4);
-      girl.corruption = Math.min(100, (girl.corruption ?? 0) + 3);
+      addCorruption(state, girl, 3);
     }
     state.logs.unshift({
       id: `log-treat-done-${girl.id}-${state.day}-${state.minutes}`, time: dateLabel(state.day, state.minutes), kind: 'clinic',

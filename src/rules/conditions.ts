@@ -1,10 +1,33 @@
 import { pickTraits } from '../content/traits.ts';
 import { pensionFor } from '../contracts.ts';
 import { corruptionStage } from '../economy.ts';
+import { loadBalance } from '../balance.ts';
 import type { GameState, Girl, StatKey } from '../types.ts';
 import { book, clone, dateLabel, hashText } from './core.ts';
 import { spawnWitchConfrontation } from './witchEvent.ts';
 // v35 从 src/game.ts 拆出：侵蚀、药瘾、特性与年金。
+
+/** 魔女化的自动阈值：读数值规则里的「魔女化阈值」，不再写死 70。 */
+export function witchThreshold(): number {
+  return Math.max(1, Math.min(100, Math.round(loadBalance().corruptionThreshold)));
+}
+
+/**
+ * 把「侵蚀已经到线、但还不是魔女」的状态补上（v245）。
+ *
+ * 旧档、或从别处直接写侵蚀的路径都可能漏掉变身；日结时兜一次。
+ * 只补状态，不弹对峙——那不是刚发生的转变。
+ */
+export function syncWitchState(state: GameState, girl: Girl): boolean {
+  if (girl.witch || girl.dead || girl.retired) return false;
+  // 抑制剂压着的时候不要再变回去：压制本身就是为了让她以普通立绘待着。
+  if ((girl.drugUntilDay ?? 0) > state.day) return false;
+  if ((girl.corruption ?? 0) < witchThreshold()) return false;
+  girl.witch = true;
+  girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
+  girl.withdrawalDays = 0;
+  return true;
+}
 
 export function addCorruption(state: GameState, girl: Girl, amount: number): void {
   if (!amount || girl.dead || girl.retired) return;
@@ -13,18 +36,26 @@ export function addCorruption(state: GameState, girl: Girl, amount: number): voi
   const after = corruptionStage(girl.corruption);
   if (after > before) {
     state.logs.unshift({ id: `log-corrupt-${girl.id}-${girl.corruption}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `${girl.name}的侵蚀进入「${['澄明', '浅蚀', '深蚀', '魔女'][after]}」阶段。${after === 3 ? '她的影子长出了不属于人类的角。' : '她的共情正在被某种东西缓慢替换。'}` });
-    if (after === 3) {
-      girl.witch = true;
-      girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
-      girl.withdrawalDays = 0;
-      // v240：跨过魔女线的那一刻就排一段对峙，界面立刻弹出。
-      spawnWitchConfrontation(state, girl);
-    }
+  }
+  // v245：到阈值就自动变身，与设置项、调试命令、手动切换同一口径；
+  // 只有「从不是魔女变成魔女」才排对峙，已经魔女的不会重复。
+  const threshold = witchThreshold();
+  const suppressed = (girl.drugUntilDay ?? 0) > state.day;
+  if (!girl.witch && !suppressed && girl.corruption >= threshold) {
+    girl.witch = true;
+    girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
+    girl.withdrawalDays = 0;
+    state.logs.unshift({ id: `log-witch-auto-${girl.id}-${state.day}-${state.minutes}`, time: dateLabel(state.day, state.minutes), kind: 'relationship', text: `${girl.name}的侵蚀越过 ${threshold}，立绘锁定在魔女化形态——要靠月光抑制剂才能压回去。` });
+    // v240：跨过魔女线的那一刻就排一段对峙，界面立刻弹出。
+    spawnWitchConfrontation(state, girl);
   }
 }
 
 export function drugTick(state: GameState, girl: Girl): void {
-  if (!girl.witch || girl.dead) return;
+  if (girl.dead) return;
+  // 旧档或漏触发的情况：日结时把「侵蚀到线但还没变身」的补上。
+  syncWitchState(state, girl);
+  if (!girl.witch) return;
   if ((girl.drugUntilDay ?? 0) >= state.day) { girl.withdrawalDays = 0; return; }
   if ((state.inventory['moon-drug'] ?? 0) > 0) {
     state.inventory['moon-drug'] -= 1;
