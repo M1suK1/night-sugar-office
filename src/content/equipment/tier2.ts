@@ -85,26 +85,26 @@ export const tier2: Equipment[] = [
   {
     id: 'silver-wand', name: '银线法器', faction: 'association', slot: 'weapon', tier: 2, price: 2200, standingReq: 20,
     description: '由纯度极高的深层银矿锻打拉丝制成的法器短杖，对细微魔力波动的响应灵敏至极，能显著缩短术式构筑的前摇间隙。',
-    stats: { magic: 5, insight: 3 },
+    stats: { magic: 7, insight: 4 },
   },
   {
     id: 'association-badge', name: '协会徽章', faction: 'association', slot: 'charm', tier: 2, price: 2200, standingReq: 20,
     description: '铸刻着古典灯塔徽记的协会纯银胸章，别在领口内侧时能稳定核心心智节律，使心防屏障在承受暴击时更不易产生裂隙。',
-    spiritBonusPct: 15, passive: '心防上限 +15%',
+    stats: { empathy: 4 }, spiritBonusPct: 15, passive: '心防上限 +15%',
   },
   {
     id: 'black-sugar', name: '黑糖护符', faction: 'witch', slot: 'charm', tier: 2, price: 1800, standingReq: 20,
     description: '一块经过特殊脱水凝固、表面泛着金属冷光的暗黑硬糖，含在舌底时微咸的苦味直冲颅顶，极大地增强了神智对重压的耐受极限。',
-    stats: { empathy: 6 }, spiritBonusPct: 10, passive: '心防上限 +10%',
+    stats: { empathy: 8 }, spiritBonusPct: 10, passive: '心防上限 +10%',
   },
   {
     id: 'riot-charm', name: '防暴护符', faction: 'government', slot: 'charm', tier: 2, price: 1500, standingReq: 20,
     description: '以高强度防爆纤维包裹铅芯制成的制式便携护符，重量感十足，贴胸悬挂时能有效缓冲外力钝击，为肉体提供坚实的生命承载加成。',
-    maxHpBonus: 10, passive: '生命上限 +10',
+    stats: { empathy: 4 }, maxHpBonus: 16, passive: '生命上限 +16',
   },
   {
     id: 'pocket-watch', name: '市役所怀表', faction: 'government', slot: 'charm', tier: 2, price: 2100, standingReq: 20,
     description: '市役所老专员常用的旧式发条怀表，走针极其严准平稳，开盖瞬间发条运转的节奏能帮助契约者在开局第一拍迅速锁定战局破绽。',
-    stats: { agility: 4 }, initiativeBonus: 3, passive: '首轮洞察 +3',
+    stats: { agility: 5, insight: 2 }, initiativeBonus: 4, passive: '首轮洞察 +4',
   },
 ];

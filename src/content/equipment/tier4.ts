@@ -42,11 +42,11 @@ export const tier4: Equipment[] = [
   {
     id: 'moon-weapon', name: '蚀月法器', faction: 'witch', slot: 'weapon', tier: 4, price: 5200, standingReq: 50,
     description: '直接以月蚀深渊结晶薄片磨砺构筑的短法器，握持时间稍长便能隐隐听见其内部传来的非人心跳声，在微量侵蚀代价下赋予攻势狂躁的穿透力。',
-    stats: { magic: 8 }, passive: '造成伤害 +6%，每场战斗侵蚀 +1', damageBonus: 6, corruptionPerBattle: 1,
+    stats: { magic: 16, insight: 8 }, passive: '造成伤害 +10%，每场战斗侵蚀 +1', damageBonus: 10, corruptionPerBattle: 1,
   },
   {
     id: 'night-ring', name: '夜祷指环', faction: 'witch', slot: 'charm', tier: 4, price: 5600, standingReq: 50,
     description: '月蚀庭遗落的纯黑古戒，戒面刻有失落的祭月符文，佩戴于指间时脑海中会自动浮现出古老而幽微的深层法术回路，赋予使用者第四技能「夜祷回响」。',
-    skillId: 'night-prayer', passive: '获得第四技能「夜祷回响」',
+    stats: { magic: 10, insight: 9 }, skillId: 'night-prayer', passive: '获得第四技能「夜祷回响」',
   },
 ];
