@@ -88,11 +88,11 @@ export function dispatch(state: GameState, girlIds: string[], missionId: string)
   }
   const squad = girlIds.map(id => findGirl(next, id)).filter((g): g is Girl => Boolean(g));
   if (squad.length !== girlIds.length || !squad.length) return { state, ok: false, message: '请选择可出勤的契约者。' };
-  // v237：对上魔法少女时，编队最多与对面人数相等（1v1 / 2v2 / 3v3）。
+  // v237：对上魔法少女时，编队最多比对面多一人，但两边都不超过 3 人。
   const limit = squadLimitFor(next, mission);
   if (squad.length > limit) {
     const duel = duelOpponents(next, mission);
-    return { state, ok: false, message: duel ? `对面只出 ${duel} 人，这场对战最多派 ${duel} 人。` : `${workLabels[mission.work]}最多派遣 ${limit} 人。` };
+    return { state, ok: false, message: duel ? `对面只出 ${duel} 人，这场对战最多派 ${limit} 人。` : `${workLabels[mission.work]}最多派遣 ${limit} 人。` };
   }
   for (const girl of squad) {
     if (girl.left) return { state, ok: false, message: `${girl.name}已经解除了契约，不能再出勤。` };

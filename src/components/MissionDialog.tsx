@@ -102,7 +102,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
               {pollutionLines(effect).map(line => <li key={line}>{line}</li>)}
             </ul>
             <p className="mission-pollution-relief">完成委托预计净化 −{relief}</p>
-            {intercept && interceptOwner && <p className="mission-interception-warning" id={`mission-interception-${mission.id}`}><AlertTriangle size={13} /><span>{factionName[interceptOwner]}在此戒备。派遣后会被其所属少女拦截（对面 {duel ?? '—'} 人，编队最多 {duel ?? '—'} 人），原委托将被覆盖。</span></p>}
+            {intercept && interceptOwner && <p className="mission-interception-warning" id={`mission-interception-${mission.id}`}><AlertTriangle size={13} /><span>{factionName[interceptOwner]}在此戒备。派遣后会被其所属少女拦截（对面 {duel ?? '—'} 人，编队最多 {limit} 人），原委托将被覆盖。</span></p>}
           </div>;
         })()}
       </section>

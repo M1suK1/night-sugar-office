@@ -2,7 +2,7 @@
  * 魔法少女对战的人数口径（v237）。
  *
  * 只处理「对面是人」的战斗：辖区当主的拦截战、势力的破坏行动。
- * 规则是双方最多三人，且我方编队不得超过对面出场人数（1v1 / 2v2 / 3v3）。
+ * 对面最多三人；我方可以比对面多带一人，但两边都不超过三人（1 对 2、2 对 3、3 对 3）。
  * 魔物委托与 Boss 战不在这里改，仍走原来的 `squadLimit`。
  */
 import { canIntercept, rosterMembers } from '../factions.ts';
@@ -40,7 +40,8 @@ export function duelOpponents(state: GameState, mission: Mission): number | unde
   return Math.max(1, Math.min(interceptionSquadSize(mission), roster.length));
 }
 
-/** 这场委托最多能派几个人：对上魔法少女时与对面人数相等，否则沿用原规则。 */
+/** 这场委托最多能派几个人：对上魔法少女时比对面多一人（封顶 3），否则沿用原规则。 */
 export function squadLimitFor(state: GameState, mission: Mission): number {
-  return duelOpponents(state, mission) ?? squadLimit(mission);
+  const duel = duelOpponents(state, mission);
+  return duel === undefined ? squadLimit(mission) : Math.min(MAX_DUEL_SIDE, duel + 1);
 }
