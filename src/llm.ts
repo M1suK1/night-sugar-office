@@ -452,6 +452,45 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
   return final;
 }
 
+/**
+ * 灯下私语的动态正文（v242）。
+ *
+ * 预设的 whisper 分区通常已经带了 {{heroine}}、{{history.missions}}、{{history.chat}}，
+ * 这里只补它没有的那部分：同一份角色档案、出勤记录与聊天记录不在提示词里出现两次。
+ * 战报是这一场独有的，只在预设也带了 {{history.battles}} 时让位。
+ */
+export function whisperPromptBody(
+  state: GameState,
+  girl: Girl,
+  job: WhisperJob,
+  runtime: PresetRuntime,
+  input: { mission?: Mission; battle?: BattleState; events: string },
+): string {
+  const entries = [...(runtime.entries ?? []), ...(runtime.contracts ?? [])];
+  const has = (macro: string) => entries.some(entry => (entry.content ?? '').includes(macro));
+  const hasHeroine = has('{{heroine}}');
+  const hasMissions = has('{{history.missions');
+  const hasChat = has('{{history.chat');
+  const hasBattles = has('{{history.battles');
+  const { mission, battle, events } = input;
+  const success = job.outcome === 'victory' || job.outcome === 'success';
+  const outcomeLabel = { victory: '胜利', defeat: '失败', success: '调查成功', failure: '调查失败' }[job.outcome];
+  const recentWithActions = hasChat ? '' : (state.messages[girl.id] ?? []).slice(-6).map(message => `${message.role === 'player' ? '所长' : girl.name}：${message.text}${message.action ? `（${message.action}）` : ''}`).join('\n') || '（还没有聊过）';
+  return [
+    hasHeroine ? '' : `【她】${girl.name}（${girl.title}）· ${girl.element}/${girl.archetype ?? '未定'} · Lv.${girl.level}
+性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。语气参考：${girl.quote ?? '没有留下出场白'}。
+对所长（玩家）的羁绊：${girl.bond}/100${girl.oath ? `（${oathStatusText(girl)}）` : ''}。`,
+    `【这一次】${mission ? `${mission.title} · ${mission.work === 'combat' ? '战斗' : '调查'} · ${mission.difficulty} · ${mission.district ? districts[mission.district]?.name ?? mission.district : '事务所周边'}` : job.missionId}
+结果：${outcomeLabel}${mission ? `；报酬 ${mission.reward} 星砂` : ''}
+${battle ? `战斗共 ${battle.round}/${battle.rounds} 回合，结果 ${battle.outcome ?? '未知'}。` : '这次没有发生战斗，只有现场的线索与判断。'}`,
+    events && !hasBattles ? `【战报】\n${events}` : '',
+    hasHeroine ? '' : `【战后】生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，疤痕 ${girl.scars.length} 道` : ''}。`,
+    success ? '【这一场之后】她赢了，但不想只报平安。' : '【这一场之后】她没赢，可能想解释、道歉、或者嘴硬。',
+    hasMissions ? '' : `【最近参与】\n${missionMemory(state, girl, job.missionId)}`,
+    hasChat ? '' : `【最近对话】\n${recentWithActions}`,
+  ].filter(Boolean).join('\n');
+}
+
 /** 灯下私语：让刚回来的她读着这一战的战报，主动写 2–3 句。 */
 export async function generateWhisper(
   config: LlmConfig,
@@ -476,25 +515,7 @@ export async function generateWhisper(
   const events = (battle?.events ?? []).slice(0, 14).map(event =>
     `- 第 ${event.round} 回合：${unitName(event.actor)} 使用「${event.skillName}」${event.targets.length ? `对 ${event.targets.map(unitName).join('、')}` : ''}${event.amount !== undefined ? `，${event.hit ? '' : '未命中，'}数值 ${event.amount}` : ''}${event.hit === false ? '（未命中）' : ''}`,
   ).join('\n');
-  const outcomeLabel = { victory: '胜利', defeat: '失败', success: '调查成功', failure: '调查失败' }[job.outcome];
-  const recentWithActions = (state.messages[girl.id] ?? []).slice(-6).map(message => `${message.role === 'player' ? '所长' : girl.name}：${message.text}${message.action ? `（${message.action}）` : ''}`).join('\n') || '（还没有聊过）';
-  const body = `【她】${girl.name}（${girl.title}）· ${girl.element}/${girl.archetype ?? '未定'} · Lv.${girl.level}
-性格：${activePersonality(girl) || girl.personality || '安静'}。外貌：${girl.appearance ?? '不详'}。语气参考：${girl.quote ?? '没有留下出场白'}。
-对所长（玩家）的羁绊：${girl.bond}/100${girl.oath ? `（${oathStatusText(girl)}）` : ''}${job.outcome === 'victory' || job.outcome === 'success' ? '。她刚打完这一场，还带着疲惫与一点侥幸。' : '。这一场没打好，她可能有点自责或嘴硬。'}
-
-【这一次】${mission ? `${mission.title} · ${mission.work === 'combat' ? '战斗' : '调查'} · ${mission.difficulty} · ${mission.district ? districts[mission.district]?.name ?? mission.district : '事务所周边'}` : job.missionId}
-结果：${outcomeLabel}${mission ? `；报酬 ${mission.reward} 星砂` : ''}
-${battle ? `战斗共 ${battle.round}/${battle.rounds} 回合，结果 ${battle.outcome ?? '未知'}。` : '这次没有发生战斗，只有现场的线索与判断。'}
-${events ? `【战报】
-${events}` : ''}
-
-【战后】生命 ${girl.hp}/${girl.maxHp}，疲劳 ${girl.fatigue}/100，侵蚀 ${girl.corruption ?? 0}/100${girl.scars?.length ? `，疤痕 ${girl.scars.length} 道` : ''}。
-${job.outcome === 'victory' || job.outcome === 'success' ? '她赢了，但不想只报平安。' : '她没赢，可能想解释、道歉、或者嘴硬。'}
-
-【最近参与】
-${missionMemory(state, girl, job.missionId)}
-【最近对话】
-${recentWithActions}`;
+  const body = whisperPromptBody(state, girl, job, runtime, { mission, battle, events });
   const { system } = composePrompt(body, runtime, 'whisper', { char: girlBrief(girl) }, '灯下私语', { state, focus: girl }, storyMemoryAppendix(runtime, state, girl));
   const messages: ChatMessage[] = [
     { role: 'system', content: `${system}\n\n${DIALOGUE_FORMAT_HINT}` },
@@ -2669,7 +2690,7 @@ import type { MacroContext } from './promptMacros.ts';
 import { battleCast, battleGirlText, battleMonsterText, battlePlaceText, battleStoryDigest, battleTimeText, normalizeBattleNoteDraft, validateBattleNoteDraft } from './battleNote.ts';
 import { activePersonality } from './personality.ts';
 import { GRAPH_MAX_EDGES, blueprintIssues, buildGraphFromDraft, type StoryGraphDraft, type StoryGraphDraftEdge, type StoryGraphDraftNode } from './storygraph.ts';
-import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine, DraftTrait, GirlVoice, Element, Equipment, Expression, GameState, Girl, IncidentEffect, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
+import type { Archetype, BattleNote, BattleState, CharacterEvent, CityNews, DialogueLine, DraftTrait, GirlVoice, Element, Equipment, Expression, GameState, Girl, IncidentEffect, Mission, MonsterTemplate, StatKey, StoryCompanion, StoryEffect, StoryGraph, StoryLine, StoryMissionSpec, StoryNodeKind, StoryTurn, WhisperJob } from './types';
 
 /** 预设词条可用的变量；玩家档案与命中的世界书词条会被一并注入。 */
 export function promptVars(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {
