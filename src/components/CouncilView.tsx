@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Clock3, Coins, Heart, Moon, ShieldCheck, X } from 'lucide-react';
-import type { GameState, Opinion } from '../types';
+import type { FactionId, GameState, Opinion } from '../types';
 import { factionInfo } from '../content/items';
+import { factionRepresentativeOf } from '../factions';
 import { opinionOptionTags, opinionSpeakerOf, previewOpinionOption, resolveOpinionDialogue, resolveOpinionOptions } from '../opinions';
 import { opinionLimit } from '../game';
 import { GirlPortrait } from './GirlPortrait';
@@ -10,6 +11,8 @@ type Props = {
   state: GameState;
   onDecide: (opinionId: string, optionId: 'accept' | 'defer' | 'reject') => void;
   onGirl: (id: string) => void;
+  /** 首领提案时点头像直接打开那一方的档案。 */
+  onFaction?: (faction: FactionId) => void;
   /** v168：组织会议 / 查看会议记录 / 继续没开完的那一场。 */
   onMeeting?: () => void;
   onMeetingRecords?: () => void;
@@ -37,7 +40,7 @@ function CouncilBackdrop() {
   );
 }
 
-export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecords, onOpenMeeting }: Props) {
+export function CouncilView({ state, onDecide, onGirl, onFaction, onMeeting, onMeetingRecords, onOpenMeeting }: Props) {
   // v172：会议只有点「结束会议」才算散会；关掉界面时它还开着，这里给一个回来的入口。
   const runningMeeting = state.events.find(event => event.meeting && event.status === 'active');
   const limit = opinionLimit(state);
@@ -63,6 +66,8 @@ export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecor
   // 大立绘跟着「这一句是谁说的」走：助手接话时画助手，不能把她的表情贴到提案人脸上。
   const figure = current ? opinionSpeakerOf(state, current, line) : undefined;
   const authorFigure = current ? opinionSpeakerOf(state, current) : undefined;
+  const leaderFaction = current?.authorKind === 'leader' ? current.authorFaction ?? undefined : undefined;
+  const leaderRep = leaderFaction ? factionRepresentativeOf(state, leaderFaction) : undefined;
 
   useEffect(() => {
     setLineIndex(0);
@@ -135,11 +140,11 @@ export function CouncilView({ state, onDecide, onGirl, onMeeting, onMeetingRecor
             <div><Moon size={13} /><span>待决议</span><b>{pending.length}</b></div>
           </div>
           {authorFigure ? (
-            <button id="council-speaker-card" type="button" className="council-speaker-card" onClick={() => speaker && onGirl(speaker.id)}>
+            <button id="council-speaker-card" type="button" className="council-speaker-card" onClick={() => { if (speaker) onGirl(speaker.id); else if (leaderFaction) onFaction?.(leaderFaction); }}>
               <GirlPortrait girl={authorFigure} variant="avatar" />
               <span>
                 <b>{authorFigure.name}</b>
-                <small>{speaker ? `${speaker.codename} · ${speaker.title}` : current?.authorKind === 'leader' ? '三方代表' : '提出者'}</small>
+                <small>{speaker ? `${speaker.codename} · ${speaker.title}` : leaderRep && leaderFaction ? `${factionInfo[leaderFaction].short}首领 · ${leaderRep.title}` : '提出者'}</small>
                 {speaker && <em><Heart size={11} /> {speaker.bond}/100 · 侵蚀 {speaker.corruption}</em>}
               </span>
             </button>

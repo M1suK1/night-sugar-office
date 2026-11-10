@@ -27,9 +27,24 @@ test('v150 休息是每小时 20 点，睡到疲劳 ≤ 20 才结束', () => {
   assert.equal(done.corruption, 20 - DEFAULT_BALANCE.dormRestCorruption);
 });
 
-test('v150 疲劳已经很低时不再安排休息', () => {
+test('v150 疲劳低于阈值时可以补休到 0', () => {
   const s = createInitialState();
   s.girls[0]!.fatigue = 15;
+  const plan = restPlanOf(s.girls[0]!);
+  assert.equal(plan.threshold, DEFAULT_BALANCE.dormRestExitFatigue);
+  assert.equal(plan.fatigueTo, 0, '低于阈值时目标改为 0，不再卡在阈值');
+  assert.equal(plan.minutes, Math.ceil(15 / DEFAULT_BALANCE.dormFatiguePerHour * 60));
+  const rest = act(s, { type: 'care', girlId: s.girls[0]!.id, mode: 'resting' });
+  assert.equal(rest.ok, true, rest.message);
+  const done = act(rest.state, { type: 'advance', minutes: plan.minutes }).state.girls.find(item => item.id === s.girls[0]!.id)!;
+  assert.equal(done.fatigue, 0);
+  assert.equal(done.status, 'idle');
+});
+
+test('v150 疲劳清零后才不再安排休息', () => {
+  const s = createInitialState();
+  s.girls[0]!.fatigue = 0;
+  s.girls[0]!.corruption = 0;
   assert.equal(act(s, { type: 'care', girlId: s.girls[0]!.id, mode: 'resting' }).ok, false);
 });
 

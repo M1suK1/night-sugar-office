@@ -1215,7 +1215,10 @@ export function composeTaskSystem(contract: string, runtime: PresetRuntime, scop
   // 预设里一条该用途的分区都没有时（旧预设、空 runtime、测试），补上默认分区：
   // 但只要还剩任意一条，就按玩家的增删来，不再插手。
   const sections = SECTION_PROMPTS.filter(entry => entry.scope === scope);
-  const hasSections = sections.some(entry => scopeEntries.some(item => item.id === entry.id));
+  // 只看「这个用途有没有玩家自己的分区」，不认 id：导入/复制过的预设会把
+  // arc-brief 之类改写成 entry-xxx，按 id 判断会误以为一条都没有，于是把
+  // 代码默认分区整组再追加一遍，出现「这一幕的写法」「文风规矩」重复两份。
+  const hasSections = (runtime.entries ?? []).some(entry => promptScope(entry) === scope);
   const entries = [...scopeEntries, ...(hasSections ? [] : sections)].filter(entry => entry.enabled && !entry.marker);
   const world = resolvePresetWorld(runtime, scope, vars);
   const rendered = renderPresetSystem(entries, { ...vars, world }, ctx);

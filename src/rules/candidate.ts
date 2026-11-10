@@ -39,6 +39,16 @@ export function clampStat(value: unknown, fallback = 50): number {
   return Math.max(1, Math.min(200, n));
 }
 
+/** 差分资产引用：读档时只信任键与字符串值，具体图片由资产库还原。 */
+function sanitizeVariantAssets(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && value) out[key] = value.slice(0, 120);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function sanitizeSubjectStats(raw: unknown): Record<StatKey, number> {
   const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const stats = {} as Record<StatKey, number>;
@@ -55,10 +65,12 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
   if (!name) return null;
   const level = factionLeaderLevel(typeof src.level === 'number' ? src.level : undefined);
   const statsFrom = typeof src.statsLevel === 'number' ? src.statsLevel : 1;
+  const variants = sanitizeExpressionVariants(src.importedVariants);
   return {
     id, faction, name,
     title: typeof src.title === 'string' && src.title.trim() ? src.title.trim().slice(0, 30) : '外来者',
     portrait: typeof src.portrait === 'string' ? src.portrait : '',
+    portraitAsset: typeof src.portraitAsset === 'string' && src.portraitAsset ? src.portraitAsset : undefined,
     portraitSpec: src.portraitSpec,
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
     quote: typeof src.quote === 'string' && src.quote.trim() ? src.quote.trim().slice(0, 80) : '她只对自己的名字负责。',
@@ -77,6 +89,8 @@ export function sanitizeCustomLeader(input: unknown, faction: FactionId, id: str
     wardrobe: Array.isArray(src.wardrobe) ? src.wardrobe.map(item => sanitizeOutfit(item, typeof src.color === 'string' && src.color ? src.color : '#f3aec9')).filter((item): item is Outfit => Boolean(item)).slice(0, 8) : undefined,
     outfitId: typeof src.outfitId === 'string' ? src.outfitId.slice(0, 40) : undefined,
     expression: typeof src.expression === 'string' ? src.expression as Expression : undefined,
+    importedVariants: Object.keys(variants).length ? variants : undefined,
+    variantAssets: sanitizeVariantAssets(src.variantAssets),
     // v85：卡上的魔女化立绘要跟着人进名册，否则月蚀庭的人永远只有普通立绘。
     witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
@@ -91,11 +105,13 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
   if (!name) return null;
   const level = factionMemberLevel(typeof src.level === 'number' ? src.level : undefined);
   const statsFrom = typeof src.statsLevel === 'number' ? src.statsLevel : 1;
+  const variants = sanitizeExpressionVariants(src.importedVariants);
   return {
     id, faction, name,
     codename: typeof src.codename === 'string' && src.codename.trim() ? src.codename.trim().slice(0, 20) : name,
     title: typeof src.title === 'string' && src.title.trim() ? src.title.trim().slice(0, 30) : '外来者',
     portrait: typeof src.portrait === 'string' ? src.portrait : '',
+    portraitAsset: typeof src.portraitAsset === 'string' && src.portraitAsset ? src.portraitAsset : undefined,
     portraitSpec: src.portraitSpec,
     color: typeof src.color === 'string' && src.color ? src.color : '#f3aec9',
     level,
@@ -110,6 +126,8 @@ export function sanitizeCustomGirl(input: unknown, faction: FactionId, id: strin
     wardrobe: Array.isArray(src.wardrobe) ? src.wardrobe.map(item => sanitizeOutfit(item, typeof src.color === 'string' && src.color ? src.color : '#f3aec9')).filter((item): item is Outfit => Boolean(item)).slice(0, 8) : undefined,
     outfitId: typeof src.outfitId === 'string' ? src.outfitId.slice(0, 40) : undefined,
     expression: typeof src.expression === 'string' ? src.expression as Expression : undefined,
+    importedVariants: Object.keys(variants).length ? variants : undefined,
+    variantAssets: sanitizeVariantAssets(src.variantAssets),
     witchForm: src.witchForm ? sanitizeOutfit({ ...src.witchForm, id: 'witchform', form: 'witch' }, typeof src.color === 'string' && src.color ? src.color : '#f3aec9') ?? undefined : undefined,
   };
 }

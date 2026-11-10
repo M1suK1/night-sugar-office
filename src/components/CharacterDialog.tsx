@@ -649,7 +649,7 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
           <div className="dossier-footer">
           <div className="care-actions">
             {(() => {
-              const rest = restPlanOf(girl);
+              const rest = restPlanOf(girl, state.day);
               const quote = clinicQuote(girl);
               const canHeal = girl.status === 'idle' && quote.missing > 0;
               return (
@@ -658,11 +658,11 @@ export function CharacterDialog({ girl, state, onCare, onTalk, onAssign, onHire,
                     id="girl-rest"
                     className="btn"
                     disabled={girl.status !== 'idle' || rest.exhausted}
-                    title={`每小时恢复 ${rest.perHour} 点疲劳，降到 ${rest.threshold} 自动结束`}
+                    title={`每小时恢复 ${rest.perHour} 点疲劳，${rest.fatigueTo > 0 ? `降到 ${rest.fatigueTo} 自动结束` : '睡到疲劳清零'}`}
                     onClick={() => onCare('resting')}
                   >
                     <Moon size={15} />
-                    <span>安排休息<small>免费 · 约 {rest.minutes} 分钟{rest.exhausted ? '（现在不累）' : ''}</small></span>
+                    <span>安排休息<small>免费 · 约 {rest.minutes} 分钟{rest.exhausted ? '（现在不累）' : ''}{rest.corruptionUsed ? ' · 今日侵蚀已平复' : ''}</small></span>
                   </button>
                   <button
                     id="girl-heal"

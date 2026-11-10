@@ -392,13 +392,20 @@ test('休息只恢复疲劳并降低侵蚀', () => {
   const halfway = act(rest.state, { type: 'advance', minutes: 60 }).state.girls[0];
   assert.equal(halfway.fatigue, 55, '一小时恢复 20 点');
   assert.equal(halfway.status, 'resting', '还没到阈值就继续睡');
-  const rested = act(rest.state, { type: 'advance', minutes: 165 }).state.girls[0];
-  assert.equal(rested.fatigue, 20, '停在 20，不会一路睡到 0');
+  const restedState = act(rest.state, { type: 'advance', minutes: 165 }).state;
+  const rested = restedState.girls[0];
+  assert.equal(rested.fatigue, 20, '先停在阈值 20');
   assert.equal(rested.status, 'idle');
   assert.equal(rested.corruption, 15, '一次休息平复 5 点侵蚀');
   assert.equal(rested.hp, 50);
-  // 疲劳已经很低时不必再睡
-  const low = createInitialState(); low.girls[0].fatigue = 12;
+  // v227：停在 20 之后还能再补一觉，把剩下的 20 点清到 0。
+  const again = act(restedState, { type: 'care', girlId: 'yue', mode: 'resting' });
+  assert.equal(again.ok, true, again.message);
+  const cleared = act(again.state, { type: 'advance', minutes: 60 }).state.girls[0];
+  assert.equal(cleared.fatigue, 0);
+  assert.equal(cleared.status, 'idle');
+  // 疲劳清零后才不能再安排休息
+  const low = createInitialState(); low.girls[0].fatigue = 0; low.girls[0].corruption = 0;
   assert.equal(act(low, { type: 'care', girlId: 'yue', mode: 'resting' }).ok, false);
 });
 test('雇佣扣款、去重并遵守基地容量', () => {

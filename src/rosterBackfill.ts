@@ -7,10 +7,10 @@
  *
  * 这里按 cardId 把那几张卡补读一次，只补空着的字段，已有的一个字不动。
  */
-import { loadCardBox } from './cardbox.ts';
+import { loadCardBox, readCardRaw } from './cardbox.ts';
 import { parseGirlCard } from './cards.ts';
 import { readLibraryFile, scanLibrary } from './cardLibrary.ts';
-import type { GameState } from './types.ts';
+import type { Expression, GameState, Outfit, PortraitSpec } from './types.ts';
 
 interface Described {
   cardId?: string;
@@ -19,9 +19,18 @@ interface Described {
   quote?: string;
   title?: string;
   codename?: string;
+  portrait?: string;
+  portraitAsset?: string;
+  portraitSpec?: PortraitSpec;
+  wardrobe?: Outfit[];
+  outfitId?: string;
+  expression?: Expression;
+  witchForm?: Outfit;
+  importedVariants?: Record<string, string>;
 }
 
 function missing(person: Described | undefined): boolean {
+  // 只按描述判断是否要读卡；读卡时顺手把立绘与表情差分一并补齐（老名册都没搬过）。
   return Boolean(person?.cardId) && (!person?.personality?.trim() || !person?.appearance?.trim());
 }
 
@@ -37,21 +46,30 @@ export async function backfillFactionDescriptions(state: GameState): Promise<{ s
   try {
     const box = await loadCardBox();
     const scan = await scanLibrary();
-    if (!scan.ok) return null;
+    const files = scan.ok ? scan.files : [];
     const byHash = new Map(box.map(entry => [entry.hash, entry]));
-    const patch = new Map<string, { appearance?: string; personality?: string; quote?: string; title?: string; codename?: string }>();
+    const patch = new Map<string, {
+      appearance?: string; personality?: string; quote?: string; title?: string; codename?: string;
+      portrait?: string; portraitSpec?: PortraitSpec; wardrobe?: Outfit[]; outfitId?: string;
+      expression?: Expression; witchForm?: Outfit; importedVariants?: Record<string, string>;
+    }>();
 
     for (const person of targets) {
       const hash = person.cardId;
       if (!hash || patch.has(hash)) continue;
-      const entry = byHash.get(hash);
-      const file = entry
-        ? scan.files.find(item => item.name === entry.fileName) ?? scan.files.find(item => item.name.includes(hash))
-        : scan.files.find(item => item.name.includes(hash));
-      if (!file) continue;
-      const text = await readLibraryFile(file, { dir: scan.dir, kind: scan.kind });
-      if (!text.ok) continue;
-      const parsed = parseGirlCard(text.text);
+      // 卡库导入时正文就存在 cardbox 里，先走这条，不依赖文件目录权限。
+      let raw = await readCardRaw(hash);
+      if (!raw && scan.ok) {
+        const entry = byHash.get(hash);
+        const file = entry
+          ? files.find(item => item.name === entry.fileName) ?? files.find(item => item.name.includes(hash))
+          : files.find(item => item.name.includes(hash));
+        if (!file) continue;
+        const text = await readLibraryFile(file, { dir: scan.dir, kind: scan.kind });
+        if (text.ok) raw = text.text;
+      }
+      if (!raw) continue;
+      const parsed = parseGirlCard(raw);
       if (!parsed.ok) continue;
       const girl = parsed.card.girl;
       patch.set(hash, {
@@ -60,6 +78,14 @@ export async function backfillFactionDescriptions(state: GameState): Promise<{ s
         quote: girl.quote?.trim() || undefined,
         title: girl.title?.trim() || undefined,
         codename: girl.codename?.trim() || undefined,
+        // 老名册在编成时没搬差分，这里按 cardId 把卡面立绘与表情补齐。
+        portrait: girl.portrait || undefined,
+        portraitSpec: girl.portraitSpec,
+        wardrobe: girl.wardrobe?.length ? girl.wardrobe : undefined,
+        outfitId: girl.outfitId,
+        expression: girl.expression,
+        witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
+        importedVariants: Object.keys(girl.importedVariants ?? {}).length ? girl.importedVariants : undefined,
       });
     }
     if (!patch.size) return null;
@@ -69,12 +95,20 @@ export async function backfillFactionDescriptions(state: GameState): Promise<{ s
       const extra = person.cardId ? patch.get(person.cardId) : undefined;
       if (!extra) return person;
       const next: T = { ...person };
-      if (!next.appearance?.trim() && extra.appearance) next.appearance = extra.appearance;
-      if (!next.personality?.trim() && extra.personality) next.personality = extra.personality;
-      if (!next.quote?.trim() && extra.quote) next.quote = extra.quote;
-      if (!next.title?.trim() && extra.title) next.title = extra.title;
-      if (!next.codename?.trim() && extra.codename) (next as Described).codename = extra.codename;
-      filled.push(extra.title ?? person.cardId ?? '');
+      let touched = false;
+      if (!next.appearance?.trim() && extra.appearance) { next.appearance = extra.appearance; touched = true; }
+      if (!next.personality?.trim() && extra.personality) { next.personality = extra.personality; touched = true; }
+      if (!next.quote?.trim() && extra.quote) { next.quote = extra.quote; touched = true; }
+      if (!next.title?.trim() && extra.title) { next.title = extra.title; touched = true; }
+      if (!next.codename?.trim() && extra.codename) { (next as Described).codename = extra.codename; touched = true; }
+      if (!next.portrait?.trim() && !next.portraitAsset && extra.portrait) { next.portrait = extra.portrait; touched = true; }
+      if (!next.portraitSpec && extra.portraitSpec) { next.portraitSpec = extra.portraitSpec; touched = true; }
+      if (!next.wardrobe?.length && extra.wardrobe) { next.wardrobe = extra.wardrobe; touched = true; }
+      if (!next.outfitId && extra.outfitId) { next.outfitId = extra.outfitId; touched = true; }
+      if (!next.expression && extra.expression) { next.expression = extra.expression; touched = true; }
+      if (!next.witchForm && extra.witchForm) { next.witchForm = extra.witchForm; touched = true; }
+      if (!Object.keys(next.importedVariants ?? {}).length && extra.importedVariants) { next.importedVariants = extra.importedVariants; touched = true; }
+      if (touched) filled.push(extra.title ?? person.cardId ?? '');
       return next;
     };
 

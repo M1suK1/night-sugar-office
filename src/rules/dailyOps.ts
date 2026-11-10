@@ -10,7 +10,7 @@ import { newsCastPool, sanitizeCityNews } from '../cityNews.ts';
 import { failStoryMission } from './storyRun.ts';
 // v35 从 src/game.ts 拆出：派遣、陪伴与聊天。
 
-export function careRecovery(girl: Girl, mode: 'resting'): void {
+export function careRecovery(girl: Girl, mode: 'resting', day?: number): void {
   if (mode === 'resting') {
     // 到点了：直接落到目标值（中途已经按比例回落过）。
     const target = girl.restProgress;
@@ -18,9 +18,11 @@ export function careRecovery(girl: Girl, mode: 'resting'): void {
       girl.fatigue = target.toFatigue;
       girl.corruption = target.toCorruption;
     } else {
-      const plan = restPlanOf(girl);
+      const before = girl.corruption ?? 0;
+      const plan = restPlanOf(girl, day);
       girl.fatigue = plan.fatigueTo;
       girl.corruption = plan.corruptionTo;
+      if (day !== undefined && plan.corruptionTo < before) girl.restCorruptionDay = day;
     }
   }
   girl.restProgress = undefined;
@@ -33,26 +35,34 @@ export function careRecovery(girl: Girl, mode: 'resting'): void {
  * 规则改成「每小时回 20 点，一直回到疲劳 ≤ 20 才算完」，所以时长不再固定 90 分钟，
  * 而是按她当前有多累算出来。疤痕里的「恢复变慢」按每小时恢复量打折。
  */
-export function restPlanOf(girl: Pick<Girl, 'fatigue' | 'corruption' | 'scars'>): {
+export function restPlanOf(girl: Pick<Girl, 'fatigue' | 'corruption' | 'scars' | 'restCorruptionDay'>, day?: number): {
   perHour: number;
   threshold: number;
   minutes: number;
   fatigueTo: number;
   corruptionTo: number;
+  /** 今天已经靠休息平复过侵蚀，这次只回疲劳。 */
+  corruptionUsed: boolean;
   exhausted: boolean;
 } {
   const rules = loadBalance();
   const penalty = girl.scars.reduce((sum, s) => sum + (s.effect.kind === 'fatigueRecovery' ? s.effect.amount : 0), 0);
   const perHour = Math.max(1, Math.round(rules.dormFatiguePerHour + penalty));
   const threshold = Math.max(0, Math.round(rules.dormRestExitFatigue));
-  const fatigueTo = Math.min(girl.fatigue, threshold);
-  const need = Math.max(0, girl.fatigue - threshold);
+  // 已经睡到阈值以下时，允许再补一觉把剩下的疲劳清到 0；
+  // 否则疲劳会永远卡在阈值上（例如 20），再也点不了休息。
+  const fatigueTo = girl.fatigue > threshold ? threshold : 0;
+  const need = Math.max(0, girl.fatigue - fatigueTo);
+  const corruption = Math.max(0, girl.corruption ?? 0);
+  // v228：每人每天只有第一次休息会平复侵蚀，反复进出宿舍不再叠加。
+  const corruptionUsed = day !== undefined && girl.restCorruptionDay === day;
   return {
     perHour,
     threshold,
     minutes: Math.max(1, Math.ceil(need / perHour * 60)),
     fatigueTo,
-    corruptionTo: Math.max(0, (girl.corruption ?? 0) - Math.max(0, Math.round(rules.dormRestCorruption))),
+    corruptionTo: corruptionUsed ? corruption : Math.max(0, corruption - Math.max(0, Math.round(rules.dormRestCorruption))),
+    corruptionUsed,
     exhausted: need <= 0,
   };
 }
@@ -100,11 +110,13 @@ export function care(state: GameState, girlId: string, mode: 'resting'): ActionR
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
   if (girl.status !== 'idle') return { state, ok: false, message: `${girl.name}正在${statusLabels[girl.status]}，无法安排照顾。` };
   if (mode === 'resting') {
-    const plan = restPlanOf(girl);
+    const plan = restPlanOf(girl, next.day);
     if (plan.exhausted && (girl.corruption ?? 0) <= plan.corruptionTo) {
-      return { state, ok: false, message: `${girl.name}的疲劳已经低于 ${plan.threshold}，不用再休息了。` };
+      return { state, ok: false, message: `${girl.name}的疲劳已经清零，今天也平复过侵蚀了，不用再休息。` };
     }
     girl.status = 'resting'; girl.remaining = plan.minutes;
+    // 先记下今天的侵蚀额度：休息途中被打断也不会留下「再进一次还能刷」的口子。
+    if (plan.corruptionTo < (girl.corruption ?? 0)) girl.restCorruptionDay = next.day;
     girl.restProgress = {
       fromFatigue: girl.fatigue,
       toFatigue: plan.fatigueTo,
@@ -112,8 +124,8 @@ export function care(state: GameState, girlId: string, mode: 'resting'): ActionR
       toCorruption: plan.corruptionTo,
       minutes: plan.minutes,
     };
-    next.logs.unshift({ id: `log-rest-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}回到晚安宿舍休息（约 ${plan.minutes} 分钟，每小时恢复 ${plan.perHour} 点疲劳，降到 ${plan.threshold} 就醒）。` });
-    return { state: next, ok: true, message: `${girl.name}开始休息，约 ${plan.minutes} 分钟后（疲劳 ≤ ${plan.threshold}）自动结束。` };
+    next.logs.unshift({ id: `log-rest-${girl.id}-${Date.now()}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `${girl.name}回到晚安宿舍休息（约 ${plan.minutes} 分钟，每小时恢复 ${plan.perHour} 点疲劳，${plan.fatigueTo > 0 ? `降到 ${plan.fatigueTo} 就醒` : '睡到疲劳清空'}；${plan.corruptionUsed ? '今天的侵蚀额度已用，这次只回疲劳' : `平复 ${Math.max(0, girl.corruption ?? 0) - plan.corruptionTo} 点侵蚀`}）。` });
+    return { state: next, ok: true, message: `${girl.name}开始休息，约 ${plan.minutes} 分钟后（${plan.fatigueTo > 0 ? '疲劳 ≤ ' + plan.fatigueTo : '疲劳清零'}）自动结束。` };
   }
   return { state, ok: false, message: '宿舍只负责休息。受伤请去诊所。' };
 }
@@ -272,7 +284,7 @@ export function finalizeRests(state: GameState): number {
   let done = 0;
   for (const girl of state.girls) {
     if (girl.status !== 'resting' || girl.remaining > 0) continue;
-    careRecovery(girl, 'resting');
+    careRecovery(girl, 'resting', state.day);
     done += 1;
     state.logs.unshift({
       id: `log-rest-done-${girl.id}-${state.day}-${state.minutes}`,

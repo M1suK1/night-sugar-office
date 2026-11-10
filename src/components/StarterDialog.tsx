@@ -285,6 +285,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
       wardrobe?: RosterSubject['wardrobe'];
       outfitId?: string;
       expression?: RosterSubject['expression'];
+      importedVariants?: RosterSubject['importedVariants'];
     }>();
     for (const hash of hashes.slice(0, 8)) {
       try {
@@ -300,6 +301,7 @@ export function StarterDialog({ state, onConfirm, onAddCard, onAddCustom, onClos
           wardrobe: girl.wardrobe,
           outfitId: girl.outfitId,
           expression: girl.expression,
+          importedVariants: girl.importedVariants,
           witchForm: girl.witchForm ? { ...girl.witchForm, id: 'witchform', form: 'witch' } : undefined,
         });
       } catch { /* 单张读失败就当没立绘，别挡住编成。 */ }

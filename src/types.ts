@@ -129,6 +129,10 @@ export interface FactionLeader {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  /** 卡面表情差分：键是 `服装:表情`，值是 data URL；议事厅换表情要靠它。 */
+  importedVariants?: Record<string, string>;
+  /** 表情差分在资产库时的 id；与 importedVariants 二选一。 */
+  variantAssets?: Record<string, AssetId>;
   /** v122：契约卡带下来的外貌与性情，提示词要写她长什么样、怎么说话。 */
   appearance?: string;
   personality?: string;
@@ -172,6 +176,9 @@ export interface FactionGirl {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  /** 卡面表情差分，处理方式同 FactionLeader。 */
+  importedVariants?: Record<string, string>;
+  variantAssets?: Record<string, AssetId>;
   /** v122：契约卡带下来的外貌与性情，提示词要写得出她的样子与说话方式。 */
   appearance?: string;
   personality?: string;
@@ -895,7 +902,9 @@ export interface Girl {
   fatigue: number; bond: number; exp: number;
   stats: Record<StatKey, number>; baseStats: Record<StatKey, number>; status: GirlStatus; roomId: string; remaining: number; missionId?: string;
   /** v89：休息进度。休息期间按比例回落到目标值，而不是等到结束才扣一次。 */
-  restProgress?: { fromFatigue: number; toFatigue: number; fromCorruption: number; toCorruption: number; minutes: number }; /** 被借调给某个势力：到点自动回岗，借调期间不能派遣。 */ loan?: { faction: FactionId; until: number; rate: number };
+  restProgress?: { fromFatigue: number; toFatigue: number; fromCorruption: number; toCorruption: number; minutes: number };
+  /** 最近一次休息平复侵蚀的日期（v228）：每人每天只算一次，防止反复进出宿舍刷侵蚀。 */
+  restCorruptionDay?: number; /** 被借调给某个势力：到点自动回岗，借调期间不能派遣。 */ loan?: { faction: FactionId; until: number; rate: number };
   skill: string; skills: string[]; description: string; cost: number;
   scars: Scar[]; relationships: Record<string, number>; portraitSpec?: PortraitSpec;
   /** 立绘的 assets 键；有它就不必再背 dataURL。 */

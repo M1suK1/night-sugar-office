@@ -1,5 +1,5 @@
 import { assetDataUrl, assetPut, assetUrl, dataUrlToBlob, storeAvailable } from './store.ts';
-import type { BattleState, BattleUnit, GameState, Girl, Outfit } from './types.ts';
+import type { BattleState, BattleUnit, GameState, Outfit } from './types.ts';
 
 /**
  * 存档瘦身的最后一块：把立绘从「内联 data URL」搬进 IndexedDB 资产库。
@@ -10,7 +10,15 @@ import type { BattleState, BattleUnit, GameState, Girl, Outfit } from './types.t
  *   2. 读档后按引用把图取回来，界面拿到的还是原来的 data URL，别的地方一行都不用改。
  * 资产库不可用（隐私模式、旧浏览器）时原样返回，功能不受影响，只是不省空间。
  */
-type WithPortrait = Pick<Girl, 'portrait' | 'portraitAsset' | 'importedVariants' | 'variantAssets' | 'wardrobe' | 'witchForm'> & { id: string };
+interface WithPortrait {
+  id: string;
+  portrait?: string;
+  portraitAsset?: string;
+  importedVariants?: Record<string, string>;
+  variantAssets?: Record<string, string>;
+  wardrobe?: Outfit[];
+  witchForm?: Outfit;
+}
 type PortraitOnly = { portrait?: string; portraitAsset?: string };
 
 /** 资产库的最小接口：测试可以换成内存实现，生产走 store.ts。 */
@@ -184,19 +192,11 @@ export async function extractStatePortraits(state: GameState, store: PortraitSto
     }
     return out;
   };
-  const mapPortraits = async <T extends PortraitOnly>(list: T[]): Promise<T[]> => {
-    const out: T[] = [];
-    for (const item of list) {
-      const swapped = await extractPortrait(item, store);
-      if (swapped) { extracted += 1; out.push(swapped); } else out.push(item);
-    }
-    return out;
-  };
   const girls = await mapAll(state.girls);
   const candidates = await mapAll(state.candidates);
-  // 三方首领与随从、以及战报里的单位快照，以前都还带着整张 data URL。
-  const customFactionLeaders = await mapPortraits(state.customFactionLeaders ?? []);
-  const customFactionGirls = await mapPortraits(state.customFactionGirls ?? []);
+  // 三方首领与随从也走完整抽取：衣柜、表情差分都可能是整张 data URL。
+  const customFactionLeaders = await mapAll(state.customFactionLeaders ?? []);
+  const customFactionGirls = await mapAll(state.customFactionGirls ?? []);
   const battleResult = await extractBattles(state.battles ?? [], store);
   extracted += battleResult.extracted;
   const memorial = state.memorial?.length
@@ -224,10 +224,11 @@ export async function hydrateStatePortraits(state: GameState, store: PortraitSto
     const url = await readPortrait(outfit.portraitAsset);
     return url ? { ...outfit, portrait: url } : outfit;
   };
-  const restore = async <T extends WithPortrait>(girl: T): Promise<T> => {
+  const restore = async <T extends WithPortrait>(girl: T, preferDataUrl = false): Promise<T> => {
     let next: T = girl;
     if (isTransientPortrait(girl.portrait) && girl.portraitAsset) {
-      const url = await store.url(girl.portraitAsset).catch(() => undefined);
+      // 首领的侧栏/议会卡用 data URL（导出与截图更稳），普通少女继续用会话内 blob。
+      const url = preferDataUrl ? await readPortrait(girl.portraitAsset) : await store.url(girl.portraitAsset).catch(() => undefined);
       if (url) next = { ...next, portrait: url };
     }
     const assets = next.variantAssets;
@@ -256,15 +257,10 @@ export async function hydrateStatePortraits(state: GameState, store: PortraitSto
     if (witch !== next.witchForm) next = { ...next, witchForm: witch };
     return next;
   };
-  const girls = await Promise.all(state.girls.map(restore));
-  const candidates = await Promise.all(state.candidates.map(restore));
-  const restoreOnly = async <T extends PortraitOnly>(item: T): Promise<T> => {
-    if (!isTransientPortrait(item.portrait) || !item.portraitAsset) return item;
-    const url = await readPortrait(item.portraitAsset);
-    return url ? { ...item, portrait: url } : item;
-  };
-  const customFactionLeaders = await Promise.all((state.customFactionLeaders ?? []).map(restoreOnly));
-  const customFactionGirls = await Promise.all((state.customFactionGirls ?? []).map(restoreOnly));
+  const girls = await Promise.all(state.girls.map(item => restore(item)));
+  const candidates = await Promise.all(state.candidates.map(item => restore(item)));
+  const customFactionLeaders = await Promise.all((state.customFactionLeaders ?? []).map(item => restore(item, true)));
+  const customFactionGirls = await Promise.all((state.customFactionGirls ?? []).map(item => restore(item, true)));
   const memorial = state.memorial?.length
     ? await Promise.all(state.memorial.map(async entry => ({ ...entry, girl: await restore(entry.girl) })))
     : state.memorial;

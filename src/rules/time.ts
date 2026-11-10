@@ -352,7 +352,7 @@ export function advance(state: GameState, minutes: number): ActionResult {
       }
     } else if (due.girl) {
       const girl = findGirl(next, due.girl.id);
-      if (girl) careRecovery(girl, 'resting');
+      if (girl) careRecovery(girl, 'resting', next.day);
     } else if (due.expedition) {
       settleExpedition(next, due.expedition.id, { day: next.day, minutes: next.minutes });
     }

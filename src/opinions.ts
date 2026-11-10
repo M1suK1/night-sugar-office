@@ -187,9 +187,9 @@ export function opinionSpeakerOf(state: GameState, opinion: Opinion, line?: Opin
   const representative = opinion.authorKind === 'leader' && opinion.authorFaction
     ? factionRepresentativeOf(state, opinion.authorFaction)
     : undefined;
-  const author: SpeakerSource | undefined = representative
-    ? { id: representative.id, name: representative.name, color: representative.color, portrait: representative.portrait ?? '', portraitSpec: representative.portraitSpec }
-    : speakerSourceOf(state, opinion.authorId);
+  // 首领代表也是完整的人：衣柜图、魔女形态、表情差分都要原样带进立绘。
+  // 以前这里只挑 id/name/color/portrait 重建对象，首领的 wardrobe 一丢就只能画剪影。
+  const author: SpeakerSource | undefined = representative ?? speakerSourceOf(state, opinion.authorId);
   const foreign = Boolean(line?.speakerId && line.speakerId !== opinion.authorId);
   const foreignSource = foreign ? speakerSourceOf(state, line?.speakerId) : undefined;
   const base = foreignSource ?? author;

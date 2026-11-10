@@ -171,6 +171,7 @@ export interface RosterSubject {
   level: number;
   color: string;
   portrait: string;
+  portraitAsset?: string;
   portraitSpec?: PortraitSpec;
   quote: string;
   origin: 'leader' | 'member' | 'custom';
@@ -188,6 +189,8 @@ export interface RosterSubject {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  importedVariants?: Record<string, string>;
+  variantAssets?: Record<string, string>;
   /** 卡面带下来的外貌与性情：名册里的首领/随从也要能把这两句带进提示词。 */
   appearance?: string;
   personality?: string;
@@ -198,8 +201,9 @@ export function subjectOfLeader(leader: FactionLeader): RosterSubject {
   return {
     id: leader.id, name: leader.name, faction: leader.faction, title: leader.title,
     level: leader.level, color: leader.color, portrait: leader.portrait,
-    portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
+    portraitAsset: leader.portraitAsset, portraitSpec: leader.portraitSpec, quote: leader.quote, origin: 'leader',
     wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
+    importedVariants: leader.importedVariants, variantAssets: leader.variantAssets,
     appearance: leader.appearance, personality: leader.personality,
     stats: leader.stats, statsLevel: leader.statsLevel, skillIds: leader.skillIds,
   };
@@ -210,8 +214,9 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
   return {
     id: girl.id, name: girl.name, faction: girl.tag, title: girl.title,
     level: girl.level, color: girl.color, portrait: girl.portrait,
-    portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
+    portraitAsset: girl.portraitAsset, portraitSpec: girl.portraitSpec, quote: girl.quote, origin: 'member',
     wardrobe: girl.wardrobe, outfitId: girl.outfitId, expression: girl.expression,
+    importedVariants: girl.importedVariants, variantAssets: girl.variantAssets,
     appearance: girl.appearance, personality: girl.personality,
     stats: girl.stats, statsLevel: girl.statsLevel, skillIds: girl.skills, codename: girl.codename,
   };
@@ -220,18 +225,20 @@ export function subjectOfGirl(girl: FactionGirl): RosterSubject {
 /** 玩家自定义的少女 → 面板条目；出身决定她默认算哪一方的人。 */
 export function subjectOfCustom(input: {
   id: string; name: string; factionTag: GirlFaction; level: number; color: string;
-  portrait: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
+  portrait: string; portraitAsset?: string; portraitSpec?: PortraitSpec; stats: Record<StatKey, number>;
   skillIds: string[]; codename?: string; quote?: string; title?: string; cardId?: string;
   witch?: boolean; witchForm?: Outfit; wardrobe?: Outfit[]; outfitId?: string; expression?: Expression;
+  importedVariants?: Record<string, string>; variantAssets?: Record<string, string>;
   appearance?: string; personality?: string;
 }): RosterSubject {
   return {
     id: input.id, name: input.name, faction: input.factionTag, title: input.title ?? '外来者',
     level: input.level, color: input.color, portrait: input.portrait,
-    portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
+    portraitAsset: input.portraitAsset, portraitSpec: input.portraitSpec, quote: input.quote ?? '她只对自己的名字负责。',
     origin: 'custom', stats: input.stats, statsLevel: input.level, skillIds: input.skillIds, codename: input.codename, cardId: input.cardId,
     witch: input.witch, witchForm: input.witchForm,
     wardrobe: input.wardrobe, outfitId: input.outfitId, expression: input.expression,
+    importedVariants: input.importedVariants, variantAssets: input.variantAssets,
     appearance: input.appearance, personality: input.personality,
   };
 }
@@ -252,7 +259,7 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
   const stats = subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 };
   return {
     id: subject.id, faction, name: subject.name, codename: subject.codename ?? subject.name,
-    title: subject.title, portrait: subject.portrait, portraitSpec: subject.portraitSpec,
+    title: subject.title, portrait: subject.portrait, portraitAsset: subject.portraitAsset, portraitSpec: subject.portraitSpec,
     color: subject.color, level,
     stats: statsAtLevel(stats, subject.statsLevel ?? 1, level, '输出'), statsLevel: level,
     skills: subject.skillIds ?? [], tag: faction, quote: subject.quote, note: '由事务所编入名册的少女。',
@@ -261,6 +268,7 @@ export function customGirlOf(faction: FactionId, subject: RosterSubject): Factio
     witch: subject.witch ?? (faction === 'witch' ? true : undefined),
     witchForm: subject.witchForm,
     wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
+    importedVariants: subject.importedVariants, variantAssets: subject.variantAssets,
     appearance: subject.appearance, personality: subject.personality,
   };
 }
@@ -271,10 +279,11 @@ export function customLeaderOf(faction: FactionId, subject: RosterSubject): Fact
   const stats = subject.stats ?? { magic: 50, insight: 50, agility: 50, empathy: 50 };
   return {
     id: subject.id, faction, name: subject.name, title: subject.title,
-    portrait: subject.portrait, portraitSpec: subject.portraitSpec, color: subject.color,
+    portrait: subject.portrait, portraitAsset: subject.portraitAsset, portraitSpec: subject.portraitSpec, color: subject.color,
     quote: subject.quote, note: '由事务所编入名册的少女。',
     witch: subject.witch ?? (faction === 'witch' ? true : undefined), witchForm: subject.witchForm,
     wardrobe: subject.wardrobe, outfitId: subject.outfitId, expression: subject.expression,
+    importedVariants: subject.importedVariants, variantAssets: subject.variantAssets,
     appearance: subject.appearance, personality: subject.personality,
     level,
     stats: statsAtLevel(stats, subject.statsLevel ?? 1, level, '输出'), statsLevel: level,
@@ -312,6 +321,7 @@ export interface FactionRepresentative {
   faction: FactionId;
   level: number;
   portrait?: string;
+  portraitAsset?: string;
   portraitSpec?: PortraitSpec;
   quote?: string;
   note?: string;
@@ -325,6 +335,8 @@ export interface FactionRepresentative {
   wardrobe?: Outfit[];
   outfitId?: string;
   expression?: Expression;
+  importedVariants?: Record<string, string>;
+  variantAssets?: Record<string, string>;
   /** v85：这个席位还空着——界面要提示「契约卡不足，需要导入」。 */
   vacant?: boolean;
   kind: 'leader' | 'envoy';
@@ -340,6 +352,7 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     faction,
     level: leader.level,
     portrait: leader.portrait,
+    portraitAsset: leader.portraitAsset,
     portraitSpec: leader.portraitSpec,
     quote: leader.quote,
     note: leader.note,
@@ -349,6 +362,7 @@ export function factionRepresentativeOf(state: RosterState, faction: FactionId):
     witch: leader.witch || undefined,
     witchForm: leader.witchForm,
     wardrobe: leader.wardrobe, outfitId: leader.outfitId, expression: leader.expression,
+    importedVariants: leader.importedVariants, variantAssets: leader.variantAssets,
     vacant: leader.vacant,
     kind: 'leader',
   };
