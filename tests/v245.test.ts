@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { act, createInitialState } from '../src/game.ts';
 import { addCorruption, drugTick, syncWitchState } from '../src/rules/conditions.ts';
 import { witchOutfitFor } from '../src/rules/outfits.ts';
+import { witchConfrontationContract } from '../src/promptSections.ts';
+import { presetPrompts, shippedPresets } from '../src/presets.ts';
 
 /** v245：侵蚀到阈值就自动魔女化；立绘锁死，只能抑制剂压回；70 起不可逆。 */
 
@@ -78,6 +80,27 @@ test('v245 抑制剂压回去后，药效期内不会又被自动变成魔女', 
   assert.equal(target.witch, false, '药效期内涨侵蚀也不变回去');
   next.day = (target.drugUntilDay ?? 0) + 1;
   assert.equal(syncWitchState(next, target), true, '药效过期、侵蚀仍在阈值上时才重新变身');
+});
+
+test('v245 魔女化开场白放宽到 1500 字，不再被 600 字截断', () => {
+  const { state, girl } = girlOf();
+  girl.corruption = 45;
+  addCorruption(state, girl, 1);
+  const event = state.events.find(entry => entry.witch)!;
+  const long = '她'.repeat(1200);
+  const result = act(state, { type: 'startStorySession', eventId: event.id, cast: [girl.id], opening: long, lines: [], options: [], seed: '' });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.state.events.find(entry => entry.id === event.id)!.opening?.length, 1200);
+  assert.match(witchConfrontationContract(), /800–1500 字/);
+});
+
+test('v245 出厂预设里的魔女化契约跟代码默认一致', () => {
+  const contract = witchConfrontationContract().trim();
+  for (const preset of shippedPresets()) {
+    const entry = presetPrompts(preset).find(item => item.id === 'arc:witch');
+    assert.ok(entry, `${preset.id} 缺少 arc:witch`);
+    assert.equal(entry!.content.trim(), contract, `${preset.id} 的魔女化契约没同步`);
+  }
 });
 
 test('v245 旧档补触发：侵蚀到线但还是普通人时，日结状态会被补成魔女', () => {

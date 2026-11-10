@@ -363,10 +363,10 @@ export const PRESET = {
   {
    "identifier": "arc:witch",
    "name": "魔女化对峙 · 结构契约",
-   "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"backdrop\":\"\"}\nbackdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。\nnarration 500–1000 字：先写清她把所长堵在哪里（具体到房间、门口或街区），再写她怎么封住退路，并对所长发泄负面情绪，需要详细描写她的魔女化后被扭曲的内心，与平时的她产生反差。\nlines 3–6 句，全部是她对所长说的，speakerId 只能是她。内容是按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。\noptions 恰好 3 条，每条不超过 60 字。",
+   "content": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"backdrop\":\"\"}\nbackdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。\nnarration 800–1500 字：先写清她把所长堵在哪里（具体到房间、门口或街区），再写她怎么封住退路，并对所长发泄负面情绪，需要详细描写她的魔女化后被扭曲的内心，与平时的她产生反差。\nlines 3–6 句，全部是她对所长说的，speakerId 只能是她。内容是按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。\noptions 恰好 3 条，每条不超过 60 字。",
    "role": "system",
    "scope": "arc",
-   "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"backdrop\":\"\"}\nbackdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。\nnarration 500–1000 字：先写清她把所长堵在哪里（具体到房间、门口或街区），再写她怎么封住退路，并对所长发泄负面情绪，需要详细描写她的魔女化后被扭曲的内心，与平时的她产生反差。\nlines 3–6 句，全部是她对所长说的，speakerId 只能是她。内容是按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。\noptions 恰好 3 条，每条不超过 60 字。",
+   "system_prompt": "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"calm\",\"text\":\"\",\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"backdrop\":\"\"}\nbackdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。\nnarration 800–1500 字：先写清她把所长堵在哪里（具体到房间、门口或街区），再写她怎么封住退路，并对所长发泄负面情绪，需要详细描写她的魔女化后被扭曲的内心，与平时的她产生反差。\nlines 3–6 句，全部是她对所长说的，speakerId 只能是她。内容是按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。\noptions 恰好 3 条，每条不超过 60 字。",
    "marker": false,
    "disable": false
   },

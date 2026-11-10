@@ -172,7 +172,7 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       if (event.status === 'done') return { state, ok: false, message: '这段事件已经结束了。' };
       // 会议最多 6 人；普通剧情仍按 5 人。
       const cast = (action.cast?.length ? action.cast : event.cast?.length ? event.cast : [event.girlId]).slice(0, event.meeting ? 6 : 5);
-      const opening = (action.opening ?? event.opening ?? event.hook ?? '').trim().slice(0, 600) || event.hook;
+      const opening = (action.opening ?? event.opening ?? event.hook ?? '').trim().slice(0, 1500) || event.hook;
       event.mode = 'session';
       event.cast = cast;
       event.opening = opening;
