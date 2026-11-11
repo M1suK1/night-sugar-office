@@ -567,6 +567,14 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .llm-response::-webkit-scrollbar{width:5px}
 .llm-response::-webkit-scrollbar-thumb{background:#5b4a61;border-radius:3px}
 .llm-no-reasoning{color:#5d5866;font-size:8.5px;margin-top:6px}
+.llm-reasoning-block{margin:0 0 6px;border:1px solid #b9a4d21f;border-radius:5px;background:#b9a4d20a}
+.llm-reasoning-block summary{display:flex;align-items:center;gap:6px;padding:5px 7px;cursor:pointer;color:#a89fac;font-size:8.5px;list-style:none}
+.llm-reasoning-block summary::-webkit-details-marker{display:none}
+.llm-reasoning-block summary span{display:inline-flex;align-items:center;gap:5px}
+.llm-reasoning-block summary em{margin-left:auto;font-style:normal;color:#5d5866;font-size:7.5px;font-family:var(--font-data)}
+.llm-reasoning-block summary:hover{color:#f3aec9}
+.llm-reasoning-block[open] summary{border-bottom:1px solid #ffffff08}
+.llm-reasoning-block .llm-reasoning{border:0;border-radius:0;background:none;max-height:280px}
 .llm-error{color:#e6a9a2;border:1px solid #e6a9a21f;background:#e6a9a20a;border-radius:4px;padding:5px 7px;font-size:8.5px;line-height:1.7;margin-top:8px}
 .llm-copy{display:inline-flex;align-items:center;gap:5px;margin-top:9px;border:1px solid #ffffff14;border-radius:4px;padding:4px 8px;font-size:8.5px;color:#a89fac}
 .llm-copy:hover{color:#f3aec9;border-color:#f3aec940}

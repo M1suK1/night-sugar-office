@@ -18,6 +18,8 @@ export interface LlmLogEntry {
   usage?: unknown;
   messages: { role: string; content: string }[];
   response: string;
+  /** 模型返回的思维链；不裁剪，整段写盘。 */
+  reasoning?: string;
 }
 
 function clip(text: string, limit = MAX_TEXT): string {

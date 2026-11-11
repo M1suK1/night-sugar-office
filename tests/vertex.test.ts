@@ -9,6 +9,7 @@ import {
   normalizeVertexModel,
   parseVertexServiceAccount,
   readVertexCredential,
+  THINKING_TOKEN_RESERVE,
   vertexAccessToken,
   vertexChat,
   vertexLocation,
@@ -224,7 +225,9 @@ test('generateContent：system 抽出去，assistant 映射成 model，图片转
     assert.equal(payload.systemInstruction.parts[0].text, '你是守夜人。');
     assert.deepEqual(payload.contents.map(item => item.role), ['user', 'model']);
     assert.deepEqual(payload.contents[0].parts[1], { inlineData: { mimeType: 'image/png', data: 'AAAA' } });
-    assert.equal(payload.generationConfig.maxOutputTokens, 256);
+    // v249：思考 token 也走 maxOutputTokens，所以正文额度之外再加思维链的预留。
+    assert.equal(payload.generationConfig.maxOutputTokens, 256 + THINKING_TOKEN_RESERVE);
+    assert.deepEqual((payload.generationConfig as unknown as { thinkingConfig?: unknown }).thinkingConfig, { includeThoughts: true });
     assert.equal(payload.generationConfig.temperature, 0.4);
     assert.equal(payload.generationConfig.topP, 0.9);
     // Vertex 不认 OpenAI 的 penalty：传了也不能出现在请求体里（否则部分模型 400 "Penalty is not enabled"）。

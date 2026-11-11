@@ -314,6 +314,15 @@ function errorMessage(status: number, body: VertexResponseBody | null, detail: s
 }
 
 /**
+ * 思维链的额外额度：Gemini 把思考 token 记进 maxOutputTokens，
+ * 这段预留保证正文该有的额度不被思考吃掉。不设 thinkingBudget，所以不会截断思维链。
+ */
+export const THINKING_TOKEN_RESERVE = 32_768;
+
+/** Gemini 2.5 系列单次输出的硬上限。 */
+const MAX_OUTPUT_TOKENS = 65_536;
+
+/**
  * 发一次 generateContent。失败信息都写成人话，方便在设置里直接看到原因。
  */
 export async function vertexChat(
@@ -340,17 +349,32 @@ export async function vertexChat(
     token = result.token;
   }
   const { systemText, contents } = toContents(messages);
-  const generationConfig: Record<string, unknown> = {};
-  if (params.temperature !== undefined) generationConfig.temperature = params.temperature;
-  if (params.topP !== undefined) generationConfig.topP = params.topP;
-  if (params.maxTokens !== undefined) generationConfig.maxOutputTokens = params.maxTokens;
-  // Gemini 的 generateContent 不认 OpenAI 的 presence/frequency penalty：
-  // 有些模型会直接 400「Penalty is not enabled for this model」，所以一律不发送。
-  // 这两个字段保留在 VertexParams 里只是为了兼容调用签名，值会被忽略。
-  const payload: Record<string, unknown> = { contents };
-  if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
-  if (Object.keys(generationConfig).length > 0) payload.generationConfig = generationConfig;
-  if (params.tools?.length) payload.tools = params.tools;
+  /**
+   * includeThinking=false 是给不认 thinkingConfig 的老模型留的退路：
+   * 去掉思维链重试一次，正文照常写。
+   */
+  const buildPayload = (includeThinking: boolean): Record<string, unknown> => {
+    const generationConfig: Record<string, unknown> = {};
+    if (params.temperature !== undefined) generationConfig.temperature = params.temperature;
+    if (params.topP !== undefined) generationConfig.topP = params.topP;
+    if (params.maxTokens !== undefined) {
+      // 思考 token 也算进 maxOutputTokens；把正文额度原样留出来，思维链走额外预留。
+      generationConfig.maxOutputTokens = includeThinking
+        ? Math.min(params.maxTokens + THINKING_TOKEN_RESERVE, MAX_OUTPUT_TOKENS)
+        : params.maxTokens;
+    }
+    // 不设 thinkingBudget：让模型自己决定想到哪里停，不人为截断思维链。
+    if (includeThinking) generationConfig.thinkingConfig = { includeThoughts: true };
+    // Gemini 的 generateContent 不认 OpenAI 的 presence/frequency penalty：
+    // 有些模型会直接 400「Penalty is not enabled for this model」，所以一律不发送。
+    // 这两个字段保留在 VertexParams 里只是为了兼容调用签名，值会被忽略。
+    const body: Record<string, unknown> = { contents };
+    if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
+    if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
+    if (params.tools?.length) body.tools = params.tools;
+    return body;
+  };
+  let payload = buildPayload(true);
 
   const model = normalizeVertexModel(input.model);
   const controller = new AbortController();
@@ -379,6 +403,11 @@ export async function vertexChat(
   };
   try {
     let attempt = await send('v1');
+    // 老模型不认 thinkingConfig，或输出的上限比预留还小：去掉思维链重试一次。
+    if (!attempt.ok && attempt.failure.status === 400 && /thinking|thought|maxOutputTokens/i.test(attempt.failure.message)) {
+      payload = buildPayload(false);
+      attempt = await send('v1');
+    }
     if (!attempt.ok && attempt.failure.status === 404) attempt = await send('v1beta1');
     if (!attempt.ok) return { ok: false, status: attempt.failure.status, message: attempt.failure.message };
     const body = attempt.body;

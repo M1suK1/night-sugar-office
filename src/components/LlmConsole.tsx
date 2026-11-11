@@ -43,8 +43,8 @@ function entryText(entry: LlmLogEntry): string {
     lines.push('', `预设：${entry.request.preset ?? '未记录'}`, `参数：${Object.entries(entry.request.params).map(([key, value]) => `${key}=${value}`).join('，')}`);
     for (const section of entry.request.sections) lines.push('', `── ${section.label} ──`, section.text);
   }
-  if (entry.response?.text !== undefined) lines.push('', '── 返回内容 ──', entry.response.text || '（空字符串）');
   if (entry.response?.reasoning) lines.push('', '── 思维链 ──', entry.response.reasoning);
+  if (entry.response?.text !== undefined) lines.push('', '── 返回内容 ──', entry.response.text || '（空字符串）');
   return lines.join('\n');
 }
 
@@ -169,6 +169,12 @@ export function LlmConsole() {
               {entry.response?.finish && <span>结束原因<b>{entry.response.finish}</b></span>}
               {entry.response?.usage && <span>用量<b>{entry.response.usage.prompt ?? '?'} → {entry.response.usage.completion ?? '?'} tokens</b></span>}
             </div>
+            {entry.response?.reasoning
+              ? <details className="llm-reasoning-block">
+                  <summary><span><Brain size={12} />思维链</span><em>{entry.response.reasoning.length} 字</em></summary>
+                  <pre className="llm-reasoning">{entry.response.reasoning}</pre>
+                </details>
+              : <p className="llm-no-reasoning">这次响应没有附带思维链（OpenAI 兼容接口看 reasoning_content，Vertex 看 thought 分段）。</p>}
             {entry.response?.text !== undefined && <>
               <h4><FileText size={12} />返回内容{entry.response?.textTruncated ? '（过长，只保留开头）' : ''}</h4>
               <pre className="llm-response">{entry.response.text || '（空字符串）'}</pre>
@@ -197,9 +203,6 @@ export function LlmConsole() {
                 </details>)}
               </div>
             </>}
-            {entry.response?.reasoning
-              ? <><h4><Brain size={12} />思维链</h4><pre className="llm-reasoning">{entry.response.reasoning}</pre></>
-              : <p className="llm-no-reasoning">这次响应没有附带思维链（OpenAI 兼容接口看 reasoning_content，Vertex 看 thought 分段）。</p>}
             {!entry.ok && <p className="llm-error">{entry.message}</p>}
             <button type="button" className="llm-copy" id={`llm-copy-${entry.id}`} onClick={() => void copy(entry)}>
               {copied === entry.id ? <Check size={12} /> : <Copy size={12} />}{copied === entry.id ? '已复制' : '复制这次调用'}

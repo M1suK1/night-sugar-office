@@ -1200,3 +1200,9 @@
 - [x] 玩家输入在请求时展开：聊天、故事方向、开场种子、每轮行动、提案返修上下文、起草提示、收尾引子。
 - [x] 存档里保留原文，每次请求重新抽。
 - [x] `tests/v248` 五条；全量 1118 通过。
+## v249：Vertex 返回并记录思维链（`tests/v249.test.ts`）
+- [x] 请求带 thinkingConfig.includeThoughts；不设 thinkingBudget，思维链不被预算截断。
+- [x] maxOutputTokens = 正文额度 + 32768 预留（封顶 65536），思考不占正文额度。
+- [x] 老模型不认 thinkingConfig 时自动去掉重试一次。
+- [x] 面板里思维链排在「返回内容」之前，可折叠；jsonl 日志整段记录，不裁剪。
+- [x] `tests/v249` 三条；全量 1121 通过。

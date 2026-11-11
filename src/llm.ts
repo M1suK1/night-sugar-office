@@ -1096,6 +1096,8 @@ function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], lab
       content: typeof message.content === 'string' ? message.content : '[图像/结构化输入]',
     })),
     response: result.ok && typeof result.text === 'string' ? result.text : (result.ok ? '' : String(result.message ?? '')),
+    // 思维链也落一份到 jsonl：事后离线看「它当时在想什么」比只看正文有用。
+    reasoning: result.reasoning,
   });
 }
 
