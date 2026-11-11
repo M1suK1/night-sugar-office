@@ -1,5 +1,5 @@
 import { outfitBrief } from './outfitBrief.ts';
-import type { Girl, GameState, MissionRun, Storyline } from './types.ts';
+import type { CharacterEvent, Girl, GameState, MissionRun, Storyline } from './types.ts';
 import { recentMissionRuns } from './missionHistory.ts';
 import { relationshipStage, stageLabels, statLabels, statusLabels, workLabels } from './rules/labels.ts';
 import { factionTagLabel } from './factions.ts';
@@ -181,15 +181,22 @@ export function storylineHistoryText(state: GameState | undefined, girl: Girl, l
   return fitLines(lines, budget, { fromEnd: false, omitted: count => `（还有 ${count} 段更早的故事线未列出）` });
 }
 
+/** 这件事算不算「她参与过」：她是主角、在 cast 里，或出席过这场会议。 */
+export function eventInvolves(event: CharacterEvent, girlId: string): boolean {
+  return event.status === 'done'
+    && Boolean((event.summary ?? '').trim())
+    && (event.girlId === girlId || (event.cast ?? []).includes(girlId) || Boolean(event.meeting?.attendeeIds.includes(girlId)));
+}
+
+/** 她参与过、写下过摘要的剧情与会议，新的在前（给宏自己拼格式用）。 */
+export function recentEventRecords(state: GameState | undefined, girlId: string, limit: number): CharacterEvent[] {
+  if (!state) return [];
+  return (state.events ?? []).filter(event => eventInvolves(event, girlId)).slice(0, Math.max(1, limit));
+}
+
 /** 已结束、写下了摘要的剧情与会议（她参与的），新的在前。 */
 export function recentEventLines(state: GameState | undefined, girlId: string, limit: number): string[] {
-  if (!state) return [];
-  return (state.events ?? [])
-    // v176：会议对每位参会者都算「之前发生过的事」。
-    .filter(event => event.status === 'done'
-      && (event.girlId === girlId || (event.cast ?? []).includes(girlId) || Boolean(event.meeting?.attendeeIds.includes(girlId)))
-      && (event.summary ?? '').trim())
-    .slice(0, Math.max(1, limit))
+  return recentEventRecords(state, girlId, limit)
     .map(event => `· ${event.title}：${(event.summary ?? '').trim()}`);
 }
 

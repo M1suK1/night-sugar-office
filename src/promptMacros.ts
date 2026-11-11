@@ -12,7 +12,7 @@ import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel } from '
 import { pollutionTierLabel } from './pollution.ts';
 import { baseCommissionPool } from './rules/missions.ts';
 import { traits } from './content/traits.ts';
-import { battleHistoryText, chatHistoryText, dossierOf, eventMemoryText, missionHistoryText, storylineHistoryText } from './girlDossier.ts';
+import { battleHistoryText, chatHistoryText, dossierOf, eventMemoryText, missionHistoryText, recentEventRecords, storylineHistoryText } from './girlDossier.ts';
 import { ENUM_TEXT, limitsText } from './promptSections.ts';
 import { promptTokens } from './tokens.ts';
 import { randomFromArg, randomHexColor } from './randomize.ts';
@@ -24,6 +24,10 @@ export interface MacroContext {
   focus?: Girl;
   /** 主角在名册里的位置（「月蚀庭首领」）；契约者没有这一项。 */
   focusRole?: string;
+  /** 多人剧情：这一场在场的人（不含 player），给 {{history.events:cast}} 用。 */
+  cast?: { id: string; name: string }[];
+  /** 同一段提示词里已经用了 {{history.events}}：cast 版要跳过它的内容。 */
+  hasFocusEvents?: boolean;
 }
 
 export interface MacroSpec {
@@ -241,7 +245,11 @@ const RESOLVERS: Record<string, Resolver> = {
   'history.storylines': (ctx, arg) => (ctx.focus ? storylineHistoryText(ctx.state, ctx.focus, argInt(arg, 3)) : '（本任务没有指定主角）'),
   'history.chat': (ctx, arg) => (ctx.focus ? chatHistoryText(ctx.state, ctx.focus, argInt(arg, 20, 1, 60)) : '（本任务没有指定主角）'),
   'history.battles': (ctx, arg) => (ctx.focus ? battleHistoryText(ctx.state, ctx.focus, argInt(arg, 4)) : '（本任务没有指定主角）'),
-  'history.events': (ctx, arg) => (ctx.focus ? eventMemoryText(ctx.state, ctx.focus.id, argInt(arg, 4)) : '（本任务没有指定主角）'),
+  'history.events': (ctx, arg) => {
+    if (!ctx.focus) return '（本任务没有指定主角）';
+    if (arg === 'cast') return castEventMemoryText(ctx);
+    return eventMemoryText(ctx.state, ctx.focus.id, argInt(arg, 4));
+  },
 };
 
 export const MACRO_GROUPS: MacroGroup[] = [
@@ -260,6 +268,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'history.chat:20', label: '聊天记录', hint: '最近 20 条她与所长说过的话', budget: 420 },
       { key: 'history.battles:4', label: '战斗经历', hint: '最近 4 场战报的胜负与伤害', budget: 260 },
       { key: 'history.events:4', label: '私人事件回忆', hint: '最近 4 件已经收尾的剧情与会议；只给摘要，不回放原文', budget: 320 },
+      { key: 'history.events:cast', label: '在场者往事', hint: '按在场的人各给两条：与私人事件回忆同时用时，主角与重复的事自动跳过', budget: 900 },
     ],
   },
   {
@@ -320,13 +329,67 @@ export const MACRO_GROUPS: MacroGroup[] = [
 ];
 
 /** 展开 `{{key}}` 与 `{{key:arg}}`；未注册的键原样留着，交给后面的变量替换。 */
+
+/** cast 版的总预算：多人一起列时别把提示词撑爆。 */
+const CAST_EVENTS_BUDGET = 900;
+
+/**
+ * `{{history.events:cast}}`：按在场的人分组，每人最多两条。
+ *
+ * 与 `{{history.events}}` 同时出现时，主角那一段留给普通宏，这里只补别人，
+ * 并且跳过主角已经列过的事——同一件事不在提示词里说两遍。
+ */
+function castEventMemoryText(ctx: MacroContext): string {
+  const state = ctx.state;
+  const focus = ctx.focus;
+  if (!state || !focus) return '（本任务没有指定主角）';
+  const people: { id: string; name: string }[] = [];
+  const seenPeople = new Set<string>();
+  const add = (person: { id: string; name: string }) => {
+    if (!person.id || person.id === 'player' || seenPeople.has(person.id)) return;
+    seenPeople.add(person.id);
+    people.push(person);
+  };
+  if (!ctx.hasFocusEvents) add({ id: focus.id, name: focus.name });
+  for (const person of ctx.cast ?? []) add(person);
+  // 没有 cast 信息（单人任务）时退回她自己，至少不会整段空着。
+  if (!people.length) add({ id: focus.id, name: focus.name });
+
+  const seenEvents = new Set<string>();
+  // 普通宏已经列过的、主角参与的事，这里不再重复。
+  if (ctx.hasFocusEvents) for (const event of recentEventRecords(state, focus.id, 24)) seenEvents.add(event.id);
+
+  const sections: string[] = [];
+  let skipped = 0;
+  for (const person of people) {
+    const lines = recentEventRecords(state, person.id, 2)
+      .filter(event => !seenEvents.has(event.id))
+      .map(event => {
+        seenEvents.add(event.id);
+        return `· ${event.title}：${(event.summary ?? '').trim()}`;
+      });
+    if (!lines.length) continue;
+    const section = `【${person.name}的往事】\n${lines.join('\n')}`;
+    if (promptTokens([...sections, section].join('\n\n')) > CAST_EVENTS_BUDGET) {
+      skipped += 1;
+      continue;
+    }
+    sections.push(section);
+  }
+  if (!sections.length) return '';
+  return sections.join('\n\n') + (skipped ? `\n（还有 ${skipped} 人的往事未列出）` : '');
+}
+
 export function resolveMacros(text: string, ctx: MacroContext = {}): { text: string; used: string[]; missing: string[]; tokens: number } {
   const used: string[] = [];
   const missing: string[] = [];
+  // 同一段文本里同时写了 {{history.events}} 时，cast 版要跳过主角那一段。
+  const withFocusEvents = ctx.hasFocusEvents || /\{\{history\.events(?::\d+)?\}\}/.test(text);
+  const local = withFocusEvents === Boolean(ctx.hasFocusEvents) ? ctx : { ...ctx, hasFocusEvents: withFocusEvents };
   const output = text.replace(/\{\{([a-zA-Z_][\w.]*)(?::([^{}]*))?\}\}/g, (match, key: string, arg?: string) => {
     const resolver = RESOLVERS[key];
     if (!resolver) return match;
-    const value = resolver(ctx, arg);
+    const value = resolver(local, arg);
     if (value === undefined || value === null) {
       missing.push(key);
       return '';

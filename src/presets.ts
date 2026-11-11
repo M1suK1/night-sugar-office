@@ -1032,6 +1032,10 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
 export function renderPresetSystem(rawEntries: PromptEntry[], vars: Record<string, string | undefined>, ctx: MacroContext = {}): { system: string; used: string[]; missing: string[]; tokens: number } {
   // 契约词条只在 composeTaskSystem 的最后一段出现，不参与正文分层，否则会重复两遍。
   const entries = rawEntries.filter(entry => !entry.contract);
+  // 只要有一条分区写了 {{history.events}}，cast 版就跳过主角（v254）：同一段往事不说两遍。
+  const hasFocusEvents = ctx.hasFocusEvents
+    || entries.some(entry => entry.enabled && !entry.marker && /\{\{history\.events(?::\d+)?\}\}/.test(entry.content ?? ''));
+  const macroCtx = hasFocusEvents === Boolean(ctx.hasFocusEvents) ? ctx : { ...ctx, hasFocusEvents };
   const used = new Set<string>();
   const missing = new Set<string>();
   const parts: string[] = [];
@@ -1040,7 +1044,7 @@ export function renderPresetSystem(rawEntries: PromptEntry[], vars: Record<strin
     const expanded = expandPresetMacros(entry.content, vars);
     expanded.used.forEach(key => used.add(key));
     // v49：先展开注册过的宏（{{heroine}} / {{history.chat:20}} / {{girls}} …），再走老的变量替换。
-    const macro = resolveMacros(expanded.text, ctx);
+    const macro = resolveMacros(expanded.text, macroCtx);
     macro.used.forEach(key => used.add(key));
     macro.missing.forEach(key => missing.add(key));
     const content = macro.text.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {

@@ -2096,6 +2096,11 @@ export function localSessionSummary(event: CharacterEvent, narration: string): s
   return parts.join('　').slice(0, 400);
 }
 
+/** 宏上下文里的在场名单：{{history.events:cast}} 用它按人分组。 */
+function castMacroList(cast: { id: string; name: string }[]): { id: string; name: string }[] {
+  return cast.map(person => ({ id: person.id, name: person.name }));
+}
+
 /** 预设里已经写了某个宏时，正文不再重复注入同一段（v252）。 */
 function presetHasMacro(preset: PresetRuntime | undefined, needle: string): boolean {
   if (!preset) return false;
@@ -2239,7 +2244,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const body = arcOpeningContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:opening',
-    }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
+    }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event), cast: castMacroList(cast) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2298,7 +2303,7 @@ export async function generateWitchConfrontation(
   const context = witchConfrontationContext(state, event, preset);
   const result = await callJson(config, preset, 'arc', witchConfrontationContract(), witchUserHint(), ['共用词条 + 完整剧情词条 + 魔女化对峙契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.title, story: event.title, contractId: 'arc:witch',
-  }, { state, focus: focusGirlOf(state, event) }, 0, context);
+  }, { state, focus: focusGirlOf(state, event), cast: castMacroList(cast) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '魔女化', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
@@ -2355,7 +2360,7 @@ export async function generateStoryEnding(
   ].filter(Boolean).join('\n');
   const ask = (extra = '') => callJson(config, preset, 'arc', arcEndingContract(choices), arcUserHint('ending'), ['共用词条 + 完整剧情词条 + 收尾契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:ending',
-  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, extra ? `${context}\n\n${extra}` : context);
+  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event), cast: castMacroList(cast) }, 0, extra ? `${context}\n\n${extra}` : context);
   let result = await ask();
   const allowed = choices.map(option => option.id);
   const pickedChoice = () => (result.ok && typeof result.raw.choice === 'string' ? result.raw.choice.trim() : '');
@@ -2428,7 +2433,7 @@ export async function generateStoryTurn(
   const body = arcTurnContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('turn'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`, '此前对话与玩家行动'], meta, {
     char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:turn',
-  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event) }, 0, context);
+  }, { state, focus: focusGirlOf(state, event), focusRole: focusRoleOf(state, event), cast: castMacroList(cast) }, 0, context);
   if (!result.ok) {
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
