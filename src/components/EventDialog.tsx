@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { ArrowRight, Brain, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, Outfit, PortraitSpec, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
+import { reasoningEcho } from '../reasoningEcho';
 import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
@@ -315,7 +316,9 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
   const lastReasoning = useMemo(() => {
     for (let at = turns.length - 1; at >= 0; at -= 1) {
       const turn = turns[at];
-      if (turn?.role === 'narrator') return turn.reasoning;
+      if (turn?.role !== 'narrator') continue;
+      // 思考只是在把这一轮正文打草稿时，就不摆出来了（v256）。
+      return turn.reasoning && !reasoningEcho(turn.reasoning, turn.text) ? turn.reasoning : undefined;
     }
     return undefined;
   }, [turns]);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertTriangle, Brain, Check, ChevronDown, ChevronUp, Copy, FileText, ListOrdered, SlidersHorizontal, Terminal, Trash2 } from 'lucide-react';
 import { clearLlmLog, loadLlmLog, type LlmLogEntry } from '../llm';
+import { reasoningEcho } from '../reasoningEcho';
 
 type Filter = 'all' | 'failed';
 type PanelSize = { w: number; h: number };
@@ -43,7 +44,7 @@ function entryText(entry: LlmLogEntry): string {
     lines.push('', `预设：${entry.request.preset ?? '未记录'}`, `参数：${Object.entries(entry.request.params).map(([key, value]) => `${key}=${value}`).join('，')}`);
     for (const section of entry.request.sections) lines.push('', `── ${section.label} ──`, section.text);
   }
-  if (entry.response?.reasoning) lines.push('', '── 思维链 ──', entry.response.reasoning);
+  if (entry.response?.reasoning && !reasoningEcho(entry.response.reasoning, entry.response.text)) lines.push('', '── 思维链 ──', entry.response.reasoning);
   if (entry.response?.text !== undefined) lines.push('', '── 返回内容 ──', entry.response.text || '（空字符串）');
   return lines.join('\n');
 }
@@ -169,7 +170,9 @@ export function LlmConsole() {
               {entry.response?.finish && <span>结束原因<b>{entry.response.finish}</b></span>}
               {entry.response?.usage && <span>用量<b>{entry.response.usage.prompt ?? '?'} → {entry.response.usage.completion ?? '?'} tokens</b></span>}
             </div>
-            {entry.response?.reasoning
+            {entry.response?.reasoning && reasoningEcho(entry.response.reasoning, entry.response.text)
+              ? <p className="llm-no-reasoning">这次的思维链只是在打同一份草稿，和返回内容几乎相同，已省略。</p>
+              : entry.response?.reasoning
               ? <details className="llm-reasoning-block">
                   <summary><span><Brain size={12} />思维链</span><em>{entry.response.reasoning.length} 字</em></summary>
                   <pre className="llm-reasoning">{entry.response.reasoning}</pre>
