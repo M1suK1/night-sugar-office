@@ -12,7 +12,7 @@ import { HOSTILITY_PAIRS, hostilityTierLabel, hostilityValue, pairLabel } from '
 import { pollutionTierLabel } from './pollution.ts';
 import { baseCommissionPool } from './rules/missions.ts';
 import { traits } from './content/traits.ts';
-import { battleHistoryText, chatHistoryText, dossierOf, missionHistoryText, storylineHistoryText } from './girlDossier.ts';
+import { battleHistoryText, chatHistoryText, dossierOf, eventMemoryText, missionHistoryText, storylineHistoryText } from './girlDossier.ts';
 import { ENUM_TEXT, limitsText } from './promptSections.ts';
 import { promptTokens } from './tokens.ts';
 import { randomFromArg, randomHexColor } from './randomize.ts';
@@ -241,6 +241,7 @@ const RESOLVERS: Record<string, Resolver> = {
   'history.storylines': (ctx, arg) => (ctx.focus ? storylineHistoryText(ctx.state, ctx.focus, argInt(arg, 3)) : '（本任务没有指定主角）'),
   'history.chat': (ctx, arg) => (ctx.focus ? chatHistoryText(ctx.state, ctx.focus, argInt(arg, 20, 1, 60)) : '（本任务没有指定主角）'),
   'history.battles': (ctx, arg) => (ctx.focus ? battleHistoryText(ctx.state, ctx.focus, argInt(arg, 4)) : '（本任务没有指定主角）'),
+  'history.events': (ctx, arg) => (ctx.focus ? eventMemoryText(ctx.state, ctx.focus.id, argInt(arg, 4)) : '（本任务没有指定主角）'),
 };
 
 export const MACRO_GROUPS: MacroGroup[] = [
@@ -258,6 +259,7 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'history.storylines', label: '故事线经历', hint: '每段故事讲到什么份上、各自走到哪个结局（带完整结局描述）', budget: 900 },
       { key: 'history.chat:20', label: '聊天记录', hint: '最近 20 条她与所长说过的话', budget: 420 },
       { key: 'history.battles:4', label: '战斗经历', hint: '最近 4 场战报的胜负与伤害', budget: 260 },
+      { key: 'history.events:4', label: '私人事件回忆', hint: '最近 4 件已经收尾的剧情与会议；只给摘要，不回放原文', budget: 320 },
     ],
   },
   {

@@ -1216,3 +1216,8 @@
 - [x] 原文模式正文上方渲染折叠块「思维链」，默认收起，显示字数；舞台模式不显示。
 - [x] 旧档没有这个字段照常读。
 - [x] `tests/v251` 四条；全量 1129 通过。
+## v252：新增 `{{history.events}}` 宏（`tests/v252.test.ts`）
+- [x] 事件摘要从 llm.ts 搬到 girlDossier：recentEventLines / eventMemoryText。
+- [x] 宏支持数量参数（`{{history.events:6}}`），预设编辑器「她的过往」分组里有条目。
+- [x] 预设写了宏时，正文的【你们之前发生过的】自动让位，不再重复注入。
+- [x] `tests/v252` 四条；全量 1133 通过。

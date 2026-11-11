@@ -181,6 +181,30 @@ export function storylineHistoryText(state: GameState | undefined, girl: Girl, l
   return fitLines(lines, budget, { fromEnd: false, omitted: count => `（还有 ${count} 段更早的故事线未列出）` });
 }
 
+/** 已结束、写下了摘要的剧情与会议（她参与的），新的在前。 */
+export function recentEventLines(state: GameState | undefined, girlId: string, limit: number): string[] {
+  if (!state) return [];
+  return (state.events ?? [])
+    // v176：会议对每位参会者都算「之前发生过的事」。
+    .filter(event => event.status === 'done'
+      && (event.girlId === girlId || (event.cast ?? []).includes(girlId) || Boolean(event.meeting?.attendeeIds.includes(girlId)))
+      && (event.summary ?? '').trim())
+    .slice(0, Math.max(1, limit))
+    .map(event => `· ${event.title}：${(event.summary ?? '').trim()}`);
+}
+
+/**
+ * 私人事件回忆（v252）：`{{history.events}}`。
+ *
+ * 只引用收尾时写下的摘要，不回看原文——原文留在存档里给玩家翻，
+ * 提示词只需要「发生过什么」。会议对每位参会者都算一次。
+ */
+export function eventMemoryText(state: GameState | undefined, girlId: string, limit: number): string {
+  if (!state) return '（未开局，没有私人事件）';
+  const lines = recentEventLines(state, girlId, limit);
+  return lines.length ? lines.join('\n') : '还没有一起经历过的事。';
+}
+
 /** 聊天记录：她与所长说过的话，按时间正序取最近 N 条。 */
 export function chatHistoryText(state: GameState | undefined, girl: Girl, limit: number): string {
   if (!state) return '（未开局，没有聊天记录）';

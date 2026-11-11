@@ -1,5 +1,5 @@
 import { outfitLine } from './outfitBrief.ts';
-import { chatHistoryText, oathStatusText, storylineHistoryText } from './girlDossier.ts';
+import { chatHistoryText, oathStatusText, recentEventLines, storylineHistoryText } from './girlDossier.ts';
 import { interleaveTurn } from './storyLines.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
@@ -1793,7 +1793,7 @@ export async function generateCityNews(config: LlmConfig, state: GameState, pres
 export async function generateEvent(config: LlmConfig, girl: Girl, storyline?: { title: string; premise: string }, preset?: PresetRuntime, state?: GameState): Promise<{ ok: true; data: GeneratedEvent } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
-  const pastEvents = state ? recentEventSummaries(state, girl.id) : '';
+  const pastEvents = state && !presetHasMacro(preset, '{{history.events') ? recentEventLines(state, girl.id, 4).join('\n') : '';
   const context = `${storyline ? `所属故事线：${storyline.title}——${storyline.premise}。这段事件应当是那条线的一次具体落地，不要另起炉灶。` : '目前没有进行中的故事线，请写一段独立的日常事件。'}
 ${pastEvents ? `你们之前发生过的（只给摘要，别复述原文）：\n${pastEvents}` : ''}`;
   const result = await callJson(config, preset, 'event', eventContract(), eventUserHint(girl.name), ['共用词条 + 私人事件词条 + 结构契约', `角色：${girl.name}`], meta, {
@@ -2096,21 +2096,21 @@ export function localSessionSummary(event: CharacterEvent, narration: string): s
   return parts.join('　').slice(0, 400);
 }
 
+/** 预设里已经写了某个宏时，正文不再重复注入同一段（v252）。 */
+function presetHasMacro(preset: PresetRuntime | undefined, needle: string): boolean {
+  if (!preset) return false;
+  return [...(preset.entries ?? []), ...(preset.contracts ?? [])].some(entry => (entry.content ?? '').includes(needle));
+}
+
 /**
- * 她与所长最近发生过的剧情（v109）。
+ * 正文里的【你们之前发生过的】（v252）。
  *
- * 只引用收尾时写下的一段摘要，不回看原文——原文留在存档里给玩家翻，
- * 而提示词只需要「发生过什么」。
+ * 预设自己写了 {{history.events}} 时这里留空——同一份摘要不该在提示词里出现两次。
  */
-function recentEventSummaries(state: GameState, girlId: string, limit = 4): string {
-  return (state.events ?? [])
-    // v176：会议对每位参会者都算「之前发生过的事」。
-    .filter(event => event.status === 'done'
-      && (event.girlId === girlId || (event.cast ?? []).includes(girlId) || Boolean(event.meeting?.attendeeIds.includes(girlId)))
-      && (event.summary ?? '').trim())
-    .slice(0, limit)
-    .map(event => `· ${event.title}：${(event.summary ?? '').trim()}`)
-    .join('\n');
+export function eventMemoryBlock(state: GameState, girlId: string, preset?: PresetRuntime): string {
+  if (presetHasMacro(preset, '{{history.events')) return '';
+  const lines = recentEventLines(state, girlId, 4);
+  return lines.length ? `【你们之前发生过的】\n${lines.join('\n')}` : '';
 }
 
 /**
@@ -2124,7 +2124,7 @@ function newsGuestMemory(state: GameState, girlId: string): string {
     .slice(-2)
     .reverse()
     .map(run => `· 第 ${run.day} 日「${run.title}」${run.district ? `（${districts[run.district].name}）` : ''}：${outcome[run.outcome] ?? run.outcome}`);
-  const events = recentEventSummaries(state, girlId, 2).split('\n').filter(Boolean);
+  const events = recentEventLines(state, girlId, 2);
   return [...runs, ...events].slice(0, 4).join('\n');
 }
 function storyCastBrief(girl: Girl, isAssistant = false): string {
@@ -2205,7 +2205,7 @@ function storyClockText(event: CharacterEvent, state: GameState): string {
   return `【现在的时间】第 ${event.day} 日 ${hh}:${mm}。旁白里要让人感到这个时间：夜色深到哪一步、街上的灯还剩几盏、离打烊还有多久；不要直接报时、不要写「第几轮」。`;
 }
 
-export function openingContext(state: GameState, event: CharacterEvent, seed = ''): string {
+export function openingContext(state: GameState, event: CharacterEvent, seed = '', preset?: PresetRuntime): string {
   const cast = storyCast(state, event);
   const seedText = expandRandomMacros(seed.trim().slice(0, 300));
   return [
@@ -2213,7 +2213,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
     storyClockText(event, state),
     event.hookInPrompt === false ? '' : event.hook ? `引子：${event.hook}` : '',
     // v109：以前的剧情只以摘要形式出现，不回放原文。
-    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    eventMemoryBlock(state, event.girlId, preset),
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     seedText ? `【所长的开场】${seedText}\n这一段会作为这一段剧情的第一句，由所长先说。你只写她听见之后的反应、场面与台词：不要替所长补话，也不要抢先替她寒暄；沿用他给出的时间、地点与姿态，不要另起炉灶、不要换场景。` : '',
@@ -2235,7 +2235,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
   // 契约单独给一份，正文另给 appendix：这样预设里改「蓝图开场 · 结构契约」才会生效，
   // 而且改契约不会顺手删掉在场的人和这一场的场面。
-  const context = openingContext(state, event, (seed || event.playerSeed || '').trim());
+  const context = openingContext(state, event, (seed || event.playerSeed || '').trim(), preset);
   const body = arcOpeningContract();
   const result = await callJson(config, preset, 'arc', body, arcUserHint('opening'), ['共用词条 + 完整剧情词条 + 结构契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: storyScenarioOf(event), story: event.title, contractId: 'arc:opening',
@@ -2266,7 +2266,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
  * 她刚跨过魔女线：把她堵人的场面、这些日子攒下的账，一起交给叙事者。
  * 故事线的结局描述与私人事件摘要都走已有口径，不在这里另拼一份。
  */
-export function witchConfrontationContext(state: GameState, event: CharacterEvent): string {
+export function witchConfrontationContext(state: GameState, event: CharacterEvent, preset?: PresetRuntime): string {
   const girl = state.girls.find(entry => entry.id === event.girlId) ?? focusGirlOf(state, event);
   if (!girl) return '';
   const witchForm = girl.witchForm;
@@ -2278,7 +2278,7 @@ export function witchConfrontationContext(state: GameState, event: CharacterEven
     witchForm ? `【魔女形态】${witchForm.name}${witchForm.description ? `：${witchForm.description}` : ''}` : '',
     `【她此刻】侵蚀 ${girl.corruption ?? 0}/100 · 生命 ${girl.hp}/${girl.maxHp} · 疲劳 ${girl.fatigue}/100${girl.scars.length ? ` · 疤痕 ${girl.scars.length} 道` : ''}${girl.oath ? ` · ${oathStatusText(girl)}` : ''}`,
     `【她的故事】\n${storylineHistoryText(state, girl, 3)}`,
-    recentEventSummaries(state, girl.id) ? `【你们之前发生过的】\n${recentEventSummaries(state, girl.id)}` : '',
+    eventMemoryBlock(state, girl.id, preset),
     `【最近说过的话】\n${chatHistoryText(state, girl, 8)}`,
     '【这一次】她刚跨过魔女线，就用这副样子把你堵住。开场只写这一场对峙：地点具体，退路被她封死；她的不满必须来自上面的经历——承诺、伤势、战场、隐瞒，一条一条落到具体的事上。不要写数值、技能名、回合数；不要替所长说话；最后把话头留给所长。',
   ].filter(Boolean).join('\n');
@@ -2295,7 +2295,7 @@ export async function generateWitchConfrontation(
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
   const briefs = cast.filter(person => person.id !== 'player').map(person => person.brief ?? person.name).join('\n');
-  const context = witchConfrontationContext(state, event);
+  const context = witchConfrontationContext(state, event, preset);
   const result = await callJson(config, preset, 'arc', witchConfrontationContract(), witchUserHint(), ['共用词条 + 完整剧情词条 + 魔女化对峙契约', `角色：${event.title}`], meta, {
     char: briefs, personality: '', scenario: event.title, story: event.title, contractId: 'arc:witch',
   }, { state, focus: focusGirlOf(state, event) }, 0, context);
@@ -2342,7 +2342,7 @@ export async function generateStoryEnding(
     `【这一段剧情】${event.title}`,
     storyClockText(event, state),
     hookFallback,
-    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    eventMemoryBlock(state, event.girlId, preset),
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     '【在场的人】',
@@ -2412,7 +2412,7 @@ export async function generateStoryTurn(
     `【这一段剧情】${event.title}`,
     storyClockText(event, state),
     hookFallback,
-    recentEventSummaries(state, event.girlId) ? `【你们之前发生过的】\n${recentEventSummaries(state, event.girlId)}` : '',
+    eventMemoryBlock(state, event.girlId, preset),
     factionSnapshotText(state, personOfEvent(state, event)?.seat?.faction),
     meetingContext(state, event),
     '【在场的人】',
