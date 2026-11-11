@@ -50,6 +50,7 @@ const HEROINE_BLOCK = `【她是谁】
 
 【她的过往】
 {{history.storylines}}
+{{history.events}}
 {{history.missions:6}}
 {{history.chat:8}}`;
 
@@ -77,7 +78,7 @@ export const SECTION_PROMPTS: PromptEntry[] = [
 8. opinion 固定两个分支：accept 与 reject 各一条出边，fromPort 分别写 accept / reject。
    不要写 defer，暂缓由系统处理、不走剧情线。`),
   section('sl-nodes', 'storyline', '蓝图·节点写法', "【各节点 data 的写法】\n- start: {\"kind\":\"start\"}\n- choice: {\"kind\":\"choice\",\"prompt\":\"她在等你怎么回应\",\"options\":[{\"id\":\"a\",\"label\":\"选项文案\",\"intent\":\"这个选择意味着什么\",\"effect\":{\"bond\":2}},{\"id\":\"b\",\"label\":\"另一个选项\",\"intent\":\"\",\"effect\":{\"bond\":-1,\"corruption\":1}}]}\n  · 2–4 个选项；id 只能是 a/b/c/d。effect 可用 bond −12…12、gold −800…800、reputation −10…10、corruption −10…10。\n- mission: {\"kind\":\"mission\",\"spec\":{\"title\":\"\",\"goal\":\"她要在这场委托里做到什么，写具体\",\"work\":\"combat / investigation\",\"difficulty\":\"简单|常规|棘手|危险\"}}\n  · 只写这四个字段。时长、报酬、判定属性、目标值、轮次、敌人与辖区由系统按 difficulty 从真实委托模板里抽；\n    战斗委托会原样复用模板的魔物组合，所以不要自己编敌人或数值。\n- event: {\"kind\":\"event\",\"title\":\"\",\"hook\":\"一句引子\",\"cast\":[\"名册里的角色 id\"],\"opening\":\"300–500 字开场白：写清地点、在场的人、她正在做什么，用「你」称呼所长，结尾留一个能让玩家接话的空档\"}\n  · cast 写 1–3 个名册里的角色 id，第一个必须是这条故事线的主角。\n  · backdrop 只能取：{{backdrops}}。必须和 opening 里写的地点一致：室内用 room:*，街区用辖区 id；不确定就写她此刻站的那块地。\n  · 这几个人必须在 opening 里真的出场：每个人至少有一句台词或一个明确动作，不能只在 cast 里挂个名字。\n- incident（强制弹窗：必须现在拿主意，或必须先看一眼的事）:\n  {\"kind\":\"incident\",\"spec\":{\"kind\":\"faction\",\"title\":\"不超过 14 字\",\"body\":\"60–160 字，写清谁在施压、要什么、不答应会怎样\",\"faction\":\"witch / association / government\",\"district\":\"candy|station|plaza|greenhouse|cathedral|crossroad|oldtown|clocktower|docks\",\"options\":[{\"label\":\"答应\",\"hint\":\"一句代价\",\"effect\":{\"gold\":-200,\"reputation\":2}},{\"label\":\"拒绝\",\"hint\":\"一句代价\",\"effect\":{\"reputation\":-3,\"faction\":{\"id\":\"government\",\"standing\":-2}}}]}}\n  · spec.kind 只能是 faction / environment / girl。\n  · options 0–3 个；effect 可用：gold −800…800、reputation −4…4、faction{id, standing −4…4}、girl{fatigue, spirit, corruption, bond}、district{id, targetPct, rewardPct, untilDay}、hostility{pair, delta −3…3}。\n  · 不给选项就是一张纯通报卡，玩家点「知道了」继续。\n- opinion（议会提案：摆到会客厅让玩家批准 / 驳回；两个分支各自接一条剧情线）:\n  {\"kind\":\"opinion\",\"spec\":{\"topic\":\"私人心愿\",\"title\":\"不超过 14 字\",\"text\":\"60–140 字，写清她要什么、为什么现在提\",\"request\":\"一句话说明她要你答应什么\",\"options\":[{\"id\":\"accept\",\"label\":\"批准\",\"effect\":\"批准之后会发生什么，一句话\"},{\"id\":\"reject\",\"label\":\"驳回\",\"effect\":\"驳回之后会发生什么，一句话\"}]}}\n  · options 只能有 accept 与 reject 两项；节点上对应两条出边，fromPort 分别是 accept 与 reject。\n  · 暂缓（defer）由程序固定补，不占端口、不推进剧情——不要写。\n  · topic 只能是 经费 / 排班 / 设施 / 同伴 / 城市 / 私人心愿。\n- reward（一次结算：数值 + 可能的特性 + 可能的一件装备）: {\"kind\":\"reward\",\"effect\":{\"bond\":2,\"gold\":0},\"equipmentTier\":3}\n  · effect 可用：bond −12…12、gold −800…800、reputation −10…10、corruption −10…10、growth{magic|insight|agility|empathy 各 −3…3}、trait{name≤16字, description≤60字}、buff{name, stat, amount ≤6, days 1…5}。\n  · equipmentTier 可选，1–5 的整数：写 3 就是「一件三阶装备」，具体哪一件由程序随机发放；不写即不给装备。\n  · 全图 gold 合计不超过 800，bond 合计不超过 12。不要写 skill、装备名字或装备属性。\n- wait: {\"kind\":\"wait\",\"days\":0,\"minutes\":60}（days 0–14，minutes 0–1440）\n- end: {\"kind\":\"end\",\"summary\":\"这条结局收在哪里\",\"ending\":\"两三个字的结局名，同一张图里不能重复\"}"),
-  section('sl-heroine', 'storyline', '蓝图·她是谁', "【她是谁】\n{{heroine}}\n\n【她的过往】\n{{history.storylines}}\n{{history.missions:6}}\n{{history.chat:8}}\n\n【可以点名的人】\n{{girls}}\n\n【不 OOC 的边界】\n1. 只用这里写到的信息；没写的事她不知道，不要替她编经历、亲友或秘密。\n2. 用她的语气参考与说话方式，不要写成通用温柔女主腔。\n3. 能力只按档案里的三技能与特性，不临时加新技能或新形态。\n4. 状态要影响她：疲劳高就迟钝，侵蚀高就偏执，疤痕多则心防低、更容易被戳痛。\n5. 距离感按羁绊阶段（疏离 → 戒备 → 平常 → 亲近 → 依恋 → 爱意），别一上来就交底。\n6. 魔女化形态用魔女化人格，普通形态用原人格，不要混。\n7. 引用过往时可以回指（「上次那条巷子」），但不要逐条复述历史。\n8. 不替所长说话、不做决定。\n9. 全程使用第三人称。"),
+  section('sl-heroine', 'storyline', '蓝图·她是谁', "【她是谁】\n{{heroine}}\n\n【她的过往】\n{{history.storylines}}\n{{history.events}}\n{{history.missions:6}}\n{{history.chat:8}}\n\n【可以点名的人】\n{{girls}}\n\n【不 OOC 的边界】\n1. 只用这里写到的信息；没写的事她不知道，不要替她编经历、亲友或秘密。\n2. 用她的语气参考与说话方式，不要写成通用温柔女主腔。\n3. 能力只按档案里的三技能与特性，不临时加新技能或新形态。\n4. 状态要影响她：疲劳高就迟钝，侵蚀高就偏执，疤痕多则心防低、更容易被戳痛。\n5. 距离感按羁绊阶段（疏离 → 戒备 → 平常 → 亲近 → 依恋 → 爱意），别一上来就交底。\n6. 魔女化形态用魔女化人格，普通形态用原人格，不要混。\n7. 引用过往时可以回指（「上次那条巷子」），但不要逐条复述历史。\n8. 不替所长说话、不做决定。\n9. 全程使用第三人称。"),
   section('sl-guard', 'storyline', '蓝图·不要与自检', "【不要】\n不要给 x、y、边 id、颜色、note 或任何额外字段；不要输出注释、解释或 Markdown 代码块。\n\n【提交前自检——逐条对照，全部通过再输出】\n1. 所有 kind 都在九种之内，且没有 scene。\n2. 每个 choice 的选项 id 都是 a/b/c/d；每个选项在 edges 里都有且只有一条 fromPort 完全相同的边。\n各条出边不能指向同一个节点；要汇合就经过 wait。\n3. edges 里每条的 fromPort，都能在 from 指向的节点里找到同名出口；出现 trust_calc、defy_fate 这类名字就说明写错了。\n4. 每个 mission 恰好一条 success、一条 failure。\n5. 每个 incident：有选项就每个 o1/o2/o3 各一条同名边，没选项就一条 out。\n6. 每个 opinion 恰好 accept 与 reject 两条边——批准走一条，驳回走另一条。\n7. start 只有一条 out；end 没有任何出边；其余非 end 节点至少一条出边。\n8. 从 start 出发能走到每一个节点，且每条路径都能到某个 end；没有环。\n\n【如果这是返修】\n若请求里出现【必须修正的问题】，逐条按它改：只补边、不改选项 id、不新增端口、不删节点；仍然只输出完整 JSON。"),
   section('dy-catalog', 'daily', '提案·今晚的目录', `【今晚的机制目录】
 {{night}}
@@ -153,12 +154,14 @@ export const SECTION_PROMPTS: PromptEntry[] = [
 {{heroine}}
 
 【她的过往】
-{{history.storylines}}`),
+{{history.storylines}}
+{{history.events}}`),
   section('arc-heroine', 'arc', '完整剧情·她是谁', `【她是谁】
 {{heroine}}
 
 【她的过往】
 {{history.storylines}}
+{{history.events}}
 {{history.chat:10}}`),
   section('profile-task', 'profile', '角色起草 · 任务', "使魔你好，现在你需要为一位刚登记的魔法少女起草档案。根据提供的立绘外观，描写她给人的第一印象，外貌、服装、元素、职阶、性格必须互相吻合，能够体现角色的特点。"),
   section('arc-craft', 'arc', '完整剧情 · 描写规矩', "作为观察使魔，你在描写时要注意以下几点:\n# 角色描写\n## 角色在新场景出场时，默认用户知道角色的外貌特征，只需要进行一次简单外观描绘，保留部分最核心的特征一起入镜，不必再次完整描写\n## 编排角色对白时，要先结合性格模拟角色内心想法，然后通过对白表达出来。不要直接将内心的想法写出来\n\n# 场景描写\n## 镜头切换到新场景时，对整个场景进行详细描绘。由远及近，先整体后局部，如同电影运镜一样，先描绘场景的整体景观，然后再推进到主角所在的局部\n## 在剧情过程中，也可以通过场景特写适时烘托情绪氛围\n\n# 动作描写\n## 描写角色动作时，分远景、近景和特写，远景可把整个动作一笔带过。近景描写时，将动作拆分并依次写出。对于特写，在描写拆分动作的基础上进一步描写细节，包括动作的力度、节奏和角色相应部位的外观描写。\n## 无论是远景、近景还是特写，都绝不能直接写出动作所蕴含的情绪或内心想法。情绪应通过节奏编排自然流露。\n\n# 情绪表达\n## 角色的情绪、场景的氛围、故事的整体基调…… 一切都不应直接写在表面上。在剧情中的每一部分通过五感的描写，将情绪藏在可见的物理特征下面。\n## 角色的情绪体现在动作和语言中，场景的氛围融入到环境里，在动作和语言后不要解释它们蕴含的情绪或想法。\n## “声音带着一丝不容置疑的意味”，“话语中带着一丝不易察觉的愤怒”…… 此类的表达需要极力避免，不容置疑和愤怒应该体现在台词内容和动作里，而不是直接写出来。此外，如果只有一丝、如果不易察觉，那就不要写出来，不要以上帝视角替读者解读本应隐蔽的细节。\n\n# 段落编排\n## 剧情段落有起 承 转 合，一个场景、一段剧情不能无止境的继续下去。\n## 剧情段落间要有直接的分界，一整段剧情内容结束后，直接用---分隔并开始新的段落。（是整段大的剧情节点结束，不要滥用分隔）\n## 整个剧情节点还没结束，但本段正文结束的时候，直接在最后一个角色动作/对白切断即可，不需要像“夜晚才刚刚开始”这样的收束\n## 开始新剧情段落或进入新场景时，参考场景描写指南从整体引入局部。从段中接续剧情时自然承接上文即可。\n## 在开始写作之前，要判断自己处于当前剧情的什么阶段，适当主动推进进度以防一段剧情一直写不完。\n##角色要有真实感、活人感，别为了强调人设让角色变得不真实。嗯，就是要更多的情感驱动而不是逻辑驱动，语言要直白生活化贴近日常，别说些莫名其妙的听不懂的话\n##要写够1500字!"),
