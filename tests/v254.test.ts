@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createInitialState } from '../src/game.ts';
 import { resolveMacros } from '../src/promptMacros.ts';
 import { renderPresetSystem } from '../src/presets.ts';
+import { promptTokens } from '../src/tokens.ts';
 import type { CharacterEvent, GameState } from '../src/types.ts';
 
 /** v254：{{history.events:cast}} 按在场的人分组，且与 {{history.events}} 不重复。 */
@@ -69,6 +70,44 @@ test('v254 两个宏分在两条分区里也不会重复', () => {
   assert.equal((system.match(/雨夜的门口/g) ?? []).length, 1);
   assert.equal((system.match(/两个人的会议/g) ?? []).length, 1);
   assert.match(system, /旧教堂的约定/);
+});
+
+test('v254 cast 可以传每人条数：{{history.events:cast:3}}', () => {
+  const { state, focus, peer, cast } = setup();
+  for (let index = 0; index < 3; index += 1) {
+    state.events.unshift({
+      id: 'peer-extra-' + index, girlId: peer.id, title: '第 ' + (index + 1) + ' 件旧事', hook: '', scenes: [],
+      stage: 0, status: 'done', day: 2, source: 'llm', badge: false, summary: '这是第 ' + (index + 1) + ' 件旧事的摘要。',
+    } as CharacterEvent);
+  }
+  const text = resolveMacros('{{history.events:cast:3}}', { state, focus, cast }).text;
+  const peerSection = text.split('\n\n').find(section => section.includes('【' + peer.name + '的往事】'))!;
+  assert.ok(peerSection, text);
+  assert.equal(peerSection.split('\n').filter(line => line.startsWith('· ')).length, 3, '每人 3 条');
+  const two = resolveMacros('{{history.events:cast}}', { state, focus, cast }).text;
+  const peerTwo = two.split('\n\n').find(section => section.includes('【' + peer.name + '的往事】'))!;
+  assert.equal(peerTwo.split('\n').filter(line => line.startsWith('· ')).length, 2, '默认仍是 2 条');
+});
+
+test('v254 总预算 2400：人多事多时整段丢弃并写明还有几人', () => {
+  const state = createInitialState();
+  state.opinions = [];
+  state.incidents = [];
+  const girls = state.girls.slice(0, 6);
+  state.events = [];
+  for (const girl of girls) {
+    for (let index = 0; index < 6; index += 1) {
+      state.events.push({
+        id: girl.id + '-e' + index, girlId: girl.id, title: girl.name + '的第 ' + (index + 1) + ' 件旧事',
+        hook: '', scenes: [], stage: 0, status: 'done', day: 2, source: 'llm', badge: false,
+        summary: '那天的细节很长，写到她把外套挂在门后、把灯调暗、又坐回窗边为止，整整一段八十来字的摘要。'.repeat(3),
+      } as CharacterEvent);
+    }
+  }
+  const cast = girls.map(girl => ({ id: girl.id, name: girl.name }));
+  const text = resolveMacros('{{history.events:cast:6}}', { state, focus: girls[0]!, cast }).text;
+  assert.ok(promptTokens(text) <= 2400 + 80, `${promptTokens(text)} 超出预算`);
+  assert.match(text, /还有 \d+ 人的往事未列出/);
 });
 
 test('v254 没有 cast 信息时退回主角自己，没有往事时展开为空', () => {

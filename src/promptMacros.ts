@@ -247,7 +247,7 @@ const RESOLVERS: Record<string, Resolver> = {
   'history.battles': (ctx, arg) => (ctx.focus ? battleHistoryText(ctx.state, ctx.focus, argInt(arg, 4)) : '（本任务没有指定主角）'),
   'history.events': (ctx, arg) => {
     if (!ctx.focus) return '（本任务没有指定主角）';
-    if (arg === 'cast') return castEventMemoryText(ctx);
+    if (arg === 'cast' || arg?.startsWith('cast:')) return castEventMemoryText(ctx, arg);
     return eventMemoryText(ctx.state, ctx.focus.id, argInt(arg, 4));
   },
 };
@@ -268,7 +268,8 @@ export const MACRO_GROUPS: MacroGroup[] = [
       { key: 'history.chat:20', label: '聊天记录', hint: '最近 20 条她与所长说过的话', budget: 420 },
       { key: 'history.battles:4', label: '战斗经历', hint: '最近 4 场战报的胜负与伤害', budget: 260 },
       { key: 'history.events:4', label: '私人事件回忆', hint: '最近 4 件已经收尾的剧情与会议；只给摘要，不回放原文', budget: 320 },
-      { key: 'history.events:cast', label: '在场者往事', hint: '按在场的人各给两条：与私人事件回忆同时用时，主角与重复的事自动跳过', budget: 900 },
+      { key: 'history.events:cast', label: '在场者往事', hint: '按在场的人分组，每人默认 2 条；写 history.events:cast:3 可改条数，总预算 2400 tokens', budget: 2400 },
+      { key: 'history.events:cast:3', label: '在场者往事 · 每人 3 条', hint: '人多事多时多给一点；仍旧受 2400 tokens 总预算约束', budget: 2400 },
     ],
   },
   {
@@ -331,7 +332,9 @@ export const MACRO_GROUPS: MacroGroup[] = [
 /** 展开 `{{key}}` 与 `{{key:arg}}`；未注册的键原样留着，交给后面的变量替换。 */
 
 /** cast 版的总预算：多人一起列时别把提示词撑爆。 */
-const CAST_EVENTS_BUDGET = 900;
+const CAST_EVENTS_BUDGET = 2400;
+/** 每个人默认给几条；`{{history.events:cast:3}}` 可以改。 */
+const CAST_EVENTS_PER_PERSON = 2;
 
 /**
  * `{{history.events:cast}}`：按在场的人分组，每人最多两条。
@@ -339,10 +342,15 @@ const CAST_EVENTS_BUDGET = 900;
  * 与 `{{history.events}}` 同时出现时，主角那一段留给普通宏，这里只补别人，
  * 并且跳过主角已经列过的事——同一件事不在提示词里说两遍。
  */
-function castEventMemoryText(ctx: MacroContext): string {
+function castEventMemoryText(ctx: MacroContext, arg?: string): string {
   const state = ctx.state;
   const focus = ctx.focus;
   if (!state || !focus) return '（本任务没有指定主角）';
+  // arg 形如 cast 或 cast:3；第二个数字是每人条数。
+  const perPersonRaw = Number((arg ?? '').split(':')[1]);
+  const perPerson = Number.isFinite(perPersonRaw) && perPersonRaw > 0
+    ? Math.max(1, Math.min(8, Math.round(perPersonRaw)))
+    : CAST_EVENTS_PER_PERSON;
   const people: { id: string; name: string }[] = [];
   const seenPeople = new Set<string>();
   const add = (person: { id: string; name: string }) => {
@@ -362,7 +370,7 @@ function castEventMemoryText(ctx: MacroContext): string {
   const sections: string[] = [];
   let skipped = 0;
   for (const person of people) {
-    const lines = recentEventRecords(state, person.id, 2)
+    const lines = recentEventRecords(state, person.id, perPerson)
       .filter(event => !seenEvents.has(event.id))
       .map(event => {
         seenEvents.add(event.id);
