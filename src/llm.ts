@@ -199,6 +199,7 @@ function presetParams(preset?: PresetRuntime): LlmCallParams | undefined {
   if (preset.maxTokens !== undefined) params.maxTokens = preset.maxTokens;
   if (preset.presencePenalty !== undefined) params.presencePenalty = preset.presencePenalty;
   if (preset.frequencyPenalty !== undefined) params.frequencyPenalty = preset.frequencyPenalty;
+  if (preset.thinking !== undefined) params.thinking = preset.thinking;
   return Object.keys(params).length > 0 ? params : undefined;
 }
 
@@ -912,6 +913,8 @@ export interface LlmCallParams {
   maxTokens?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  /** 仅 Vertex：是否让模型回传思维链（thought 分段）。 */
+  thinking?: boolean;
 }
 
 export interface LlmCallOptions {
@@ -928,6 +931,8 @@ export function requestParams(config: LlmConfig, params?: LlmCallParams): Record
   if (config.provider === 'vertex') {
     out.provider = 'vertex';
     out.location = vertexLocation(config.location);
+    // 日志里要能看出这一次有没有开思维链。
+    if (params?.thinking !== undefined) out.thinking = params.thinking;
   }
   if (params?.temperature !== undefined) out.temperature = params.temperature;
   if (params?.topP !== undefined) out.top_p = params.topP;
@@ -978,6 +983,7 @@ async function chatVertex(config: LlmConfig, messages: ChatMessage[], options: L
       temperature: params.temperature ?? 0.9,
       topP: params.topP,
       maxTokens: params.maxTokens,
+      thinking: params.thinking,
     },
   );
 }

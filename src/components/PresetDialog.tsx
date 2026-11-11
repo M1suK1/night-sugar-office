@@ -264,6 +264,13 @@ export function PresetDialog({ presets, binding, initialScope, initialPresetId, 
         </div>
 
         {tab === 'sampling' ? <div className="preset-fields">
+          <label className="preset-field preset-toggle" htmlFor="preset-thinking">
+            <div className="preset-field-head">
+              <span>返回思维链<em>仅 Vertex</em></span>
+              <input id="preset-thinking" type="checkbox" checked={preset.settings.thinking !== false} disabled={!editable} onChange={event => patchSetting('thinking', event.target.checked)} />
+            </div>
+            <small>开启后模型会回传思考摘要，叙事引擎面板里可以折叠查看；思考不占正文额度，但更慢、更贵。关掉最省。缺省为开。</small>
+          </label>
           {SAMPLING_FIELDS.map(field => {
             const value = samplingValue(preset, field.key);
             return <div className={`preset-field ${field.applied ? '' : 'stored-only'}`} key={field.key}>

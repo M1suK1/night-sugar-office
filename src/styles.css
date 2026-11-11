@@ -616,6 +616,8 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .preset-field-head input{width:64px;background:#0f0e14;border:1px solid #ffffff14;border-radius:4px;color:#ded5e3;font-size:9px;padding:3px 5px;text-align:right;font-family:var(--font-data)}
 .preset-field input[type=range]{width:100%;accent-color:#f3aec9;height:12px}
 .preset-field small{font-size:7.5px;color:#5d5866;line-height:1.6}
+.preset-field.preset-toggle{grid-column:1/-1}
+.preset-field-head input[type=checkbox]{width:13px;height:13px;accent-color:#f3aec9;padding:0;text-align:left}
 .preset-field.stored-only small:before{content:'· '}
 .preset-field.stored-only{opacity:.9}
 .preset-text{display:flex;flex-direction:column;gap:4px;grid-column:1/-1}

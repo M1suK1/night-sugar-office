@@ -25,6 +25,8 @@ export interface VertexParams {
   maxTokens?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  /** 是否回传思维链；缺省为开（关掉时正文额度也不额外预留）。 */
+  thinking?: boolean;
   /** 原样透传给 generateContent 的 tools（例如 `[{ googleSearch: {} }]`）。 */
   tools?: unknown[];
 }
@@ -374,7 +376,7 @@ export async function vertexChat(
     if (params.tools?.length) body.tools = params.tools;
     return body;
   };
-  let payload = buildPayload(true);
+  let payload = buildPayload(params.thinking !== false);
 
   const model = normalizeVertexModel(input.model);
   const controller = new AbortController();

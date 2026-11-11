@@ -132,6 +132,8 @@ export interface PresetRuntime {
   maxTokens?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  /** Vertex 是否回传思维链（thought 分段）；缺省为开。 */
+  thinking?: boolean;
   maxContext: number;
   main: string;
   jailbreak: string;
@@ -1011,6 +1013,8 @@ export function presetRuntime(preset: ChatPreset | undefined): PresetRuntime {
     maxTokens: Math.round(pickNum(settings, ['openai_max_tokens', 'max_tokens'], 8000, 64, 32768)),
     presencePenalty: pickNum(settings, ['pres_pen_openai', 'presence_penalty'], 0, -2, 2),
     frequencyPenalty: pickNum(settings, ['freq_pen_openai', 'frequency_penalty'], 0, -2, 2),
+    // 老预设没有这个键：按开处理，行为和 v249 一致。
+    thinking: settings.thinking !== false,
     maxContext: Math.round(pickNum(settings, ['openai_max_context', 'max_context'], 12000, 2000, 400000)),
     main: text(settings, 'main'),
     jailbreak: text(settings, 'jailbreak'),
