@@ -186,7 +186,7 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       const at = Date.now();
       event.turns = [
         ...(seed ? [{ id: `turn-${at.toString(36)}-p`, role: 'player' as const, text: seed, lines: [{ speakerId: 'player', speakerName: '所长', expression: 'calm' as const, text: seed, mode: 'speech' as const }], at }] : []),
-        { id: `turn-${at.toString(36)}`, role: 'narrator' as const, text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at },
+        { id: `turn-${at.toString(36)}`, role: 'narrator' as const, text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at, reasoning: action.reasoning },
       ];
       const girl = findGirl(next, event.girlId);
       if (girl) girl.eventBadge = '!';

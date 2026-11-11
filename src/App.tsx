@@ -635,11 +635,12 @@ export default function App() {
       let opening = event.opening?.trim() ?? '';
       let lines: StoryLine[] = [];
       let options: string[] = [];
+      let reasoning: string | undefined;
       let backdrop: string | undefined = event.backdrop;
       // 蓝图已经写好开场白就直接用，别让叙事者再覆盖一遍。
       if (config.apiKey && !opening) {
         const result = await generateStoryOpening(config, state, event, taskRuntime(boundPreset('arc', presets, binding), 'arc'), seed);
-        if (result.ok) { opening = result.narration; lines = result.lines; options = result.options; backdrop = result.backdrop ?? event.backdrop; }
+        if (result.ok) { opening = result.narration; lines = result.lines; options = result.options; backdrop = result.backdrop ?? event.backdrop; reasoning = result.reasoning; }
         else {
           // 失败就停在这一步：玩家写的那段还留着，卡片会退回输入态。
           notify(`${result.message || '开场白没有写出来'}这一句已经记下了，可以再试一次。`, false);
@@ -649,7 +650,7 @@ export default function App() {
       }
       if (!opening) opening = seed ? `${seed}\n\n${event.hook}` : (event.hook || '她在这里等你开口。');
       if (!options.length) options = ['你先开口问她', '你看一眼她手边的东西', '你什么都不说，等她先讲'];
-      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options, seed, backdrop }); return applied.ok ? applied.state : prev; });
+      setState(prev => { const applied = act(prev, { type: 'startStorySession', eventId: event.id, cast, opening, lines, options, seed, backdrop, reasoning }); return applied.ok ? applied.state : prev; });
       setArcBusy(null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -682,7 +683,7 @@ export default function App() {
       // 表现就是「引擎显示生成成功，但界面里一个字都没有」。
       let appendError = '';
       setState(prev => {
-        const turn: StoryTurn = { id: `turn-n-${Date.now().toString(36)}`, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
+        const turn: StoryTurn = { id: `turn-n-${Date.now().toString(36)}`, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, reasoning: result.turn.reasoning, at: Date.now() };
         const applied = act(prev, { type: 'appendStoryTurn', eventId, turn });
         if (!applied.ok) { appendError = applied.message; return prev; }
         if (!gains) return applied.state;
@@ -738,7 +739,7 @@ export default function App() {
       const context: CharacterEvent = { ...event, turns: turns.slice(0, index) };
       const result = await generateStoryTurn(config, state, context, action, taskRuntime(boundPreset('arc', presets, binding), 'arc'), { rewrite: true });
       if (!result.ok) { notify(result.message, false); return false; }
-      const turn: StoryTurn = { id: turnId, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, at: Date.now() };
+      const turn: StoryTurn = { id: turnId, role: 'narrator', text: result.turn.narration, summary: result.turn.summary, lines: result.turn.lines, options: result.turn.options, reasoning: result.turn.reasoning, at: Date.now() };
       setState(prev => { const applied = act(prev, { type: 'replaceStoryTurn', eventId, turnId, turn }); return applied.ok ? applied.state : prev; });
       return true;
     } finally {
@@ -1042,6 +1043,7 @@ export default function App() {
       let narration = '';
       let lines: StoryLine[] = [];
       let options: string[] = [];
+      let reasoning: string | undefined;
       let backdrop: string | undefined = pending.backdrop;
       let failure = '';
       try {
@@ -1052,6 +1054,7 @@ export default function App() {
             lines = result.lines;
             options = result.options;
             backdrop = result.backdrop;
+            reasoning = result.reasoning;
           } else failure = result.message;
         }
       } catch (error) {
@@ -1061,7 +1064,7 @@ export default function App() {
       if (!options.length) options = fallback.options;
       try {
         setState(prev => {
-          const applied = act(prev, { type: 'startStorySession', eventId: pending.id, cast: [pending.girlId], opening: narration, lines, options, seed: '', backdrop });
+          const applied = act(prev, { type: 'startStorySession', eventId: pending.id, cast: [pending.girlId], opening: narration, lines, options, seed: '', backdrop, reasoning });
           return applied.ok ? applied.state : prev;
         });
       } finally {

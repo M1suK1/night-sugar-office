@@ -1925,6 +1925,8 @@ const STORY_EXPRESSIONS = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'] a
 
 export interface StoryTurnDraft {
   narration: string;
+  /** 写这一轮的思维链；只给玩家看，不进提示词。 */
+  reasoning?: string;
   /** 这一轮的总结（提示词 300 字，落库最多 400）；历史只引用它。 */
   summary: string;
   lines: StoryLine[];
@@ -2226,7 +2228,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
 export function storyOpeningContextForTest(state: GameState, event: CharacterEvent, seed = ''): string {
   return openingContext(state, event, seed);
 }
-export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string } | { ok: false; message: string }> {
+export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2254,7 +2256,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
   // v191：叙事者写这一段时顺手选的背景；认不出来就不用，交给辖区/房间的旧规则。
-  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
+  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
 }
 
 
@@ -2288,7 +2290,7 @@ export async function generateWitchConfrontation(
   state: GameState,
   event: CharacterEvent,
   preset?: PresetRuntime,
-): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string } | { ok: false; message: string }> {
+): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2311,7 +2313,7 @@ export async function generateWitchConfrontation(
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
   recordLlmLog({ kind: '魔女化', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `魔女化对峙：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
-  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined };
+  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
 }
 
 /**
@@ -2448,7 +2450,7 @@ export async function generateStoryTurn(
     .slice(0, 3);
   const bondRaw = Number(result.raw.bond);
   const bond = Number.isFinite(bondRaw) ? Math.max(-2, Math.min(2, Math.round(bondRaw))) : 0;
-  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), summary, lines, options: optionList, bond };
+  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), summary, lines, options: optionList, bond, reasoning: meta.response?.reasoning };
   recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${lines.length} 句）`, request: meta.request, response: meta.response });
   return { ok: true, turn };
 }

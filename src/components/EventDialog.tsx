@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ArrowRight, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowRight, Brain, Check, ChevronRight, LoaderCircle, MessageCircle, Pencil, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { CharacterEvent, Expression, Girl, Outfit, PortraitSpec, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { SideCast } from './SideCast';
@@ -310,6 +310,16 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
     return undefined;
   }, [turns]);
 
+  // v251：最近一轮叙述的思维链——只在这个弹窗里看，不写进提示词、不进历史。
+  // 只认最后那一轮，别在关掉思维链之后还挂着前面那一轮的旧内容。
+  const lastReasoning = useMemo(() => {
+    for (let at = turns.length - 1; at >= 0; at -= 1) {
+      const turn = turns[at];
+      if (turn?.role === 'narrator') return turn.reasoning;
+    }
+    return undefined;
+  }, [turns]);
+
   const vnComposerSlot = !readOnly && !event.pendingChoice ? (
     <div className="vn-session-input">
       <label className="sr-only" htmlFor="story-action-vn">写下你的行动</label>
@@ -545,6 +555,12 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
             />
 
             <main className="battle-note-center event-center">
+              {lastReasoning && (
+                <details className="story-reasoning" id="story-reasoning">
+                  <summary><span><Brain size={13} />思维链</span><em>{lastReasoning.length} 字 · 最近一轮</em></summary>
+                  <pre>{lastReasoning}</pre>
+                </details>
+              )}
               <div ref={end} className="battle-note-body" role="log" aria-live="polite" onScroll={syncReading}>
                 {turns.length === 0 && (
                   <div className="battle-note-loading" role="status">

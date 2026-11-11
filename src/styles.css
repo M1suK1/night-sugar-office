@@ -1704,3 +1704,13 @@ label.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
 .equipment-set-active b{font-weight:500;font-size:11px;color:var(--set-color)}
 .equipment-set-active em{font-style:normal;font-size:9px;color:#b9aeb8}
 .equipment-set-active small{display:block;margin-top:4px;font-size:8.5px;line-height:1.7;color:#8d8492}
+/* v251：原文模式顶部的思维链（折叠） */
+.story-reasoning { flex: 0 0 auto; margin: 10px clamp(14px, 2.2vw, 44px) 0; border: 1px solid #b9a4d224; border-radius: 6px; background: #b9a4d20a; }
+.story-reasoning summary { display: flex; align-items: center; gap: 6px; padding: 5px 9px; cursor: pointer; list-style: none; color: #a89fac; font-size: 8.5px; }
+.story-reasoning summary::-webkit-details-marker { display: none; }
+.story-reasoning summary span { display: inline-flex; align-items: center; gap: 5px; }
+.story-reasoning summary em { margin-left: auto; font-style: normal; color: #5d5866; font-size: 7.5px; font-family: var(--font-data); }
+.story-reasoning summary:hover { color: #f3aec9; }
+.story-reasoning[open] summary { border-bottom: 1px solid #ffffff08; }
+.story-reasoning pre { margin: 0; padding: 8px 9px; max-height: 220px; overflow: auto; color: #b9b0c6; font-size: 8.5px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; font-family: var(--font-data); scrollbar-width: thin; }
+@media (max-width: 800px) { .story-reasoning { margin: 8px 13px 0; } }

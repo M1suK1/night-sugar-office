@@ -732,6 +732,8 @@ export interface StoryTurn {
   options?: string[];
   /** 这一轮的总结（≤400 字）；历史上下文只引用它，不回放整段旁白。 */
   summary?: string;
+  /** 写这一轮的模型思维链（仅 Vertex 开了开关时才有）；只给玩家看，不进提示词。 */
+  reasoning?: string;
   /** 这一轮被重写过几次。 */
   rewrites?: number;
   /** 这一轮被玩家手动改过几次（v104）。 */
@@ -1450,7 +1452,7 @@ export type GameAction =
   /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
-  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string; backdrop?: string }
+  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string; backdrop?: string; reasoning?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
   | { type: 'rollNewsCast' }
