@@ -75,12 +75,12 @@ test('v258 内联台词优先于 JSON 的 lines', () => {
   assert.equal(merged.text, '');
 });
 
-test('v258 一轮最多十二句，多出来的降级成人话', () => {
-  const narration = Array.from({ length: 13 }, (_, index) => `@爱丽丝：第 ${index + 1} 句。`).join('\n');
+test('v258 台词句数不再设上限，全部按台词渲染', () => {
+  const narration = Array.from({ length: 20 }, (_, index) => `@爱丽丝：第 ${index + 1} 句。`).join('\n');
   const parsed = splitInlineStory(narration, cast);
-  assert.equal(parsed.lines.length, 12);
-  assert.equal(parsed.text.includes('@'), false, '多出来的那句不再带标记');
-  assert.match(parsed.text, /爱丽丝：「第 13 句。」/);
+  assert.equal(parsed.lines.length, 20);
+  assert.equal(parsed.text, '');
+  assert.equal(parsed.lines.at(-1)!.text, '第 20 句。');
 });
 
 test('v258 旧存档里的残留标记也能显示成人话', () => {

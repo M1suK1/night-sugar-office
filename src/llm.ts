@@ -2254,7 +2254,7 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
   // v258：台词写在正文里，解析成 lines；正文没有标记时才退回 JSON 的 lines。
-  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast, 8);
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast);
   // v102：不再按字数判死。短就短，先让人看到画面与对话，要不要重来由玩家自己点。
   if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者什么都没写出来，可以再试一次。';
@@ -2313,7 +2313,7 @@ export async function generateWitchConfrontation(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
-  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 6), cast, 8);
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 6), cast);
   if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者没有写出这一段对峙。';
     recordLlmLog({ kind: '魔女化', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
@@ -2379,7 +2379,7 @@ export async function generateStoryEnding(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
-  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast, 6);
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast);
   // v102：收尾也不按字数卡；空到手上一句话都没有才算失败。
   if (!merged.text && merged.lines.length === 0) {
     const message = '收尾什么都没写出来，可以再试一次。';
@@ -2445,7 +2445,7 @@ export async function generateStoryTurn(
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, NARRATION_LIMIT) : '';
   const summary = storyTurnSummary(result.raw.summary);
   // v258：台词写在正文里；正文认不出标记时才用 JSON 的 lines。
-  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 8), cast, 12);
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 8), cast);
   // v102：不再因为「太短」把这一轮丢掉——先让玩家看到旁白与台词，觉得不够可以自己重写。
   if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者这一轮什么都没写出来，可以再试一次。';

@@ -28,7 +28,7 @@ export function applyEditStoryTurn(state: GameState, action: Extract<GameAction,
           ...state.candidates.map(girl => ({ id: girl.id, name: girl.name })),
           ...(previous.lines ?? []).map(line => ({ id: line.speakerId, name: line.speakerName })),
         ];
-        const parsed = splitInlineStory(text, cast, 8);
+        const parsed = splitInlineStory(text, cast);
         turns[index] = parsed.inline
           ? { ...previous, text: parsed.text, lines: parsed.lines, edited }
           : { ...previous, text, edited };

@@ -22,8 +22,6 @@ const EXPRESSION_ALIAS: Record<string, Expression> = {
   平静: 'calm', 冷静: 'calm', 微笑: 'smile', 笑: 'smile', 惊讶: 'surprise',
   难过: 'sad', 悲伤: 'sad', 生气: 'angry', 愤怒: 'angry', 害羞: 'shy',
 };
-/** 一轮最多认几句台词：多人群像常常超过 8 句，留到 12 句；再多就降级成旁白。 */
-export const INLINE_LINE_LIMIT = 12;
 /** 单句台词的字数上限，和 parseStoryLines 一致。 */
 const INLINE_TEXT_LIMIT = 220;
 
@@ -70,13 +68,13 @@ function readMarker(
 }
 
 /** 正文 → 旁白 + 台词。没有标记时 inline 为 false，调用方照旧用 JSON 的 lines。 */
-export function splitInlineStory(narration: string, cast: StoryCastEntry[], limit = INLINE_LINE_LIMIT): ParsedStory {
+export function splitInlineStory(narration: string, cast: StoryCastEntry[]): ParsedStory {
   const raw = (narration ?? '').replace(/\r\n?/g, '\n').trim();
   if (!raw) return { text: '', lines: [], inline: false };
   const lines: StoryLine[] = [];
   const paragraphs: string[] = [];
   for (const source of raw.split('\n')) {
-    const marker = lines.length < limit ? readMarker(source.trim(), cast) : undefined;
+    const marker = readMarker(source.trim(), cast);
     if (marker) {
       // after = 这句之前已经写下的非空旁白行数（与 split(/\n+/) 的分段口径一致）。
       const after = paragraphs.filter(paragraph => paragraph.trim()).length;
@@ -99,7 +97,7 @@ export function splitInlineStory(narration: string, cast: StoryCastEntry[], limi
 /**
  * 把残留的标记行改成人话。
  *
- * 说话人不在场、或一轮超过台词上限时，这一行会留在正文里；直接显示
+ * 说话人不在场的标记行会留在正文里；直接显示
  * \`@名字[表情]：\` 很扎眼，这里降级成「名字：「台词」」——内容一个字不丢，也不再有标记。
  */
 export function humanizeMarkers(text: string): string {
@@ -122,9 +120,8 @@ export function storyWithLines(
   narration: string,
   jsonLines: StoryLine[],
   cast: StoryCastEntry[],
-  limit = INLINE_LINE_LIMIT,
 ): ParsedStory {
-  const parsed = splitInlineStory(narration, cast, limit);
+  const parsed = splitInlineStory(narration, cast);
   if (parsed.inline) return parsed;
   return { text: (narration ?? '').trim(), lines: jsonLines, inline: false };
 }
