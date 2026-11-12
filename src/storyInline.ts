@@ -27,7 +27,7 @@ export const INLINE_LINE_LIMIT = 8;
 /** 单句台词的字数上限，和 parseStoryLines 一致。 */
 const INLINE_TEXT_LIMIT = 220;
 
-const MARKER = /^@\s*([^\s[\]［］：:]{1,24})\s*(?:[\[［]([^\]］]{1,12})[\]］])?\s*[：:]\s*(.*)$/;
+const MARKER = /^@\s*([^\s[\]［］：:（(]{1,24})\s*(?:[\[［]([^\]］]{1,12})[\]］])?\s*(?:[（(](心想|心声)[）)])?\s*[：:]\s*(.*)$/;
 
 export interface ParsedStory {
   /** 去掉标记行之后的旁白。 */
@@ -54,14 +54,19 @@ function expressionOf(raw?: string): Expression {
 }
 
 /** 把一行拆成台词；不是标记行（或认不出说话人）就返回 undefined。 */
-function readMarker(line: string, cast: StoryCastEntry[]): { speaker: StoryCastEntry; expression: Expression; text: string } | undefined {
+function readMarker(
+  line: string,
+  cast: StoryCastEntry[],
+): { speaker: StoryCastEntry; expression: Expression; text: string; mode: 'speech' | 'thought' } | undefined {
   const match = MARKER.exec(line);
   if (!match) return undefined;
   const speaker = findSpeaker(match[1] ?? '', cast);
   if (!speaker) return undefined;
-  const text = (match[3] ?? '').trim().slice(0, INLINE_TEXT_LIMIT);
+  const text = (match[4] ?? '').trim().slice(0, INLINE_TEXT_LIMIT);
   if (!text) return undefined;
-  return { speaker, expression: expressionOf(match[2]), text };
+  // （心想）/（心声）写在冒号前：这句是心里话，界面会标「· 心声」并换成虚线。
+  const mode = match[3] ? 'thought' as const : 'speech' as const;
+  return { speaker, expression: expressionOf(match[2]), text, mode };
 }
 
 /** 正文 → 旁白 + 台词。没有标记时 inline 为 false，调用方照旧用 JSON 的 lines。 */
@@ -80,7 +85,7 @@ export function splitInlineStory(narration: string, cast: StoryCastEntry[], limi
         speakerName: marker.speaker.name,
         expression: marker.expression,
         text: marker.text,
-        mode: 'speech',
+        mode: marker.mode,
         after,
       });
       continue;

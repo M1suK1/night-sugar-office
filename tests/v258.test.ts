@@ -123,10 +123,28 @@ test('v258 编辑内联轮次：写了标记就重新解析，只改旁白则保
   assert.equal(b!.name.length > 0, true);
 });
 
+test('v258 心声写法：（心想）标记成 thought', () => {
+  const parsed = splitInlineStory('@爱丽丝[calm]（心想）：我不敢看她。\n\n@砂糖（心想）：她怕黑。', cast);
+  assert.equal(parsed.lines.length, 2);
+  assert.equal(parsed.lines[0]!.mode, 'thought');
+  assert.equal(parsed.lines[0]!.expression, 'calm');
+  assert.equal(parsed.lines[0]!.text, '我不敢看她。');
+  assert.equal(parsed.lines[1]!.mode, 'thought', '不带表情也认');
+  assert.equal(parsed.lines[1]!.expression, 'calm');
+  assert.equal(parsed.text.includes('心想'), false, '标记行从正文移除');
+});
+
+test('v258 普通台词不会被误判成心声', () => {
+  const parsed = splitInlineStory('@爱丽丝[sad]：我不想去。', cast);
+  assert.equal(parsed.lines[0]!.mode, 'speech');
+});
+
 test('v258 四个契约都改成内联写法，不再教 after', () => {
   for (const contract of [arcTurnContract(), arcOpeningContract(), arcEndingContract(), witchConfrontationContract()]) {
     assert.match(contract, /@[^\s「]{1,12}\[表情\]/);
     assert.equal(contract.includes('after 必填'), false);
+    assert.equal(contract.includes('"lines"'), false, 'JSON 形状不再出现 lines');
+    assert.match(contract, /（心想）/, '要教心声写法');
   }
 });
 
