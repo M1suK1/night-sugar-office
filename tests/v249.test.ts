@@ -38,6 +38,7 @@ test('v249 Vertex 请求开启思维链，并给正文单独留出额度', async
   assert.equal(result.body.generationConfig.maxOutputTokens, 6000 + THINKING_TOKEN_RESERVE, '正文额度不被思考吃掉');
   assert.equal(result.call.ok && result.call.text, '正文');
   assert.equal(result.call.ok && result.call.reasoning, '先把时间对上。');
+  assert.equal(result.call.ok && result.call.thinkingDropped, false, '正常请求不该标成降级');
 });
 
 test('v249 老模型不认思维链时去掉它重试一次，正文照常', async () => {
@@ -51,6 +52,7 @@ test('v249 老模型不认思维链时去掉它重试一次，正文照常', asy
     },
   );
   assert.equal(result.call.ok, true, result.call.ok ? '' : result.call.message);
+  assert.equal(result.call.ok && result.call.thinkingDropped, true, '要标出「思维链被悄悄去掉了」');
   assert.equal(result.bodies.length, 2);
   assert.equal(result.bodies[1]!.generationConfig.thinkingConfig, undefined);
   assert.equal(result.bodies[1]!.generationConfig.maxOutputTokens, 6000, '退回原来的正文额度');

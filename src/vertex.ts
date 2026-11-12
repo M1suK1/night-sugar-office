@@ -37,8 +37,8 @@ export interface VertexGrounding {
 }
 
 export type VertexCallResult =
-  | { ok: true; text: string; reasoning?: string; finish?: string; grounding?: VertexGrounding; usage?: { prompt?: number; completion?: number; total?: number } }
-  | { ok: false; message: string; reasoning?: string; status?: number; usage?: { prompt?: number; completion?: number; total?: number } };
+  | { ok: true; text: string; reasoning?: string; finish?: string; grounding?: VertexGrounding; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean }
+  | { ok: false; message: string; reasoning?: string; status?: number; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean };
 
 export const DEFAULT_VERTEX_LOCATION = 'us-central1';
 export const VERTEX_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
@@ -403,15 +403,18 @@ export async function vertexChat(
     if (!body || typeof body !== 'object') return { ok: false, failure: { message: 'Vertex AI 返回了无法解析的响应体，可能被代理或网关改写了。' } };
     return { ok: true, body };
   };
+  // 这个模型不接受 thinkingConfig 时，会悄悄降级成「没有思维链」；记下来给界面提示。
+  let thinkingDropped = false;
   try {
     let attempt = await send('v1');
     // 老模型不认 thinkingConfig，或输出的上限比预留还小：去掉思维链重试一次。
     if (!attempt.ok && attempt.failure.status === 400 && /thinking|thought|maxOutputTokens/i.test(attempt.failure.message)) {
       payload = buildPayload(false);
+      thinkingDropped = params.thinking !== false;
       attempt = await send('v1');
     }
     if (!attempt.ok && attempt.failure.status === 404) attempt = await send('v1beta1');
-    if (!attempt.ok) return { ok: false, status: attempt.failure.status, message: attempt.failure.message };
+    if (!attempt.ok) return { ok: false, status: attempt.failure.status, message: attempt.failure.message, thinkingDropped };
     const body = attempt.body;
     const candidate = body.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
@@ -445,7 +448,7 @@ export async function vertexChat(
           .slice(0, 8),
       }
       : undefined;
-    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), grounding, usage };
+    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), grounding, usage, thinkingDropped };
   } catch (error) {
     if (controller.signal.aborted) return { ok: false, message: '请求超过 600 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
     const detail = error instanceof Error ? error.message : '';

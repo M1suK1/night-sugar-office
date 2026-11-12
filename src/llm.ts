@@ -62,6 +62,8 @@ export interface LlmResponseSnapshot {
   /** 超过 RESPONSE_TEXT_LIMIT 时只留开头，避免把 localStorage 撑爆。 */
   textTruncated?: boolean;
   reasoning?: string;
+  /** 请求开了思维链，但模型不接受、已自动去掉重试（v259）。 */
+  thinkingDropped?: boolean;
   finish?: string;
   usage?: { prompt?: number; completion?: number; total?: number };
 }
@@ -451,7 +453,7 @@ export async function generateDialogue(config: LlmConfig, { girl, state, text, r
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
     message: final.ok ? `与${girl.name}完成一次对话（${final.lines.length} 条）` : final.message,
     detail: final.ok ? undefined : final.message,
-    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
+    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, thinkingDropped: result.thinkingDropped, usage: result.usage, finish: result.ok ? result.finish : undefined },
   });
   return final;
 }
@@ -555,7 +557,7 @@ export async function generateWhisper(
     durationMs: Date.now() - started, endpoint: llmEndpointLabel(cfg),
     message: final.ok ? `${girl.name}的灯下私语已生成（${final.lines.length} 条）` : final.message,
     detail: final.ok ? undefined : final.message,
-    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined },
+    request, response: { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, thinkingDropped: result.thinkingDropped, usage: result.usage, finish: result.ok ? result.finish : undefined },
   });
   return final;
 }
@@ -924,8 +926,8 @@ export interface LlmCallOptions {
 }
 
 export type LlmCallResult =
-  | { ok: true; text: string; reasoning?: string; finish?: string; usage?: LlmResponseSnapshot['usage'] }
-  | { ok: false; message: string; reasoning?: string; status?: number; usage?: LlmResponseSnapshot['usage'] };
+  | { ok: true; text: string; reasoning?: string; finish?: string; usage?: LlmResponseSnapshot['usage']; thinkingDropped?: boolean }
+  | { ok: false; message: string; reasoning?: string; status?: number; usage?: LlmResponseSnapshot['usage']; thinkingDropped?: boolean };
 
 export function requestParams(config: LlmConfig, params?: LlmCallParams): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = { model: config.model.trim() };
@@ -1087,7 +1089,7 @@ function logModel(meta: LlmCallMeta, config: LlmConfig): string {
 function captureCall(meta: LlmCallMeta | undefined, messages: ChatMessage[], labels: string[], config: LlmConfig, params: LlmCallParams | undefined, result: LlmCallResult) {
   if (!meta) return;
   meta.request = requestSnapshot(messages, requestParams(config, params), labels, meta.slots, meta.presetName);
-  meta.response = { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, usage: result.usage, finish: result.ok ? result.finish : undefined };
+  meta.response = { ...responseTextOf(result.ok ? result.text : undefined), reasoning: result.reasoning, thinkingDropped: result.thinkingDropped, usage: result.usage, finish: result.ok ? result.finish : undefined };
   // 同一条记录也落盘：data/llm-logs/YYYY-MM-DD.jsonl，方便直接 grep 与对照。
   persistLlmLog({
     scope: labels[labels.length - 1] ?? '叙事者',
