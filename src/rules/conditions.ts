@@ -1,6 +1,6 @@
 import { pickTraits } from '../content/traits.ts';
 import { pensionFor } from '../contracts.ts';
-import { corruptionStage } from '../economy.ts';
+import { WITCH_STAGE_AT, corruptionStage, effectiveMaxHp } from '../economy.ts';
 import { loadBalance } from '../balance.ts';
 import type { GameState, Girl, StatKey } from '../types.ts';
 import { book, clone, dateLabel, hashText } from './core.ts';
@@ -19,14 +19,66 @@ export function witchThreshold(): number {
  * 只补状态，不弹对峙——那不是刚发生的转变。
  */
 export function syncWitchState(state: GameState, girl: Girl): boolean {
-  if (girl.witch || girl.dead || girl.retired) return false;
-  // 抑制剂压着的时候不要再变回去：压制本身就是为了让她以普通立绘待着。
-  if ((girl.drugUntilDay ?? 0) > state.day) return false;
-  if ((girl.corruption ?? 0) < witchThreshold()) return false;
+  if (girl.dead || girl.retired) return false;
+  const corruption = girl.corruption ?? 0;
+  const suppressed = (girl.drugUntilDay ?? 0) > state.day;
+  // v252：药效压着、又还没越过 70 的不可逆线时，她该以普通立绘待着——
+  // 已经在魔女形态里的也要放下来（用抑制剂之后立刻恢复普通形态）。
+  if (suppressed && corruption < WITCH_STAGE_AT) {
+    if (girl.witch) {
+      girl.witch = false;
+      girl.withdrawalDays = 0;
+    }
+    return false;
+  }
+  if (girl.witch) return false;
+  if (corruption < witchThreshold()) return false;
   girl.witch = true;
   girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
   girl.withdrawalDays = 0;
   return true;
+}
+
+/**
+ * 用一支月光抑制剂把她从魔女形态压回普通形态（v252）。
+ *
+ * 这是「用抑制剂」的唯一出处：诊所的注射按钮、魔女立绘弹窗的压制按钮都走这里，
+ * 免得两条路径各写一份、其中一条忘了解除形态锁定。
+ *
+ * 规则：侵蚀越过 70 就是不可逆魔女化，药只能续命；没越过就立刻退出魔女形态、
+ * 换回普通立绘。压制只是压住——药效过期后侵蚀还过线，她会重新被锁成魔女。
+ */
+export function suppressWitchWithDrug(state: GameState, girl: Girl): { ok: true; stock: number } | { ok: false; message: string } {
+  if ((girl.corruption ?? 0) >= WITCH_STAGE_AT) {
+    return { ok: false, message: `${girl.name}已经越过那条线：月光抑制剂只能续命，压不回普通形态。唯一解除方式是记忆重塑。` };
+  }
+  if ((state.inventory['moon-drug'] ?? 0) <= 0) return { ok: false, message: '仓库里没有月光抑制剂，压不回去。' };
+  state.inventory['moon-drug'] -= 1;
+  girl.witch = false;
+  girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
+  girl.withdrawalDays = 0;
+  girl.hp = Math.min(effectiveMaxHp(girl), girl.hp + 20);
+  return { ok: true, stock: state.inventory['moon-drug'] };
+}
+
+/**
+ * 诊所注射：把一支月光抑制剂打进她体内（v252）。
+ *
+ * 与「压力形」不同，这条路在越过 70 之后仍然可用——只是那时它只剩续命：
+ * 断药倒计时清零、药效续上，形态仍然是魔女。
+ */
+export function useMoonDrug(state: GameState, girl: Girl): { ok: true; stock: number; unlocked: boolean } | { ok: false; message: string } {
+  const corruption = girl.corruption ?? 0;
+  if (girl.witch && corruption < WITCH_STAGE_AT) {
+    const result = suppressWitchWithDrug(state, girl);
+    return result.ok ? { ...result, unlocked: true } : result;
+  }
+  if ((state.inventory['moon-drug'] ?? 0) <= 0) return { ok: false, message: '仓库里没有月光抑制剂。' };
+  state.inventory['moon-drug'] -= 1;
+  girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, state.day + 10);
+  girl.withdrawalDays = 0;
+  girl.hp = Math.min(effectiveMaxHp(girl), girl.hp + 20);
+  return { ok: true, stock: state.inventory['moon-drug'], unlocked: false };
 }
 
 export function addCorruption(state: GameState, girl: Girl, amount: number): void {
@@ -56,11 +108,13 @@ export function drugTick(state: GameState, girl: Girl): void {
   // 旧档或漏触发的情况：日结时把「侵蚀到线但还没变身」的补上。
   syncWitchState(state, girl);
   if (!girl.witch) return;
-  if ((girl.drugUntilDay ?? 0) >= state.day) { girl.withdrawalDays = 0; return; }
+  if ((girl.drugUntilDay ?? 0) > state.day) { girl.withdrawalDays = 0; return; }
   if ((state.inventory['moon-drug'] ?? 0) > 0) {
     state.inventory['moon-drug'] -= 1;
     girl.drugUntilDay = state.day + 10;
     girl.withdrawalDays = 0;
+    // 药灌下去就压住：没越过 70 的话，形态也跟着退回普通立绘。
+    if ((girl.corruption ?? 0) < WITCH_STAGE_AT) girl.witch = false;
     state.logs.unshift({ id: `log-drug-${girl.id}-${state.day}`, time: dateLabel(state.day, 0), kind: 'clinic', text: `仓库中的月蚀抑制剂被用于${girl.name}，药效延长至第 ${girl.drugUntilDay} 日。` });
     return;
   }

@@ -560,10 +560,10 @@ export function BaseView({
                             id={`av-clinic-drug-${g.id}`}
                             type="button"
                             className="av-btn av-btn-small"
-                            disabled={!g.witch || !(state.inventory['moon-drug'] > 0) || !onUseItem}
+                            disabled={(!g.witch && drugDaysLeft(g, state.day) <= 0) || !(state.inventory['moon-drug'] > 0) || !onUseItem}
                             onClick={() => onUseItem?.(g.id, 'moon-drug')}
                           >
-                            <Syringe size={11} />注射抑制剂
+                            <Syringe size={11} />{g.witch ? '注射抑制剂' : '续压制期'}
                           </button>
                           <button
                             id={`av-clinic-purify-${g.id}`}

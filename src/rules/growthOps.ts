@@ -1,7 +1,6 @@
 import { sanitizePortraitSrc } from '../image.ts';
 import { defaultWitchPersonality } from '../personality.ts';
 import { loadBalance } from '../balance.ts';
-import { WITCH_STAGE_AT } from '../economy.ts';
 import { EXPRESSION_VARIANT_LIMIT, currentExpressionOutfitId, expressionLabel, isExpressionVariantData, parseExpressionVariantKey } from '../expressions.ts';
 import { WARDROBE_LIMIT } from '../rules/labels.ts';
 import { sanitizeVoice } from '../voice.ts';
@@ -9,6 +8,7 @@ import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
 import { allocatePoint, statLabel } from '../progression.ts';
 import { buildCost } from '../rules/roster.ts';
 import { book, clone, dateLabel, findRosterGirl, pushNotice } from '../rules/core.ts';
+import { suppressWitchWithDrug } from './conditions.ts';
 import type { ActionResult, GameAction, GameState, Outfit } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -316,12 +316,9 @@ export function applySuppressWitch(state: GameState, action: Extract<GameAction,
   const girl = findRosterGirl(next, action.girlId);
   if (!girl) return { state, ok: false, message: '找不到这位契约者。' };
   if (!girl.witch) return { state, ok: false, message: `${girl.name}现在不是魔女形态。` };
-  // v200：越过 70 之后回不去——抑制剂只负责续命。
-  if ((girl.corruption ?? 0) >= WITCH_STAGE_AT) return { state, ok: false, message: `${girl.name}已经越过那条线：月光抑制剂只能续命，压不回普通形态。唯一解除方式是记忆重塑。` };
-  if ((next.inventory['moon-drug'] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有月光抑制剂，压不回去。' };
-  next.inventory['moon-drug'] -= 1;
-  girl.witch = false;
-  girl.drugUntilDay = Math.max(girl.drugUntilDay ?? 0, next.day + 10);
-  next.logs.unshift({ id: `log-witch-suppress-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `给${girl.name}用了一支月光抑制剂，魔女形态压了回去（剩下 ${next.inventory['moon-drug']} 支）。` });
-  return { state: next, ok: true, message: `${girl.name}恢复了普通形态，抑制剂剩 ${next.inventory['moon-drug']} 支。` };
+  // v252：压制规则只在 conditions 里写一份——诊所的注射按钮与这里走同一条。
+  const result = suppressWitchWithDrug(next, girl);
+  if (!result.ok) return { state, ok: false, message: result.message };
+  next.logs.unshift({ id: `log-witch-suppress-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'care', text: `给${girl.name}用了一支月光抑制剂，魔女形态压了回去，立绘恢复成普通形态（剩下 ${result.stock} 支）。` });
+  return { state: next, ok: true, message: `${girl.name}恢复了普通形态，抑制剂剩 ${result.stock} 支。` };
 }

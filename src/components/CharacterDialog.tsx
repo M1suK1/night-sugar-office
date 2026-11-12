@@ -249,11 +249,12 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
                 <span>魔女化阈值<b>{rules().corruptionThreshold}</b></span>
                 <span>不可逆阶段<b>{WITCH_STAGE_AT}</b></span>
                 <span>共情修正<b>−{corruptionEmpathyPenalty(girl.corruption)}%</b></span>
-                <span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : '未转化'}</b></span>
+                <span>抑制剂<b className={drug <= 2 ? 'warn' : ''}>{girl.witch ? (drug > 0 ? `${drug} 日` : `断药第 ${girl.withdrawalDays ?? 0} 日`) : drug > 0 ? `压制中 ${drug} 日` : '未转化'}</b></span>
               </div>
               {girl.witch && <p className="corruption-note">{girl.corruption >= WITCH_STAGE_AT
                 ? '她已经越过那条线：月光抑制剂只能续命，断药第 10 日会死亡；唯一解除方式是记忆重塑。'
                 : drug > 0 ? '抑制剂仍在起效。断药前记得补充。' : '断药期间无法派遣、远行或接受势力任务；第 10 日会死亡。'}</p>}
+              {!girl.witch && drug > 0 && girl.corruption < WITCH_STAGE_AT && <p className="corruption-note">抑制剂正压着魔女化：立绘是普通形态。药效过期时侵蚀仍在 {rules().corruptionThreshold} 以上，她会重新被锁成魔女化——记得提前补药。</p>}
             </div>
             {girl.conditions.length > 0 && <div className="condition-list">{girl.conditions.map(condition => <span key={condition.id} className={`condition-chip ${condition.kind}`} title={condition.description}>{condition.name}<small>{condition.remaining} 日</small></span>)}</div>}
             <div className="scar-track">

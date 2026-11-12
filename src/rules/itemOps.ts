@@ -4,6 +4,7 @@ import { factionInfo, getItem } from '../content/items.ts';
 import { book, clone, dateLabel, findGirl } from '../rules/core.ts';
 import { executeCraft } from '../crafting.ts';
 import { executeRefine } from '../refine.ts';
+import { useMoonDrug } from './conditions.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -86,11 +87,24 @@ export function applyUseItem(state: GameState, action: Extract<GameAction, { typ
       if (!girl || !item) return { state, ok: false, message: '找不到对应的契约者或物资。' };
       if ((next.inventory[item.id] ?? 0) <= 0) return { state, ok: false, message: '仓库里没有这件物资。' };
       if (item.effect === 'drug') {
-        if (!girl.witch) return { state, ok: false, message: '只有魔女需要月蚀抑制剂。' };
-        next.inventory[item.id] -= 1;
-        girl.drugUntilDay = next.day + 10; girl.withdrawalDays = 0; girl.hp = Math.min(effectiveMaxHp(girl), girl.hp + 20);
-        next.logs.unshift({ id: `log-use-drug-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic', text: `${girl.name}使用了月蚀抑制剂。断药状态结束，药效维持至第 ${girl.drugUntilDay} 日。` });
-        return { state: next, ok: true, message: `${girl.name}的断药状态已解除。` };
+        // v252：诊所用抑制剂——魔女形态下注射，没越过 70 就立刻退出魔女化、换回普通立绘；
+        // 越过 70 只续命（形态仍是魔女）；已经压住的则只把压制期往后推。
+        const suppressed = (girl.drugUntilDay ?? 0) > next.day;
+        if (!girl.witch && !suppressed) return { state, ok: false, message: `${girl.name}既没有魔女化，也不在压制期内，不需要抑制剂。` };
+        const result = useMoonDrug(next, girl);
+        if (!result.ok) return { state, ok: false, message: result.message };
+        next.logs.unshift({
+          id: `log-use-drug-${girl.id}-${next.day}`, time: dateLabel(next.day, next.minutes), kind: 'clinic',
+          text: result.unlocked
+            ? `${girl.name}注射了一支月蚀抑制剂，魔女化被压了回去，立绘恢复成普通形态。药效维持至第 ${girl.drugUntilDay} 日（剩 ${result.stock} 支）。`
+            : `${girl.name}注射了一支月蚀抑制剂，断药状态结束，药效维持至第 ${girl.drugUntilDay} 日（剩 ${result.stock} 支）。`,
+        });
+        return {
+          state: next, ok: true,
+          message: result.unlocked
+            ? `${girl.name}退出了魔女化，药效维持至第 ${girl.drugUntilDay} 日，抑制剂剩 ${result.stock} 支。`
+            : `${girl.name}的断药状态已解除，药效维持至第 ${girl.drugUntilDay} 日，抑制剂剩 ${result.stock} 支。`,
+        };
       }
       if (item.effect === 'heal') {
         next.inventory[item.id] -= 1;
