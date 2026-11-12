@@ -1266,3 +1266,8 @@
 - [x] Vertex 因模型不接受 thinkingConfig 而降级重试时，结果标 thinkingDropped 并写进日志。
 - [x] 叙事引擎面板分别提示「模型不接受，已自动去掉」与「开了但没返回 thought 分段」。
 - [x] `tests/v249` 断言降级标记；全量 1164 通过。
+## v260：精炼 / 炼制装备实例读档不丢（`tests/v260.test.ts`）
+- [x] 读档校验拆开：`validStoredItem` 放行 `refine- / craft- / relic-`，LLM 装备仍走 `validGeneratedItem`。
+- [x] `GENERATED_ITEM_LIMIT = 200` 统一写入与读档；裁剪优先保住仓库与身上引用的实例。
+- [x] 炼制兜底实例写入 `generatedItems`；精炼改走 `rememberGeneratedItem`。
+- [x] `tests/v260` 五条（含连精两次、超上限裁剪）；全量 1169 通过。

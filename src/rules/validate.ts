@@ -25,6 +25,30 @@ export function validGeneratedItem(item: unknown): item is Equipment {
   return true;
 }
 
+/** 运行时登记装备的 id 前缀：精炼、炼制、故事遗物都靠 generatedItems 过夜。 */
+const STORED_ITEM_PREFIXES = ['lm_item_', 'refine-', 'craft-', 'relic-'];
+
+/**
+ * 读档用的装备校验（v260）。
+ *
+ * validGeneratedItem 是给 LLM 产出把关的（只认 lm_item_），读档时套用它会把
+ * 精炼 / 炼制的本地实例当成非法数据丢掉，装备就从存档里消失了。
+ * 本地实例只校验「能不能被渲染、被装备」，数值仍由代码写死。
+ */
+export function validStoredItem(item: unknown): item is Equipment {
+  if (!item || typeof item !== 'object') return false;
+  const entry = item as Equipment;
+  if (typeof entry.id !== 'string' || !STORED_ITEM_PREFIXES.some(prefix => entry.id.startsWith(prefix))) return false;
+  if (entry.id.startsWith('lm_item_')) return validGeneratedItem(item);
+  if (typeof entry.name !== 'string' || !entry.name) return false;
+  if (typeof entry.description !== 'string') return false;
+  if (!['weapon', 'charm', 'consumable'].includes(entry.slot)) return false;
+  if (!['witch', 'association', 'government'].includes(entry.faction)) return false;
+  if (entry.stats && (typeof entry.stats !== 'object' || Array.isArray(entry.stats))) return false;
+  if (entry.affixes && !Array.isArray(entry.affixes)) return false;
+  return true;
+}
+
 export const characterIds = new Set(['yue', 'tang', 'ling', 'wu', 'zhi', 'lu']);
 
 export function safeId(id: unknown): id is string {

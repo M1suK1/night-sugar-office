@@ -1,4 +1,4 @@
-import type { Equipment, FactionId } from '../types';
+import type { Equipment, FactionId, GameState } from '../types';
 import { tier1 } from './equipment/tier1.ts';
 import { tier2 } from './equipment/tier2.ts';
 import { tier3 } from './equipment/tier3.ts';
@@ -39,4 +39,44 @@ export function registerItem(item: Equipment): Equipment {
   items.push(decorated);
   itemById.set(decorated.id, decorated);
   return decorated;
+}
+
+/**
+ * 运行时登记装备的存档上限（v260）。
+ *
+ * 精炼 / 炼制 / 故事遗物只存在于运行时，只能靠 generatedItems 过夜。
+ * 上限放在这一处，写入与读档共用——此前一边写 120、一边只留 40，超出的会被静默丢掉。
+ */
+export const GENERATED_ITEM_LIMIT = 200;
+
+/** 存档里仍被引用的装备 id：仓库还有货，或者有人穿在身上。 */
+export function referencedItemIds(state: Pick<GameState, 'inventory' | 'girls'>): Set<string> {
+  const ids = new Set<string>();
+  for (const [id, count] of Object.entries(state.inventory ?? {})) {
+    if ((count ?? 0) > 0) ids.add(id);
+  }
+  for (const girl of state.girls ?? []) {
+    for (const id of Object.values(girl.equipment ?? {})) {
+      if (id) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/** 裁剪 generatedItems：被引用的实例一定留下，其余按「新的在前」保留。 */
+export function pruneGeneratedItems(list: Equipment[], keep: Set<string>): Equipment[] {
+  if (list.length <= GENERATED_ITEM_LIMIT) return list;
+  const kept = list.filter(item => keep.has(item.id));
+  const spare = list.filter(item => !keep.has(item.id));
+  const room = Math.max(0, GENERATED_ITEM_LIMIT - kept.length);
+  return [...kept, ...spare.slice(0, room)];
+}
+
+/** 记下新登记的实例，并按引用关系裁剪。 */
+export function rememberGeneratedItem(
+  state: Pick<GameState, 'inventory' | 'girls' | 'generatedItems'>,
+  item: Equipment,
+): Equipment[] {
+  const next = [item, ...(state.generatedItems ?? []).filter(existing => existing.id !== item.id)];
+  return pruneGeneratedItems(next, referencedItemIds(state));
 }

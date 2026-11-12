@@ -9,7 +9,7 @@ import type {
 } from './types.ts';
 import { findEquipmentSet } from './content/sets.ts';
 import { findMaterial } from './content/materials.ts';
-import { findItem, registerItem } from './content/items.ts';
+import { findItem, registerItem, rememberGeneratedItem } from './content/items.ts';
 import { book, dateLabel, findGirl, hashText } from './rules/core.ts';
 import { effectiveMaxHp, effectiveMaxSpirit } from './economy.ts';
 
@@ -262,8 +262,8 @@ export function executeRefine(
     targetGirl.spirit = Math.min(targetGirl.spirit, targetGirl.maxSpirit);
   }
 
-  // 记入 generatedItems 保证读档不丢
-  state.generatedItems = [newItem, ...(state.generatedItems ?? []).filter(i => i.id !== newItem.id)].slice(0, 120);
+  // 记入 generatedItems 保证读档不丢（上限与读档共用，见 GENERATED_ITEM_LIMIT）
+  state.generatedItems = rememberGeneratedItem(state, newItem);
 
   state.logs.unshift({
     id: `log-refine-${Date.now()}-${seed}`,

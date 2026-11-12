@@ -3,8 +3,8 @@ import { bossTemplateOf } from '../content/bosses.ts';
 import { normalizeGeneratedDay } from '../autoGenerate.ts';
 import { sanitizeCityNews } from '../cityNews.ts';
 import { sanitizeMeetingRecords } from './meetingSettle.ts';
-import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
-import { getItem, items, registerItem } from '../content/items.ts';
+import { validBattleNote, validStoredItem, validGirl } from '../rules/validate.ts';
+import { getItem, items, pruneGeneratedItems, referencedItemIds, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
 import { reconcileWitch } from './conditions.ts';
 import { extraMissions } from '../content/missions-extra.ts';
@@ -263,7 +263,9 @@ function normalizeState(raw: string | null): GameState | null {
       f.stockDay ??= state.day; f.envoyDay ??= state.day;
     }
     state.inventory = state.inventory && typeof state.inventory === 'object' ? state.inventory : {};
-    state.generatedItems = Array.isArray(state.generatedItems) ? state.generatedItems.filter(validGeneratedItem).slice(0, 40) : [];
+    // v260：精炼 / 炼制的本地实例 id 不是 lm_item_，用 validStoredItem 读回来；裁剪时保住仍被引用的那几件。
+    state.generatedItems = Array.isArray(state.generatedItems) ? state.generatedItems.filter(validStoredItem) : [];
+    state.generatedItems = pruneGeneratedItems(state.generatedItems, referencedItemIds(state));
     for (const item of state.generatedItems) registerItem(item);
     const rawStock = Array.isArray(state.marketStock) ? state.marketStock : [];
     state.marketStock = rawStock.filter((entry): entry is MarketStockEntry => {

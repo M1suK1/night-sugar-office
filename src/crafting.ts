@@ -7,7 +7,7 @@ import type {
 } from './types.ts';
 import { findMaterial } from './content/materials.ts';
 import { findEquipmentSet } from './content/sets.ts';
-import { items, registerItem } from './content/items.ts';
+import { items, registerItem, rememberGeneratedItem } from './content/items.ts';
 import { book, dateLabel, hashText } from './rules/core.ts';
 
 export const CRAFT_MIN_MATERIALS = 2;
@@ -183,6 +183,8 @@ export function executeCraft(
 
   // 入库与记日志
   state.inventory[outputItem.id] = (state.inventory[outputItem.id] ?? 0) + 1;
+  // v260：兜底炼制产出的是新实例（craft-…），不写进 generatedItems 读档就会消失。
+  if (outputItem.id.startsWith('craft-')) state.generatedItems = rememberGeneratedItem(state, outputItem);
   const setInfo = findEquipmentSet(rolledSet);
 
   state.logs.unshift({
