@@ -22,8 +22,8 @@ const EXPRESSION_ALIAS: Record<string, Expression> = {
   平静: 'calm', 冷静: 'calm', 微笑: 'smile', 笑: 'smile', 惊讶: 'surprise',
   难过: 'sad', 悲伤: 'sad', 生气: 'angry', 愤怒: 'angry', 害羞: 'shy',
 };
-/** 一轮最多认几句台词，和 JSON 那条路径的上限保持一致。 */
-export const INLINE_LINE_LIMIT = 8;
+/** 一轮最多认几句台词：多人群像常常超过 8 句，留到 12 句；再多就降级成旁白。 */
+export const INLINE_LINE_LIMIT = 12;
 /** 单句台词的字数上限，和 parseStoryLines 一致。 */
 const INLINE_TEXT_LIMIT = 220;
 
@@ -92,8 +92,26 @@ export function splitInlineStory(narration: string, cast: StoryCastEntry[], limi
     }
     paragraphs.push(source.trimEnd());
   }
-  const text = paragraphs.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const text = humanizeMarkers(paragraphs.join('\n')).replace(/\n{3,}/g, '\n\n').trim();
   return { text, lines, inline: lines.length > 0 };
+}
+
+/**
+ * 把残留的标记行改成人话。
+ *
+ * 说话人不在场、或一轮超过台词上限时，这一行会留在正文里；直接显示
+ * \`@名字[表情]：\` 很扎眼，这里降级成「名字：「台词」」——内容一个字不丢，也不再有标记。
+ */
+export function humanizeMarkers(text: string): string {
+  if (!text.includes('@')) return text;
+  return text.split('\n').map(line => {
+    const match = MARKER.exec(line.trim());
+    if (!match) return line;
+    const name = (match[1] ?? '').trim();
+    const spoken = (match[4] ?? '').trim();
+    if (!name || !spoken) return line;
+    return match[3] ? `${name}（心想）：「${spoken}」` : `${name}：「${spoken}」`;
+  }).join('\n');
 }
 
 /**

@@ -8,6 +8,7 @@
  */
 import type { Expression } from '../types.ts';
 import { placeLines, segmentsFromPositions } from '../storyLines.ts';
+import { humanizeMarkers } from '../storyInline.ts';
 import type { StorySegment } from '../storyLines.ts';
 import { backdropForElement } from './backdrops.ts';
 import type { VnBeat, VnBackdrop } from './types.ts';
@@ -129,7 +130,7 @@ export function beatsFromPassage(passage: PassageLike, options: PassageBeatOptio
       : backdropForElement(options.element);
   beats.push({ kind: 'bg', backdrop });
 
-  const rawParagraphs = paragraphsOf(passage.narration);
+  const rawParagraphs = paragraphsOf(humanizeMarkers(passage.narration ?? ''));
   // 空台词先丢掉，否则 after 的下标会和台词对不上。
   const rawLines = (passage.lines ?? []).filter(line => tidy(line.text ?? ''));
   const { chunks: paragraphs, lines, segments } = interleave(rawParagraphs, rawLines);
@@ -182,7 +183,7 @@ export interface TurnLike {
 export function beatsFromTurns(turns: readonly TurnLike[], options: { playerName?: string; scene?: VnBackdrop } = {}): VnBeat[] {
   const beats: VnBeat[] = [{ kind: 'bg', backdrop: options.scene ?? { id: 'night' } }];
   turns.forEach((turn, turnIndex) => {
-    const paragraphs = paragraphsOf(turn.text ?? '');
+    const paragraphs = paragraphsOf(humanizeMarkers(turn.text ?? ''));
     const lines = (turn.lines ?? []).filter(line => tidy(line.text ?? ''));
     const isPlayer = turn.role === 'player';
 

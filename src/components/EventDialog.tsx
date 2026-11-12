@@ -4,6 +4,7 @@ import { ArrowRight, Brain, Check, ChevronRight, LoaderCircle, MessageCircle, Pe
 import type { CharacterEvent, Expression, Girl, Outfit, PortraitSpec, StoryLine } from '../types';
 import { GirlPortrait } from './GirlPortrait';
 import { reasoningEcho } from '../reasoningEcho';
+import { humanizeMarkers } from '../storyInline';
 import { SideCast } from './SideCast';
 import { VnReader } from '../vn/VnReader';
 import { VnModeRow, VnModeToggle } from '../vn/VnModeToggle';
@@ -618,7 +619,7 @@ function StorySession({ event, girl, state, castPool, busy, onTurn, onRewrite, o
                       </div>
                     ) : (() => {
                       // v111：和舞台走同一个 arrangeStoryText，两边的插入位置不会再各算一套。
-                      const arranged = arrangeStoryText(turn.text, turn.lines ?? []);
+                      const arranged = arrangeStoryText(humanizeMarkers(turn.text), turn.lines ?? []);
                       const turnLines = arranged.lines;
                       const renderLine = (line: StoryLine, index: number) => {
                         const right = line.speakerId === 'player';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitInlineStory, storyWithLines } from '../src/storyInline.ts';
+import { humanizeMarkers, splitInlineStory, storyWithLines } from '../src/storyInline.ts';
 import { act, createInitialState } from '../src/game.ts';
 import { arcTurnContract, arcOpeningContract, arcEndingContract, witchConfrontationContract } from '../src/promptSections.ts';
 import { presetPrompts, shippedPresets } from '../src/presets.ts';
@@ -47,13 +47,15 @@ test('v258 名字认不出时整行留成旁白，不丢字', () => {
   const parsed = splitInlineStory('@路人甲：谁在那里？', cast);
   assert.equal(parsed.inline, false);
   assert.equal(parsed.lines.length, 0);
-  assert.match(parsed.text, /@路人甲：谁在那里？/);
+  assert.equal(parsed.text.includes('@'), false, '不把标记原样露给玩家');
+  assert.match(parsed.text, /路人甲：「谁在那里？」/);
 });
 
 test('v258 所长不写成台词：避免和玩家行动气泡重复', () => {
   const parsed = splitInlineStory('@所长：先听她说完。', cast);
   assert.equal(parsed.inline, false);
-  assert.match(parsed.text, /@所长/);
+  assert.equal(parsed.text.includes('@'), false);
+  assert.match(parsed.text, /所长：「先听她说完。」/);
 });
 
 test('v258 没有标记时不动正文，交由 JSON 的 lines 兜底', () => {
@@ -73,11 +75,20 @@ test('v258 内联台词优先于 JSON 的 lines', () => {
   assert.equal(merged.text, '');
 });
 
-test('v258 一轮最多八句，多出来的留成旁白', () => {
-  const narration = Array.from({ length: 9 }, (_, index) => `@爱丽丝：第 ${index + 1} 句。`).join('\n');
+test('v258 一轮最多十二句，多出来的降级成人话', () => {
+  const narration = Array.from({ length: 13 }, (_, index) => `@爱丽丝：第 ${index + 1} 句。`).join('\n');
   const parsed = splitInlineStory(narration, cast);
-  assert.equal(parsed.lines.length, 8);
-  assert.match(parsed.text, /第 9 句/);
+  assert.equal(parsed.lines.length, 12);
+  assert.equal(parsed.text.includes('@'), false, '多出来的那句不再带标记');
+  assert.match(parsed.text, /爱丽丝：「第 13 句。」/);
+});
+
+test('v258 旧存档里的残留标记也能显示成人话', () => {
+  const old = '旁白一句。\n@爱丽丝[angry]：旧标记。\n@砂糖（心想）：心里话。';
+  const text = humanizeMarkers(old);
+  assert.equal(text.includes('@'), false);
+  assert.match(text, /爱丽丝：「旧标记。」/);
+  assert.match(text, /砂糖（心想）：「心里话。」/);
 });
 
 const inlineState = (): { state: GameState; event: CharacterEvent } => {
