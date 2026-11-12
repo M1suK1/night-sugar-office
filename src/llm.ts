@@ -1985,7 +1985,7 @@ function parseStoryLines(raw: unknown, cast: { id: string; name: string }[], lim
   return raw.flatMap(item => {
     if (!item || typeof item !== 'object') return [];
     const line = item as Record<string, unknown>;
-    const text = typeof line.text === 'string' ? line.text.trim().slice(0, 220) : '';
+    const text = typeof line.text === 'string' ? line.text.trim() : '';
     if (!text) return [];
     const speakerId = typeof line.speakerId === 'string' ? line.speakerId.trim() : '';
     // 所长这一轮说了什么/做了什么，界面里已经有他自己的行动气泡；模型再写一遍就是两条一样的。

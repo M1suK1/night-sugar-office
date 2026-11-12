@@ -134,6 +134,12 @@ test('v258 编辑内联轮次：写了标记就重新解析，只改旁白则保
   assert.equal(b!.name.length > 0, true);
 });
 
+test('v258 单句不设字数上限', () => {
+  const long = '她'.repeat(400);
+  const parsed = splitInlineStory('@爱丽丝：' + long, cast);
+  assert.equal(parsed.lines[0]!.text.length, 400);
+});
+
 test('v258 心声写法：（心想）标记成 thought', () => {
   const parsed = splitInlineStory('@爱丽丝[calm]（心想）：我不敢看她。\n\n@砂糖（心想）：她怕黑。', cast);
   assert.equal(parsed.lines.length, 2);

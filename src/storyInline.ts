@@ -22,8 +22,6 @@ const EXPRESSION_ALIAS: Record<string, Expression> = {
   平静: 'calm', 冷静: 'calm', 微笑: 'smile', 笑: 'smile', 惊讶: 'surprise',
   难过: 'sad', 悲伤: 'sad', 生气: 'angry', 愤怒: 'angry', 害羞: 'shy',
 };
-/** 单句台词的字数上限，和 parseStoryLines 一致。 */
-const INLINE_TEXT_LIMIT = 220;
 
 const MARKER = /^@\s*([^\s[\]［］：:（(]{1,24})\s*(?:[\[［]([^\]］]{1,12})[\]］])?\s*(?:[（(](心想|心声)[）)])?\s*[：:]\s*(.*)$/;
 
@@ -60,7 +58,7 @@ function readMarker(
   if (!match) return undefined;
   const speaker = findSpeaker(match[1] ?? '', cast);
   if (!speaker) return undefined;
-  const text = (match[4] ?? '').trim().slice(0, INLINE_TEXT_LIMIT);
+  const text = (match[4] ?? '').trim();
   if (!text) return undefined;
   // （心想）/（心声）写在冒号前：这句是心里话，界面会标「· 心声」并换成虚线。
   const mode = match[3] ? 'thought' as const : 'speech' as const;
