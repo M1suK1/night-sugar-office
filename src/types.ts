@@ -728,6 +728,8 @@ export interface StoryTurn {
   text: string;
   /** 这一轮里说出口的话；旁白不重复台词。 */
   lines?: StoryLine[];
+  /** v258：台词是从正文的内联标记解析出来的（编辑时要重新解析）。 */
+  inline?: boolean;
   /** 模型给下一轮的参考选项；玩家仍可自由输入。 */
   options?: string[];
   /** 这一轮的总结（≤400 字）；历史上下文只引用它，不回放整段旁白。 */
@@ -1452,7 +1454,7 @@ export type GameAction =
   /** 滑条一次提交四项：只克隆一次 state，避免连续 allocateStat 互相盖掉。 */
   | { type: 'allocateStats'; girlId: string; plan: Partial<Record<StatKey, number>> }
   | { type: 'setLevelUpMode'; mode: 'auto' | 'manual' }
-  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; options?: string[]; seed?: string; backdrop?: string; reasoning?: string }
+  | { type: 'startStorySession'; eventId: string; cast?: string[]; opening?: string; lines?: StoryLine[]; inline?: boolean; options?: string[]; seed?: string; backdrop?: string; reasoning?: string }
   | { type: 'seedStorySession'; eventId: string; seed: string }
   | { type: 'setNewsHost'; girlId: string }
   | { type: 'rollNewsCast' }
@@ -1474,7 +1476,7 @@ export type GameAction =
   /** 删掉自己说的那一轮（只能删 player 轮）。 */
   | { type: 'deleteStoryTurn'; eventId: string; turnId: string }
   /** v189：`lead` 是所长停在输入框里、没发出去的那一句；结束时要作为最后一轮玩家发言记下来。 */
-  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[] }; summary?: string; lead?: string; port?: string }
+  | { type: 'finishStorySession'; eventId: string; ending?: { narration: string; lines: StoryLine[]; inline?: boolean }; summary?: string; lead?: string; port?: string }
   | { type: 'finishEnding'; endingId: 'leave' }
   /** 选掉蓝图上的一个分支：推进蓝图并把这段剧情收尾。 */
   | { type: 'chooseStoryOption'; eventId: string; storylineId: string; port: string }

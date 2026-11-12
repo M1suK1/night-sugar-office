@@ -26,6 +26,6 @@ test('v74 少女的台词与表情仍然照常解析', () => {
 
 test('v74 契约里写清了不要写 player', () => {
   const contract = arcTurnContract();
-  assert.match(contract, /不要写 player/);
+  assert.match(contract, /不要写 @所长 \/ @player/);
   assert.doesNotMatch(contract, /speakerId 只能取在场的人或 player/);
 });

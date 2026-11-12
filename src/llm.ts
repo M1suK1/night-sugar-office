@@ -1,5 +1,6 @@
 import { outfitLine } from './outfitBrief.ts';
 import { chatHistoryText, oathStatusText, recentEventLines, storylineHistoryText } from './girlDossier.ts';
+import { storyWithLines } from './storyInline.ts';
 import { interleaveTurn } from './storyLines.ts';
 import { closeTruncatedJson } from './jsonRepair.ts';
 import { persistLlmLog } from './llmLog.ts';
@@ -1925,6 +1926,8 @@ const STORY_EXPRESSIONS = ['calm', 'smile', 'surprise', 'sad', 'angry', 'shy'] a
 
 export interface StoryTurnDraft {
   narration: string;
+  /** v258：台词是从正文标记解析出来的。 */
+  inline?: boolean;
   /** 写这一轮的思维链；只给玩家看，不进提示词。 */
   reasoning?: string;
   /** 这一轮的总结（提示词 300 字，落库最多 400）；历史只引用它。 */
@@ -2233,7 +2236,7 @@ export function openingContext(state: GameState, event: CharacterEvent, seed = '
 export function storyOpeningContextForTest(state: GameState, event: CharacterEvent, seed = ''): string {
   return openingContext(state, event, seed);
 }
-export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
+export async function generateStoryOpening(config: LlmConfig, state: GameState, event: CharacterEvent, preset?: PresetRuntime, seed = ''): Promise<{ ok: true; narration: string; lines: StoryLine[]; inline?: boolean; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2250,18 +2253,19 @@ export async function generateStoryOpening(config: LlmConfig, state: GameState, 
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
-  const lines = parseStoryLines(result.raw.lines, cast, 5);
+  // v258：台词写在正文里，解析成 lines；正文没有标记时才退回 JSON 的 lines。
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast, 5);
   // v102：不再按字数判死。短就短，先让人看到画面与对话，要不要重来由玩家自己点。
-  if (!narration && lines.length === 0) {
+  if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者什么都没写出来，可以再试一次。';
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
-  recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
+  recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `开场白：${event.title}（${merged.text.length} 字）`, request: meta.request, response: meta.response });
   // v191：叙事者写这一段时顺手选的背景；认不出来就不用，交给辖区/房间的旧规则。
-  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
+  return { ok: true, narration: merged.text, lines: merged.lines, inline: merged.inline, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
 }
 
 
@@ -2295,7 +2299,7 @@ export async function generateWitchConfrontation(
   state: GameState,
   event: CharacterEvent,
   preset?: PresetRuntime,
-): Promise<{ ok: true; narration: string; lines: StoryLine[]; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
+): Promise<{ ok: true; narration: string; lines: StoryLine[]; inline?: boolean; options: string[]; backdrop?: string; reasoning?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2309,16 +2313,16 @@ export async function generateWitchConfrontation(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, OPENING_LIMIT) : '';
-  const lines = parseStoryLines(result.raw.lines, cast, 6);
-  if (!narration && lines.length === 0) {
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 6), cast, 6);
+  if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者没有写出这一段对峙。';
     recordLlmLog({ kind: '魔女化', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
   }
   const rawOptions = Array.isArray(result.raw.options) ? result.raw.options : [];
   const options = rawOptions.filter((item): item is string => typeof item === 'string').map(item => item.trim().slice(0, 60)).filter(Boolean).slice(0, 3);
-  recordLlmLog({ kind: '魔女化', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `魔女化对峙：${event.title}（${narration.length} 字）`, request: meta.request, response: meta.response });
-  return { ok: true, narration, lines, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
+  recordLlmLog({ kind: '魔女化', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `魔女化对峙：${event.title}（${merged.text.length} 字）`, request: meta.request, response: meta.response });
+  return { ok: true, narration: merged.text, lines: merged.lines, inline: merged.inline, options, backdrop: isBackdropId(result.raw.backdrop) ? result.raw.backdrop : undefined, reasoning: meta.response?.reasoning };
 }
 
 /**
@@ -2334,7 +2338,7 @@ export async function generateStoryEnding(
   /** v188：所长点了结束、但输入框里还留着一句没发出去的话——收尾时当作引子。 */
   lead?: string,
   choice?: { options: { id: string; label: string }[] },
-): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[] }; summary: string; choice?: string } | { ok: false; message: string }> {
+): Promise<{ ok: true; turn: { narration: string; lines: StoryLine[]; inline?: boolean }; summary: string; choice?: string } | { ok: false; message: string }> {
   const started = Date.now();
   const meta: LlmCallMeta = {};
   const cast = storyCast(state, event);
@@ -2375,9 +2379,9 @@ export async function generateStoryEnding(
     return result;
   }
   const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
-  const lines = parseStoryLines(result.raw.lines, cast, 5);
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 5), cast, 5);
   // v102：收尾也不按字数卡；空到手上一句话都没有才算失败。
-  if (!narration && lines.length === 0) {
+  if (!merged.text && merged.lines.length === 0) {
     const message = '收尾什么都没写出来，可以再试一次。';
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
@@ -2388,8 +2392,8 @@ export async function generateStoryEnding(
   // v109：收尾时顺手把整段压成摘要——之后的历史只引用它，原文留给人翻。
   const summary = typeof result.raw.summary === 'string' && result.raw.summary.trim()
     ? result.raw.summary.trim().slice(0, 800)
-    : localSessionSummary(event, narration);
-  return { ok: true, turn: { narration, lines }, summary, choice: choiceId };
+    : localSessionSummary(event, merged.text);
+  return { ok: true, turn: { narration: merged.text, lines: merged.lines, inline: merged.inline }, summary, choice: choiceId };
 }
 
 /**
@@ -2438,11 +2442,12 @@ export async function generateStoryTurn(
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: statusOf(result.message), durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: result.message, request: meta.request, response: meta.response });
     return result;
   }
-  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim() : '';
+  const narration = typeof result.raw.narration === 'string' ? result.raw.narration.trim().slice(0, NARRATION_LIMIT) : '';
   const summary = storyTurnSummary(result.raw.summary);
-  const lines = parseStoryLines(result.raw.lines, cast, 8);
+  // v258：台词写在正文里；正文认不出标记时才用 JSON 的 lines。
+  const merged = storyWithLines(narration, parseStoryLines(result.raw.lines, cast, 8), cast, 8);
   // v102：不再因为「太短」把这一轮丢掉——先让玩家看到旁白与台词，觉得不够可以自己重写。
-  if (!narration && lines.length === 0) {
+  if (!merged.text && merged.lines.length === 0) {
     const message = '叙事者这一轮什么都没写出来，可以再试一次。';
     recordLlmLog({ kind: '角色剧情', ok: false, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message, request: meta.request, response: meta.response });
     return { ok: false, message };
@@ -2455,8 +2460,8 @@ export async function generateStoryTurn(
     .slice(0, 3);
   const bondRaw = Number(result.raw.bond);
   const bond = Number.isFinite(bondRaw) ? Math.max(-2, Math.min(2, Math.round(bondRaw))) : 0;
-  const turn: StoryTurnDraft = { narration: narration.slice(0, NARRATION_LIMIT), summary, lines, options: optionList, bond, reasoning: meta.response?.reasoning };
-  recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${lines.length} 句）`, request: meta.request, response: meta.response });
+  const turn: StoryTurnDraft = { narration: merged.text, inline: merged.inline, summary, lines: merged.lines, options: optionList, bond, reasoning: meta.response?.reasoning };
+  recordLlmLog({ kind: '角色剧情', ok: true, model: logModel(meta, config), status: 200, durationMs: Date.now() - started, endpoint: llmEndpointLabel(config), message: `剧情续写：${event.title}（${turn.narration.length} 字 / ${turn.lines.length} 句）`, request: meta.request, response: meta.response });
   return { ok: true, turn };
 }
 

@@ -186,7 +186,7 @@ export function applyStartStorySession(state: GameState, action: Extract<GameAct
       const at = Date.now();
       event.turns = [
         ...(seed ? [{ id: `turn-${at.toString(36)}-p`, role: 'player' as const, text: seed, lines: [{ speakerId: 'player', speakerName: '所长', expression: 'calm' as const, text: seed, mode: 'speech' as const }], at }] : []),
-        { id: `turn-${at.toString(36)}`, role: 'narrator' as const, text: opening, lines: action.lines ?? [], options: (action.options ?? []).slice(0, 3), at, reasoning: action.reasoning },
+        { id: `turn-${at.toString(36)}`, role: 'narrator' as const, text: opening, lines: action.lines ?? [], inline: action.inline, options: (action.options ?? []).slice(0, 3), at, reasoning: action.reasoning },
       ];
       const girl = findGirl(next, event.girlId);
       if (girl) girl.eventBadge = '!';
@@ -238,23 +238,7 @@ export function applyReplaceStoryTurn(state: GameState, action: Extract<GameActi
       return { state: next, ok: true, message: '这一段已经重写。' };
 }
 
-/** editStoryTurn 的动作处理器（v104）：玩家手动改写一句，只动文本。 */
-export function applyEditStoryTurn(state: GameState, action: Extract<GameAction, { type: 'editStoryTurn' }>): ActionResult {
-      const text = action.text.trim();
-      if (!text) return { state, ok: false, message: '文本不能是空的，想删就用「删掉这一句」。' };
-      const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
-      if (!event) return { state, ok: false, message: '找不到这段剧情。' };
-      const index = (event.turns ?? []).findIndex(turn => turn.id === action.turnId);
-      if (index < 0) return { state, ok: false, message: '找不到要改的那一段。' };
-      const previous = event.turns![index]!;
-      const turns = [...event.turns!];
-      // 玩家那一轮的台词与正文是同一句：改正文的时候把它们一起改掉。
-      const lines = previous.lines?.map(line => (line.speakerId === 'player' ? { ...line, text } : line));
-      turns[index] = { ...previous, text, lines: lines ?? previous.lines, edited: (previous.edited ?? 0) + 1 };
-      event.turns = turns;
-      return { state: next, ok: true, message: '已经改成你写的这一段。' };
-}
-
+export { applyEditStoryTurn } from './storyEdit.ts';
 /** deleteStoryTurn 的动作处理器（v104）：只允许删玩家自己说的话。 */
 export function applyDeleteStoryTurn(state: GameState, action: Extract<GameAction, { type: 'deleteStoryTurn' }>): ActionResult {
       const next = clone(state); const event = next.events.find(item => item.id === action.eventId);
@@ -313,6 +297,7 @@ export function applyFinishStorySession(state: GameState, action: Extract<GameAc
           role: 'narrator' as const,
           text: action.ending.narration.trim(),
           lines: action.ending.lines ?? [],
+          inline: action.ending.inline,
           options: [],
           at: Date.now(),
         }];

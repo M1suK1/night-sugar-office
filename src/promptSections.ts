@@ -191,8 +191,8 @@ export function arcContract(targets: string): string {
 export function arcEndingContract(choice?: { id: string; label: string }[]): string {
   const allowed = (choice ?? []).slice(0, 4);
   const shape = allowed.length
-    ? `{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","after":0,"mode":"speech|thought"}],"summary":"","choice":"${allowed[0].id}"}`
-    : '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","after":0,"mode":"speech|thought"}],"summary":""}';
+    ? `{"narration":"","lines":[],"summary":"","choice":"${allowed[0].id}"}`
+    : '{"narration":"","lines":[],"summary":""}';
   const branch = allowed.length
     ? [
       `choice 只能取：${allowed.map(option => option.id).join('、')}；按此前的对话判断所长实际走向了哪一条，不要空着，也不要自创 id。`,
@@ -204,9 +204,9 @@ export function arcEndingContract(choice?: { id: string; label: string }[]): str
     shape,
     '这一轮是**收尾**：所长已经决定把这段剧情停在这里，不要写 options，不要留悬念，不要提示「下一轮」。',
     ...branch,
+    '台词写进 narration 里：每句单独一行，以「@名字[表情]：」开头，前后用空行分段；名字必须是【在场的人】，不要写 @所长 / @player。',
     'narration 1000–2000 字：把这一夜收束成一个结局——最后发生的事、她此刻站在哪里、这段关系停在什么位置。可以留余味，但不要留未解决的问题。',
-    'lines 1–5 句：只写她最后说的话或者一个没说出口的心声；可以不写（空数组也可以）。expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy。',
-    'after 必填：这句台词插在旁白的第几段之后（0 = 旁白最前面；narration 要分段，段间用换行，从 0 数）。每句贴着她开口的那一段，不要几句都填同一个数，也不要全塞在最前或最后。',
+    '台词 1–5 句，只写她最后说的话或者一个没说出口的心声，都写在正文里；expression 只认 calm / smile / surprise / sad / angry / shy。lines 留空数组即可。',
     'summary 150–300 字：把**这一整段**（不只是结尾）压成一段前情提要——发生了什么、关系推进到哪、留下什么未解的事。以后只引用这段摘要，不再回看原文。',
   ].join('\n');
 }
@@ -239,10 +239,14 @@ export function stripContractBlocks(text: string): string {
 export function arcOpeningContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"smile","text":"","mode":"speech|thought"}],"options":["","",""],"backdrop":""}',
+    '{"narration":"","lines":[],"options":["","",""],"backdrop":""}',
+    '台词写进 narration 里：每句单独一行，以「@名字[表情]：」开头，前后用空行分段。',
+    '例：@爱丽丝[calm]：今晚的委托，我不接。',
+    '例：@砂糖：那我替她接。',
+    '名字必须是【在场的人】里的名字或 id；表情可省（缺省 calm），只认 calm / smile / surprise / sad / angry / shy。不要写 @所长 / @player。',
     'backdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。',
-    'expression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。',
-    'narration 250–350 字；lines 2–5 句，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条，每条不超过 60 字、用「你……」开头。',
+    'narration 250–350 字，里面带 2–5 句台词；台词贴着她开口的那段旁白写，不要全堆在末尾。',
+    'lines 可以留空数组；实在有内联表达不了的台词才放这里（最多 2 句）。options 恰好 3 条，每条不超过 60 字、用「你……」开头。',
     '不要写数值与技能名。',
   ].join('\n');
 }
@@ -256,17 +260,31 @@ export function witchUserHint(): string {
 export function witchConfrontationContract(): string {
   return [
     '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
-    '{"narration":"","lines":[{"speakerId":"","expression":"calm","text":"","mode":"speech|thought"}],"options":["","",""],"backdrop":""}',
+    '{"narration":"","lines":[],"options":["","",""],"backdrop":""}',
+    '台词写进 narration 里：每句单独一行，以「@她的名字[表情]：」开头，前后用空行分段。不要写 @所长 / @player。',
     'backdrop 只能取：{{backdrops}}；必须和 narration 里写的地点一致，室内用 room:*，街区用辖区 id。',
     'narration 800–1500 字：先写清她把所长堵在哪里（具体到房间、门口或街区），再写她怎么封住退路，并对所长发泄负面情绪，需要详细描写她的魔女化后被扭曲的内心，与平时的她产生反差。',
-    'lines 3–6 句，全部是她对所长说的，speakerId 只能是她。内容是按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。',
+    '正文里带 3–6 句她的台词，全部写进 narration：按上面的经历逐条对质——她记得的承诺、所长让她受的伤、所长让她上的战场、所长瞒过她的事以及她想要从所长身上索取的，都要落到具体的事上，不要空泛地喊恨。expression 每句自己挑：calm / smile / surprise / sad / angry / shy。lines 留空数组即可。',
     'options 恰好 3 条，每条不超过 60 字。',
   ].join('\n');
 }
 
 /** 交互式续写的锁定契约。 */
 export function arcTurnContract(): string {
-  return "【JSON 形状】只输出一个 JSON 对象，不要 Markdown：\n{\"narration\":\"\",\"lines\":[{\"speakerId\":\"\",\"expression\":\"smile\",\"text\":\"\",\"after\":0,\"mode\":\"speech|thought\"}],\"options\":[\"\",\"\",\"\"],\"bond\":0,\"summary\":\"\"}\nexpression 每句自己挑一个：calm / smile / surprise / sad / angry / shy；不要写「calm|smile|…」这样的列表，也不要整段都用同一个值——按这句话当时的情绪走。\nnarration 1500–3000 字；lines 2句以上，speakerId 只能取在场的少女，**不要写 player**（所长这一轮的话与动作已由系统显示）；options 恰好 3 条、每条不超过 60 字、用「你……」开头。\nafter 必填：这句台词插在旁白的第几段之后（0 = 段落最前面，按 narration 里的换行分段、从 0 数，注意是插入在段落之后）。台词必须贴着它回应或打断的那一段，不要全都塞在结尾。\nsummary 必填，不超过 300 字：把这一轮压成一段给下一轮用的前情——所长做了什么、她怎么回应、局面推进到哪；之后的历史只引用它。\nbond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。\n这一轮给出的选项不要出现在正文中，你要明白选项只是用来给所长参考的，不要强迫所长做出选择。";
+  return [
+    '【JSON 形状】只输出一个 JSON 对象，不要 Markdown：',
+    '{"narration":"","lines":[],"options":["","",""],"bond":0,"summary":""}',
+    '台词写进 narration 里：每句单独一行，以「@名字[表情]：」开头，前后用空行分段。',
+    '例：@爱丽丝[calm]：今晚的委托，我不接。',
+    '例：@砂糖：那我替她接。',
+    '名字必须是【在场的人】里的名字或 id；表情可省（缺省 calm），只认 calm / smile / surprise / sad / angry / shy；不要写 @所长 / @player（所长这一轮的话与动作已由系统显示）。',
+    '台词贴着她回应或打断的那段旁白写，不要全都塞在结尾。',
+    'narration 1500–3000 字；options 恰好 3 条、每条不超过 60 字、用「你……」开头。',
+    'lines 可以留空数组；只有内联写法表达不了的台词才放这里（最多 2 句，需要 speakerId / expression / text）。',
+    'summary 必填，不超过 300 字：把这一轮压成一段给下一轮用的前情——所长做了什么、她怎么回应、局面推进到哪；之后的历史只引用它。',
+    'bond 只能是 −2 到 2 的整数；不要写其他数值、伤害或技能名；也不要把所长这一轮的动作复述成一句台词——他做过什么，系统已经写下。',
+    '这一轮给出的选项不要出现在正文中，你要明白选项只是用来给所长参考的，不要强迫所长做出选择。',
+  ].join('\n');
 }
 
 /** 战斗札记的锁定契约：JSON 骨架、台词上限与「不写数值」的硬规则。 */
