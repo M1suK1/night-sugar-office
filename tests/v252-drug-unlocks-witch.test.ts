@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act } from '../src/rules/act.ts';
 import { createInitialState } from '../src/game.ts';
-import { drugTick, suppressWitchWithDrug } from '../src/rules/conditions.ts';
+import { drugTick, reconcileWitch, shouldBeWitch, suppressWitchWithDrug } from '../src/rules/conditions.ts';
+import { loadState } from '../src/rules/persistence.ts';
 
 /**
  * v252：抑制剂要真的把人从魔女化里放出来。
@@ -108,4 +109,44 @@ test('v252 共享压制函数：仓库没药时直接拒绝，形态不变', () 
   const result = suppressWitchWithDrug(state, girl);
   assert.equal(result.ok, false);
   assert.equal(girl.witch, true);
+});
+
+test('v252 净化把侵蚀压回线下：立绘立刻恢复普通形态', () => {
+  const { state, girl } = setup({ corruption: 45, witch: true, stock: 0 });
+  state.inventory['purify-course'] = 3;
+  const result = act(state, { type: 'useItem', girlId: girl.id, itemId: 'purify-course' });
+  assert.equal(result.ok, true, result.message);
+  const after = result.state.girls.find(entry => entry.id === girl.id)!;
+  assert.equal(after.corruption, 37);
+  assert.equal(after.witch, false, '侵蚀掉到线下就该退出魔女化');
+});
+
+test('v252 越过 70 就是不可逆：有药压着也仍然是魔女形态', () => {
+  const { state, girl } = setup({ corruption: 80, witch: false, stock: 3 });
+  girl.drugUntilDay = state.day + 10;
+  assert.equal(shouldBeWitch(state, girl), true);
+  assert.equal(reconcileWitch(state, girl), true);
+  assert.equal(girl.witch, true);
+});
+
+test('v252 形态由侵蚀与药效共同决定：对齐函数覆盖四种组合', () => {
+  const { state, girl } = setup({ corruption: 45, witch: false, stock: 0 });
+  assert.equal(shouldBeWitch(state, girl), true, '过线又没药 → 该锁');
+  girl.drugUntilDay = state.day + 5;
+  assert.equal(shouldBeWitch(state, girl), false, '过线但有药 → 不锁');
+  girl.corruption = 30;
+  assert.equal(shouldBeWitch(state, girl), false, '线下 → 不锁');
+  girl.corruption = 70;
+  assert.equal(shouldBeWitch(state, girl), true, '不可逆 → 锁');
+});
+
+test('v252 读档时把「侵蚀已降下来却还锁着」的旧档修回普通形态', () => {
+  const state = createInitialState();
+  const girl = state.girls[0]!;
+  girl.witch = true;
+  girl.corruption = 28;
+  girl.drugUntilDay = state.day + 4;
+  const loaded = loadState(JSON.stringify(state));
+  const after = loaded.girls.find(entry => entry.id === girl.id)!;
+  assert.equal(after.witch, false);
 });

@@ -4,7 +4,7 @@ import { factionInfo, getItem } from '../content/items.ts';
 import { book, clone, dateLabel, findGirl } from '../rules/core.ts';
 import { executeCraft } from '../crafting.ts';
 import { executeRefine } from '../refine.ts';
-import { useMoonDrug } from './conditions.ts';
+import { reconcileWitch, useMoonDrug } from './conditions.ts';
 import type { ActionResult, GameAction, GameState } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
 
@@ -114,7 +114,9 @@ export function applyUseItem(state: GameState, action: Extract<GameAction, { typ
       if (item.effect === 'purify') {
         next.inventory[item.id] -= 1;
         girl.corruption = Math.max(0, girl.corruption - (item.amount ?? 8));
-        return { state: next, ok: true, message: `${girl.name}完成净化课程，侵蚀度下降。` };
+        // v252：侵蚀掉回阈值以下时，立绘也要跟着回到普通形态。
+        const unlocked = girl.witch && !reconcileWitch(next, girl);
+        return { state: next, ok: true, message: unlocked ? `${girl.name}完成净化课程，侵蚀降到线下，立绘恢复成普通形态。` : `${girl.name}完成净化课程，侵蚀度下降。` };
       }
       if (item.effect === 'taxRefund') {
         next.inventory[item.id] -= 1;

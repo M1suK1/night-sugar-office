@@ -8,6 +8,7 @@ import { pruneOrphanVariants, sanitizeOutfit } from '../rules/outfits.ts';
 import { allocatePoint, statLabel } from '../progression.ts';
 import { buildCost } from '../rules/roster.ts';
 import { book, clone, dateLabel, findRosterGirl, pushNotice } from '../rules/core.ts';
+import { WITCH_STAGE_AT } from '../economy.ts';
 import { suppressWitchWithDrug } from './conditions.ts';
 import type { ActionResult, GameAction, GameState, Outfit } from '../types.ts';
 // v35 从 src/game.ts 拆出：动作处理器。
@@ -255,6 +256,10 @@ export function applySetWitchForm(state: GameState, action: Extract<GameAction, 
       }
       const activate = action.activate !== false;
       const witchAt = loadBalance().corruptionThreshold;
+      // v252：药效正压着的时候不让她切过去，切了也会被下一次对齐放回来。
+      if (activate && (girl.drugUntilDay ?? 0) > next.day && (girl.corruption ?? 0) < WITCH_STAGE_AT) {
+        return { state, ok: false, message: `${girl.name}正被月光抑制剂压着：药效期内立绘会一直是普通形态。` };
+      }
       if (activate && girl.corruption < witchAt && !girl.witch) return { state, ok: false, message: `${girl.name}的侵蚀还没有到能切换到魔女姿态的程度（${witchAt}）。立绘仍可以先导入。` };
       const outfit = sanitizeOutfit({ ...action.outfit, id: 'witchform', form: 'witch' }, girl.color);
       if (!outfit) return { state, ok: false, message: '这份魔女化立绘无法识别。' };

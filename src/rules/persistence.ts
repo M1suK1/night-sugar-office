@@ -6,6 +6,7 @@ import { sanitizeMeetingRecords } from './meetingSettle.ts';
 import { validBattleNote, validGeneratedItem, validGirl } from '../rules/validate.ts';
 import { getItem, items, registerItem } from '../content/items.ts';
 import { createSeedPack } from '../content/seed-pack.ts';
+import { reconcileWitch } from './conditions.ts';
 import { extraMissions } from '../content/missions-extra.ts';
 import { rebaseOpenMissionRewards } from '../missionReward.ts';
 
@@ -294,6 +295,8 @@ function normalizeState(raw: string | null): GameState | null {
     state.chronicle = Array.isArray(state.chronicle)
       ? state.chronicle.filter((entry): entry is ChronicleEntry => Boolean(entry) && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && Number.isFinite(entry.day)).slice(0, 200)
       : [];
+    // v252：旧档里「侵蚀已经降回线下 / 药效正压着」却还锁在魔女化形态的情况，读档时统一放开。
+    for (const girl of state.girls) reconcileWitch(state, girl);
     return state;
   } catch { return null; }
 }
