@@ -37,8 +37,8 @@ export interface VertexGrounding {
 }
 
 export type VertexCallResult =
-  | { ok: true; text: string; reasoning?: string; finish?: string; grounding?: VertexGrounding; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean }
-  | { ok: false; message: string; reasoning?: string; status?: number; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean };
+  | { ok: true; text: string; reasoning?: string; finish?: string; grounding?: VertexGrounding; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean; thinkingVariant?: ThinkingVariant }
+  | { ok: false; message: string; reasoning?: string; status?: number; usage?: { prompt?: number; completion?: number; total?: number }; thinkingDropped?: boolean; thinkingVariant?: ThinkingVariant };
 
 export const DEFAULT_VERTEX_LOCATION = 'us-central1';
 export const VERTEX_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
@@ -324,6 +324,45 @@ export const THINKING_TOKEN_RESERVE = 32_768;
 /** Gemini 2.5 系列单次输出的硬上限。 */
 const MAX_OUTPUT_TOKENS = 65_536;
 
+/** 思维链请求体的几种写法：新老模型各认一种，按顺序试。 */
+export type ThinkingVariant = 'plain' | 'level' | 'budget' | 'off';
+
+/**
+ * 各写法对应的 `generationConfig.thinkingConfig`（v251）。
+ *
+ *  - `plain`：只开 includeThoughts —— Gemini 2.5 认这个；
+ *  - `level`：再带上 thinkingLevel —— Gemini 3/4 这一代用它（不写档位时有的端点
+ *    只当成「不思考」，于是正文回来了、思维链一直是空的）；
+ *  - `budget`：改用 thinkingBudget: -1（动态，不封顶）—— 2.5 的另一种写法。
+ */
+export function thinkingConfigOf(variant: ThinkingVariant): Record<string, unknown> | undefined {
+  if (variant === 'plain') return { includeThoughts: true };
+  if (variant === 'level') return { includeThoughts: true, thinkingLevel: 'high' };
+  if (variant === 'budget') return { includeThoughts: true, thinkingBudget: -1 };
+  return undefined;
+}
+
+/** 这个模型该按哪种顺序试思维链写法：新模型先试 thinkingLevel，老模型先试裸 includeThoughts。 */
+export function thinkingLadder(model: string, enabled = true): ThinkingVariant[] {
+  if (!enabled) return ['off'];
+  const modern = /gemini-(?:[3-9]|\d{2,})/i.test(model);
+  return modern ? ['level', 'plain', 'budget', 'off'] : ['plain', 'budget', 'off'];
+}
+
+/** 服务端明说「这个模型不支持思维链」时，不用再换写法，直接走不要思维链那一档。 */
+const UNSUPPORTED_HINT = /not supported|does not support|not allowed|unsupported/i;
+/** 报错点名的是 thinkingLevel / thinkingBudget 这类子字段：说明这一版认识 thinkingConfig，只是不认这个写法。 */
+const NAMES_THINKING_FIELD = /thinking(?:Level|Budget)/i;
+/** 报错点名的是整个 thinkingConfig / includeThoughts：说明这一版压根不认识思维链，换 API 版本才有戏。 */
+const NAMES_THINKING_OBJECT = /thinkingConfig|includeThoughts/i;
+
+/** 试出来能用、并且真的回了思维链的写法；下次同一个模型直接从这里开始。 */
+const workingVariant = new Map<string, ThinkingVariant>();
+
+export function clearThinkingVariantCache(): void {
+  workingVariant.clear();
+}
+
 /**
  * 发一次 generateContent。失败信息都写成人话，方便在设置里直接看到原因。
  */
@@ -352,21 +391,24 @@ export async function vertexChat(
   }
   const { systemText, contents } = toContents(messages);
   /**
-   * includeThinking=false 是给不认 thinkingConfig 的老模型留的退路：
-   * 去掉思维链重试一次，正文照常写。
+   * 按「思维链写法」拼请求体（v251）。
+   *
+   * `capMax` 用来在服务端嫌 maxOutputTokens 太大时，把额度压回配置值重试——
+   * 这种情况仍要保留 thinkingConfig，不能再顺手把思维链也扔掉。
    */
-  const buildPayload = (includeThinking: boolean): Record<string, unknown> => {
+  const buildPayload = (variant: ThinkingVariant, capMax?: number, noReserve = false): Record<string, unknown> => {
     const generationConfig: Record<string, unknown> = {};
     if (params.temperature !== undefined) generationConfig.temperature = params.temperature;
     if (params.topP !== undefined) generationConfig.topP = params.topP;
-    if (params.maxTokens !== undefined) {
+    const budget = capMax ?? params.maxTokens;
+    if (budget !== undefined) {
       // 思考 token 也算进 maxOutputTokens；把正文额度原样留出来，思维链走额外预留。
-      generationConfig.maxOutputTokens = includeThinking
-        ? Math.min(params.maxTokens + THINKING_TOKEN_RESERVE, MAX_OUTPUT_TOKENS)
-        : params.maxTokens;
+      generationConfig.maxOutputTokens = variant === 'off' || noReserve
+        ? budget
+        : Math.min(budget + THINKING_TOKEN_RESERVE, MAX_OUTPUT_TOKENS);
     }
-    // 不设 thinkingBudget：让模型自己决定想到哪里停，不人为截断思维链。
-    if (includeThinking) generationConfig.thinkingConfig = { includeThoughts: true };
+    const thinkingConfig = thinkingConfigOf(variant);
+    if (thinkingConfig) generationConfig.thinkingConfig = thinkingConfig;
     // Gemini 的 generateContent 不认 OpenAI 的 presence/frequency penalty：
     // 有些模型会直接 400「Penalty is not enabled for this model」，所以一律不发送。
     // 这两个字段保留在 VertexParams 里只是为了兼容调用签名，值会被忽略。
@@ -376,9 +418,14 @@ export async function vertexChat(
     if (params.tools?.length) body.tools = params.tools;
     return body;
   };
-  let payload = buildPayload(params.thinking !== false);
-
   const model = normalizeVertexModel(input.model);
+  const ladder = (() => {
+    const list = thinkingLadder(model, params.thinking !== false);
+    const known = workingVariant.get(model);
+    // 只认这一档也在这个阶梯里时才提前用（关掉思维链的那次会记下 off，不能带到开着的请求里）。
+    return known && list.includes(known) ? [known, ...list.filter(variant => variant !== known)] : list;
+  })();
+  let payload = buildPayload(ladder[0]!);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 600_000);
   /** 发一次请求；404 时换 v1beta1 再试，别让新模型卡在版本上。 */
@@ -403,19 +450,8 @@ export async function vertexChat(
     if (!body || typeof body !== 'object') return { ok: false, failure: { message: 'Vertex AI 返回了无法解析的响应体，可能被代理或网关改写了。' } };
     return { ok: true, body };
   };
-  // 这个模型不接受 thinkingConfig 时，会悄悄降级成「没有思维链」；记下来给界面提示。
-  let thinkingDropped = false;
-  try {
-    let attempt = await send('v1');
-    // 老模型不认 thinkingConfig，或输出的上限比预留还小：去掉思维链重试一次。
-    if (!attempt.ok && attempt.failure.status === 400 && /thinking|thought|maxOutputTokens/i.test(attempt.failure.message)) {
-      payload = buildPayload(false);
-      thinkingDropped = params.thinking !== false;
-      attempt = await send('v1');
-    }
-    if (!attempt.ok && attempt.failure.status === 404) attempt = await send('v1beta1');
-    if (!attempt.ok) return { ok: false, status: attempt.failure.status, message: attempt.failure.message, thinkingDropped };
-    const body = attempt.body;
+  /** 把一次成功的响应解析成结果（不含「思维链要不要换个写法再试」的判断）。 */
+  const parseBody = (body: VertexResponseBody): VertexCallResult => {
     const candidate = body.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
     const text = parts.filter(part => !part.thought && typeof part.text === 'string').map(part => part.text as string).join('');
@@ -448,7 +484,73 @@ export async function vertexChat(
           .slice(0, 8),
       }
       : undefined;
-    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), grounding, usage, thinkingDropped };
+    return { ok: true, text, reasoning, finish: finishOf(candidate?.finishReason), grounding, usage };
+  };
+
+  /** 发一次「这个思维链写法」：404/不认 thinking 时换 v1beta1；额度太大压回配置值再试，但保留思维链。 */
+  const sendVariant = async (variant: ThinkingVariant, capMax?: number, noReserve = false) => {
+    payload = buildPayload(variant, capMax, noReserve);
+    let attempt = await send('v1');
+    const message = attempt.ok ? '' : attempt.failure.message;
+    const thinkingComplaint = !attempt.ok && attempt.failure.status === 400 && /thinking|thought/i.test(message);
+    // 只有「这一版压根不认识 thinkingConfig」才值得换 API 版本再试；
+    // 报错点名 thinkingLevel / thinkingBudget 时，换版本也没用，直接换写法。
+    const worthAnotherVersion = thinkingComplaint && !NAMES_THINKING_FIELD.test(message) && (NAMES_THINKING_OBJECT.test(message) || !UNSUPPORTED_HINT.test(message));
+    if (!attempt.ok && (attempt.failure.status === 404 || worthAnotherVersion)) {
+      const beta = await send('v1beta1');
+      if (beta.ok || beta.failure.status !== 400) attempt = beta;
+    }
+    if (!attempt.ok && attempt.failure.status === 400 && /maxOutputTokens/i.test(attempt.failure.message) && capMax === undefined) {
+      // 额度太大：压回配置值重试。这时连预留也去掉，否则压下去还是超。
+      return sendVariant(variant, params.maxTokens, true);
+    }
+    return attempt;
+  };
+
+  try {
+    // 思维链写法按阶梯试：新模型先试 thinkingLevel，老模型先试裸 includeThoughts。
+    // 只有所有写法都不认，才退到「不要思维链」，并且要标出来给界面提示。
+    let fallback: VertexCallResult | null = null;
+    let fallbackVariant: ThinkingVariant | null = null;
+    // 新模型才值得把几种写法都探一遍；老模型正文回来就收，别为了试而白花请求。
+    const modern = ladder[0] === 'level';
+    let index = 0;
+    let calls = 0;
+    while (index < ladder.length && calls < 6) {
+      calls += 1;
+      const variant = ladder[index]!;
+      const attempt = await sendVariant(variant);
+      if (!attempt.ok) {
+        const thinkingComplaint = attempt.failure.status === 400 && /thinking|thought/i.test(attempt.failure.message);
+        if (!thinkingComplaint || variant === 'off') {
+          return { ok: false, status: attempt.failure.status, message: attempt.failure.message, thinkingDropped: params.thinking !== false && fallback !== null };
+        }
+        // 服务端明说「这个模型不支持思维链」：直接跳到最后一档，别把别的写法挨个试一遍。
+        index = UNSUPPORTED_HINT.test(attempt.failure.message) ? ladder.length - 1 : index + 1;
+        continue;
+      }
+      const parsed = parseBody(attempt.body);
+      if (parsed.ok && parsed.reasoning) {
+        workingVariant.set(model, variant);
+        return { ...parsed, thinkingDropped: false, thinkingVariant: variant };
+      }
+      // 正文回来了但没有思维链：留下这个可用结果，再换一种写法试试。
+      if (!fallback || (parsed.ok && !fallback.ok)) {
+        fallback = parsed;
+        fallbackVariant = variant;
+      }
+      if (!parsed.ok || variant === 'off' || params.thinking === false) break;
+      if (!modern || workingVariant.has(model)) break;
+      index += 1;
+    }
+    if (fallback) {
+      // 记下这次定下来的写法，下次同一个模型直接从它开始，不再重复试探。
+      if (fallbackVariant && params.thinking !== false) workingVariant.set(model, fallbackVariant);
+      // 所有写法都没能带回思维链：如实标出来，不假装有。
+      const thinkingDropped = params.thinking !== false && !fallback.reasoning;
+      return { ...fallback, thinkingDropped, thinkingVariant: fallbackVariant ?? undefined };
+    }
+    return { ok: false, message: '所有思维链写法都被服务端拒绝，且没有拿到正文。请检查模型名与区域，或在预设里关掉思维链。', thinkingDropped: params.thinking !== false };
   } catch (error) {
     if (controller.signal.aborted) return { ok: false, message: '请求超过 600 秒仍未返回，已中止。可以重试，或换一个更快的模型。' };
     const detail = error instanceof Error ? error.message : '';

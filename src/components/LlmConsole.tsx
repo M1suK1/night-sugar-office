@@ -49,6 +49,15 @@ function entryText(entry: LlmLogEntry): string {
   return lines.join('\n');
 }
 
+/** 日志里显示「这次用哪种写法要思维链」（v251）。 */
+function variantLabel(variant: string | undefined): string {
+  if (variant === 'level') return 'thinkingLevel: high';
+  if (variant === 'plain') return 'includeThoughts';
+  if (variant === 'budget') return 'thinkingBudget: -1';
+  if (variant === 'off') return '不带思维链';
+  return '未记录';
+}
+
 export function LlmConsole() {
   const [entries, setEntries] = useState<LlmLogEntry[]>(loadLlmLog);
   const [open, setOpen] = useState(false);
@@ -171,7 +180,7 @@ export function LlmConsole() {
               {entry.response?.usage && <span>用量<b>{entry.response.usage.prompt ?? '?'} → {entry.response.usage.completion ?? '?'} tokens</b></span>}
             </div>
             {entry.response?.thinkingDropped
-              ? <p className="llm-no-reasoning">这个模型不接受思维链配置，请求已自动去掉它重试成功——这一条没有思维链，不是预设没开。</p>
+              ? <p className="llm-no-reasoning">试过 thinkingLevel / includeThoughts / thinkingBudget 几种写法，模型都没回 thought 分段（最后用的是「{variantLabel(entry.response?.thinkingVariant)}」）——这一条没有思维链，不是预设没开。</p>
               : entry.response?.reasoning && reasoningEcho(entry.response.reasoning, entry.response.text)
               ? <p className="llm-no-reasoning">这次的思维链只是在打同一份草稿，和返回内容几乎相同，已省略。</p>
               : entry.response?.reasoning
@@ -180,7 +189,7 @@ export function LlmConsole() {
                   <pre className="llm-reasoning">{entry.response.reasoning}</pre>
                 </details>
               : <p className="llm-no-reasoning">{entry.request?.params?.thinking === true
-                  ? '预设开了思维链，但这次模型没有返回 thought 分段（该模型可能不支持，或这次没思考）。'
+                  ? `预设开了思维链，但这次模型没有返回 thought 分段（这一条用的是「${variantLabel(entry.response?.thinkingVariant)}」写法，该模型可能不支持，或这次没思考）。`
                   : '这次响应没有附带思维链（预设里的「返回思维链」是关着的）。'}</p>}
             {entry.response?.text !== undefined && <>
               <h4><FileText size={12} />返回内容{entry.response?.textTruncated ? '（过长，只保留开头）' : ''}</h4>
