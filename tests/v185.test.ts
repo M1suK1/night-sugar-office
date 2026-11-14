@@ -12,7 +12,7 @@ test('v185 退休金整体下调到原来的一半', () => {
   assert.equal(pensionFor(girl(10)), 920);
 });
 
-test('v185 欠缴按新标准累计', () => {
-  assert.equal(pensionArrears(girl(5, 3)), 1560);
+test('v185 欠缴按日单价（10 日标准的 1/10）累计', () => {
+  assert.equal(pensionArrears(girl(5, 3)), 156);
   assert.equal(pensionArrears(girl(5, 0)), 0);
 });

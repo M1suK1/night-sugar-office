@@ -131,12 +131,11 @@ export function planFronts(state: GameState, at: { day: number; minutes: number 
   return created;
 }
 
-/** 没人管就直接结算：按双方力量与一点运气比大小。 */
+/** 没人管就直接结算：按双方力量与对称随机摆动比大小。 */
 export function autoResolveFront(state: GameState, front: FactionFront, at: { day: number; minutes: number }): 'attackerWin' | 'defenderWin' | 'stalemate' {
-  const total = front.attackerPower + front.defenderPower;
   const swing = (state.day * 37 + front.district.length * 11) % 30;
   const attackerScore = front.attackerPower * 1.1 + swing;
-  const defenderScore = front.defenderPower * 1.1 + (total - swing);
+  const defenderScore = front.defenderPower * 1.1 + (29 - swing);
   const result: 'attackerWin' | 'defenderWin' | 'stalemate' = Math.abs(attackerScore - defenderScore) < 6
     ? 'stalemate'
     : attackerScore > defenderScore ? 'attackerWin' : 'defenderWin';
@@ -171,7 +170,7 @@ export function resolveDueFronts(state: GameState, at: { day: number; minutes: n
     if (!front.side) { autoResolveFront(state, front, at); continue; }
     const swing = (state.day * 37 + front.district.length * 11) % 30;
     const attackerScore = front.attackerPower * 0.9 + (front.side === 'attacker' ? squadPower(state, front) : 0) + swing;
-    const defenderScore = front.defenderPower * 0.9 + (front.side === 'defender' ? squadPower(state, front) : 0) + (10 - swing);
+    const defenderScore = front.defenderPower * 0.9 + (front.side === 'defender' ? squadPower(state, front) : 0) + (29 - swing);
     const result: 'attackerWin' | 'defenderWin' | 'stalemate' = Math.abs(attackerScore - defenderScore) < 6
       ? 'stalemate'
       : attackerScore > defenderScore ? 'attackerWin' : 'defenderWin';

@@ -20,7 +20,7 @@ export function applyFinishEnding(state: GameState, action: Extract<GameAction, 
     girls: next.girls.filter(girl => !girl.dead && !girl.retired && !girl.left).length,
   };
   next.endings = [record, ...(next.endings ?? [])].slice(0, 3);
-  archive(next, '事件', '离开樱雾市', `第 ${next.day} 日，事务所关灯，钥匙留在桌上；她带着 ${record.gold.toLocaleString('en-US')} 星砂离开了樱雾市。`);
+  archive(next, '事件', '离开樱雾市', `第 ${next.day} 日，事务所关灯，钥匙留在桌上；你带着 ${record.gold.toLocaleString('en-US')} 星砂离开了樱雾市。`);
   next.logs.unshift({
     id: `log-ending-leave-${next.day}-${next.minutes}`,
     time: dateLabel(next.day, next.minutes),

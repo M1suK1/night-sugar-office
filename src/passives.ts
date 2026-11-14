@@ -103,7 +103,7 @@ export function passiveText(skill: Skill): string {
     const effect = trigger.effect;
     const amount = effect.amount ? ` ${effect.amount}` : '';
     const duration = effect.duration ? `，${effect.duration} 轮` : '';
-    const stat = effect.stat ? (effect.stat === 'hit' ? '命中' : effect.stat === 'initiative' ? '速度' : STAT_LABELS[effect.stat]) : '';
+    const stat = effect.stat ? (effect.stat === 'hit' ? '命中' : effect.stat === 'initiative' ? '速度' : effect.stat === 'damage' ? '伤害%' : STAT_LABELS[effect.stat]) : '';
     const verb = effect.kind === 'shield' ? '获得护盾'
       : effect.kind === 'regen' ? '回复'
       : effect.kind === 'dot' ? '获得持续伤害'

@@ -40,7 +40,7 @@ const slotLabels = { weapon: '法器', charm: '护符' } as const;
 const ALLOCATE_KEYS = ['magic', 'insight', 'agility', 'empathy'] as const;
 const NO_POINTS: Record<'magic' | 'insight' | 'agility' | 'empathy', number> = { magic: 0, insight: 0, agility: 0, empathy: 0 };
 
-export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign, onHire, onRetire, onClinic, onTradeDrug, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
+export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign, onHire, onRetire, onDismiss, onClinic, onTradeDrug, onAssistant, onRemote, onRenew, onRehire, onChangeOutfit, onExpression, onExpressionVariants, onWardrobe, onEquip, onUseItem, onUnequip, onExportCard, onStory, onStoryBlueprint, onStoryRegenerate, onStoryGraph, storyBusy, onStoryChoice, onStoryPort, onStoryMission, onEvent, onWitch, onWitchForm, onWitchFile, onPersonality, onAllocateMany, onProfileText, onWitchDescription, onOutfitDescription, onPortraitFile, portraitBroken, memories, onMemory, onMutePoints }: {
   girl: Girl; state: GameState; onCare: (mode: 'resting') => void;
   /** 满羁绊后缔结誓约；誓约后婚礼走议会会议。 */
   onOath?: () => void;
@@ -62,6 +62,7 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
   /** 滑条一次提交四项：由 allocateStats 一次落地，避免连续 +1 互相盖掉。 */
   onAllocateMany?: (plan: Partial<Record<StatKey, number>>) => void;
   onTalk: () => void; onAssign: () => void; onHire: () => void; onRetire: () => void;
+  onDismiss?: () => void;
   onClinic: (mode: 'treat' | 'wipe' | 'clone', kink?: boolean) => void;
   /** v244：用城市安定度换一支月蚀抑制剂（不动星砂）。 */
   onTradeDrug?: () => void;
@@ -710,8 +711,10 @@ export function CharacterDialog({ girl, state, onCare, onOath, onTalk, onAssign,
           </div>
           </div>
           {girl.retired
-            ? <p className="small-note"><ShieldCheck size={12} />已转任文职。她仍住在基地，也会出现在关系网络里。退休金从每月经营收入中划拨。</p>
-            : girl.scars.length >= 4 && <button id="girl-retire" className="btn retire-btn" onClick={onRetire}><Flower2 size={15} />申请退役 · 转任文职</button>}
+            ? <p className="small-note"><ShieldCheck size={12} />已转任文职并腾出宿舍床位。她仍会出现在关系网络里，退休金按十日标准每日划拨。</p>
+            : girl.scars.length >= 4
+              ? <button id="girl-retire" className="btn retire-btn" onClick={onRetire}><Flower2 size={15} />申请伤退 · 转任文职</button>
+              : onDismiss && <button id="girl-dismiss" className="btn retire-btn" disabled={girl.status !== 'idle' || state.girls.filter(g => !g.dead && !g.retired && !g.left).length <= 1} onClick={onDismiss}>协商解约 · 腾出床位</button>}
           {girl.status !== 'idle' && <p className="small-note">正在{statusLabels[girl.status]}，剩余 {girl.remaining} 分钟。推进时间完成安排。</p>}
         </>}
       </div>

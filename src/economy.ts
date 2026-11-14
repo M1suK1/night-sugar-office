@@ -48,7 +48,7 @@ export function activeSetOf(girl: Girl): EquipmentSetId | undefined {
   return undefined;
 }
 
-export function effectiveStats(girl: Girl, state?: GameState): Record<StatKey, number> {
+export function effectiveStats(girl: Girl, state?: Pick<GameState, 'reputation'>): Record<StatKey, number> {
   const raw: Record<StatKey, number> = { ...girl.stats };
   for (const item of equipmentOf(girl)) {
     for (const key of statOrder) raw[key] += item.stats?.[key] ?? 0;
@@ -79,15 +79,15 @@ export function spiritBonusPctOf(girl: Girl): number {
  * 光看 `girl.maxSpirit` 是不够的：升级、换装、长疤都会立刻改变这个值，
  * 所以每次要用的时候重算，字段只作为缓存。
  */
-export function effectiveGuard(girl: Girl): number {
-  const base = guardMax({ stats: { empathy: effectiveStats(girl).empathy } }, spiritBonusPctOf(girl));
+export function effectiveGuard(girl: Girl, state?: Pick<GameState, 'reputation'>): number {
+  const base = guardMax({ stats: { empathy: effectiveStats(girl, state).empathy } }, spiritBonusPctOf(girl));
   const scar = girl.scars.reduce((sum, sc) => sum + (sc.effect.kind === 'maxSpirit' ? Math.abs(sc.effect.amount) : 0), 0);
   return Math.max(10, base - scar);
 }
 
 /** 兼容旧名：共情值现在就是心防条，读的是同一个上限。 */
-export function effectiveMaxSpirit(girl: Girl): number {
-  return effectiveGuard(girl);
+export function effectiveMaxSpirit(girl: Girl, state?: Pick<GameState, 'reputation'>): number {
+  return effectiveGuard(girl, state);
 }
 
 export const cityStages = [

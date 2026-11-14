@@ -2,6 +2,7 @@ import { GirlThumb } from './GirlThumb';
 import { useState } from 'react';
 import { ArrowUpRight, Clock3, Sparkles, Shield, Check, Radio, Heart, Swords, ScanEye, Skull, Bandage, Users, ChevronRight, ScrollText, MapPin, Hourglass, Wind, AlertTriangle, CloudRain, CloudLightning, Snowflake, CloudFog, Moon } from 'lucide-react';
 import type { GameState, Girl, Mission } from '../types';
+import { effectiveStats } from '../economy';
 import { chance, clock, duelOpponents, inWithdrawal, missionDeadlineLabel, squadChance, squadLimitFor, statLabels, statusLabels, workDescriptions, workLabels } from '../game';
 import { districtOfMission, effectLines } from '../districts';
 import { windowLabel } from '../shift';
@@ -38,7 +39,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
   const squad = selected.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const castReady = (mission.storyCastIds ?? []).every(id => selected.includes(id));
   const squadReady = squad.length > 0 && squad.every(g => canGo(g).ok) && squad.length <= limit && castReady;
-  const chanceValue = squadChance(squad, mission);
+  const chanceValue = squadChance(squad, mission, state);
   const assigned = mission.squad.map(id => state.girls.find(g => g.id === id)).filter((g): g is Girl => Boolean(g));
   const lastBattle = state.battles.find(item => item.missionId === mission.id);
   const region = districtOfMission(mission);
@@ -187,9 +188,9 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
                   <GirlThumb girl={person} />
                   <span>
                     <b>{person.name}<i className="assignment-role" title="职业">{person.archetype ?? '未定'}</i></b>
-                    <small>{!check.ok ? check.reason : `${statLabels[mission.requirement]} ${person.stats[mission.requirement]} · 疲劳 ${person.fatigue}`}</small>
+                    <small>{!check.ok ? check.reason : `${statLabels[mission.requirement]} ${effectiveStats(person, state)[mission.requirement]} · 疲劳 ${person.fatigue}`}</small>
                   </span>
-                  <em>{check.ok ? `${chance(person, mission)}%` : '—'}<small>{check.ok ? '单人契合' : ''}</small></em>
+                  <em>{check.ok ? `${chance(person, mission, state)}%` : '—'}<small>{check.ok ? '单人契合' : ''}</small></em>
                   {picked && <Check size={15} />}
                   {fatalRisk && <span className="risk-flag" title="第五道疤痕会导致死亡"><Bandage size={11} />濒危</span>}
                 </button>
@@ -198,7 +199,7 @@ export function MissionDialog({ state, mission, initialGirlId, onDispatch, onGir
           </div>
           <div className="assignment-note">
             <Radio size={14} />
-            <span>{squad.length ? `${squad.map(g => g.name).join('、')}已受领简报，预计于 ${clock((state.minutes + mission.duration) % 1440)} 携现场记录返回事务所。${mission.work === 'combat' ? '战斗交锋一旦展开不可中途撤回，请审慎确认阵线。' : '调查行动以队伍最高特长综合裁定胜负。'}${squadChance(squad, mission) < 45 ? ' 当前队伍契合度偏低，面临较高失手与负伤风险。' : ''}` : '请自待命名单中指派最多 ' + limit + ' 位契约少女组建出勤小队；当成员生命过低或过度疲惫时，请优先安排休整或诊所药浴。'}</span>
+            <span>{squad.length ? `${squad.map(g => g.name).join('、')}已受领简报，预计于 ${clock((state.minutes + mission.duration) % 1440)} 携现场记录返回事务所。${mission.work === 'combat' ? '战斗交锋一旦展开不可中途撤回，请审慎确认阵线。' : '调查行动以队伍最高特长综合裁定胜负。'}${chanceValue < 45 ? ' 当前队伍契合度偏低，面临较高失手与负伤风险。' : ''}` : '请自待命名单中指派最多 ' + limit + ' 位契约少女组建出勤小队；当成员生命过低或过度疲惫时，请优先安排休整或诊所药浴。'}</span>
           </div>
           <div className="squad-readiness">
             <div><span>队伍契合</span><b className={chanceValue < 45 ? 'low' : chanceValue > 75 ? 'high' : ''}>{squad.length ? `${chanceValue}%` : '—'}</b></div>
@@ -241,7 +242,7 @@ export function AssignmentPicker({ state, girlId, onSelect }: { state: GameState
         {missions.map(m => (
           <button id={`picker-${m.id}`} key={m.id} onClick={() => onSelect(m.id)}>
             <span><b>{m.title}</b><small>{m.category} · {m.duration} 分钟 · {m.reward} 星砂</small></span>
-            <em>{girl ? `${chance(girl, m)}%` : '—'}</em>
+            <em>{girl ? `${chance(girl, m, state)}%` : '—'}</em>
             <ArrowUpRight size={17} />
           </button>
         ))}

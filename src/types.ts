@@ -508,6 +508,8 @@ export interface Storyline {
   id: string; girlId: string; title: string; premise: string; tone: string;
   beats: StoryBeat[]; stage: number; status: 'active' | 'done' | 'abandoned';
   createdAt: string; day: number; source: 'llm' | 'template' | 'manual';
+  /** 故事线作用域：personal 为个人三段线（默认），main 为事务所主线章节（不随单人离队废弃）。 */
+  scope?: 'personal' | 'main';
   /** 第几段故事（1 起，最多 3 段）。 */
   slot?: number;
   /** 上一段的 id：门禁靠它判断能不能开新的一段。 */
@@ -790,7 +792,7 @@ export interface Treatment {
 export type EffectCategory = 'offense' | 'defense' | 'speed' | 'mind' | 'control' | 'sustain';
 export interface SkillEffect {
   kind: EffectKind;
-  stat?: StatKey | 'hit' | 'initiative';
+  stat?: StatKey | 'hit' | 'initiative' | 'damage';
   amount: number;
   duration: number;
   chance?: number;
@@ -1443,6 +1445,7 @@ export type GameAction =
   | { type: 'startExpedition'; memberIds: string[] }
   | { type: 'recallExpedition'; expeditionId: string }
   | { type: 'clinic'; girlId: string; mode: 'treat' | 'wipe' | 'clone'; kink?: boolean }
+  | { type: 'dismissGirl'; girlId: string }
   | { type: 'changeOutfit'; girlId: string; outfitId: string }
   | { type: 'setExpression'; girlId: string; expression: Expression }
   | { type: 'setPersonality'; girlId: string; text: string }

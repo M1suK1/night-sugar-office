@@ -55,8 +55,8 @@ export function clinicCost(state: GameState, base: number): number {
   return clinicPrice(base, clinicLevel(state));
 }
 
-export function chance(girl: Girl, mission: Mission): number {
-  const stats = effectiveStats(girl);
+export function chance(girl: Girl, mission: Mission, state?: Pick<GameState, 'reputation'>): number {
+  const stats = effectiveStats(girl, state);
   return Math.max(35, Math.min(99, Math.round(70 + (stats[mission.requirement] - mission.target) * 0.65 - girl.fatigue * 0.15)));
 }
 
@@ -74,9 +74,9 @@ export function squadLimit(mission: Mission): number {
   return Math.max(cap, monsters, cast);
 }
 
-export function squadChance(girls: Girl[], mission: Mission): number {
+export function squadChance(girls: Girl[], mission: Mission, state?: Pick<GameState, 'reputation'>): number {
   if (!girls.length) return 0;
-  const best = Math.max(...girls.map(g => effectiveStats(g)[mission.requirement]));
+  const best = Math.max(...girls.map(g => effectiveStats(g, state)[mission.requirement]));
   const bonus = (girls.length - 1) * 4;
   const fatigue = Math.round(girls.reduce((sum, g) => sum + g.fatigue, 0) / girls.length * 0.15);
   return Math.max(20, Math.min(99, Math.round(55 + (best + bonus - mission.target) * 0.9 - fatigue)));

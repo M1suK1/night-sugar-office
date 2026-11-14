@@ -10,13 +10,11 @@ import { absoluteMinutes, deadlineFor } from '../shift.ts';
 import { buildNodeIncident, stampIncident } from './storyIncidents.ts';
 import { addEvent, applyStoryEffect } from '../rules/storyCore.ts';
 import { storyCastAfterMission } from './storyChoice.ts';
-import { archive, dateLabel, findGirl, hashText } from '../rules/core.ts';
+import { archive, dateLabel, hashText } from '../rules/core.ts';
 import { pickEquipmentOfTier, pickMissionTemplate } from '../nightPick.ts';
 import { pickCandidateSkills } from '../skills.ts';
 import type { CharacterEvent, GameState, Girl, Mission, Opinion, StoryBeat, StoryPlan, Storyline } from '../types.ts';
 // v35 从 src/game.ts 拆出：故事蓝图的推进与故事委托（两者互相调用，合成一个模块）。
-
-// v35 从 src/game.ts 拆出：故事蓝图的节点推进。
 
 export function storyChoices(beat: number, girl: Girl): Storyline['beats'][number]['choices'] {
   const warm = { id: 'warm', label: '先听她说完', intent: '把这一晚留给她', effect: { bond: 4, corruption: -2 } };
@@ -43,9 +41,20 @@ export function startStoryGraph(state: GameState, story: Storyline): void {
   advanceStoryGraph(state, story);
 }
 
+/**
+ * 解析故事蓝图当前关联的契约者锚点（v261）：个人线认 girlId，主线缺席时回落至值班助理或在册首位。
+ */
+export function storyAnchorGirl(state: GameState, story: Storyline): Girl | undefined {
+  const direct = state.girls.find(item => item.id === story.girlId && !item.dead);
+  if (story.scope !== 'main') return direct;
+  if (direct && !direct.retired && !direct.left) return direct;
+  const assistant = state.assistantId ? state.girls.find(item => item.id === state.assistantId && !item.dead && !item.retired && !item.left) : undefined;
+  return assistant ?? state.girls.find(item => !item.dead && !item.retired && !item.left) ?? direct;
+}
+
 export function advanceStoryGraph(state: GameState, story: Storyline): void {
   if (!story.graph || !story.run || story.status !== 'active') return;
-  const girl = state.girls.find(item => item.id === story.girlId);
+  const girl = storyAnchorGirl(state, story);
   if (!girl) { story.status = 'abandoned'; return; }
   for (let guard = 0; guard < 64; guard += 1) {
     const run = story.run;
@@ -360,14 +369,12 @@ export function spawnStoryBeat(state: GameState, story: Storyline): Mission | nu
 }
 
 /** 故事委托完成：标记这一幕，并生成她单独的剧情事件。 */
-
-/** 故事委托完成：标记这一幕，并生成她单独的剧情事件。 */
 export function completeStoryMission(state: GameState, mission: Mission): CharacterEvent | undefined {
   if (!mission.storylineId || !mission.storyBeatId) return undefined;
   const story = state.storylines.find(item => item.id === mission.storylineId);
   if (!story || story.status !== 'active') return undefined;
   const beat = story.beats.find(item => item.id === mission.storyBeatId);
-  const girl = findGirl(state, story.girlId);
+  const girl = storyAnchorGirl(state, story);
   if (!beat || !girl) return undefined;
   beat.status = 'done';
   if (story.run) { resolveStoryWait(state, story.id, 'mission', mission.id, 'success'); return undefined; }

@@ -10,6 +10,10 @@ const PENSION_SCALE = 0.5;
 export function pensionFor(girl: Girl): number {
   return Math.round((240 + girl.level * 160) * PENSION_SCALE);
 }
+/** 每日退休金划拨与欠约单价：pensionFor 是每 10 日总额，日单价统一折算为 1/10。 */
+export function dailyPensionFor(girl: Girl): number {
+  return Math.max(1, Math.round(pensionFor(girl) / 10));
+}
 /**
  * 续约价：契约总价的一半（含技能溢价），下限 150 星砂。
  * 契约价改过之后这里必须跟着走，否则续约比重新签还贵。
@@ -18,7 +22,7 @@ export function renewalCost(girl: Girl): number {
   return Math.max(150, Math.round(contractPriceFor(girl) / 2));
 }
 export function pensionArrears(girl: Girl): number {
-  return Math.max(0, girl.pensionMissed) * pensionFor(girl);
+  return Math.max(0, girl.pensionMissed) * dailyPensionFor(girl);
 }
 export function contractLabel(girl: Girl, day: number): string {
   if (girl.retired) return '退休中';

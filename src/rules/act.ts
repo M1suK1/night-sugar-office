@@ -27,7 +27,7 @@ import {
 import { applyAssignFactionRoster } from './rosterOps.ts';
 import { applyFinishEnding } from './endingOps.ts';
 import {
-  applyClinic, applyHire, applyHireLeader, applyOpeningFill,
+  applyClinic, applyDismissGirl, applyHire, applyHireLeader, applyOpeningFill,
   applyRecallExpedition, applyRehire, applyRenewContract, applyRetire,
   applySeenPrologue, applySetAssistant, applySetOfficeProfile, applySetStarters,
   applyStartExpedition,
@@ -77,6 +77,7 @@ export function act(state: GameState, action: GameAction): ActionResult {
     case 'hire': return applyHire(state, action);
     case 'build': return applyBuild(state, action);
     case 'retire': return applyRetire(state, action);
+    case 'dismissGirl': return applyDismissGirl(state, action);
     case 'changeOutfit': return applyChangeOutfit(state, action);
     case 'setExpression': return applySetExpression(state, action);
     case 'setProfileText': return applySetProfileText(state, action);

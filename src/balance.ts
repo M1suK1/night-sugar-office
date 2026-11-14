@@ -191,7 +191,16 @@ export interface BalanceField {
   kind?: 'number' | 'toggle';
 }
 
-export const BALANCE_GROUPS = ['运营与诊所', '灯下私语', '城市新闻', '终局'] as const;
+export const BALANCE_GROUPS = [
+  '运营与诊所',
+  '基地设施',
+  '势力代表',
+  '事务所会议',
+  '污染与难度',
+  '灯下私语',
+  '城市新闻',
+  '终局',
+] as const;
 
 export const BALANCE_FIELDS: BalanceField[] = [
   { key: 'clinicBase', label: '诊所起步价', hint: '每次治疗的基础费用。', min: 0, max: 2000, step: 10, unit: '星砂', group: '运营与诊所' },

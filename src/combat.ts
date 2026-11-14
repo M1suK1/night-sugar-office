@@ -99,8 +99,9 @@ export function speedOf(unit: BattleUnit): number {
 export function initiativeOf(unit: BattleUnit, roll: number): number {
   return speedOf(unit) + roll;
 }
-function unitFromGirl(girl: Girl, _index: number): BattleUnit {
-  const maxSpirit = effectiveMaxSpirit(girl);
+function unitFromGirl(girl: Girl, _index: number, reputation?: number): BattleUnit {
+  const repState = reputation !== undefined ? { reputation } : undefined;
+  const maxSpirit = effectiveMaxSpirit(girl, repState);
   const gear = equipmentOf(girl);
   const extraSkills = gear.map(item => item.skillId).filter((id): id is string => Boolean(id));
   const activeSet = activeSetOf(girl);
@@ -113,7 +114,7 @@ function unitFromGirl(girl: Girl, _index: number): BattleUnit {
     uid: `ally-${girl.id}`, side: 'ally', name: girl.name, portrait: '', portraitAsset: girl.portraitAsset, color: girl.color,
     girlId: girl.id, codename: girl.codename, expression: girl.expression, portraitSpec: girl.portraitSpec,
     hp: clamp(0, effectiveMaxHp(girl), girl.hp), maxHp: effectiveMaxHp(girl), spirit: maxSpirit, maxSpirit,
-    stats: effectiveStats(girl), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,
+    stats: effectiveStats(girl, repState), skills: [...new Set([...girl.skills, ...extraSkills])], cooldown: {}, effects: [], down: false,
     insightRoll: 0, scarHit: girl.scars.reduce((s, scar) => s + (scar.effect.kind === 'hit' ? scar.effect.amount : 0), 0),
     dealt: 0, taken: 0, healed: 0, controlled: 0, kills: 0,
     damageBonus: gear.reduce((sum, item) => sum + (item.damageBonus ?? 0), 0),
@@ -316,6 +317,8 @@ export interface BattleSetup {
   enemyGirls?: FactionGirl[];
   /** 与 `mission.enemyIds` 对齐的血量覆盖（Boss 消耗战）。 */
   enemyHpOverride?: number[];
+  /** 城市安定度：>=75 时激活「信赖」全员四维 +2 共鸣。 */
+  reputation?: number;
 }
 
 /**
@@ -356,7 +359,7 @@ export function simulateBattle(setup: BattleSetup): BattleState {
   const env = mission.environment ?? region.effect;
   const interception = setup.battleKind === 'interception';
   const units = [
-    ...girls.map(unitFromGirl),
+    ...girls.map((girl, index) => unitFromGirl(girl, index, setup.reputation)),
     ...(interception
       ? (setup.enemyGirls ?? []).map((girl, index) => unitFromEnemyGirl(girl, index, mission.recommendedLevel))
       : (mission.enemyIds ?? []).map((id, index) => unitFromMonster(
@@ -576,8 +579,8 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             target = coverer;
           }
         }
-        // 织梦套装：首轮首个受击绝对偏折 Miss
-        if (target.activeSet === 'set-dream' && round === 1 && !target.evadedFirstHit && skill.side === 'enemy') {
+        // 织梦套装：首轮首个单体受击绝对偏折 Miss
+        if (target.activeSet === 'set-dream' && round === 1 && !target.evadedFirstHit && skill.side === 'enemy' && (skill.targets ?? 1) === 1) {
           target.evadedFirstHit = true;
           log({ round, actor: unit.name, skillId: skill.id, skillName: skill.name, targets: [target.name], hit: false, note: `${target.name}织梦幻影偏折，攻击落空` });
           continue;
@@ -597,12 +600,15 @@ export function simulateBattle(setup: BattleSetup): BattleState {
           const mitigation = (1 - damageReduction(target)) * (1 - affixMitigation);
           // 焚烬套装：半血以下全伤害激增 25%
           const cinderBonus = unit.activeSet === 'set-cinder' && unit.hp <= unit.maxHp * 0.5 ? 25 : 0;
-          // 幽月套装：法术伤害附带 20% 穿透
-          const moonBonus = unit.activeSet === 'set-moonlight' ? 20 : 0;
           // 辖区环境：本区魔物护甲、夜色加成与街道地形都会改变伤害。
           const terrain = unit.side === 'ally' ? 1 + (env.damageDealtPct ?? 0) / 100 : 1 + (env.damageTakenPct ?? 0) / 100;
-          const gear = 1 + Math.max(-50, Math.min(200, (unit.damageBonus ?? 0) + passiveDamageBonus(unit) + cinderBonus + moonBonus)) / 100;
-          const raw = Math.max(1, Math.round(magic * skill.power * variance * mitigation * terrain * gear));
+          const gear = 1 + Math.max(-50, Math.min(200, (unit.damageBonus ?? 0) + passiveDamageBonus(unit) + cinderBonus)) / 100;
+          const damageEffectPct = unit.effects.reduce((sum, e) => sum + (e.stat === 'damage' ? (e.kind === 'buff' ? e.amount : e.kind === 'debuff' ? -e.amount : 0) : 0), 0);
+          const damageScale = 1 + clamp(-60, 100, damageEffectPct) / 100;
+          const unmitigatedBase = magic * skill.power * variance * terrain * gear * damageScale;
+          // 幽月套装：法术攻击附带 20% 无视减伤与护持的真实穿透伤害
+          const pierceBonus = unit.activeSet === 'set-moonlight' ? Math.max(1, Math.round(unmitigatedBase * 0.2)) : 0;
+          const raw = Math.max(1, Math.round(unmitigatedBase * mitigation)) + (skill.resource === 'spirit' ? pierceBonus : 0);
           let dealt = 0;
           let shield = 0;
           let resource: 'hp' | 'spirit' = skill.resource;
@@ -629,11 +635,11 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             resource = 'hp';
             note = `${target.name}的心防已破，血量 ${dealt}`;
           } else {
-            // 血量伤害：心防在时打七折。
-            const scaled = Math.max(1, Math.round(raw * guardHpMul(target) * (target.spiritBroken ? BROKEN_TAKEN_MUL : 1)));
+            // 血量伤害：心防在时打七折；幽月穿透部分不吃护持折减。
+            const scaled = Math.max(1, Math.round(raw * guardHpMul(target) * (target.spiritBroken ? BROKEN_TAKEN_MUL : 1))) + pierceBonus;
             shield = Math.min(target.effects.reduce((sum, e) => sum + (e.kind === 'shield' ? e.amount : 0), 0), scaled);
             dealt = Math.min(target.hp, absorb(target, scaled));
-            if (target.activeSet === 'set-frosting' && !target.survivedLethalOnce && target.hp - dealt <= 0) {
+            if (target.activeSet === 'set-frosting' && isGuarded(target) && !target.survivedLethalOnce && target.hp - dealt <= 0) {
               target.survivedLethalOnce = true;
               dealt = Math.max(0, target.hp - 1);
               log({ round, actor: target.name, skillId: 'set-frosting-survive', skillName: '甘饴庇护', targets: [target.name], hit: true, note: `${target.name}甘饴守护触发，免死保留了最后 1 点生命！` });
@@ -650,10 +656,17 @@ export function simulateBattle(setup: BattleSetup): BattleState {
             if (rule.effect === 'dot') addEffect(unit, { kind: 'dot', amount: rule.amount ?? 0, duration: rule.duration ?? 1, source: target.name });
           }
           if (unit.activeSet === 'set-cinder' && offensive && hit && !target.down) {
-            addEffect(target, { kind: 'dot', amount: Math.max(4, Math.round(magic * 0.15)), duration: 2, source: unit.name, label: '烈火灼伤' });
+            addEffect(target, { kind: 'dot', amount: Math.max(4, Math.round(magic * 0.15)), duration: 2, source: unit.name });
+          }
+          if (unit.activeSet === 'set-dream' && offensive && hit && !target.down && target.hp > 0 && !rulesOf(target).some(rule => rule.effect === 'immuneStun')) {
+            if (rng() * 100 < 35) {
+              addEffect(target, { kind: 'stun', amount: 1, duration: 1, source: unit.name });
+              unit.controlled += 1;
+              log({ round, actor: unit.name, skillId: 'set-dream-stun', skillName: '镜花幻影', targets: [target.name], hit: true, note: `${target.name}陷入镜花失衡，本轮失神无法行动！` });
+            }
           }
           if (target.activeSet === 'set-moonlight' && offensive && hit && !unit.down) {
-            addEffect(unit, { kind: 'debuff', stat: 'magic', amount: 15, duration: 2, source: target.name, label: '暗蚀虚弱' });
+            addEffect(unit, { kind: 'debuff', stat: 'damage', amount: 15, duration: 2, source: target.name });
           }
           if (target.hp > 0) {
             firePassive(unit, 'onHit', { round, target });

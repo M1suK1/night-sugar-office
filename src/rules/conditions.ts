@@ -1,5 +1,5 @@
 import { pickTraits } from '../content/traits.ts';
-import { pensionFor } from '../contracts.ts';
+import { dailyPensionFor } from '../contracts.ts';
 import { WITCH_STAGE_AT, corruptionStage, effectiveMaxHp } from '../economy.ts';
 import { loadBalance } from '../balance.ts';
 import type { GameState, Girl, StatKey } from '../types.ts';
@@ -178,7 +178,7 @@ export function accruePension(state: GameState, days: number): void {
   for (const girl of state.girls) {
     if (girl.dead || !girl.retired) continue;
     for (let i = 0; i < days; i++) {
-      const daily = Math.max(1, Math.round(pensionFor(girl) / 10));
+      const daily = dailyPensionFor(girl);
       if (state.gold - paid - daily >= 0) paid += daily;
       else missing += daily;
     }

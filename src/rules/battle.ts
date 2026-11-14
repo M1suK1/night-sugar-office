@@ -53,14 +53,6 @@ export function recordBattle(state: GameState, battle: BattleState): void {
  * 也不推故事节点。战后的人物状态（HP、疲惫、侵蚀、疤痕、羁绊）仍由 `settleCombat`
  * 的公共收尾处理，这里不复制第二套。
  */
-
-/**
- * 拦截战的结算分支。
- *
- * 只做「打完并作废原委托」这一件事：不发原委托的报酬与声望，不净化污染，不换辖区，
- * 也不推故事节点。战后的人物状态（HP、疲惫、侵蚀、疤痕、羁绊）仍由 `settleCombat`
- * 的公共收尾处理，这里不复制第二套。
- */
 export function settleInterception(state: GameState, mission: Mission, interception: Interception, battle: BattleState, at: { day: number; minutes: number }): void {
   const win = battle.outcome === 'victory';
   interception.outcome = win ? 'win' : 'loss';
@@ -154,6 +146,7 @@ export function settleCombat(state: GameState, mission: Mission, squad: Girl[], 
     battleKind: interception ? 'interception' : 'commission',
     enemyGirls: interception ? enemies : undefined,
     enemyHpOverride: mission.boss && state.boss ? [state.boss.hp ?? state.boss.maxHp ?? 0] : undefined,
+    reputation: state.reputation,
   });
   mission.attempts += 1;
   mission.lastOutcome = battle.outcome;

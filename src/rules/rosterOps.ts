@@ -179,6 +179,7 @@ export function applyHireLeader(state: GameState, action: Extract<GameAction, { 
       if (!owner) return { state, ok: false, message: '她现在已经不在任何一方了。' };
       if (!factionCollapsed(state, owner)) return { state, ok: false, message: '她还有辖区要守。' };
       if (state.girls.some(girl => girl.id === leader.id && !girl.retired)) return { state, ok: false, message: '她已经在名册里。' };
+      if (seatsTaken(state) >= capacity(state)) return { state, ok: false, message: '基地宿舍床位已满，请先扩建宿舍、办理伤退或与在册契约者协商解约。' };
       if (state.gold < LEADER_HIRE_COST) return { state, ok: false, message: `星砂不足（需要 ${LEADER_HIRE_COST}）。` };
       const next = clone(state);
       next.gold -= LEADER_HIRE_COST;
@@ -339,7 +340,7 @@ export function applyHire(state: GameState, action: Extract<GameAction, { type: 
       if (!candidate) return { state, ok: false, message: '这位候选者已经不在名册上。' };
       if (next.gold < candidate.cost) return { state, ok: false, message: `星砂不足，还需要 ${candidate.cost - next.gold}。` };
       const used = seatsTaken(next);
-      if (used >= capacity(next)) return { state, ok: false, message: '基地席位已满，请先扩建宿舍或让资深契约者退役。' };
+      if (used >= capacity(next)) return { state, ok: false, message: '基地宿舍床位已满，请先扩建宿舍、办理伤退或与在册契约者协商解约。' };
       next.gold -= candidate.cost;
       book(next, next.day, -candidate.cost);
       next.girls.push({ ...candidate, status: 'idle', roomId: 'lounge', remaining: 0, contractEndDay: next.day + CONTRACT_DAYS, contractDays: CONTRACT_DAYS, contractRenewals: 0, pensionMissed: 0, retired: false, retiredReason: undefined });
@@ -358,6 +359,49 @@ export function applyRetire(state: GameState, action: Extract<GameAction, { type
       if (girl.status === 'mission') return { state, ok: false, message: '出勤中的契约者无法办理退役。' };
       if (girl.scars.length < 4) return { state, ok: false, message: '只有累积 4 道疤痕的契约者可以申请退役。' };
       girl.retired = true; girl.status = 'retired'; girl.retiredReason = 'injury';
-      next.logs.unshift({ id: `log-retire-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'memorial', text: `${girl.name}办理了退役，转任事务所文职。她的席位仍留在基地，并将按月领取退休金。` });
-      return { state: next, ok: true, message: `${girl.name}已转为文职，不再参与派遣。` };
+      next.logs.unshift({ id: `log-retire-${girl.id}`, time: dateLabel(next.day, next.minutes), kind: 'memorial', text: `${girl.name}办理了伤退，转任事务所文职。她已腾出宿舍床位，并将按十日标准每日划拨退休金。` });
+      return { state: next, ok: true, message: `${girl.name}已转为文职并腾出宿舍床位，不再参与派遣。` };
+}
+
+/** dismissGirl 的动作处理器（v261）：协商解约，归还穿戴装备、释放床位并回到候选池。 */
+export function applyDismissGirl(state: GameState, action: Extract<GameAction, { type: 'dismissGirl' }>): ActionResult {
+      const next = clone(state);
+      const girl = findGirl(next, action.girlId);
+      if (!girl || girl.dead || girl.retired || girl.left) return { state, ok: false, message: '找不到这位在册契约者。' };
+      if (seatsTaken(next) <= 1) return { state, ok: false, message: '事务所至少需要保留一位在册契约者。' };
+      const inFront = (next.fronts ?? []).some(front => (front.status === 'open' || front.status === 'joined') && front.squad?.includes(girl.id));
+      if (girl.status !== 'idle' || girl.loan || inFront) return { state, ok: false, message: `${girl.name}当前正在执勤或休养，待命后再谈解约。` };
+      const arrears = pensionArrears(girl);
+      if (next.gold < arrears) return { state, ok: false, message: `需先结清欠缴契约款（${arrears} 星砂）才能协商解约。` };
+      if (arrears > 0) {
+        next.gold -= arrears;
+        book(next, next.day, -arrears);
+      }
+      for (const slot of ['weapon', 'charm'] as const) {
+        const eqId = girl.equipment?.[slot];
+        if (eqId) next.inventory[eqId] = (next.inventory[eqId] ?? 0) + 1;
+      }
+      if (next.assistantId === girl.id) next.assistantId = undefined;
+      next.girls = next.girls.filter(item => item.id !== girl.id);
+      const returned: Girl = {
+        ...girl,
+        equipment: {},
+        status: 'idle',
+        remaining: 0,
+        missionId: undefined,
+        pensionMissed: 0,
+        cost: renewalCost(girl),
+        candidateUntilDay: next.day + 14,
+      };
+      next.candidates = [returned, ...next.candidates.filter(item => item.id !== girl.id)];
+      next.marketSold = (next.marketSold ?? []).filter(id => id !== girl.id);
+      normalizeMarketWindow(next);
+      next.logs.unshift({
+        id: `log-dismiss-${girl.id}-${next.day}-${next.minutes}`,
+        time: dateLabel(next.day, next.minutes),
+        kind: 'relationship',
+        text: `与${girl.name}协商解除当前契约${arrears > 0 ? `（结清欠款 ${arrears} 星砂）` : ''}。随身装备已交还仓库，她暂时回到市场候选名册。`,
+        ...(arrears > 0 ? { delta: -arrears } : {}),
+      });
+      return { state: next, ok: true, message: `已与${girl.name}协商解约，腾出 1 个宿舍床位。` };
 }
